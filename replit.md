@@ -1,15 +1,17 @@
 # Laravel Application with Vizra ADK
 
 ## Overview
-This is a Laravel 12 PHP web application with the Vizra ADK framework for AI agent development. It connects to Azure OpenAI for medical guideline consultations.
+This is a Laravel 12 PHP web application with the Vizra ADK framework for AI agent development. It connects to Azure OpenAI for medical guideline consultations and uses RAGFlow for document retrieval.
 
 ## Project Structure
 - `app/` - Application core code (Controllers, Models, Services)
   - `app/Agents/` - AI agents (VascularExpertAgent)
   - `app/Tools/` - Agent tools (ConsultGuidelineTool)
   - `app/Providers/LLM/` - Custom LLM providers (AzureOpenAIProvider)
+  - `app/Services/RAGFlow/` - RAGFlow API client and resources
+  - `app/Facades/` - Laravel facades (RAGFlow)
 - `bootstrap/` - Framework bootstrap files
-- `config/` - Configuration files
+- `config/` - Configuration files (ragflow.php, prism.php, vizra-adk.php)
 - `database/` - Migrations, seeders, SQLite database
 - `public/` - Web server entry point and assets
 - `resources/` - Views, CSS, JavaScript
@@ -26,6 +28,26 @@ This is a Laravel 12 PHP web application with the Vizra ADK framework for AI age
 
 **Important**: When using Azure OpenAI with Vizra ADK, you MUST explicitly set `protected ?string $provider = 'azure';` in your agent class. The framework auto-detects "gpt" in model names and defaults to OpenAI provider, overriding config settings.
 
+## RAGFlow Integration
+- Custom Laravel 12 compatible client in `app/Services/RAGFlow/`
+- Facade: `App\Facades\RAGFlow`
+- Config: `config/ragflow.php`
+- Environment variables: `RAGFLOW_API_KEY`, `RAGFLOW_ENDPOINT`
+
+### RAGFlow Usage
+```php
+use App\Facades\RAGFlow;
+
+// List datasets
+$datasets = RAGFlow::datasets()->list();
+
+// Create chat session
+$chat = RAGFlow::chat()->create(['name' => 'My Chat']);
+
+// Send message
+$response = RAGFlow::chat()->sendMessage($chatId, ['message' => 'Hello']);
+```
+
 ## Development Commands
 - `php artisan serve --host=0.0.0.0 --port=5000` - Start development server
 - `php artisan vizra:chat vascular_expert` - Chat with the vascular expert agent
@@ -38,6 +60,8 @@ This is a Laravel 12 PHP web application with the Vizra ADK framework for AI age
 Currently using SQLite at `database/database.sqlite`
 
 ## Recent Changes
+- 2026-01-09: Implemented RAGFlow PHP client for Laravel 12 (custom implementation)
+- 2026-01-09: Created ConsultGuidelineTool to query ESVS vascular surgery guidelines
 - 2026-01-09: Fixed Azure OpenAI connection by explicitly setting provider in VascularExpertAgent
 - Implemented custom AzureOpenAIProvider with handlers for text, structured, and streaming responses
 - Registered Azure provider extension via AzureOpenAIServiceProvider
