@@ -13,6 +13,7 @@ return [
         'vector_similarity_weight' => (float) env('RAGFLOW_VECTOR_WEIGHT', 0.3),
         'rerank_model' => env('RAGFLOW_RERANK_MODEL', 'Cohere-rerank-v3-5-rdrns'),
         'use_knowledge_graph' => filter_var(env('RAGFLOW_USE_KNOWLEDGE_GRAPH', true), FILTER_VALIDATE_BOOLEAN),
+        'use_toc' => filter_var(env('RAGFLOW_USE_TOC', true), FILTER_VALIDATE_BOOLEAN),
     ],
 
     'datasets' => [
