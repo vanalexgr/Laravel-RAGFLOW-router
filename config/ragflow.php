@@ -5,6 +5,10 @@ return [
     'api_endpoint' => env('RAGFLOW_ENDPOINT', 'http://localhost/api/v1'),
     'request_timeout' => env('RAGFLOW_REQUEST_TIMEOUT', 30),
 
+    'use_bridge' => filter_var(env('RAGFLOW_USE_BRIDGE', false), FILTER_VALIDATE_BOOLEAN),
+    'bridge_url' => env('RAGFLOW_BRIDGE_URL', 'http://localhost:8000'),
+    'bridge_secret' => env('RAGFLOW_BRIDGE_SECRET'),
+
     'retrieval' => [
         'top_k' => (int) env('RAGFLOW_TOP_K', 20),
         'top_n' => (int) env('RAGFLOW_TOP_N', 6),

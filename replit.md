@@ -35,6 +35,13 @@ This is a Laravel 12 PHP web application with the Vizra ADK framework for AI age
 - Environment variables: `RAGFLOW_API_KEY`, `RAGFLOW_ENDPOINT` (must include `/api/v1` suffix)
 - Direct dataset retrieval endpoint: `POST /api/v1/retrieval`
 
+### Python Bridge (Optional - for reranking/KG support)
+- Location: `ragflow_service/`
+- Enables: `rerank_id` parameter, proper knowledge graph retrieval
+- Port: 8000 (internal)
+- Enable: Set `RAGFLOW_USE_BRIDGE=true` in .env
+- Workflow: `RAGFlow Bridge`
+
 ### Dataset IDs
 - ESVS Guidelines: `4fff3622eb1b11f09021f2381272676b`
 
@@ -80,6 +87,8 @@ $response = RAGFlow::chat()->sendMessage($chatId, ['message' => 'Hello']);
 Currently using SQLite at `database/database.sqlite`
 
 ## Recent Changes
+- 2026-01-09: Added Python FastAPI bridge service (ragflow_service/) for reranking and knowledge graph support via official RAGFlow SDK patterns
+- 2026-01-09: Laravel RAGFlowClient now supports bridge mode (RAGFLOW_USE_BRIDGE=true) with shared secret authentication
 - 2026-01-09: Added dedicated RAGFlow logging channel - logs to storage/logs/ragflow-YYYY-MM-DD.log with full payload (dataset_ids, all params), response status, chunk count, timing
 - 2026-01-09: Added use_toc parameter to RAGFlow retrieval for TOC/heading_path routing (RAGFLOW_USE_TOC env var, default true)
 - 2026-01-09: Added HttpLogging middleware - logs all requests to storage/logs/http-YYYY-MM-DD.log with URL, headers (secrets redacted), request JSON, timing, and response
