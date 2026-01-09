@@ -34,3 +34,9 @@ externalPort = 80
 
 [userenv.shared]
 APP_URL = "https://9287bb87-c6fb-4044-8c84-59a9d5d40a6c-00-bbjfytvmszqy.kirk.replit.dev"
+RAGFLOW_API_KEY = "ragflow-FpGgOmlttlwtSTQQR1F-JHFymw8n2Qdu_v8Pzh3XAKw"
+RAGFLOW_BASE_URL = "https://ragflow.clinicalguidelines.io"
+VIZRA_ADK_DRIVER = "azure"
+AZURE_OPENAI_API_KEY = "7Prp8cQXAmcr7d5B43RreIEIZJtjhjfvOnsbUGvGflTqT8F4lmv5JQQJ99BHACfhMk5XJ3w3AAAAACOGzxcj"
+AZURE_OPENAI_BASE_URL = "https://alexiouv-5401-resource.cognitiveservices.azure.com/openai/deployments/gpt-5-chat"
+AZURE_OPENAI_VERSION = "2024-12-01-preview"
