@@ -226,6 +226,18 @@ Your VascularExpert agent is exposed as an OpenAI-compatible API endpoint.
 | `/api/v1/models/{model}` | GET | Get model info |
 | `/api/v1/chat/completions` | POST | Chat completions (streaming supported) |
 
+### API Authentication
+
+The OpenAI-compatible endpoints require API key authentication.
+
+| Variable | Description |
+|----------|-------------|
+| `API_SECRET_KEY` | Required. Your API key for authenticating requests |
+
+Pass the API key using one of these methods:
+- **Authorization header**: `Authorization: Bearer YOUR_API_KEY`
+- **X-API-Key header**: `X-API-Key: YOUR_API_KEY`
+
 ### Connecting OpenWebUI
 
 1. Open OpenWebUI in your browser
@@ -235,7 +247,7 @@ Your VascularExpert agent is exposed as an OpenAI-compatible API endpoint.
 5. Fill in:
    ```
    API URL: https://9287bb87-c6fb-4044-8c84-59a9d5d40a6c-00-bbjfytvmszqy.kirk.replit.dev/api/v1
-   API Key: any-value (not validated)
+   API Key: your-api-secret-key
    Model IDs: vascular_expert
    ```
 6. Save and start chatting!
@@ -243,12 +255,14 @@ Your VascularExpert agent is exposed as an OpenAI-compatible API endpoint.
 ### Testing the API
 
 ```bash
-# List models
-curl https://YOUR-REPLIT-URL/api/v1/models
+# List models (requires API key)
+curl https://YOUR-REPLIT-URL/api/v1/models \
+  -H "Authorization: Bearer YOUR_API_KEY"
 
 # Chat completion
 curl -X POST https://YOUR-REPLIT-URL/api/v1/chat/completions \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{
     "model": "vascular_expert",
     "messages": [{"role": "user", "content": "What is carotid stenosis?"}]
@@ -257,6 +271,7 @@ curl -X POST https://YOUR-REPLIT-URL/api/v1/chat/completions \
 # Streaming
 curl -X POST https://YOUR-REPLIT-URL/api/v1/chat/completions \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{
     "model": "vascular_expert",
     "messages": [{"role": "user", "content": "What is carotid stenosis?"}],

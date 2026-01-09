@@ -80,6 +80,7 @@ $response = RAGFlow::chat()->sendMessage($chatId, ['message' => 'Hello']);
 Currently using SQLite at `database/database.sqlite`
 
 ## Recent Changes
+- 2026-01-09: Added API key authentication (ValidateApiKey middleware) for OpenAI-compatible endpoints
 - 2026-01-09: Added OpenAI-compatible API endpoint for OpenWebUI integration (/api/v1/chat/completions)
 - 2026-01-09: Added automatic metadata extraction (guideline ID, year, recommendation ID, class, level, territory, similarity scores) in ConsultGuidelineTool
 - 2026-01-09: Added multi-turn memory support with includeHistory=true and contextStrategy='full' in VascularExpertAgent
