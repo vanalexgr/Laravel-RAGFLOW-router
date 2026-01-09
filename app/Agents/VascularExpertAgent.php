@@ -29,5 +29,6 @@ class VascularExpertAgent extends BaseLlmAgent
     protected string $model = 'gpt-5-chat';
 
     protected array $tools = [
+        ConsultGuidelineTool::class,
     ];
 }

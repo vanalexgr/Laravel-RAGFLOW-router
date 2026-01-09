@@ -8,7 +8,7 @@ use Illuminate\Support\Arr;
 use Prism\Prism\Concerns\CallsTools;
 use Prism\Prism\Enums\FinishReason;
 use Prism\Prism\Exceptions\PrismException;
-use Prism\Prism\Providers\OpenAI\Concerns\BuildsTools;
+use Prism\Prism\Tool;
 use Prism\Prism\Providers\OpenAI\Concerns\ProcessRateLimits;
 use Prism\Prism\Providers\OpenAI\Concerns\ValidatesResponse;
 use Prism\Prism\Providers\OpenAI\Maps\ToolCallMap;
@@ -26,7 +26,6 @@ use Prism\Prism\ValueObjects\Usage;
 
 class AzureTextHandler
 {
-    use BuildsTools;
     use CallsTools;
     use ProcessRateLimits;
     use ValidatesResponse;
@@ -172,7 +171,7 @@ class AzureTextHandler
                         'type' => 'function',
                         'function' => [
                             'name' => $tc->name,
-                            'arguments' => $tc->arguments(),
+                            'arguments' => is_string($tc->arguments()) ? $tc->arguments() : json_encode($tc->arguments()),
                         ],
                     ], $message->toolCalls);
                 }
@@ -189,6 +188,39 @@ class AzureTextHandler
         }
 
         return $messages;
+    }
+
+    /**
+     * Build tools array in the correct format for Azure/OpenAI API
+     * The API expects tools wrapped in a 'function' key
+     */
+    protected function buildTools(Request $request): ?array
+    {
+        $tools = $request->tools();
+        
+        if (empty($tools)) {
+            return null;
+        }
+
+        return array_map(function (Tool $tool): array {
+            $definition = [
+                'type' => 'function',
+                'function' => [
+                    'name' => $tool->name(),
+                    'description' => $tool->description(),
+                ],
+            ];
+
+            if (count($tool->parameters()) > 0) {
+                $definition['function']['parameters'] = [
+                    'type' => 'object',
+                    'properties' => $tool->parametersAsArray(),
+                    'required' => $tool->requiredParameters(),
+                ];
+            }
+
+            return $definition;
+        }, $tools);
     }
 
     protected function addStep(

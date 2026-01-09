@@ -4,47 +4,45 @@ namespace App\Tools;
 
 use App\Facades\RAGFlow;
 use Illuminate\Support\Facades\Log;
-use Vizra\VizraADK\Tools\BaseTool;
-use Vizra\VizraADK\Tools\ToolParameter;
+use Vizra\VizraADK\Contracts\ToolInterface;
+use Vizra\VizraADK\Memory\AgentMemory;
+use Vizra\VizraADK\System\AgentContext;
 
-class ConsultGuidelineTool extends BaseTool
+class ConsultGuidelineTool implements ToolInterface
 {
-    protected string $name = 'consult_guideline';
-
-    protected string $description = 'Consult ESVS vascular surgery guidelines for a specific topic. Queries the official guideline datasets directly and returns relevant recommendations.';
-
-    protected array $parameters = [];
-
     private const DATASET_IDS = [
         '4fff3622eb1b11f09021f2381272676b',
-        '4fff3622eb1b11f09021f2381272676',
     ];
 
-    public function __construct()
+    public function definition(): array
     {
-        $this->parameters = [
-            new ToolParameter(
-                name: 'topic',
-                description: 'The vascular surgery topic to search for (e.g., Carotid, Aortic, Trauma, Venous, Peripheral)',
-                type: 'string',
-                required: true
-            ),
-            new ToolParameter(
-                name: 'question',
-                description: 'Optional specific clinical question to answer',
-                type: 'string',
-                required: false
-            ),
+        return [
+            'name' => 'consult_guideline',
+            'description' => 'Consult ESVS vascular surgery guidelines for a specific topic. Queries the official guideline datasets directly and returns relevant recommendations.',
+            'parameters' => [
+                'type' => 'object',
+                'properties' => [
+                    'topic' => [
+                        'type' => 'string',
+                        'description' => 'The vascular surgery topic to search for (e.g., Carotid, Aortic, Trauma, Venous, Peripheral)',
+                    ],
+                    'question' => [
+                        'type' => 'string',
+                        'description' => 'Optional specific clinical question to answer',
+                    ],
+                ],
+                'required' => ['topic'],
+            ],
         ];
     }
 
-    public function execute(array $input): string
+    public function execute(array $arguments, AgentContext $context, AgentMemory $memory): string
     {
-        $topic = $input['topic'] ?? '';
-        $question = $input['question'] ?? '';
+        $topic = $arguments['topic'] ?? '';
+        $question = $arguments['question'] ?? '';
 
         if (empty($topic)) {
-            return 'Error: A topic is required to consult the guidelines.';
+            return json_encode(['error' => 'A topic is required to consult the guidelines.']);
         }
 
         $query = "ESVS guidelines {$topic}";
@@ -52,19 +50,24 @@ class ConsultGuidelineTool extends BaseTool
             $query .= " - {$question}";
         }
 
+        Log::info("ConsultGuidelineTool: Querying RAGFlow for: {$query}");
+
         try {
             $response = RAGFlow::datasets()->retrieve(self::DATASET_IDS, [
                 'question' => $query,
                 'top_k' => 10,
             ]);
 
+            Log::info("ConsultGuidelineTool: RAGFlow returned " . count($response['data']['chunks'] ?? []) . " chunks");
+
             if (!empty($response['data']['chunks'])) {
                 return $this->formatRetrievalResults($response['data']['chunks'], $topic);
             }
 
-            if (!empty($response['errors'])) {
-                Log::warning('RAGFlow retrieval errors: ' . implode('; ', $response['errors']));
-                return $this->getReferenceGuidelines($topic) . "\n\n[RAGFlow retrieval errors: " . implode('; ', $response['errors']) . "]";
+            if (isset($response['code']) && $response['code'] !== 0) {
+                $errorMsg = $response['message'] ?? 'Unknown error';
+                Log::warning('RAGFlow returned error: ' . $errorMsg);
+                return $this->getReferenceGuidelines($topic) . "\n\n[RAGFlow Error: {$errorMsg}]";
             }
 
             Log::info('RAGFlow: No chunks returned for query: ' . $query);
