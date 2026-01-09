@@ -80,6 +80,7 @@ $response = RAGFlow::chat()->sendMessage($chatId, ['message' => 'Hello']);
 Currently using SQLite at `database/database.sqlite`
 
 ## Recent Changes
+- 2026-01-09: Added HttpLogging middleware - logs all requests to storage/logs/http-YYYY-MM-DD.log with URL, headers (secrets redacted), request JSON, timing, and response
 - 2026-01-09: Fixed tool invocation by setting tool_choice='required' on first request in AzureTextHandler - ensures agent uses consult_guideline tool instead of answering from training data
 - 2026-01-09: Simplified ConsultGuidelineTool to single 'topic' parameter - Prism marks all parameters as required by default
 - 2026-01-09: Added APP_KEY to .env (required for Laravel encryption)
