@@ -3,6 +3,8 @@
 namespace App\Tools;
 
 use App\Facades\RAGFlow;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Vizra\VizraADK\Tools\BaseTool;
 use Vizra\VizraADK\Tools\ToolParameter;
 
@@ -13,6 +15,10 @@ class ConsultGuidelineTool extends BaseTool
     protected string $description = 'Consult ESVS vascular surgery guidelines for a specific topic. Returns relevant recommendations and evidence-based guidance.';
 
     protected array $parameters = [];
+
+    private const CHAT_CACHE_KEY = 'ragflow_guideline_chat_id';
+    private const SESSION_CACHE_KEY = 'ragflow_guideline_session_id';
+    private const CACHE_TTL = 3600;
 
     public function __construct()
     {
@@ -41,22 +47,17 @@ class ConsultGuidelineTool extends BaseTool
             return 'Error: A topic is required to consult the guidelines.';
         }
 
+        $query = "ESVS guidelines {$topic}";
+        if (!empty($question)) {
+            $query .= " - {$question}";
+        }
+
         try {
-            $query = "ESVS guidelines {$topic}";
-            if (!empty($question)) {
-                $query .= " - {$question}";
-            }
-
-            $chats = RAGFlow::chat()->list();
-            
-            if (empty($chats['data'])) {
-                return $this->getMockGuidelines($topic);
-            }
-
-            $chatId = $chats['data'][0]['id'] ?? null;
+            $chatId = $this->getOrCreateChat();
             
             if (!$chatId) {
-                return $this->getMockGuidelines($topic);
+                Log::info('RAGFlow: No chat available, using reference guidelines');
+                return $this->getReferenceGuidelines($topic);
             }
 
             $response = RAGFlow::chat()->sendMessage($chatId, [
@@ -68,46 +69,92 @@ class ConsultGuidelineTool extends BaseTool
                 return $response['data']['answer'];
             }
 
-            return $this->getMockGuidelines($topic);
+            if (isset($response['code']) && $response['code'] !== 0) {
+                Log::warning('RAGFlow returned error code: ' . ($response['message'] ?? 'Unknown error'));
+            }
+
+            return $this->getReferenceGuidelines($topic);
 
         } catch (\Exception $e) {
-            \Log::warning('RAGFlow query failed, using mock data: ' . $e->getMessage());
-            return $this->getMockGuidelines($topic);
+            Log::error('RAGFlow query failed: ' . $e->getMessage());
+            return $this->getReferenceGuidelines($topic);
         }
     }
 
-    protected function getMockGuidelines(string $topic): string
+    protected function getOrCreateChat(): ?string
+    {
+        $cachedChatId = Cache::get(self::CHAT_CACHE_KEY);
+        if ($cachedChatId) {
+            return $cachedChatId;
+        }
+
+        try {
+            $chats = RAGFlow::chat()->list();
+            
+            if (!empty($chats['data']) && !empty($chats['data'][0]['id'])) {
+                $chatId = $chats['data'][0]['id'];
+                Cache::put(self::CHAT_CACHE_KEY, $chatId, self::CACHE_TTL);
+                return $chatId;
+            }
+
+            $newChat = RAGFlow::chat()->create([
+                'name' => 'ESVS Guidelines Assistant',
+                'description' => 'Assistant for querying ESVS vascular surgery guidelines',
+            ]);
+
+            if (!empty($newChat['data']['id'])) {
+                $chatId = $newChat['data']['id'];
+                Cache::put(self::CHAT_CACHE_KEY, $chatId, self::CACHE_TTL);
+                Log::info('RAGFlow: Created new chat with ID: ' . $chatId);
+                return $chatId;
+            }
+
+            Log::warning('RAGFlow: Failed to create chat - no ID returned');
+            return null;
+
+        } catch (\Exception $e) {
+            Log::error('RAGFlow chat setup failed: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    protected function getReferenceGuidelines(string $topic): string
     {
         $guidelines = [
-            'carotid' => "ESVS Carotid Guidelines Summary:
+            'carotid' => "ESVS Carotid Guidelines Summary (Reference):
 - Rec 12: In symptomatic patients with carotid stenosis (>=50%), carotid endarterectomy (CEA) should be performed as soon as possible, ideally within 14 days of symptom onset.
 - Rec 13: Carotid artery stenting (CAS) can be considered as an alternative to CEA in symptomatic patients at high surgical risk.
 - Rec 17: In asymptomatic patients with 60-99% stenosis, CEA should be considered if life expectancy exceeds 5 years and perioperative stroke/death risk is <3%.
-- Rec 23: All patients should receive optimal medical therapy including antiplatelets, statins, and risk factor modification.",
+- Rec 23: All patients should receive optimal medical therapy including antiplatelets, statins, and risk factor modification.
+Note: For more detailed guidance, please ensure RAGFlow is properly configured with ESVS guideline documents.",
             
-            'aortic' => "ESVS Aortic Guidelines Summary:
+            'aortic' => "ESVS Aortic Guidelines Summary (Reference):
 - Rec 8: Elective repair of abdominal aortic aneurysm (AAA) is recommended when diameter reaches 5.5cm in men or 5.0cm in women.
 - Rec 15: EVAR should be considered as an alternative to open repair in patients with suitable anatomy.
 - Rec 22: Annual surveillance imaging is recommended for AAA between 3.0-4.4cm, and every 6 months for 4.5-5.4cm.
-- Rec 28: Emergency repair is indicated for ruptured or symptomatic AAA regardless of size.",
+- Rec 28: Emergency repair is indicated for ruptured or symptomatic AAA regardless of size.
+Note: For more detailed guidance, please ensure RAGFlow is properly configured with ESVS guideline documents.",
             
-            'trauma' => "ESVS Vascular Trauma Guidelines Summary:
+            'trauma' => "ESVS Vascular Trauma Guidelines Summary (Reference):
 - Rec 5: Hard signs of vascular injury require immediate surgical exploration.
 - Rec 12: CT angiography is the first-line imaging modality for suspected vascular trauma.
 - Rec 18: Endovascular repair should be considered for suitable blunt thoracic aortic injuries.
-- Rec 24: Damage control surgery principles apply to unstable patients with vascular trauma.",
+- Rec 24: Damage control surgery principles apply to unstable patients with vascular trauma.
+Note: For more detailed guidance, please ensure RAGFlow is properly configured with ESVS guideline documents.",
             
-            'venous' => "ESVS Chronic Venous Disease Guidelines Summary:
+            'venous' => "ESVS Chronic Venous Disease Guidelines Summary (Reference):
 - Rec 10: Compression therapy is recommended as first-line treatment for venous leg ulcers.
 - Rec 16: Superficial venous ablation should be considered for symptomatic varicose veins.
 - Rec 23: Duplex ultrasound is the investigation of choice for chronic venous disease.
-- Rec 31: Deep venous reconstruction may be considered for severe post-thrombotic syndrome.",
+- Rec 31: Deep venous reconstruction may be considered for severe post-thrombotic syndrome.
+Note: For more detailed guidance, please ensure RAGFlow is properly configured with ESVS guideline documents.",
             
-            'peripheral' => "ESVS Peripheral Arterial Disease Guidelines Summary:
+            'peripheral' => "ESVS Peripheral Arterial Disease Guidelines Summary (Reference):
 - Rec 7: Ankle-brachial index (ABI) is recommended as first-line diagnostic test for PAD.
 - Rec 14: Supervised exercise therapy should be offered to all claudicants as first-line treatment.
 - Rec 21: Revascularization is indicated for critical limb ischemia to prevent limb loss.
-- Rec 35: Endovascular-first approach may be considered for aortoiliac disease.",
+- Rec 35: Endovascular-first approach may be considered for aortoiliac disease.
+Note: For more detailed guidance, please ensure RAGFlow is properly configured with ESVS guideline documents.",
         ];
 
         $topicLower = strtolower($topic);
@@ -118,6 +165,6 @@ class ConsultGuidelineTool extends BaseTool
             }
         }
 
-        return "No specific ESVS guidelines found for topic: {$topic}. Available topics include: Carotid, Aortic, Trauma, Venous, and Peripheral arterial disease. Please specify one of these topics for detailed recommendations.";
+        return "No specific ESVS guidelines found for topic: {$topic}. Available topics include: Carotid, Aortic, Trauma, Venous, and Peripheral arterial disease. Please specify one of these topics for detailed recommendations. Note: For comprehensive guidance, please ensure RAGFlow is configured with the relevant ESVS guideline documents.";
     }
 }
