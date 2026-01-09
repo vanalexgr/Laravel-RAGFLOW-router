@@ -78,7 +78,8 @@ class ConsultGuidelineTool extends BaseTool
 
     protected function formatRetrievalResults(array $chunks, string $topic): string
     {
-        $output = "ESVS Guidelines - {$topic} (Retrieved from RAGFlow datasets)\n";
+        $output = "[SOURCE: RAGFlow Direct Dataset Retrieval - " . count($chunks) . " chunks from dataset 4fff3622eb1b11f09021f2381272676b]\n\n";
+        $output .= "ESVS Guidelines - {$topic}\n";
         $output .= str_repeat("=", 60) . "\n\n";
 
         foreach ($chunks as $index => $chunk) {
