@@ -61,26 +61,43 @@ class ConsultGuidelineTool implements ToolInterface
         $retrievalConfig = config('ragflow.retrieval', []);
         $datasetIds = [config('ragflow.datasets.esvs_guidelines', '4fff3622eb1b11f09021f2381272676b')];
 
-        $topK = $arguments['top_k'] ?? $retrievalConfig['top_k'] ?? 10;
+        $topK = $arguments['top_k'] ?? $retrievalConfig['top_k'] ?? 20;
+        $topN = $retrievalConfig['top_n'] ?? 6;
         $similarityThreshold = $arguments['similarity_threshold'] ?? $retrievalConfig['similarity_threshold'] ?? 0.2;
         $keywordMode = $arguments['keyword_mode'] ?? $retrievalConfig['keyword_mode'] ?? true;
         $vectorWeight = $retrievalConfig['vector_similarity_weight'] ?? 0.3;
+        $rerankModel = $retrievalConfig['rerank_model'] ?? null;
+        $useKnowledgeGraph = $retrievalConfig['use_knowledge_graph'] ?? false;
 
         Log::info("ConsultGuidelineTool: Querying RAGFlow", [
             'query' => $query,
             'top_k' => $topK,
+            'top_n' => $topN,
             'similarity_threshold' => $similarityThreshold,
             'keyword_mode' => $keywordMode,
+            'rerank_model' => $rerankModel,
+            'use_knowledge_graph' => $useKnowledgeGraph,
         ]);
 
         try {
-            $response = RAGFlow::datasets()->retrieve($datasetIds, [
+            $retrievalParams = [
                 'question' => $query,
                 'top_k' => $topK,
+                'top_n' => $topN,
                 'similarity_threshold' => $similarityThreshold,
                 'keyword' => $keywordMode,
                 'vector_similarity_weight' => $vectorWeight,
-            ]);
+            ];
+            
+            if (!empty($rerankModel)) {
+                $retrievalParams['rerank_model'] = $rerankModel;
+            }
+            
+            if ($useKnowledgeGraph) {
+                $retrievalParams['use_knowledge_graph'] = true;
+            }
+
+            $response = RAGFlow::datasets()->retrieve($datasetIds, $retrievalParams);
 
             Log::info("ConsultGuidelineTool: RAGFlow returned " . count($response['data']['chunks'] ?? []) . " chunks");
 

@@ -29,18 +29,26 @@ These control how documents are retrieved from RAGFlow datasets.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `RAGFLOW_TOP_K` | `10` | Number of results to retrieve per query (Top-N) |
+| `RAGFLOW_TOP_K` | `20` | Number of chunks to retrieve initially (before reranking) |
+| `RAGFLOW_TOP_N` | `6` | Number of chunks to return after reranking |
 | `RAGFLOW_SIMILARITY_THRESHOLD` | `0.2` | Minimum similarity score (0.0-1.0). Lower = more results |
-| `RAGFLOW_KEYWORD_MODE` | `true` | Enable keyword analysis in retrieval |
-| `RAGFLOW_VECTOR_WEIGHT` | `0.3` | Weight for vector similarity vs keyword matching (0.0-1.0) |
+| `RAGFLOW_KEYWORD_MODE` | `true` | Enable hybrid search (keyword + vector) |
+| `RAGFLOW_VECTOR_WEIGHT` | `0.3` | Weight for vector similarity in hybrid search (0.0-1.0) |
+| `RAGFLOW_RERANK_MODEL` | `Cohere-rerank-v3-5-rdrns` | Reranking model for improved relevance |
+| `RAGFLOW_USE_KNOWLEDGE_GRAPH` | `true` | Enable knowledge graph for multi-hop QA |
 
 **Example:**
 ```env
-RAGFLOW_TOP_K=15
-RAGFLOW_SIMILARITY_THRESHOLD=0.3
+RAGFLOW_TOP_K=20
+RAGFLOW_TOP_N=6
+RAGFLOW_SIMILARITY_THRESHOLD=0.2
 RAGFLOW_KEYWORD_MODE=true
-RAGFLOW_VECTOR_WEIGHT=0.5
+RAGFLOW_VECTOR_WEIGHT=0.3
+RAGFLOW_RERANK_MODEL=Cohere-rerank-v3-5-rdrns
+RAGFLOW_USE_KNOWLEDGE_GRAPH=true
 ```
+
+**Note:** TOC (Table of Contents) and Auto Keywords & Meta must be configured in the RAGFlow UI when setting up the dataset, not via API.
 
 #### Understanding Retrieval Settings
 
