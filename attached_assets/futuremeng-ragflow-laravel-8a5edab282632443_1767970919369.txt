@@ -1,0 +1,1466 @@
+Directory structure:
+└── futuremeng-ragflow-laravel/
+    ├── README.md
+    ├── CHANGELOG.md
+    ├── composer.json
+    ├── CONTRIBUTING.md
+    ├── LICENSE.md
+    ├── phpstan.neon.dist
+    ├── phpunit.xml.dist
+    ├── .editorconfig
+    ├── config/
+    │   └── ragflow.php
+    ├── resources/
+    │   └── views/
+    │       └── components/
+    │           ├── badge.php
+    │           ├── new-line.php
+    │           └── two-column-detail.php
+    ├── src/
+    │   ├── ServiceProvider.php
+    │   ├── Commands/
+    │   │   └── InstallCommand.php
+    │   ├── Exceptions/
+    │   │   └── ApiKeyIsMissing.php
+    │   ├── Facades/
+    │   │   └── RAGFlow.php
+    │   ├── Support/
+    │   │   └── View.php
+    │   └── Testing/
+    │       └── RAGFlowFake.php
+    ├── tests/
+    │   ├── Arch.php
+    │   ├── ServiceProvider.php
+    │   └── Facades/
+    │       └── RAGFlow.php
+    └── .github/
+        ├── FUNDING.yml
+        └── workflows/
+            ├── formats.yml
+            └── tests.yml
+
+================================================
+FILE: README.md
+================================================
+<p align="center">
+    <p align="center">
+        <a href="https://github.com/futuremeng/RAGFlow-laravel/actions"><img alt="GitHub Workflow Status (master)" src="https://img.shields.io/github/actions/workflow/status/futuremeng/RAGFlow-laravel/tests.yml?branch=main&label=tests&style=round-square"></a>
+        <a href="https://packagist.org/packages/futuremeng/RAGFlow-laravel"><img alt="Total Downloads" src="https://img.shields.io/packagist/dt/futuremeng/RAGFlow-laravel"></a>
+        <a href="https://packagist.org/packages/futuremeng/RAGFlow-laravel"><img alt="Latest Version" src="https://img.shields.io/packagist/v/futuremeng/RAGFlow-laravel"></a>
+        <a href="https://packagist.org/packages/futuremeng/RAGFlow-laravel"><img alt="License" src="https://img.shields.io/github/license/futuremeng/RAGFlow-laravel"></a>
+    </p>
+</p>
+
+---
+
+**RAGFlow PHP** for Laravel is a community-maintained PHP API client that allows you to interact with the [RAGFlow API](https://beta.ragflow.com/docs/api-reference/introduction). If you or your business relies on this package, it's important to support the developers who have contributed their time and effort to create and maintain this valuable tool:
+
+-   Nuno Maduro: **[github.com/sponsors/nunomaduro](https://github.com/sponsors/nunomaduro)**
+-   Sandro Gehri: **[github.com/sponsors/gehrisandro](https://github.com/sponsors/gehrisandro)**
+
+> **Note:** This repository contains the integration code of the **RAGFlow PHP** for Laravel. If you want to use the **RAGFlow PHP** client in a framework-agnostic way, take a look at the [futuremeng/RAGFlow-php-client](https://github.com/futuremeng/RAGFlow-php-client) repository.
+
+## Get Started
+
+> **Requires [PHP 8.1+](https://php.net/releases/)**
+
+First, install RAGFlow via the [Composer](https://getcomposer.org/) package manager:
+
+```bash
+composer require futuremeng/RAGFlow-laravel
+```
+
+Next, execute the install command:
+
+```bash
+php artisan ragflow:install
+```
+
+This will create a `config/ragflow.php` configuration file in your project, which you can modify to your needs
+using environment variables.
+Blank environment variables for the RAGFlow API key and RAGFLOW_ENDPOINT id are already appended to your `.env` file.
+
+```env
+RAGFLOW_API_KEY=sk-...
+and RAGFLOW_ENDPOINT=https://ragflow.com/api/v1
+```
+
+Finally, you may use the `RAGFlow` facade to access the RAGFlow API:
+
+```php
+use RAGFlow\Laravel\Facades\RAGFlow;
+
+$result = RAGFlow::chat()->create([
+    'message' =>'Hello!',
+]);
+
+echo $result->completion->content; // Hello! How can I assist you today?
+```
+
+## Configuration
+
+Configuration is done via environment variables or directly in the configuration file (`config/ragflow.php`).
+
+### RAGFlow API Key and RAGFLOW_ENDPOINT
+
+Specify your RAGFlow API Key and RAGFLOW_ENDPOINT. This will be
+used to authenticate with the RAGFlow API - you can find your API key
+on your RAGFlow dashboard, at https://ragflow.com.
+
+```env
+RAGFLOW_API_KEY=
+RAGFLOW_ENDPOINT=
+```
+
+### Request Timeout
+
+The timeout may be used to specify the maximum number of seconds to wait
+for a response. By default, the client will time out after 30 seconds.
+
+```env
+RAGFLOW_REQUEST_TIMEOUT=
+```
+
+## Usage
+
+For usage examples, take a look at the [futuremeng/RAGFlow-php-client](https://github.com/futuremeng/RAGFlow-php-client) repository.
+
+## Testing
+
+The `RAGFlow` facade comes with a `fake()` method that allows you to fake the API responses.
+
+The fake responses are returned in the order they are provided to the `fake()` method.
+
+All responses are having a `fake()` method that allows you to easily create a response object by only providing the parameters relevant for your test case.
+
+```php
+use RAGFlow\Laravel\Facades\RAGFlow;
+use RAGFlow\Responses\Completions\CreateResponse;
+
+RAGFlow::fake([
+    CreateResponse::fake([
+        'choices' => [
+            [
+                'text' => 'awesome!',
+            ],
+        ],
+    ]),
+]);
+
+$completion = RAGFlow::completions()->create([
+    'model' => 'gpt-3.5-turbo-instruct',
+    'prompt' => 'PHP is ',
+]);
+
+expect($completion['choices'][0]['text'])->toBe('awesome!');
+```
+
+After the requests have been sent there are various methods to ensure that the expected requests were sent:
+
+```php
+// assert completion create request was sent
+RAGFlow::assertSent(Completions::class, function (string $method, array $parameters): bool {
+    return $method === 'create' &&
+        $parameters['model'] === 'gpt-3.5-turbo-instruct' &&
+        $parameters['prompt'] === 'PHP is ';
+});
+```
+
+For more testing examples, take a look at the [futuremeng/RAGFlow-php-client](https://github.com/futuremeng/RAGFlow-php-client#testing) repository.
+
+---
+
+RAGFlow PHP for Laravel is an open-sourced software licensed under the **[MIT license](https://opensource.org/licenses/MIT)**.
+
+
+
+================================================
+FILE: CHANGELOG.md
+================================================
+# Changelog
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](http://keepachangelog.com/)
+and this project adheres to [Semantic Versioning](http://semver.org/).
+
+## v0.10.1 (2024-06-06)
+### Changed
+- Changed underlying `ragflow/client` package version from 0.9.1 to v0.10.1
+
+## v0.10.0-beta.2 (2024-05-28)
+### Fixed
+- Api version header in Service Provider - ([#100](https://github.com/futuremeng/RAGFlow-laravel/issues/100))
+
+## v0.10.0-beta.1 (2024-05-27)
+### Changed
+- Changed underlying `ragflow/client` package version from 0.9.1 to v0.10.0-beta.1
+
+## v0.9.1 (2024-05-25)
+### Changed
+- Changed underlying `ragflow/client` package version from 0.9.0 to v0.9.1
+
+## v0.9.0 (2024-05-21)
+### Changed
+- Changed underlying `ragflow/client` package version from 0.8.0 to v0.9.0
+
+## v0.8.0 (2023-11-23)
+### Changed
+- Changed underlying `ragflow/client` package version from 0.7.8 to v0.8.0
+
+## v0.8.0-beta.1 (2023-11-13)
+### Changed
+- Changed underlying `ragflow/client` package version from 0.7.8 to v0.8.0-beta.1
+
+## v0.7.8 (2023-11-07)
+### Changed
+- Changed underlying `ragflow/client` package version from 0.7.5 to 0.7.8
+
+## v0.7.5 (2023-11-06)
+### Changed
+- Changed underlying `ragflow/client` package version from 0.7.0 to 0.7.5
+
+## v0.7.0 (2023-08-29)
+### Changed
+- Changed underlying `ragflow/client` package version from 0.6.3 to 0.7.0
+- Update configuration documentation
+
+## v0.6.3 (2023-07-10)
+### Changed
+- Changed underlying `ragflow/client` package version from 0.6.0 to 0.6.3
+
+## v0.6.0 (2023-06-14)
+### Added
+- Make HTTP request timeout configurable ([#45](https://github.com/futuremeng/RAGFlow-laravel/pull/45))
+
+### Changed
+- Changed underlying `ragflow/client` package version from 0.5.3 to 0.6.0
+
+## v0.5.3 (2023-06-07)
+### Changed
+- Changed underlying `ragflow/client` package version from 0.5.1 to 0.5.3
+
+## v0.5.2 (2023-05-29)
+### Fixed
+- Removed unnecessary dependency for `http-interop/http-factory-guzzle` from composer.json which leads to an error with Laravel 10 - ([#64](https://github.com/futuremeng/RAGFlow-laravel/issues/46))
+
+## v0.5.1 (2023-05-24)
+### Changed
+- Changed underlying `ragflow/client` package version from 0.5.0 to 0.5.1
+
+## v0.5.0 (2023-05-24)
+### Changed
+- Changed underlying `ragflow/client` package version from 0.4.2 to 0.5.0
+
+## v0.4.3 (2023-04-13)
+### Fixed
+- Undefined methods on facade due missing provides ([8d6d3cb](https://github.com/futuremeng/RAGFlow-laravel/commit/8d6d3cbd8ad1aea121dd294dddfe81569c2c1dd9))
+
+## v0.4.2 (2023-04-12)
+### Added
+- Facade `fake()` / Testing support ([#27](https://github.com/futuremeng/RAGFlow-laravel/pull/27))
+
+### Changed
+- ServiceProvider: run `publishes` only when running in console ([#29](https://github.com/futuremeng/RAGFlow-laravel/pull/29))
+- Make ServiceProvider deferred ([#30](https://github.com/futuremeng/RAGFlow-laravel/pull/30))
+- Changed underlying `ragflow/client` package version from 0.4.1 to 0.4.2
+
+## v0.4.1 (2023-03-24)
+### Changed
+- Changed underlying `ragflow/client` package version from 0.4.0 to 0.4.1
+
+## v0.4.0 (2023-03-17)
+### Changed
+- Changed underlying `ragflow/client` package version from 0.3.4 to 0.4.0
+
+## v0.3.4 (2023-03-03)
+### Changed
+- Changed underlying `ragflow/client` package version from 0.3.3 to 0.3.4
+
+## v0.3.3 (2023-03-02)
+### Changed
+- Changed underlying `ragflow/client` package version from 0.3.2 to 0.3.3
+
+## v0.3.2 (2023-02-28)
+### Changed
+- Changed underlying `ragflow/client` package version from 0.3.0 to 0.3.2
+
+## v0.3.1 (2023-01-27)
+### Added
+- Support for Laravel 10 ([#8](https://github.com/futuremeng/RAGFlow-laravel/pull/8))
+
+## v0.3.0 (2023-01-03)
+### Changed
+- Changed underlying `ragflow/client` package version from 0.2.x to 0.3.x ([4f785ef](https://github.com/futuremeng/RAGFlow-laravel/commit/4f785ef21c6c8f68d3380b3d7178689c938c1235))
+
+## v0.2.1 (2022-12-27)
+### Fixed
+- Typo on configuration file ([#3](https://github.com/futuremeng/RAGFlow-laravel/pull/3))
+
+## v0.2.0 (2022-12-26)
+### Added
+- First version
+
+
+
+================================================
+FILE: composer.json
+================================================
+{
+    "name": "futuremeng/ragflow-laravel",
+    "description": "RAGFlow PHP for Laravel is a supercharged PHP API client that allows you to interact with the RAGFlow API",
+    "keywords": ["laravel","php", "ragflow", "sdk", "codex", "GPT-3", "DALL-E", "api", "client", "natural", "language", "processing"],
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Future Meng",
+            "email": "futuremeng@gmail.com"
+        },
+        {
+            "name": "Nuno Maduro",
+            "email": "enunomaduro@gmail.com"
+        }
+    ],
+    "require": {
+        "php": "^8.1.0",
+        "guzzlehttp/guzzle": "^7.9.2",
+        "laravel/framework": "^9.46.0|^10.34.2|^11.29.0",
+        "futuremeng/ragflow-php-client": "^0.2"
+    },
+    "require-dev": {
+        "laravel/pint": "^1.18.1",
+        "pestphp/pest": "^2.35.1|^3.5.0",
+        "pestphp/pest-plugin-arch": "^2.7.0|^3.0.0",
+        "phpstan/phpstan": "^1.12.7",
+        "symfony/var-dumper": "^6.4.0|^7.1.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "RAGFlow\\Laravel\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "config": {
+        "sort-packages": true,
+        "preferred-install": "dist",
+        "allow-plugins": {
+            "pestphp/pest-plugin": true,
+            "php-http/discovery": true
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "RAGFlow\\Laravel\\ServiceProvider"
+            ]
+        }
+    },
+    "scripts": {
+        "lint": "pint -v",
+        "test:lint": "pint --test -v",
+        "test:types": "phpstan analyse --ansi",
+        "test:unit": "pest --colors=always",
+        "test": [
+            "@test:lint",
+            "@test:types",
+            "@test:unit"
+        ]
+    }
+}
+
+
+
+================================================
+FILE: CONTRIBUTING.md
+================================================
+# CONTRIBUTING
+
+Contributions are welcome, and are accepted via pull requests.
+Please review these guidelines before submitting any pull requests.
+
+## Process
+
+1. Fork the project
+1. Create a new branch
+1. Code, test, commit and push
+1. Open a pull request detailing your changes. Make sure to follow the [template](.github/PULL_REQUEST_TEMPLATE.md)
+
+## Guidelines
+
+* Please ensure the coding style running `composer lint`.
+* Send a coherent commit history, making sure each individual commit in your pull request is meaningful.
+* You may need to [rebase](https://git-scm.com/book/en/v2/Git-Branching-Rebasing) to avoid merge conflicts.
+* Please remember that we follow [SemVer](http://semver.org/).
+
+## Setup
+
+Clone your fork, then install the dev dependencies:
+```bash
+composer install
+```
+## Lint
+
+Lint your code:
+```bash
+composer lint
+```
+## Tests
+
+Run all tests:
+```bash
+composer test
+```
+
+Check types:
+```bash
+composer test:types
+```
+
+Unit tests:
+```bash
+composer test:unit
+```
+
+
+
+================================================
+FILE: LICENSE.md
+================================================
+The MIT License (MIT)
+
+Copyright (c) Nuno Maduro <enunomaduro@gmail.com>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+
+
+================================================
+FILE: phpstan.neon.dist
+================================================
+parameters:
+    level: max
+    paths:
+        - src
+
+    reportUnmatchedIgnoredErrors: true
+
+
+
+================================================
+FILE: phpunit.xml.dist
+================================================
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         backupGlobals="false"
+         beStrictAboutTestsThatDoNotTestAnything="true"
+         beStrictAboutOutputDuringTests="true"
+         bootstrap="vendor/autoload.php"
+         cacheResult="false"
+         colors="true"
+         failOnRisky="true"
+         failOnWarning="true"
+         processIsolation="false"
+         stopOnError="false"
+         stopOnFailure="false"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/10.0/phpunit.xsd"
+         cacheDirectory=".phpunit.cache"
+         backupStaticProperties="false"
+         displayDetailsOnIncompleteTests="true"
+         displayDetailsOnSkippedTests="true"
+         displayDetailsOnTestsThatTriggerDeprecations="true"
+         displayDetailsOnTestsThatTriggerErrors="true"
+         displayDetailsOnTestsThatTriggerNotices="true"
+         displayDetailsOnTestsThatTriggerWarnings="true"
+>
+    <testsuites>
+        <testsuite name="Default Test Suite">
+            <directory suffix=".php">./tests</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory suffix=".php">./src</directory>
+        </include>
+    </source>
+</phpunit>
+
+
+
+================================================
+FILE: .editorconfig
+================================================
+; This file is for unifying the coding style for different editors and IDEs.
+; More information at http://editorconfig.org
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+indent_style = space
+indent_size = 4
+trim_trailing_whitespace = true
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.yml]
+indent_size = 2
+
+
+
+================================================
+FILE: config/ragflow.php
+================================================
+<?php
+/*
+ * @Author: FutureMeng futuremeng@gmail.com
+ * @Date: 2025-01-24 16:33:12
+ * @LastEditors: FutureMeng futuremeng@gmail.com
+ * @LastEditTime: 2025-01-24 16:53:50
+ * @FilePath: /RAGFlow-laravel/config/ragflow.php
+ * @Description: 
+ * 
+ */
+
+return [
+
+    /*
+    |--------------------------------------------------------------------------
+    | RAGFlow API Key and ENDPOINT
+    |--------------------------------------------------------------------------
+    |
+    | Here you may specify your RAGFlow API Key and ENDPOINT. This will be
+    | used to authenticate with the RAGFlow API - you can find your API key
+    | on your RAGFlow dashboard, at https://ragflow.com.
+    */
+
+    'api_key' => env('RAGFLOW_API_KEY'),
+    'api_endpoint' => env('RAGFLOW_ENDPOINT'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Request Timeout
+    |--------------------------------------------------------------------------
+    |
+    | The timeout may be used to specify the maximum number of seconds to wait
+    | for a response. By default, the client will time out after 30 seconds.
+    */
+
+    'request_timeout' => env('RAGFLOW_REQUEST_TIMEOUT', 30),
+];
+
+
+
+================================================
+FILE: resources/views/components/badge.php
+================================================
+<?php
+
+/** @var string $type */
+/** @var string $content */
+[$bgBadgeColor, $bgBadgeText] = match ($type) {
+    'INFO' => ['blue', 'INFO'],
+    'ERROR' => ['red', 'ERROR'],
+};
+
+?>
+
+<div class="my-1">
+    <span class="ml-2 px-1 bg-<?php echo $bgBadgeColor ?>-600 font-bold"><?php echo htmlspecialchars($bgBadgeText) ?></span>
+    <span class="ml-1">
+        <?php echo htmlspecialchars($content) ?>
+    </span>
+</div>
+
+
+
+================================================
+FILE: resources/views/components/new-line.php
+================================================
+<div></div>
+
+
+
+================================================
+FILE: resources/views/components/two-column-detail.php
+================================================
+<div class="flex mx-2 max-w-150">
+    <span>
+        <?php echo htmlspecialchars($left) ?>
+    </span>
+    <span class="flex-1 content-repeat-[.] text-gray ml-1"></span>
+    <?php if ($right !== '') { ?>
+        <span class="ml-1 text-gray">
+            <?php echo htmlspecialchars($right) ?>
+        </span>
+    <?php } ?>
+</div>
+
+
+
+
+================================================
+FILE: src/ServiceProvider.php
+================================================
+<?php
+/*
+ * @Author: FutureMeng futuremeng@gmail.com
+ * @Date: 2025-01-24 16:33:12
+ * @LastEditors: FutureMeng futuremeng@gmail.com
+ * @LastEditTime: 2025-01-24 16:52:18
+ * @FilePath: /RAGFlow-laravel/src/ServiceProvider.php
+ * @Description:
+ *
+ */
+
+declare (strict_types = 1);
+
+namespace RAGFlow\Laravel;
+
+use Illuminate\Contracts\Support\DeferrableProvider;
+use Illuminate\Support\ServiceProvider as BaseServiceProvider;
+use RAGFlow;
+use RAGFlow\Client;
+use RAGFlow\Contracts\ClientContract;
+use RAGFlow\Laravel\Commands\InstallCommand;
+use RAGFlow\Laravel\Exceptions\ApiKeyIsMissing;
+
+/**
+ * @internal
+ */
+final class ServiceProvider extends BaseServiceProvider implements DeferrableProvider
+{
+    /**
+     * Register any application services.
+     */
+    public function register(): void
+    {
+        $this->app->singleton(ClientContract::class, static function (): Client {
+            $apiKey      = config('ragflow.api_key');
+            $apiEndpoint = config('ragflow.api_endpoint');
+
+            if (! is_string($apiKey) || ! is_string($apiEndpoint)) {
+                throw ApiKeyIsMissing::create();
+            }
+
+            return RAGFlow::factory()
+                ->withApiKey($apiKey)
+                ->withHttpClient(new \GuzzleHttp\Client(['timeout' => config('ragflow.request_timeout', 30)]))
+                ->make();
+        });
+
+        $this->app->alias(ClientContract::class, 'ragflow');
+        $this->app->alias(ClientContract::class, Client::class);
+    }
+
+    /**
+     * Bootstrap any application services.
+     */
+    public function boot(): void
+    {
+        if ($this->app->runningInConsole()) {
+            $this->publishes([
+                __DIR__ . '/../config/ragflow.php' => config_path('ragflow.php'),
+            ]);
+
+            $this->commands([
+                InstallCommand::class,
+            ]);
+        }
+    }
+
+    /**
+     * Get the services provided by the provider.
+     *
+     * @return array<int, string>
+     */
+    public function provides(): array
+    {
+        return [
+            Client::class,
+            ClientContract::class,
+            'ragflow',
+        ];
+    }
+}
+
+
+
+================================================
+FILE: src/Commands/InstallCommand.php
+================================================
+<?php
+namespace RAGFlow\Laravel\Commands;
+
+use Illuminate\Console\Command;
+use RAGFlow\Laravel\ServiceProvider;
+use RAGFlow\Laravel\Support\View;
+
+class InstallCommand extends Command
+{
+    private const LINKS = [
+        'Repository'          => 'https://github.com/futuremeng/RAGFlow-laravel',
+        'RAGFlow PHP Docs'    => 'https://github.com/futuremeng/RAGFlow-php-client#readme',
+        'Join us on Telegram' => 'https://t.me/+66GDs6UM6RcxY2U8',
+    ];
+
+    private const FUNDING_LINKS = [
+        'Sponsor Sandro' => 'https://github.com/sponsors/gehrisandro',
+        'Sponsor Nuno'   => 'https://github.com/sponsors/nunomaduro',
+    ];
+
+    protected $signature = 'ragflow:install';
+
+    protected $description = 'Prepares the RAGFlow client for use.';
+
+    public function handle(): void
+    {
+        View::renderUsing($this->output);
+
+        View::render('components.badge', [
+            'type'    => 'INFO',
+            'content' => 'Installing RAGFlow for Laravel.',
+        ]);
+
+        $this->copyConfig();
+
+        View::render('components.new-line');
+
+        $this->addEnvKeys('.env');
+        $this->addEnvKeys('.env.example');
+
+        View::render('components.new-line');
+
+        $wantsToSupport = $this->askToStarRepository();
+
+        $this->showLinks();
+
+        View::render('components.badge', [
+            'type'    => 'INFO',
+            'content' => 'Open your .env and add your RAGFlow API key and Endpoint.',
+        ]);
+
+        if ($wantsToSupport) {
+            $this->openRepositoryInBrowser();
+        }
+    }
+
+    private function copyConfig(): void
+    {
+        if (file_exists(config_path('ragflow.php'))) {
+            View::render('components.two-column-detail', [
+                'left'  => 'config/ragflow.php',
+                'right' => 'File already exists.',
+            ]);
+
+            return;
+        }
+
+        View::render('components.two-column-detail', [
+            'left'  => 'config/ragflow.php',
+            'right' => 'File created.',
+        ]);
+
+        $this->callSilent('vendor:publish', [
+            '--provider' => ServiceProvider::class,
+        ]);
+    }
+
+    private function addEnvKeys(string $envFile): void
+    {
+        $fileContent = file_get_contents(base_path($envFile));
+
+        if ($fileContent === false) {
+            return;
+        }
+
+        if (str_contains($fileContent, 'RAGFLOW_API_KEY')) {
+            View::render('components.two-column-detail', [
+                'left'  => $envFile,
+                'right' => 'Variables already exists.',
+            ]);
+
+            return;
+        }
+
+        file_put_contents(base_path($envFile), PHP_EOL . 'RAGFLOW_API_KEY=' . PHP_EOL . 'RAGFLOW_ORGANIZATION=' . PHP_EOL, FILE_APPEND);
+
+        View::render('components.two-column-detail', [
+            'left'  => $envFile,
+            'right' => 'RAGFLOW_API_KEY and RAGFLOW_ORGANIZATION variables added.',
+        ]);
+    }
+
+    private function askToStarRepository(): bool
+    {
+        if (! $this->input->isInteractive()) {
+            return false;
+        }
+
+        return $this->confirm(' <options=bold>Wanna show RAGFlow for Laravel some love by starring it on GitHub?</>', false);
+    }
+
+    private function openRepositoryInBrowser(): void
+    {
+        if (PHP_OS_FAMILY == 'Darwin') {
+            exec('open https://github.com/futuremeng/RAGFlow-laravel');
+        }
+        if (PHP_OS_FAMILY == 'Windows') {
+            exec('start https://github.com/futuremeng/RAGFlow-laravel');
+        }
+        if (PHP_OS_FAMILY == 'Linux') {
+            exec('xdg-open https://github.com/futuremeng/RAGFlow-laravel');
+        }
+    }
+
+    private function showLinks(): void
+    {
+        $links = [
+             ...self::LINKS,
+            ...rand(0, 1) ? self::FUNDING_LINKS : array_reverse(self::FUNDING_LINKS, true),
+        ];
+
+        foreach ($links as $message => $link) {
+            View::render('components.two-column-detail', [
+                'left'  => $message,
+                'right' => $link,
+            ]);
+        }
+    }
+}
+
+
+
+================================================
+FILE: src/Exceptions/ApiKeyIsMissing.php
+================================================
+<?php
+
+declare(strict_types=1);
+
+namespace RAGFlow\Laravel\Exceptions;
+
+use InvalidArgumentException;
+
+/**
+ * @internal
+ */
+final class ApiKeyIsMissing extends InvalidArgumentException
+{
+    /**
+     * Create a new exception instance.
+     */
+    public static function create(): self
+    {
+        return new self(
+            'The RAGFlow API Key is missing. Please publish the [ragflow.php] configuration file and set the [api_key].'
+        );
+    }
+}
+
+
+
+================================================
+FILE: src/Facades/RAGFlow.php
+================================================
+<?php
+
+declare(strict_types=1);
+
+namespace RAGFlow\Laravel\Facades;
+
+use Illuminate\Support\Facades\Facade;
+use RAGFlow\Contracts\ResponseContract;
+use RAGFlow\Laravel\Testing\RAGFlowFake;
+use RAGFlow\Responses\StreamResponse;
+
+/**
+ * @method static \RAGFlow\Resources\Assistants assistants()
+ * @method static \RAGFlow\Resources\Audio audio()
+ * @method static \RAGFlow\Resources\Batches batches()
+ * @method static \RAGFlow\Resources\Chat chat()
+ * @method static \RAGFlow\Resources\Completions completions()
+ * @method static \RAGFlow\Resources\Embeddings embeddings()
+ * @method static \RAGFlow\Resources\Edits edits()
+ * @method static \RAGFlow\Resources\Files files()
+ * @method static \RAGFlow\Resources\FineTunes fineTunes()
+ * @method static \RAGFlow\Resources\Images images()
+ * @method static \RAGFlow\Resources\Models models()
+ * @method static \RAGFlow\Resources\Moderations moderations()
+ * @method static \RAGFlow\Resources\Threads threads()
+ * @method static \RAGFlow\Resources\VectorStores vectorStores()
+ */
+final class RAGFlow extends Facade
+{
+    /**
+     * Get the registered name of the component.
+     */
+    protected static function getFacadeAccessor(): string
+    {
+        return 'ragflow';
+    }
+
+    /**
+     * @param  array<array-key, ResponseContract|StreamResponse|string>  $responses
+     */
+    public static function fake(array $responses = []): RAGFlowFake /** @phpstan-ignore-line */
+    {
+        $fake = new RAGFlowFake($responses);
+        self::swap($fake);
+
+        return $fake;
+    }
+}
+
+
+
+================================================
+FILE: src/Support/View.php
+================================================
+<?php
+
+declare(strict_types=1);
+
+namespace RAGFlow\Laravel\Support;
+
+use Symfony\Component\Console\Output\OutputInterface;
+use Termwind\Termwind;
+
+use function Termwind\render;
+use function Termwind\renderUsing;
+
+/**
+ * @internal
+ */
+final class View
+{
+    /**
+     * The implementation of the output.
+     */
+    private static OutputInterface $output;
+
+    /**
+     * Renders views using the given Output instance.
+     */
+    public static function renderUsing(OutputInterface $output): void
+    {
+        self::$output = $output;
+    }
+
+    /**
+     * Renders the given view.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public static function render(string $path, array $data = []): void
+    {
+        $contents = self::compile($path, $data);
+
+        $existing = Termwind::getRenderer();
+
+        renderUsing(self::$output);
+
+        try {
+            render($contents);
+        } finally {
+            renderUsing($existing);
+        }
+    }
+
+    /**
+     * Compiles the given view.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private static function compile(string $path, array $data): string
+    {
+        extract($data);
+
+        ob_start();
+
+        $path = str_replace('.', '/', $path);
+
+        include sprintf('%s/../../resources/views/%s.php', __DIR__, $path);
+
+        $contents = ob_get_contents();
+
+        ob_clean();
+
+        return (string) $contents;
+    }
+}
+
+
+
+================================================
+FILE: src/Testing/RAGFlowFake.php
+================================================
+<?php
+
+namespace RAGFlow\Laravel\Testing;
+
+use RAGFlow\Testing\ClientFake;
+
+class RAGFlowFake extends ClientFake {}
+
+
+
+================================================
+FILE: tests/Arch.php
+================================================
+<?php
+
+test('exceptions')
+    ->expect('RAGFlow\Laravel\Exceptions')
+    ->toUseNothing();
+
+test('facades')
+    ->expect('RAGFlow\Laravel\Facades\RAGFlow')
+    ->toOnlyUse([
+        'Illuminate\Support\Facades\Facade',
+        'RAGFlow\Contracts\ResponseContract',
+        'RAGFlow\Laravel\Testing\RAGFlowFake',
+        'RAGFlow\Responses\StreamResponse',
+    ]);
+
+test('service providers')
+    ->expect('RAGFlow\Laravel\ServiceProvider')
+    ->toOnlyUse([
+        'GuzzleHttp\Client',
+        'Illuminate\Support\ServiceProvider',
+        'RAGFlow\Laravel',
+        'RAGFlow',
+        'Illuminate\Contracts\Support\DeferrableProvider',
+
+        // helpers...
+        'config',
+        'config_path',
+    ]);
+
+
+
+================================================
+FILE: tests/ServiceProvider.php
+================================================
+<?php
+
+use Illuminate\Config\Repository;
+use RAGFlow\Client;
+use RAGFlow\Contracts\ClientContract;
+use RAGFlow\Laravel\Exceptions\ApiKeyIsMissing;
+use RAGFlow\Laravel\ServiceProvider;
+
+it('binds the client on the container', function () {
+    $app = app();
+
+    $app->bind('config', fn () => new Repository([
+        'ragflow' => [
+            'api_key' => 'test',
+        ],
+    ]));
+
+    (new ServiceProvider($app))->register();
+
+    expect($app->get(Client::class))->toBeInstanceOf(Client::class);
+});
+
+it('binds the client on the container as singleton', function () {
+    $app = app();
+
+    $app->bind('config', fn () => new Repository([
+        'ragflow' => [
+            'api_key' => 'test',
+        ],
+    ]));
+
+    (new ServiceProvider($app))->register();
+
+    $client = $app->get(Client::class);
+
+    expect($app->get(Client::class))->toBe($client);
+});
+
+it('requires an api key', function () {
+    $app = app();
+
+    $app->bind('config', fn () => new Repository([]));
+
+    (new ServiceProvider($app))->register();
+})->throws(
+    ApiKeyIsMissing::class,
+    'The RAGFlow API Key is missing. Please publish the [ragflow.php] configuration file and set the [api_key].',
+);
+
+it('provides', function () {
+    $app = app();
+
+    $provides = (new ServiceProvider($app))->provides();
+
+    expect($provides)->toBe([
+        Client::class,
+        ClientContract::class,
+        'ragflow',
+    ]);
+});
+
+
+
+================================================
+FILE: tests/Facades/RAGFlow.php
+================================================
+<?php
+
+use Illuminate\Config\Repository;
+use RAGFlow\Laravel\Facades\RAGFlow;
+use RAGFlow\Laravel\ServiceProvider;
+use RAGFlow\Resources\Completions;
+use RAGFlow\Responses\Completions\CreateResponse;
+use PHPUnit\Framework\ExpectationFailedException;
+
+it('resolves resources', function () {
+    $app = app();
+
+    $app->bind('config', fn () => new Repository([
+        'ragflow' => [
+            'api_key' => 'test',
+        ],
+    ]));
+
+    (new ServiceProvider($app))->register();
+
+    RAGFlow::setFacadeApplication($app);
+
+    $completions = RAGFlow::completions();
+
+    expect($completions)->toBeInstanceOf(Completions::class);
+});
+
+test('fake returns the given response', function () {
+    RAGFlow::fake([
+        CreateResponse::fake([
+            'choices' => [
+                [
+                    'text' => 'awesome!',
+                ],
+            ],
+        ]),
+    ]);
+
+    $completion = RAGFlow::completions()->create([
+        'model' => 'gpt-3.5-turbo-instruct',
+        'prompt' => 'PHP is ',
+    ]);
+
+    expect($completion['choices'][0]['text'])->toBe('awesome!');
+});
+
+test('fake throws an exception if there is no more given response', function () {
+    RAGFlow::fake([
+        CreateResponse::fake(),
+    ]);
+
+    RAGFlow::completions()->create([
+        'model' => 'gpt-3.5-turbo-instruct',
+        'prompt' => 'PHP is ',
+    ]);
+
+    RAGFlow::completions()->create([
+        'model' => 'gpt-3.5-turbo-instruct',
+        'prompt' => 'PHP is ',
+    ]);
+})->expectExceptionMessage('No fake responses left');
+
+test('append more fake responses', function () {
+    RAGFlow::fake([
+        CreateResponse::fake([
+            'id' => 'cmpl-1',
+        ]),
+    ]);
+
+    RAGFlow::addResponses([
+        CreateResponse::fake([
+            'id' => 'cmpl-2',
+        ]),
+    ]);
+
+    $completion = RAGFlow::completions()->create([
+        'model' => 'gpt-3.5-turbo-instruct',
+        'prompt' => 'PHP is ',
+    ]);
+
+    expect($completion)
+        ->id->toBe('cmpl-1');
+
+    $completion = RAGFlow::completions()->create([
+        'model' => 'gpt-3.5-turbo-instruct',
+        'prompt' => 'PHP is ',
+    ]);
+
+    expect($completion)
+        ->id->toBe('cmpl-2');
+});
+
+test('fake can assert a request was sent', function () {
+    RAGFlow::fake([
+        CreateResponse::fake(),
+    ]);
+
+    RAGFlow::completions()->create([
+        'model' => 'gpt-3.5-turbo-instruct',
+        'prompt' => 'PHP is ',
+    ]);
+
+    RAGFlow::assertSent(Completions::class, function (string $method, array $parameters): bool {
+        return $method === 'create' &&
+            $parameters['model'] === 'gpt-3.5-turbo-instruct' &&
+            $parameters['prompt'] === 'PHP is ';
+    });
+});
+
+test('fake throws an exception if a request was not sent', function () {
+    RAGFlow::fake([
+        CreateResponse::fake(),
+    ]);
+
+    RAGFlow::assertSent(Completions::class, function (string $method, array $parameters): bool {
+        return $method === 'create' &&
+            $parameters['model'] === 'gpt-3.5-turbo-instruct' &&
+            $parameters['prompt'] === 'PHP is ';
+    });
+})->expectException(ExpectationFailedException::class);
+
+test('fake can assert a request was sent on the resource', function () {
+    RAGFlow::fake([
+        CreateResponse::fake(),
+    ]);
+
+    RAGFlow::completions()->create([
+        'model' => 'gpt-3.5-turbo-instruct',
+        'prompt' => 'PHP is ',
+    ]);
+
+    RAGFlow::completions()->assertSent(function (string $method, array $parameters): bool {
+        return $method === 'create' &&
+            $parameters['model'] === 'gpt-3.5-turbo-instruct' &&
+            $parameters['prompt'] === 'PHP is ';
+    });
+});
+
+test('fake can assert a request was sent n times', function () {
+    RAGFlow::fake([
+        CreateResponse::fake(),
+        CreateResponse::fake(),
+    ]);
+
+    RAGFlow::completions()->create([
+        'model' => 'gpt-3.5-turbo-instruct',
+        'prompt' => 'PHP is ',
+    ]);
+
+    RAGFlow::completions()->create([
+        'model' => 'gpt-3.5-turbo-instruct',
+        'prompt' => 'PHP is ',
+    ]);
+
+    RAGFlow::assertSent(Completions::class, 2);
+});
+
+test('fake throws an exception if a request was not sent n times', function () {
+    RAGFlow::fake([
+        CreateResponse::fake(),
+        CreateResponse::fake(),
+    ]);
+
+    RAGFlow::completions()->create([
+        'model' => 'gpt-3.5-turbo-instruct',
+        'prompt' => 'PHP is ',
+    ]);
+
+    RAGFlow::assertSent(Completions::class, 2);
+})->expectException(ExpectationFailedException::class);
+
+test('fake can assert a request was not sent', function () {
+    RAGFlow::fake();
+
+    RAGFlow::assertNotSent(Completions::class);
+});
+
+test('fake throws an exception if a unexpected request was sent', function () {
+    RAGFlow::fake([
+        CreateResponse::fake(),
+    ]);
+
+    RAGFlow::completions()->create([
+        'model' => 'gpt-3.5-turbo-instruct',
+        'prompt' => 'PHP is ',
+    ]);
+
+    RAGFlow::assertNotSent(Completions::class);
+})->expectException(ExpectationFailedException::class);
+
+test('fake can assert a request was not sent on the resource', function () {
+    RAGFlow::fake([
+        CreateResponse::fake(),
+    ]);
+
+    RAGFlow::completions()->assertNotSent();
+});
+
+test('fake can assert no request was sent', function () {
+    RAGFlow::fake();
+
+    RAGFlow::assertNothingSent();
+});
+
+test('fake throws an exception if any request was sent when non was expected', function () {
+    RAGFlow::fake([
+        CreateResponse::fake(),
+    ]);
+
+    RAGFlow::completions()->create([
+        'model' => 'gpt-3.5-turbo-instruct',
+        'prompt' => 'PHP is ',
+    ]);
+
+    RAGFlow::assertNothingSent();
+})->expectException(ExpectationFailedException::class);
+
+
+
+================================================
+FILE: .github/FUNDING.yml
+================================================
+# These are supported funding model platforms
+
+github: [nunomaduro,gehrisandro]
+patreon: nunomaduro
+custom: https://www.paypal.com/paypalme/enunomaduro
+
+
+
+================================================
+FILE: .github/workflows/formats.yml
+================================================
+name: Formats
+
+on: ['push', 'pull_request']
+
+jobs:
+  ci:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest]
+        php: [8.2]
+        dependency-version: [prefer-lowest, prefer-stable]
+
+    name: Formats P${{ matrix.php }} - ${{ matrix.os }} - ${{ matrix.dependency-version }}
+
+    steps:
+
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Cache dependencies
+      uses: actions/cache@v1
+      with:
+        path: ~/.composer/cache/files
+        key: dependencies-php-${{ matrix.php }}-composer-${{ hashFiles('composer.json') }}
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ matrix.php }}
+        extensions: dom, mbstring, zip
+        tools: prestissimo
+        coverage: pcov
+
+    - name: Install Composer dependencies
+      run: composer update --${{ matrix.dependency-version }} --no-interaction --prefer-dist
+
+    - name: Coding Style Checks
+      run: composer test:lint
+
+    - name: Type Checks
+      run: composer test:types
+
+
+
+================================================
+FILE: .github/workflows/tests.yml
+================================================
+name: Tests
+
+on: ['push', 'pull_request']
+
+jobs:
+  ci:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest]
+        php: [8.1, 8.2, 8.3, 8.4]
+        laravel: [11.*, 10.*, 9.*]
+        dependency-version: [prefer-lowest, prefer-stable]
+        exclude:
+          - php: 8.1
+            laravel: 11.*
+
+    name: Tests P${{ matrix.php }} - L${{ matrix.laravel }} - ${{ matrix.os }} - ${{ matrix.dependency-version }}
+    steps:
+
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Cache dependencies
+      uses: actions/cache@v1
+      with:
+        path: ~/.composer/cache/files
+        key: dependencies-php-${{ matrix.php }}-L${{ matrix.laravel }}-${{ matrix.dependency-version }}-composer-${{ hashFiles('composer.json') }}
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ matrix.php }}
+        extensions: dom, mbstring, zip
+        coverage: none
+
+    - name: Require Laravel Version
+      run: >
+        composer require
+        "laravel/framework:${{ matrix.laravel }}"
+        --no-interaction --no-update
+
+    - name: Install Composer dependencies
+      run: composer update --${{ matrix.dependency-version }} --no-interaction --prefer-dist
+
+    - name: Integration Tests
+      run: php ./vendor/bin/pest
+
+
