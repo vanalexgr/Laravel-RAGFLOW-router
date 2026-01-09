@@ -214,6 +214,68 @@ Retrieved chunks automatically extract these metadata fields:
 
 ---
 
+## OpenWebUI Integration
+
+Your VascularExpert agent is exposed as an OpenAI-compatible API endpoint.
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/models` | GET | List available models |
+| `/api/v1/models/{model}` | GET | Get model info |
+| `/api/v1/chat/completions` | POST | Chat completions (streaming supported) |
+
+### Connecting OpenWebUI
+
+1. Open OpenWebUI in your browser
+2. Go to **Settings** > **Connections** > **OpenAI**
+3. Click the wrench icon to **Manage**
+4. Click **Add Connection**
+5. Fill in:
+   ```
+   API URL: https://9287bb87-c6fb-4044-8c84-59a9d5d40a6c-00-bbjfytvmszqy.kirk.replit.dev/api/v1
+   API Key: any-value (not validated)
+   Model IDs: vascular_expert
+   ```
+6. Save and start chatting!
+
+### Testing the API
+
+```bash
+# List models
+curl https://YOUR-REPLIT-URL/api/v1/models
+
+# Chat completion
+curl -X POST https://YOUR-REPLIT-URL/api/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "vascular_expert",
+    "messages": [{"role": "user", "content": "What is carotid stenosis?"}]
+  }'
+
+# Streaming
+curl -X POST https://YOUR-REPLIT-URL/api/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "vascular_expert",
+    "messages": [{"role": "user", "content": "What is carotid stenosis?"}],
+    "stream": true
+  }'
+```
+
+### Session Persistence
+
+For multi-turn conversations, pass a session ID header:
+```bash
+curl -X POST https://YOUR-REPLIT-URL/api/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "X-Session-ID: my-session-123" \
+  -d '{...}'
+```
+
+---
+
 ## Troubleshooting
 
 ### RAGFlow Connection Issues
