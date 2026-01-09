@@ -40,6 +40,9 @@ class ChatSessionResource
 
     public function sendMessage(string $sessionId, array $parameters): array
     {
-        return $this->client->post("/chats/{$this->chatId}/sessions/{$sessionId}/completions", $parameters);
+        return $this->client->post("/chats/{$this->chatId}/completions", array_merge(
+            $parameters,
+            ['session_id' => $sessionId]
+        ));
     }
 }
