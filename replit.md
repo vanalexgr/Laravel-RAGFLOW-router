@@ -65,6 +65,9 @@ $chats = RAGFlow::chat()->list();
 $response = RAGFlow::chat()->sendMessage($chatId, ['message' => 'Hello']);
 ```
 
+## Documentation
+- See `docs/CONFIGURATION.md` for complete configuration guide
+
 ## Development Commands
 - `php artisan serve --host=0.0.0.0 --port=5000` - Start development server
 - `php artisan vizra:chat vascular_expert` - Chat with the vascular expert agent
