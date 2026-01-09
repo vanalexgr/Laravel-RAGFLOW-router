@@ -14,29 +14,13 @@ class ConsultGuidelineTool implements ToolInterface
     {
         return [
             'name' => 'consult_guideline',
-            'description' => 'Consult ESVS vascular surgery guidelines for a specific topic. Queries the official guideline datasets directly and returns relevant recommendations.',
+            'description' => 'REQUIRED: Always use this tool to consult ESVS vascular surgery guidelines before answering any clinical question. Queries official guideline datasets and returns evidence-based recommendations.',
             'parameters' => [
                 'type' => 'object',
                 'properties' => [
                     'topic' => [
                         'type' => 'string',
-                        'description' => 'The vascular surgery topic to search for (e.g., Carotid, Aortic, Trauma, Venous, Peripheral)',
-                    ],
-                    'question' => [
-                        'type' => 'string',
-                        'description' => 'Optional specific clinical question to answer',
-                    ],
-                    'top_k' => [
-                        'type' => 'integer',
-                        'description' => 'Number of results to retrieve (default: from config)',
-                    ],
-                    'similarity_threshold' => [
-                        'type' => 'number',
-                        'description' => 'Minimum similarity score threshold (0.0-1.0)',
-                    ],
-                    'keyword_mode' => [
-                        'type' => 'boolean',
-                        'description' => 'Enable keyword analysis in retrieval',
+                        'description' => 'The complete search query including guideline topic and clinical question (e.g., "Carotid stenosis management symptomatic", "Aortic aneurysm repair threshold", "Trauma carotid injury blunt")',
                     ],
                 ],
                 'required' => ['topic'],
@@ -47,24 +31,20 @@ class ConsultGuidelineTool implements ToolInterface
     public function execute(array $arguments, AgentContext $context, AgentMemory $memory): string
     {
         $topic = $arguments['topic'] ?? '';
-        $question = $arguments['question'] ?? '';
 
         if (empty($topic)) {
             return json_encode(['error' => 'A topic is required to consult the guidelines.']);
         }
 
-        $query = "ESVS guidelines {$topic}";
-        if (!empty($question)) {
-            $query .= " - {$question}";
-        }
+        $query = $topic;
 
         $retrievalConfig = config('ragflow.retrieval', []);
         $datasetIds = [config('ragflow.datasets.esvs_guidelines', '4fff3622eb1b11f09021f2381272676b')];
 
-        $topK = $arguments['top_k'] ?? $retrievalConfig['top_k'] ?? 20;
+        $topK = $retrievalConfig['top_k'] ?? 20;
         $topN = $retrievalConfig['top_n'] ?? 6;
-        $similarityThreshold = $arguments['similarity_threshold'] ?? $retrievalConfig['similarity_threshold'] ?? 0.2;
-        $keywordMode = $arguments['keyword_mode'] ?? $retrievalConfig['keyword_mode'] ?? true;
+        $similarityThreshold = $retrievalConfig['similarity_threshold'] ?? 0.2;
+        $keywordMode = $retrievalConfig['keyword_mode'] ?? true;
         $vectorWeight = $retrievalConfig['vector_similarity_weight'] ?? 0.3;
         $rerankModel = $retrievalConfig['rerank_model'] ?? null;
         $useKnowledgeGraph = $retrievalConfig['use_knowledge_graph'] ?? false;

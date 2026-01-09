@@ -129,15 +129,21 @@ class AzureTextHandler
     protected function sendRequest(Request $request): ClientResponse
     {
         $messages = $this->buildMessages($request);
+        $tools = $this->buildTools($request);
 
+        $toolChoice = ToolChoiceMap::map($request->toolChoice());
+        if ($tools && !$toolChoice && $this->responseBuilder->steps->count() === 0) {
+            $toolChoice = 'required';
+        }
+        
         $payload = array_merge([
             'messages' => $messages,
         ], Arr::whereNotNull([
             'temperature' => $request->temperature(),
             'max_tokens' => $request->maxTokens(),
             'top_p' => $request->topP(),
-            'tools' => $this->buildTools($request),
-            'tool_choice' => ToolChoiceMap::map($request->toolChoice()),
+            'tools' => $tools,
+            'tool_choice' => $toolChoice,
         ]));
 
         return $this->client->post('chat/completions', $payload);
