@@ -35,6 +35,10 @@ return [
         ],
     ],
 
+    'api' => [
+        'key' => env('API_SECRET_KEY'),
+    ],
+
     'azure_openai' => [
         'api_key' => env('AZURE_OPENAI_API_KEY'),
         'endpoint' => env('AZURE_OPENAI_ENDPOINT'),
