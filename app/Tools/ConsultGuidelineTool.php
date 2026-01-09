@@ -10,10 +10,6 @@ use Vizra\VizraADK\System\AgentContext;
 
 class ConsultGuidelineTool implements ToolInterface
 {
-    private const DATASET_IDS = [
-        '4fff3622eb1b11f09021f2381272676b',
-    ];
-
     public function definition(): array
     {
         return [
@@ -29,6 +25,18 @@ class ConsultGuidelineTool implements ToolInterface
                     'question' => [
                         'type' => 'string',
                         'description' => 'Optional specific clinical question to answer',
+                    ],
+                    'top_k' => [
+                        'type' => 'integer',
+                        'description' => 'Number of results to retrieve (default: from config)',
+                    ],
+                    'similarity_threshold' => [
+                        'type' => 'number',
+                        'description' => 'Minimum similarity score threshold (0.0-1.0)',
+                    ],
+                    'keyword_mode' => [
+                        'type' => 'boolean',
+                        'description' => 'Enable keyword analysis in retrieval',
                     ],
                 ],
                 'required' => ['topic'],
@@ -50,12 +58,28 @@ class ConsultGuidelineTool implements ToolInterface
             $query .= " - {$question}";
         }
 
-        Log::info("ConsultGuidelineTool: Querying RAGFlow for: {$query}");
+        $retrievalConfig = config('ragflow.retrieval', []);
+        $datasetIds = [config('ragflow.datasets.esvs_guidelines', '4fff3622eb1b11f09021f2381272676b')];
+
+        $topK = $arguments['top_k'] ?? $retrievalConfig['top_k'] ?? 10;
+        $similarityThreshold = $arguments['similarity_threshold'] ?? $retrievalConfig['similarity_threshold'] ?? 0.2;
+        $keywordMode = $arguments['keyword_mode'] ?? $retrievalConfig['keyword_mode'] ?? true;
+        $vectorWeight = $retrievalConfig['vector_similarity_weight'] ?? 0.3;
+
+        Log::info("ConsultGuidelineTool: Querying RAGFlow", [
+            'query' => $query,
+            'top_k' => $topK,
+            'similarity_threshold' => $similarityThreshold,
+            'keyword_mode' => $keywordMode,
+        ]);
 
         try {
-            $response = RAGFlow::datasets()->retrieve(self::DATASET_IDS, [
+            $response = RAGFlow::datasets()->retrieve($datasetIds, [
                 'question' => $query,
-                'top_k' => 10,
+                'top_k' => $topK,
+                'similarity_threshold' => $similarityThreshold,
+                'keyword' => $keywordMode,
+                'vector_similarity_weight' => $vectorWeight,
             ]);
 
             Log::info("ConsultGuidelineTool: RAGFlow returned " . count($response['data']['chunks'] ?? []) . " chunks");
