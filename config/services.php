@@ -35,4 +35,11 @@ return [
         ],
     ],
 
+    'azure_openai' => [
+        'api_key' => env('AZURE_OPENAI_API_KEY'),
+        'endpoint' => env('AZURE_OPENAI_ENDPOINT'),
+        'deployment' => env('AZURE_OPENAI_DEPLOYMENT', 'gpt-5-chat'),
+        'api_version' => env('AZURE_OPENAI_VERSION', '2024-12-01-preview'),
+    ],
+
 ];
