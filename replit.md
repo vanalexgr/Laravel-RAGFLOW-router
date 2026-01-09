@@ -77,6 +77,7 @@ $response = RAGFlow::chat()->sendMessage($chatId, ['message' => 'Hello']);
 Currently using SQLite at `database/database.sqlite`
 
 ## Recent Changes
+- 2026-01-09: Added automatic metadata extraction (guideline ID, year, recommendation ID, class, level, territory, similarity scores) in ConsultGuidelineTool
 - 2026-01-09: Added multi-turn memory support with includeHistory=true and contextStrategy='full' in VascularExpertAgent
 - 2026-01-09: Added configurable retrieval settings (top_k, similarity_threshold, keyword_mode, vector_similarity_weight) in config/ragflow.php
 - 2026-01-09: ConsultGuidelineTool now supports runtime parameter overrides for retrieval settings

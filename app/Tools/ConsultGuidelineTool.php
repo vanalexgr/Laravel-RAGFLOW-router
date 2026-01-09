@@ -105,23 +105,29 @@ class ConsultGuidelineTool implements ToolInterface
 
     protected function formatRetrievalResults(array $chunks, string $topic): string
     {
-        $output = "[SOURCE: RAGFlow Direct Dataset Retrieval - " . count($chunks) . " chunks from dataset 4fff3622eb1b11f09021f2381272676b]\n\n";
+        $output = "[SOURCE: RAGFlow Direct Dataset Retrieval - " . count($chunks) . " chunks]\n\n";
         $output .= "ESVS Guidelines - {$topic}\n";
         $output .= str_repeat("=", 60) . "\n\n";
 
         foreach ($chunks as $index => $chunk) {
             $num = $index + 1;
-            $similarity = isset($chunk['similarity']) ? round($chunk['similarity'] * 100, 1) : 'N/A';
-            $docName = $chunk['doc_name'] ?? $chunk['document_name'] ?? 'Unknown Document';
             $content = $chunk['content'] ?? $chunk['content_with_weight'] ?? '';
 
             if (empty($content)) {
                 continue;
             }
 
-            $output .= "--- Result {$num} (Relevance: {$similarity}%) ---\n";
-            $output .= "Source: {$docName}\n\n";
-            $output .= trim($content) . "\n\n";
+            $metadata = $this->extractMetadata($chunk, $content);
+            
+            $output .= "--- Result {$num} ---\n";
+            $output .= "METADATA:\n";
+            $output .= "  Guideline: {$metadata['guideline_id']} ({$metadata['guideline_year']})\n";
+            $output .= "  Recommendation: {$metadata['recommendation_id']}\n";
+            $output .= "  Class: {$metadata['class']} | Level: {$metadata['level']}\n";
+            $output .= "  Territory: {$metadata['territory']}\n";
+            $output .= "  Similarity: {$metadata['similarity']}% (Vector: {$metadata['vector_similarity']}%, Term: {$metadata['term_similarity']}%)\n";
+            $output .= "  Document: {$metadata['document']}\n\n";
+            $output .= "RECOMMENDATION:\n{$metadata['recommendation_text']}\n\n";
         }
 
         if (strlen($output) < 100) {
@@ -129,6 +135,47 @@ class ConsultGuidelineTool implements ToolInterface
         }
 
         return $output;
+    }
+
+    protected function extractMetadata(array $chunk, string $content): array
+    {
+        $metadata = [
+            'guideline_id' => 'Unknown',
+            'guideline_year' => 'Unknown',
+            'recommendation_id' => 'Unknown',
+            'class' => 'Unknown',
+            'level' => 'Unknown',
+            'territory' => 'Unknown',
+            'recommendation_text' => $content,
+            'document' => $chunk['document_keyword'] ?? $chunk['doc_name'] ?? 'Unknown',
+            'similarity' => isset($chunk['similarity']) ? round($chunk['similarity'] * 100, 1) : 0,
+            'vector_similarity' => isset($chunk['vector_similarity']) ? round($chunk['vector_similarity'] * 100, 1) : 0,
+            'term_similarity' => isset($chunk['term_similarity']) ? round($chunk['term_similarity'] * 100, 1) : 0,
+        ];
+
+        if (preg_match('/GUIDELINE_ID:\s*(\S+)/i', $content, $m)) {
+            $metadata['guideline_id'] = $m[1];
+        }
+        if (preg_match('/GUIDELINE_YEAR:\s*(\d+)/i', $content, $m)) {
+            $metadata['guideline_year'] = $m[1];
+        }
+        if (preg_match('/RECOMMENDATION_ID:\s*(Rec\s*\d+)/i', $content, $m)) {
+            $metadata['recommendation_id'] = $m[1];
+        }
+        if (preg_match('/CLASS:\s*(Class\s*\S+)/i', $content, $m)) {
+            $metadata['class'] = $m[1];
+        }
+        if (preg_match('/LEVEL:\s*(Level\s*\S+)/i', $content, $m)) {
+            $metadata['level'] = $m[1];
+        }
+        if (preg_match('/TERRITORY:\s*(\S+)/i', $content, $m)) {
+            $metadata['territory'] = $m[1];
+        }
+        if (preg_match('/RECOMMENDATION_TEXT:\s*(.+?)(?=TRIPLES:|$)/is', $content, $m)) {
+            $metadata['recommendation_text'] = trim($m[1]);
+        }
+
+        return $metadata;
     }
 
     protected function getReferenceGuidelines(string $topic): string
