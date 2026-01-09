@@ -136,9 +136,14 @@ class OpenAICompatibleController extends Controller
     protected function streamResponse(string $content, string $completionId, string $model): StreamedResponse
     {
         return response()->stream(function () use ($content, $completionId, $model) {
-            $words = explode(' ', $content);
+            if (ob_get_level()) {
+                ob_end_clean();
+            }
             
-            foreach ($words as $index => $word) {
+            $chunkSize = 50;
+            $chunks = mb_str_split($content, $chunkSize);
+            
+            foreach ($chunks as $index => $textChunk) {
                 $chunk = [
                     'id' => $completionId,
                     'object' => 'chat.completion.chunk',
@@ -148,7 +153,7 @@ class OpenAICompatibleController extends Controller
                         [
                             'index' => 0,
                             'delta' => [
-                                'content' => $word . ($index < count($words) - 1 ? ' ' : ''),
+                                'content' => $textChunk,
                             ],
                             'finish_reason' => null,
                         ],
@@ -156,9 +161,8 @@ class OpenAICompatibleController extends Controller
                 ];
 
                 echo "data: " . json_encode($chunk) . "\n\n";
-                ob_flush();
                 flush();
-                usleep(20000);
+                usleep(10000);
             }
 
             $finalChunk = [
@@ -176,7 +180,6 @@ class OpenAICompatibleController extends Controller
             ];
             echo "data: " . json_encode($finalChunk) . "\n\n";
             echo "data: [DONE]\n\n";
-            ob_flush();
             flush();
 
         }, 200, [
