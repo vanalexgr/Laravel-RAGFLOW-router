@@ -77,6 +77,9 @@ $response = RAGFlow::chat()->sendMessage($chatId, ['message' => 'Hello']);
 Currently using SQLite at `database/database.sqlite`
 
 ## Recent Changes
+- 2026-01-09: Added multi-turn memory support with includeHistory=true and contextStrategy='full' in VascularExpertAgent
+- 2026-01-09: Added configurable retrieval settings (top_k, similarity_threshold, keyword_mode, vector_similarity_weight) in config/ragflow.php
+- 2026-01-09: ConsultGuidelineTool now supports runtime parameter overrides for retrieval settings
 - 2026-01-09: Fixed RAGFLOW_ENDPOINT environment variable name (was RAGFLOW_BASE_URL) to match config expectations
 - 2026-01-09: Fixed Azure OpenAI tool format - tools must have 'function' wrapper and arguments as JSON strings
 - 2026-01-09: Updated ConsultGuidelineTool to query RAGFlow datasets directly via `/api/v1/retrieval` endpoint
