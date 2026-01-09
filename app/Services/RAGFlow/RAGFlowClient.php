@@ -77,6 +77,8 @@ class RAGFlowClient
             
             $decoded = json_decode($body, true) ?? [];
             
+            $retrievalInfo = $decoded['retrieval_info'] ?? null;
+            
             Log::channel('ragflow')->info("RAGFlow Response", [
                 'url' => $targetUrl,
                 'status' => $response->getStatusCode(),
@@ -84,7 +86,19 @@ class RAGFlowClient
                 'chunk_count' => isset($decoded['data']['chunks']) ? count($decoded['data']['chunks']) : null,
                 'code' => $decoded['code'] ?? null,
                 'message' => $decoded['message'] ?? null,
+                'retrieval_info' => $retrievalInfo,
             ]);
+            
+            if ($retrievalInfo) {
+                Log::channel('ragflow')->info("RAGFlow Retrieval Details", [
+                    'rerank_id' => $retrievalInfo['rerank_id'] ?? 'not_set',
+                    'use_kg' => $retrievalInfo['use_kg'] ?? false,
+                    'top_k' => $retrievalInfo['top_k'] ?? null,
+                    'size' => $retrievalInfo['size'] ?? null,
+                    'chunk_count' => $retrievalInfo['chunk_count'] ?? 0,
+                    'top_chunks' => $retrievalInfo['top_chunks'] ?? [],
+                ]);
+            }
             
             return $decoded;
         } catch (GuzzleException $e) {

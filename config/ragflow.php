@@ -10,14 +10,15 @@ return [
     'bridge_secret' => env('RAGFLOW_BRIDGE_SECRET'),
 
     'retrieval' => [
-        'top_k' => (int) env('RAGFLOW_TOP_K', 20),
-        'top_n' => (int) env('RAGFLOW_TOP_N', 6),
+        'top_k' => (int) env('RAGFLOW_TOP_K', 1024),
+        'size' => (int) env('RAGFLOW_SIZE', 10),
+        'page' => (int) env('RAGFLOW_PAGE', 1),
         'similarity_threshold' => (float) env('RAGFLOW_SIMILARITY_THRESHOLD', 0.2),
         'keyword_mode' => filter_var(env('RAGFLOW_KEYWORD_MODE', true), FILTER_VALIDATE_BOOLEAN),
         'vector_similarity_weight' => (float) env('RAGFLOW_VECTOR_WEIGHT', 0.3),
         'rerank_id' => env('RAGFLOW_RERANK_ID', 'Cohere-rerank-v3-5-rdrns___OpenAI-API@OpenAI-API-Compatible'),
-        'use_knowledge_graph' => filter_var(env('RAGFLOW_USE_KNOWLEDGE_GRAPH', true), FILTER_VALIDATE_BOOLEAN),
-        'use_toc' => filter_var(env('RAGFLOW_USE_TOC', true), FILTER_VALIDATE_BOOLEAN),
+        'use_kg' => filter_var(env('RAGFLOW_USE_KG', true), FILTER_VALIDATE_BOOLEAN),
+        'highlight' => filter_var(env('RAGFLOW_HIGHLIGHT', true), FILTER_VALIDATE_BOOLEAN),
     ],
 
     'datasets' => [
