@@ -31,6 +31,7 @@ class RetrieveRequest(BaseModel):
     use_toc: bool = True
 
 @app.post("/retrieve")
+@app.post("/retrieval")
 async def retrieve(request: Request, body: RetrieveRequest):
     if SHARED_SECRET:
         provided_secret = request.headers.get("X-Bridge-Secret")
