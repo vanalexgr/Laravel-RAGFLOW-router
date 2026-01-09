@@ -34,9 +34,11 @@ class VascularExpertAgent extends BaseLlmAgent
     
     protected string $model = 'gpt-5-chat';
 
-    protected bool $includeHistory = true;
+    protected bool $includeConversationHistory = true;
 
     protected string $contextStrategy = 'full';
+
+    protected int $historyLimit = 20;
 
     protected int $maxSteps = 5;
 

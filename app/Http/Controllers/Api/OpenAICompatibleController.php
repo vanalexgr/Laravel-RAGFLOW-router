@@ -76,11 +76,14 @@ class OpenAICompatibleController extends Controller
         }
 
         $userMessage = '';
-        $sessionId = $request->header('X-Session-ID', 'openwebui-' . Str::random(16));
+        $conversationContext = [];
         
         foreach ($messages as $msg) {
             if ($msg['role'] === 'user') {
                 $userMessage = $msg['content'];
+            }
+            if ($msg['role'] !== 'system') {
+                $conversationContext[] = $msg;
             }
         }
 
@@ -93,8 +96,22 @@ class OpenAICompatibleController extends Controller
             ], 400);
         }
 
+        $contextString = '';
+        if (count($conversationContext) > 1) {
+            $history = array_slice($conversationContext, 0, -1);
+            $contextString = "CONVERSATION HISTORY:\n";
+            foreach ($history as $msg) {
+                $role = strtoupper($msg['role']);
+                $contextString .= "[{$role}]: {$msg['content']}\n\n";
+            }
+            $contextString .= "---\nCURRENT QUESTION:\n";
+        }
+        
+        $fullPrompt = $contextString . $userMessage;
+        $sessionId = $request->header('X-Session-ID', 'openwebui-session');
+
         try {
-            $response = Agent::run('vascular_expert', $userMessage, $sessionId);
+            $response = Agent::run('vascular_expert', $fullPrompt, $sessionId);
             $completionId = 'chatcmpl-' . Str::random(29);
 
             if ($stream) {

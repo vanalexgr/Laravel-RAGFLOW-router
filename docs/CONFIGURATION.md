@@ -279,9 +279,11 @@ curl -X POST https://YOUR-REPLIT-URL/api/v1/chat/completions \
   }'
 ```
 
-### Session Persistence
+### Multi-Turn Conversations
 
-For multi-turn conversations, pass a session ID header:
+The API automatically handles conversation context from the messages array. OpenWebUI sends the full conversation history, which is passed to the agent for context-aware responses.
+
+For additional session persistence, you can pass a session ID header:
 ```bash
 curl -X POST https://YOUR-REPLIT-URL/api/v1/chat/completions \
   -H "Content-Type: application/json" \
