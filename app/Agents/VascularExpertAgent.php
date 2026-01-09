@@ -3,16 +3,14 @@
 namespace App\Agents;
 
 use Vizra\VizraADK\Agents\BaseLlmAgent;
-use App\Tools\ConsultGuidelineTool; // Import your custom tool
+use App\Tools\ConsultGuidelineTool;
 
 class VascularExpertAgent extends BaseLlmAgent
 {
-    // This is the name you use in the command line: php artisan vizra:chat vascular_expert
     protected string $name = 'vascular_expert';
 
     protected string $description = 'Expert consultant for vascular surgery guidelines using ESVS documents.';
 
-    // The "Chief of Surgery" Persona
     protected string $instructions = 
         "You are a highly experienced Vascular Surgeon acting as a guideline consultant.
 
@@ -26,10 +24,10 @@ class VascularExpertAgent extends BaseLlmAgent
 
          NEVER hallucinate rules. If the tool returns no info, state that.";
 
-    // Your Azure Deployment Name
+    protected ?string $provider = 'azure';
+    
     protected string $model = 'gpt-5-chat';
 
-    // Register the tool so the Agent can use it
     protected array $tools = [
         ConsultGuidelineTool::class,
     ];
