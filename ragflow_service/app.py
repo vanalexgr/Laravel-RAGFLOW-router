@@ -21,14 +21,15 @@ SHARED_SECRET = os.getenv("RAGFLOW_BRIDGE_SECRET")
 class RetrieveRequest(BaseModel):
     question: str
     dataset_ids: list[str]
-    top_k: int = 20
-    top_n: int = 6
+    top_k: int = 1024
+    size: int = 10
+    page: int = 1
     similarity_threshold: float = 0.2
     vector_similarity_weight: float = 0.3
     keyword: bool = True
     rerank_id: Optional[str] = None
-    use_knowledge_graph: bool = False
-    use_toc: bool = True
+    use_kg: bool = False
+    highlight: bool = True
 
 @app.post("/retrieve")
 @app.post("/retrieval")
@@ -41,30 +42,29 @@ async def retrieve(request: Request, body: RetrieveRequest):
     if not RAGFLOW_API_KEY:
         raise HTTPException(status_code=500, detail="RAGFLOW_API_KEY not configured")
 
-    logger.info(f"Retrieve request: question='{body.question[:50]}...', datasets={body.dataset_ids}")
+    logger.info(f"Retrieve request: question='{body.question[:50]}...', kb_ids={body.dataset_ids}")
 
     payload = {
         "question": body.question,
         "dataset_ids": body.dataset_ids,
         "top_k": body.top_k,
-        "top_n": body.top_n,
+        "page": body.page,
+        "size": body.size,
         "similarity_threshold": body.similarity_threshold,
         "vector_similarity_weight": body.vector_similarity_weight,
         "keyword": body.keyword,
+        "highlight": body.highlight,
     }
 
     if body.rerank_id:
         payload["rerank_id"] = body.rerank_id
-        logger.info(f"Using rerank_id: {body.rerank_id}")
+        logger.info(f"Reranking ENABLED: rerank_id={body.rerank_id}")
 
-    if body.use_knowledge_graph:
-        payload["use_knowledge_graph"] = True
-        logger.info("Knowledge graph enabled")
+    if body.use_kg:
+        payload["use_kg"] = True
+        logger.info("Knowledge Graph ENABLED: use_kg=true")
 
-    if body.use_toc:
-        payload["use_toc"] = True
-
-    logger.info(f"RAGFlow payload: {payload}")
+    logger.info(f"RAGFlow API payload: {payload}")
 
     start_time = datetime.now()
 
@@ -83,8 +83,25 @@ async def retrieve(request: Request, body: RetrieveRequest):
 
         result = response.json()
 
-        chunk_count = len(result.get("data", {}).get("chunks", []))
+        chunks = result.get("data", {}).get("chunks", [])
+        chunk_count = len(chunks)
+        
+        top_chunks_summary = []
+        for i, chunk in enumerate(chunks[:3]):
+            chunk_info = {
+                "rank": i + 1,
+                "id": chunk.get("id", chunk.get("chunk_id", "unknown"))[:16] + "...",
+                "similarity": chunk.get("similarity"),
+                "vector_similarity": chunk.get("vector_similarity"),
+                "term_similarity": chunk.get("term_similarity"),
+                "rerank_score": chunk.get("rerank_score"),
+                "score": chunk.get("score"),
+            }
+            chunk_info = {k: v for k, v in chunk_info.items() if v is not None}
+            top_chunks_summary.append(chunk_info)
+        
         logger.info(f"RAGFlow response: status={response.status_code}, chunks={chunk_count}, duration={duration_ms:.2f}ms")
+        logger.info(f"Top 3 chunks: {top_chunks_summary}")
 
         if response.status_code != 200:
             logger.error(f"RAGFlow error: {result}")
@@ -95,6 +112,14 @@ async def retrieve(request: Request, body: RetrieveRequest):
             "data": result.get("data", {}),
             "code": result.get("code", -1),
             "message": result.get("message"),
+            "retrieval_info": {
+                "rerank_id": body.rerank_id,
+                "use_kg": body.use_kg,
+                "top_k": body.top_k,
+                "size": body.size,
+                "chunk_count": chunk_count,
+                "top_chunks": top_chunks_summary,
+            }
         }
 
     except httpx.TimeoutException:

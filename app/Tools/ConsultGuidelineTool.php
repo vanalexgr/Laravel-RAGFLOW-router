@@ -41,46 +41,44 @@ class ConsultGuidelineTool implements ToolInterface
         $retrievalConfig = config('ragflow.retrieval', []);
         $datasetIds = [config('ragflow.datasets.esvs_guidelines', '4fff3622eb1b11f09021f2381272676b')];
 
-        $topK = $retrievalConfig['top_k'] ?? 20;
-        $topN = $retrievalConfig['top_n'] ?? 6;
+        $topK = $retrievalConfig['top_k'] ?? 1024;
+        $size = $retrievalConfig['size'] ?? 10;
+        $page = $retrievalConfig['page'] ?? 1;
         $similarityThreshold = $retrievalConfig['similarity_threshold'] ?? 0.2;
         $keywordMode = $retrievalConfig['keyword_mode'] ?? true;
         $vectorWeight = $retrievalConfig['vector_similarity_weight'] ?? 0.3;
         $rerankId = $retrievalConfig['rerank_id'] ?? null;
-        $useKnowledgeGraph = $retrievalConfig['use_knowledge_graph'] ?? false;
+        $useKg = $retrievalConfig['use_kg'] ?? true;
+        $highlight = $retrievalConfig['highlight'] ?? true;
 
         Log::info("ConsultGuidelineTool: Querying RAGFlow", [
             'query' => $query,
             'top_k' => $topK,
-            'top_n' => $topN,
+            'size' => $size,
             'similarity_threshold' => $similarityThreshold,
             'keyword_mode' => $keywordMode,
             'rerank_id' => $rerankId,
-            'use_knowledge_graph' => $useKnowledgeGraph,
+            'use_kg' => $useKg,
         ]);
 
         try {
-            $useToc = $retrievalConfig['use_toc'] ?? true;
-            
             $retrievalParams = [
                 'question' => $query,
                 'top_k' => $topK,
-                'top_n' => $topN,
+                'size' => $size,
+                'page' => $page,
                 'similarity_threshold' => $similarityThreshold,
                 'keyword' => $keywordMode,
                 'vector_similarity_weight' => $vectorWeight,
+                'highlight' => $highlight,
             ];
             
             if (!empty($rerankId)) {
                 $retrievalParams['rerank_id'] = $rerankId;
             }
             
-            if ($useKnowledgeGraph) {
-                $retrievalParams['use_knowledge_graph'] = true;
-            }
-            
-            if ($useToc) {
-                $retrievalParams['use_toc'] = true;
+            if ($useKg) {
+                $retrievalParams['use_kg'] = true;
             }
             
             Log::channel('ragflow')->info("ConsultGuidelineTool: Full retrieval payload", [
