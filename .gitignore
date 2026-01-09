@@ -3,6 +3,16 @@
 .env
 .env.backup
 .env.production
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pythonlibs/
+.venv/
+venv/
+*.egg-info/
+.uv/
 .phpactor.json
 .phpunit.result.cache
 /.fleet

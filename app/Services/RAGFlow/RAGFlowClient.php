@@ -12,31 +12,45 @@ class RAGFlowClient
     protected string $apiKey;
     protected string $baseUrl;
     protected int $timeout;
+    protected bool $useBridge;
+    protected string $bridgeUrl;
+    protected ?string $bridgeSecret;
 
     public function __construct(string $apiKey, string $baseUrl, int $timeout = 30)
     {
         $this->apiKey = $apiKey;
         $this->baseUrl = rtrim($baseUrl, '/') . '/';
         $this->timeout = $timeout;
+        $this->useBridge = config('ragflow.use_bridge', false);
+        $this->bridgeUrl = rtrim(config('ragflow.bridge_url', 'http://localhost:7001'), '/');
+        $this->bridgeSecret = config('ragflow.bridge_secret');
+        
+        $headers = [
+            'Content-Type' => 'application/json',
+            'Accept' => 'application/json',
+        ];
+        
+        if (!$this->useBridge) {
+            $headers['Authorization'] = 'Bearer ' . $this->apiKey;
+        }
         
         $this->httpClient = new Client([
-            'base_uri' => $this->baseUrl,
+            'base_uri' => $this->useBridge ? $this->bridgeUrl . '/' : $this->baseUrl,
             'timeout' => $this->timeout,
-            'headers' => [
-                'Authorization' => 'Bearer ' . $this->apiKey,
-                'Content-Type' => 'application/json',
-                'Accept' => 'application/json',
-            ],
+            'headers' => $headers,
         ]);
     }
 
     protected function request(string $method, string $endpoint, array $data = []): array
     {
-        $fullUrl = $this->baseUrl . ltrim($endpoint, '/');
+        $targetUrl = $this->useBridge 
+            ? $this->bridgeUrl . '/' . ltrim($endpoint, '/')
+            : $this->baseUrl . ltrim($endpoint, '/');
         
         Log::channel('ragflow')->info("RAGFlow Request", [
             'method' => $method,
-            'url' => $fullUrl,
+            'url' => $targetUrl,
+            'via_bridge' => $this->useBridge,
             'payload' => $data,
         ]);
         
@@ -44,6 +58,11 @@ class RAGFlowClient
         
         try {
             $options = [];
+            
+            if ($this->useBridge && $this->bridgeSecret) {
+                $options['headers'] = ['X-Bridge-Secret' => $this->bridgeSecret];
+            }
+            
             if (!empty($data)) {
                 if ($method === 'GET') {
                     $options['query'] = $data;
@@ -59,7 +78,7 @@ class RAGFlowClient
             $decoded = json_decode($body, true) ?? [];
             
             Log::channel('ragflow')->info("RAGFlow Response", [
-                'url' => $fullUrl,
+                'url' => $targetUrl,
                 'status' => $response->getStatusCode(),
                 'duration_ms' => $duration,
                 'chunk_count' => isset($decoded['data']['chunks']) ? count($decoded['data']['chunks']) : null,
@@ -71,7 +90,7 @@ class RAGFlowClient
         } catch (GuzzleException $e) {
             $duration = round((microtime(true) - $startTime) * 1000, 2);
             Log::channel('ragflow')->error("RAGFlow Error", [
-                'url' => $fullUrl,
+                'url' => $targetUrl,
                 'duration_ms' => $duration,
                 'error' => $e->getMessage(),
             ]);

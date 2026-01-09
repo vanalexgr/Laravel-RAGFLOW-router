@@ -1,0 +1,165 @@
+Objective
+
+Integrate RAGFlow’s Python API (ragflow-sdk) into the existing Laravel app so that guideline retrieval requests can use:
+
+✅ Reranking (via rerank_id)
+
+✅ Knowledge Graph datasets (chunk_method="knowledge-graph")
+
+⚙ Communicate between Laravel and Python through a lightweight REST bridge
+
+🧱 1. Architecture Overview
+
+Laravel → calls → Python microservice (running ragflow-sdk) → calls → RAGFlow API
+
+This is necessary because Laravel (PHP) cannot use the ragflow-sdk directly — it must send requests to a Python layer that does.
+
+🪄 2. Setup the Python microservice
+a. Create new folder ragflow_service/
+
+Inside, add a simple FastAPI app:
+
+ragflow_service/app.py
+
+from fastapi import FastAPI, Request
+from ragflow_sdk import RAGFlow
+import os
+
+app = FastAPI()
+
+# Initialize RAGFlow client
+ragflow = RAGFlow(api_key=os.getenv("RAGFLOW_API_KEY"),
+                  base_url="https://ragflow.clinicalguidelines.io")
+
+@app.post("/retrieve")
+async def retrieve(request: Request):
+    body = await request.json()
+    question = body.get("question")
+    dataset_ids = body.get("dataset_ids", [])
+    rerank_id = body.get("rerank_id", None)
+    top_k = body.get("top_k", 20)
+    top_n = body.get("top_n", 6)
+    similarity_threshold = body.get("similarity_threshold", 0.2)
+    vector_similarity_weight = body.get("vector_similarity_weight", 0.3)
+
+    result = ragflow.retrieve(
+        question=question,
+        dataset_ids=dataset_ids,
+        top_k=top_k,
+        top_n=top_n,
+        similarity_threshold=similarity_threshold,
+        vector_similarity_weight=vector_similarity_weight,
+        rerank_id=rerank_id
+    )
+
+    return result
+
+b. Add requirements.txt
+fastapi
+uvicorn
+ragflow-sdk
+
+c. Create .env file
+RAGFLOW_API_KEY=<your_ragflow_api_key_here>
+
+d. Run service (locally or in Docker)
+uvicorn app:app --host 0.0.0.0 --port 7001
+
+
+(You can Dockerize it if you prefer — Replit can deploy this easily.)
+
+🌉 3. Connect Laravel → Python microservice
+
+In Laravel, update your existing RAGFlowClient to call the new FastAPI bridge instead of hitting RAGFlow directly.
+
+Example (Laravel):
+
+$response = Http::post('http://localhost:7001/retrieve', [
+    'question' => $query,
+    'dataset_ids' => [$datasetId],
+    'top_k' => 20,
+    'top_n' => 6,
+    'similarity_threshold' => 0.2,
+    'vector_similarity_weight' => 0.3,
+    'rerank_id' => 'your-reranker-model-uuid'
+]);
+
+
+Laravel continues to handle:
+
+Authentication
+
+Logging
+
+Agent context
+
+But the retrieval + reranking logic now happens in the Python layer.
+
+🧠 4. Ensure Knowledge Graph dataset is active
+
+Verify your dataset on the RAGFlow server:
+
+curl -H "Authorization: Bearer <RAGFLOW_API_KEY>" \
+     https://ragflow.clinicalguidelines.io/api/v1/datasets/<dataset_id> | jq '.chunk_method'
+
+
+If it’s not "knowledge-graph", re-import it using:
+
+ragflow.create_dataset(name="ESVS Trauma", chunk_method="knowledge-graph")
+
+
+Once it’s a KG dataset, Laravel queries will automatically use that structure — no special flag required.
+
+🔒 5. (Optional) Secure the bridge
+
+Add a simple shared secret in both .env files to authenticate Laravel → FastAPI requests.
+
+Example in FastAPI:
+
+if request.headers.get("X-Secret") != os.getenv("LARAVEL_SHARED_SECRET"):
+    raise HTTPException(status_code=403, detail="Unauthorized")
+
+
+And in Laravel:
+
+$response = Http::withHeaders(['X-Secret' => env('LARAVEL_SHARED_SECRET')])
+    ->post('http://localhost:7001/retrieve', [...]);
+
+🧩 6. Testing Checklist
+
+✅ RAGFlow SDK imports and connects using your API key
+
+✅ FastAPI returns JSON with 30 chunks and rerank order visible
+
+✅ Laravel receives that response and displays retrieval results
+
+✅ Logs show reranking applied (check for rerank_score or model name)
+
+🧾 7. Deliverables for Replit
+
+ragflow_service/ folder containing:
+
+app.py
+
+requirements.txt
+
+.env
+
+Run command for Replit:
+
+pip install -r requirements.txt && uvicorn app:app --host 0.0.0.0 --port 7001
+
+
+Update Laravel’s RAGFlowClient endpoint to http://localhost:7001/retrieve.
+
+✅ End result
+
+Laravel keeps its current tool & agent logic.
+
+The Python microservice handles:
+
+Reranking (via rerank_id)
+
+Retrieval from KG-structured datasets
+
+Everything stays modular, updatable, and compatible with the official RAGFlow SDK.
