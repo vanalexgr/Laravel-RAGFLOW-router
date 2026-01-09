@@ -80,6 +80,7 @@ $response = RAGFlow::chat()->sendMessage($chatId, ['message' => 'Hello']);
 Currently using SQLite at `database/database.sqlite`
 
 ## Recent Changes
+- 2026-01-09: Added advanced RAGFlow retrieval options: top_k=20, top_n=6, rerank_model=Cohere-rerank-v3-5-rdrns, knowledge_graph=ON
 - 2026-01-09: Fixed multi-turn conversation memory by correcting property name to includeConversationHistory and passing full chat history from OpenWebUI messages
 - 2026-01-09: Added API key authentication (ValidateApiKey middleware) for OpenAI-compatible endpoints
 - 2026-01-09: Added OpenAI-compatible API endpoint for OpenWebUI integration (/api/v1/chat/completions)
