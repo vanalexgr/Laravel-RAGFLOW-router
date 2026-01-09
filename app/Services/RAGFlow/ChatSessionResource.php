@@ -15,32 +15,32 @@ class ChatSessionResource
 
     public function create(array $parameters = []): array
     {
-        return $this->client->post("/chats/{$this->chatId}/sessions", $parameters);
+        return $this->client->post("chats/{$this->chatId}/sessions", $parameters);
     }
 
     public function list(array $parameters = []): array
     {
-        return $this->client->get("/chats/{$this->chatId}/sessions", $parameters);
+        return $this->client->get("chats/{$this->chatId}/sessions", $parameters);
     }
 
     public function get(string $sessionId): array
     {
-        return $this->client->get("/chats/{$this->chatId}/sessions/{$sessionId}");
+        return $this->client->get("chats/{$this->chatId}/sessions/{$sessionId}");
     }
 
     public function update(string $sessionId, array $parameters): array
     {
-        return $this->client->put("/chats/{$this->chatId}/sessions/{$sessionId}", $parameters);
+        return $this->client->put("chats/{$this->chatId}/sessions/{$sessionId}", $parameters);
     }
 
     public function delete(string $sessionId): array
     {
-        return $this->client->delete("/chats/{$this->chatId}/sessions/{$sessionId}");
+        return $this->client->delete("chats/{$this->chatId}/sessions/{$sessionId}");
     }
 
     public function sendMessage(string $sessionId, array $parameters): array
     {
-        return $this->client->post("/chats/{$this->chatId}/completions", array_merge(
+        return $this->client->post("chats/{$this->chatId}/completions", array_merge(
             $parameters,
             ['session_id' => $sessionId]
         ));

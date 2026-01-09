@@ -16,7 +16,7 @@ class RAGFlowClient
     public function __construct(string $apiKey, string $baseUrl, int $timeout = 30)
     {
         $this->apiKey = $apiKey;
-        $this->baseUrl = rtrim($baseUrl, '/');
+        $this->baseUrl = rtrim($baseUrl, '/') . '/';
         $this->timeout = $timeout;
         
         $this->httpClient = new Client([

@@ -3,7 +3,6 @@
 namespace App\Tools;
 
 use App\Facades\RAGFlow;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Vizra\VizraADK\Tools\BaseTool;
 use Vizra\VizraADK\Tools\ToolParameter;
@@ -12,13 +11,14 @@ class ConsultGuidelineTool extends BaseTool
 {
     protected string $name = 'consult_guideline';
 
-    protected string $description = 'Consult ESVS vascular surgery guidelines for a specific topic. Returns relevant recommendations and evidence-based guidance.';
+    protected string $description = 'Consult ESVS vascular surgery guidelines for a specific topic. Queries the official guideline datasets directly and returns relevant recommendations.';
 
     protected array $parameters = [];
 
-    private const CHAT_CACHE_KEY = 'ragflow_guideline_chat_id';
-    private const SESSION_CACHE_KEY = 'ragflow_guideline_session_id';
-    private const CACHE_TTL = 3600;
+    private const DATASET_IDS = [
+        '4fff3622eb1b11f09021f2381272676b',
+        '4fff3622eb1b11f09021f2381272676',
+    ];
 
     public function __construct()
     {
@@ -53,110 +53,54 @@ class ConsultGuidelineTool extends BaseTool
         }
 
         try {
-            $chatId = $this->getOrCreateChat();
-            
-            if (!$chatId) {
-                Log::info('RAGFlow: No chat assistant available, using reference guidelines');
-                return $this->getReferenceGuidelines($topic);
-            }
-
-            $sessionId = $this->getOrCreateSession($chatId);
-            
-            if (!$sessionId) {
-                Log::info('RAGFlow: Could not create session, using reference guidelines');
-                return $this->getReferenceGuidelines($topic);
-            }
-
-            $response = RAGFlow::chat()->sessions($chatId)->sendMessage($sessionId, [
-                'message' => $query,
-                'stream' => false,
+            $response = RAGFlow::datasets()->retrieve(self::DATASET_IDS, [
+                'question' => $query,
+                'top_k' => 10,
             ]);
 
-            if (!empty($response['data']['answer'])) {
-                return "RAGFlow Response:\n" . $response['data']['answer'];
+            if (!empty($response['data']['chunks'])) {
+                return $this->formatRetrievalResults($response['data']['chunks'], $topic);
             }
 
-            if (isset($response['code']) && $response['code'] !== 0) {
-                $errorMsg = $response['message'] ?? 'Unknown error';
-                Log::warning('RAGFlow returned error: ' . $errorMsg);
-                return $this->getReferenceGuidelines($topic) . "\n\n[RAGFlow Error: {$errorMsg}]";
+            if (!empty($response['errors'])) {
+                Log::warning('RAGFlow retrieval errors: ' . implode('; ', $response['errors']));
+                return $this->getReferenceGuidelines($topic) . "\n\n[RAGFlow retrieval errors: " . implode('; ', $response['errors']) . "]";
             }
 
-            Log::info('RAGFlow: No answer in response, using reference guidelines');
-            return $this->getReferenceGuidelines($topic);
+            Log::info('RAGFlow: No chunks returned for query: ' . $query);
+            return $this->getReferenceGuidelines($topic) . "\n\n[No matching documents found in RAGFlow datasets]";
 
         } catch (\Exception $e) {
-            Log::error('RAGFlow query failed: ' . $e->getMessage());
+            Log::error('RAGFlow dataset query failed: ' . $e->getMessage());
             return $this->getReferenceGuidelines($topic) . "\n\n[RAGFlow temporarily unavailable: " . $e->getMessage() . "]";
         }
     }
 
-    protected function getOrCreateChat(): ?string
+    protected function formatRetrievalResults(array $chunks, string $topic): string
     {
-        $cachedChatId = Cache::get(self::CHAT_CACHE_KEY);
-        if ($cachedChatId) {
-            return $cachedChatId;
-        }
+        $output = "ESVS Guidelines - {$topic} (Retrieved from RAGFlow datasets)\n";
+        $output .= str_repeat("=", 60) . "\n\n";
 
-        try {
-            $chats = RAGFlow::chat()->list(['page' => 1, 'page_size' => 10]);
-            
-            if (!empty($chats['data'])) {
-                foreach ($chats['data'] as $chat) {
-                    if (!empty($chat['id'])) {
-                        $chatId = $chat['id'];
-                        Cache::put(self::CHAT_CACHE_KEY, $chatId, self::CACHE_TTL);
-                        Log::info('RAGFlow: Using existing chat assistant: ' . ($chat['name'] ?? $chatId));
-                        return $chatId;
-                    }
-                }
+        foreach ($chunks as $index => $chunk) {
+            $num = $index + 1;
+            $similarity = isset($chunk['similarity']) ? round($chunk['similarity'] * 100, 1) : 'N/A';
+            $docName = $chunk['doc_name'] ?? $chunk['document_name'] ?? 'Unknown Document';
+            $content = $chunk['content'] ?? $chunk['content_with_weight'] ?? '';
+
+            if (empty($content)) {
+                continue;
             }
 
-            Log::info('RAGFlow: No chat assistants found. Please create one in RAGFlow with your ESVS guidelines dataset.');
-            return null;
-
-        } catch (\Exception $e) {
-            Log::error('RAGFlow chat list failed: ' . $e->getMessage());
-            return null;
-        }
-    }
-
-    protected function getOrCreateSession(string $chatId): ?string
-    {
-        $cacheKey = self::SESSION_CACHE_KEY . '_' . $chatId;
-        $cachedSessionId = Cache::get($cacheKey);
-        
-        if ($cachedSessionId) {
-            return $cachedSessionId;
+            $output .= "--- Result {$num} (Relevance: {$similarity}%) ---\n";
+            $output .= "Source: {$docName}\n\n";
+            $output .= trim($content) . "\n\n";
         }
 
-        try {
-            $sessions = RAGFlow::chat()->sessions($chatId)->list(['page' => 1, 'page_size' => 1]);
-            
-            if (!empty($sessions['data']) && !empty($sessions['data'][0]['id'])) {
-                $sessionId = $sessions['data'][0]['id'];
-                Cache::put($cacheKey, $sessionId, self::CACHE_TTL);
-                return $sessionId;
-            }
-
-            $newSession = RAGFlow::chat()->sessions($chatId)->create([
-                'name' => 'Guideline Consultation - ' . date('Y-m-d H:i:s'),
-            ]);
-
-            if (!empty($newSession['data']['id'])) {
-                $sessionId = $newSession['data']['id'];
-                Cache::put($cacheKey, $sessionId, self::CACHE_TTL);
-                Log::info('RAGFlow: Created new session: ' . $sessionId);
-                return $sessionId;
-            }
-
-            Log::warning('RAGFlow: Session creation failed - ' . json_encode($newSession));
-            return null;
-
-        } catch (\Exception $e) {
-            Log::error('RAGFlow session setup failed: ' . $e->getMessage());
-            return null;
+        if (strlen($output) < 100) {
+            return $this->getReferenceGuidelines($topic) . "\n\n[RAGFlow returned empty content]";
         }
+
+        return $output;
     }
 
     protected function getReferenceGuidelines(string $topic): string

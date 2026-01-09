@@ -32,19 +32,36 @@ This is a Laravel 12 PHP web application with the Vizra ADK framework for AI age
 - Custom Laravel 12 compatible client in `app/Services/RAGFlow/`
 - Facade: `App\Facades\RAGFlow`
 - Config: `config/ragflow.php`
-- Environment variables: `RAGFLOW_API_KEY`, `RAGFLOW_ENDPOINT`
+- Environment variables: `RAGFLOW_API_KEY`, `RAGFLOW_ENDPOINT` (must include `/api/v1` suffix)
+- Direct dataset retrieval endpoint: `POST /api/v1/retrieval`
+
+### Dataset IDs
+- ESVS Guidelines: `4fff3622eb1b11f09021f2381272676b`
 
 ### RAGFlow Usage
 ```php
 use App\Facades\RAGFlow;
 
+// Direct dataset retrieval (recommended for guideline queries)
+$response = RAGFlow::datasets()->retrieve(
+    ['4fff3622eb1b11f09021f2381272676b'], // dataset IDs
+    [
+        'question' => 'carotid artery guidelines',
+        'top_k' => 10,
+    ]
+);
+
+// Access retrieved chunks
+foreach ($response['data']['chunks'] as $chunk) {
+    echo $chunk['content'];
+    echo $chunk['similarity']; // relevance score
+}
+
 // List datasets
 $datasets = RAGFlow::datasets()->list();
 
-// Create chat session
-$chat = RAGFlow::chat()->create(['name' => 'My Chat']);
-
-// Send message
+// Chat sessions (alternative to direct retrieval)
+$chats = RAGFlow::chat()->list();
 $response = RAGFlow::chat()->sendMessage($chatId, ['message' => 'Hello']);
 ```
 
@@ -60,6 +77,8 @@ $response = RAGFlow::chat()->sendMessage($chatId, ['message' => 'Hello']);
 Currently using SQLite at `database/database.sqlite`
 
 ## Recent Changes
+- 2026-01-09: Updated ConsultGuidelineTool to query RAGFlow datasets directly via `/api/v1/retrieval` endpoint
+- 2026-01-09: Fixed Guzzle base_uri trailing slash issue for proper relative path resolution
 - 2026-01-09: Implemented RAGFlow PHP client for Laravel 12 (custom implementation)
 - 2026-01-09: Created ConsultGuidelineTool to query ESVS vascular surgery guidelines
 - 2026-01-09: Fixed Azure OpenAI connection by explicitly setting provider in VascularExpertAgent
