@@ -46,7 +46,7 @@ class ConsultGuidelineTool implements ToolInterface
         $similarityThreshold = $retrievalConfig['similarity_threshold'] ?? 0.2;
         $keywordMode = $retrievalConfig['keyword_mode'] ?? true;
         $vectorWeight = $retrievalConfig['vector_similarity_weight'] ?? 0.3;
-        $rerankModel = $retrievalConfig['rerank_model'] ?? null;
+        $rerankId = $retrievalConfig['rerank_id'] ?? null;
         $useKnowledgeGraph = $retrievalConfig['use_knowledge_graph'] ?? false;
 
         Log::info("ConsultGuidelineTool: Querying RAGFlow", [
@@ -55,7 +55,7 @@ class ConsultGuidelineTool implements ToolInterface
             'top_n' => $topN,
             'similarity_threshold' => $similarityThreshold,
             'keyword_mode' => $keywordMode,
-            'rerank_model' => $rerankModel,
+            'rerank_id' => $rerankId,
             'use_knowledge_graph' => $useKnowledgeGraph,
         ]);
 
@@ -71,8 +71,8 @@ class ConsultGuidelineTool implements ToolInterface
                 'vector_similarity_weight' => $vectorWeight,
             ];
             
-            if (!empty($rerankModel)) {
-                $retrievalParams['rerank_model'] = $rerankModel;
+            if (!empty($rerankId)) {
+                $retrievalParams['rerank_id'] = $rerankId;
             }
             
             if ($useKnowledgeGraph) {
