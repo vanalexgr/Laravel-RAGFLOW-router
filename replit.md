@@ -95,7 +95,8 @@ Currently using SQLite at `database/database.sqlite`
 - 2026-01-09: Fixed tool invocation by setting tool_choice='required' on first request in AzureTextHandler - ensures agent uses consult_guideline tool instead of answering from training data
 - 2026-01-09: Simplified ConsultGuidelineTool to single 'topic' parameter - Prism marks all parameters as required by default
 - 2026-01-09: Added APP_KEY to .env (required for Laravel encryption)
-- 2026-01-09: Added advanced RAGFlow retrieval options: top_k=20, top_n=6, rerank_model=Cohere-rerank-v3-5-rdrns, knowledge_graph=ON
+- 2026-01-09: Changed rerank_model to rerank_id parameter with full identifier format: 'Cohere-rerank-v3-5-rdrns___OpenAI-API@OpenAI-API-Compatible'
+- 2026-01-09: Added advanced RAGFlow retrieval options: top_k=20, top_n=6, rerank_id, knowledge_graph=ON
 - 2026-01-09: Fixed multi-turn conversation memory by correcting property name to includeConversationHistory and passing full chat history from OpenWebUI messages
 - 2026-01-09: Added API key authentication (ValidateApiKey middleware) for OpenAI-compatible endpoints
 - 2026-01-09: Added OpenAI-compatible API endpoint for OpenWebUI integration (/api/v1/chat/completions)
