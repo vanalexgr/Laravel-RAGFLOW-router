@@ -135,6 +135,14 @@ return [
             'replace_placeholders' => true,
         ],
 
+        'ragflow' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/ragflow.log'),
+            'level' => 'debug',
+            'days' => 7,
+            'replace_placeholders' => true,
+        ],
+
     ],
 
 ];

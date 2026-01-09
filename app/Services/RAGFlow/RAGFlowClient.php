@@ -32,6 +32,16 @@ class RAGFlowClient
 
     protected function request(string $method, string $endpoint, array $data = []): array
     {
+        $fullUrl = $this->baseUrl . ltrim($endpoint, '/');
+        
+        Log::channel('ragflow')->info("RAGFlow Request", [
+            'method' => $method,
+            'url' => $fullUrl,
+            'payload' => $data,
+        ]);
+        
+        $startTime = microtime(true);
+        
         try {
             $options = [];
             if (!empty($data)) {
@@ -44,10 +54,27 @@ class RAGFlowClient
 
             $response = $this->httpClient->request($method, $endpoint, $options);
             $body = $response->getBody()->getContents();
+            $duration = round((microtime(true) - $startTime) * 1000, 2);
             
-            return json_decode($body, true) ?? [];
+            $decoded = json_decode($body, true) ?? [];
+            
+            Log::channel('ragflow')->info("RAGFlow Response", [
+                'url' => $fullUrl,
+                'status' => $response->getStatusCode(),
+                'duration_ms' => $duration,
+                'chunk_count' => isset($decoded['data']['chunks']) ? count($decoded['data']['chunks']) : null,
+                'code' => $decoded['code'] ?? null,
+                'message' => $decoded['message'] ?? null,
+            ]);
+            
+            return $decoded;
         } catch (GuzzleException $e) {
-            Log::error('RAGFlow API Error: ' . $e->getMessage());
+            $duration = round((microtime(true) - $startTime) * 1000, 2);
+            Log::channel('ragflow')->error("RAGFlow Error", [
+                'url' => $fullUrl,
+                'duration_ms' => $duration,
+                'error' => $e->getMessage(),
+            ]);
             throw new \RuntimeException('RAGFlow API request failed: ' . $e->getMessage(), 0, $e);
         }
     }

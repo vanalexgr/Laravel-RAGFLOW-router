@@ -60,6 +60,8 @@ class ConsultGuidelineTool implements ToolInterface
         ]);
 
         try {
+            $useToc = $retrievalConfig['use_toc'] ?? true;
+            
             $retrievalParams = [
                 'question' => $query,
                 'top_k' => $topK,
@@ -76,6 +78,15 @@ class ConsultGuidelineTool implements ToolInterface
             if ($useKnowledgeGraph) {
                 $retrievalParams['use_knowledge_graph'] = true;
             }
+            
+            if ($useToc) {
+                $retrievalParams['use_toc'] = true;
+            }
+            
+            Log::channel('ragflow')->info("ConsultGuidelineTool: Full retrieval payload", [
+                'dataset_ids' => $datasetIds,
+                'params' => $retrievalParams,
+            ]);
 
             $response = RAGFlow::datasets()->retrieve($datasetIds, $retrievalParams);
 
