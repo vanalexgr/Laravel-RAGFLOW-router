@@ -138,10 +138,29 @@ class OpenAICompatibleController extends Controller
             ], 400);
         }
 
+        $userMessageTokens = $this->estimateTokens($userMessage);
+        $maxUserTokens = self::MAX_CONTEXT_TOKENS - self::RESERVED_TOKENS;
+        
+        if ($userMessageTokens > $maxUserTokens) {
+            \Log::warning('User message exceeds token limit', [
+                'user_tokens' => $userMessageTokens,
+                'max_allowed' => $maxUserTokens,
+            ]);
+            return response()->json([
+                'error' => [
+                    'message' => "Message too long. Please shorten your message (estimated {$userMessageTokens} tokens, max {$maxUserTokens}).",
+                    'type' => 'invalid_request_error',
+                    'code' => 'context_length_exceeded',
+                ],
+            ], 400);
+        }
+        
+        $availableHistoryTokens = max(0, $maxUserTokens - $userMessageTokens);
+        
         $contextString = '';
         if (count($conversationContext) > 1) {
             $history = array_slice($conversationContext, 0, -1);
-            $history = $this->truncateHistory($history, self::MAX_HISTORY_TOKENS);
+            $history = $this->truncateHistory($history, $availableHistoryTokens);
             
             if (!empty($history)) {
                 $contextString = "CONVERSATION HISTORY:\n";
@@ -257,7 +276,7 @@ class OpenAICompatibleController extends Controller
      * Stream response with progress events (for real-time streaming).
      * Shows processing steps before the final response.
      */
-    public function chatCompletionsWithProgress(Request $request): StreamedResponse
+    public function chatCompletionsWithProgress(Request $request): StreamedResponse|JsonResponse
     {
         $validated = $request->validate([
             'model' => 'required|string',
@@ -281,10 +300,25 @@ class OpenAICompatibleController extends Controller
             }
         }
 
+        $userMessageTokens = $this->estimateTokens($userMessage);
+        $maxUserTokens = self::MAX_CONTEXT_TOKENS - self::RESERVED_TOKENS;
+        
+        if ($userMessageTokens > $maxUserTokens) {
+            return response()->json([
+                'error' => [
+                    'message' => "Message too long. Please shorten your message (estimated {$userMessageTokens} tokens, max {$maxUserTokens}).",
+                    'type' => 'invalid_request_error',
+                    'code' => 'context_length_exceeded',
+                ],
+            ], 400);
+        }
+        
+        $availableHistoryTokens = max(0, $maxUserTokens - $userMessageTokens);
+        
         $contextString = '';
         if (count($conversationContext) > 1) {
             $history = array_slice($conversationContext, 0, -1);
-            $history = $this->truncateHistory($history, self::MAX_HISTORY_TOKENS);
+            $history = $this->truncateHistory($history, $availableHistoryTokens);
             
             if (!empty($history)) {
                 $contextString = "CONVERSATION HISTORY:\n";
