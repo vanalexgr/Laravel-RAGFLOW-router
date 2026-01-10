@@ -22,6 +22,10 @@ class ConsultGuidelineTool implements ToolInterface
                         'type' => 'string',
                         'description' => 'The complete search query including guideline topic and clinical question (e.g., "Carotid stenosis management symptomatic", "Aortic aneurysm repair threshold", "Trauma carotid injury blunt")',
                     ],
+                    'dataset_ids' => [
+                        'type' => 'string',
+                        'description' => 'JSON array of dataset IDs from select_guidelines tool output (e.g., ["be20b02c...", "fd679d82..."]). If not provided, queries all guideline datasets.',
+                    ],
                 ],
                 'required' => ['topic'],
             ],
@@ -39,7 +43,17 @@ class ConsultGuidelineTool implements ToolInterface
         $query = $topic;
 
         $retrievalConfig = config('ragflow.retrieval', []);
-        $datasetIds = config('ragflow.datasets.default', ['8f58aeadec9411f0a38066bc68590b9b', '4fff3622eb1b11f09021f2381272676b']);
+        
+        $datasetIdsParam = $arguments['dataset_ids'] ?? null;
+        if (!empty($datasetIdsParam)) {
+            $decoded = json_decode($datasetIdsParam, true);
+            $datasetIds = is_array($decoded) ? $decoded : config('guidelines.all_guideline_datasets', []);
+        } else {
+            $datasetIds = config('guidelines.all_guideline_datasets', []);
+        }
+        
+        $recommendationsDatasetId = config('guidelines.recommendations_dataset');
+        $datasetIds = array_filter($datasetIds, fn($id) => $id !== $recommendationsDatasetId);
 
         $topK = $retrievalConfig['top_k'] ?? 1024;
         $size = $retrievalConfig['size'] ?? 10;
