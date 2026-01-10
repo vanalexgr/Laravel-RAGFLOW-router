@@ -1,0 +1,72 @@
+Two things to watch (likely next bottlenecks)
+A) “carotid_vertebral” is getting pulled in as a third guideline
+
+It’s low-score (10) and not forced, but it is selected. That can create noise in other queries (“asymptomatic stenosis” is a magnet term).
+
+Fix (clean):
+
+In MULTI-INTENT, if you already have ≥2 forced keys, only allow extra guidelines if score ≥ (say) 25 or if the question explicitly contains carotid/vertebral terms.
+
+This keeps the router from over-selecting “nice-to-have” guidelines.
+
+B) You requested size:10 but got chunk_count:31
+
+That’s not necessarily wrong — with use_kg:true, many systems do:
+
+retrieve top-N seeds (size=10)
+
+KG-expand neighbors
+
+return expanded set (31)
+
+But it matters because you’ll pass a lot of text to generation and slow things down.
+
+Fix (best practice):
+
+Keep KG expansion, but cap what you return to the model:
+
+max_return_chunks = 12–18 total (post-dedupe, post-rerank)
+
+Or do two-stage rerank:
+
+rerank within each guideline (keep top 6–8 per guideline)
+
+merge + rerank globally (keep top 12–16 total)
+
+That tends to improve relevance and speed.
+
+If your real goal is “AAA screening vs PAD screening” quality
+
+Even though you’re retrieving from both datasets, a single blended query like:
+
+“screening recommendations AAA vs asymptomatic PAD 65-year-old male smoker”
+
+can still bias retrieval toward whichever corpus has denser “screening” language.
+
+Upgrade (high-impact): split the query
+
+Query A (AAA): “AAA screening recommendations (men 65, smoker) ultrasound population screening”
+
+Query B (PAD): “screening asymptomatic PAD ABI screening recommendation risk factors”
+
+Retrieve separately, then merge.
+
+This usually improves “coverage” (you actually get the key PAD screening chunks, not just AAA ones).
+
+About showing live “process snippets” in OpenWebUI (your earlier question)
+
+Now that your multi-stage pipeline is clearly tool-driven (select_guidelines → consult_guideline), you’re in the perfect spot to emit UI progress updates.
+
+Add __event_emitter__ status events at:
+
+Selecting guidelines…
+
+Querying RAGFlow…
+
+KG expansion…
+
+Reranking…
+
+Drafting answer…
+
+That will replace the “pulsating dot” feel with visible steps.
