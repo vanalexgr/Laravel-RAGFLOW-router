@@ -1,0 +1,97 @@
+These logs look **clean** — you’ve basically implemented the exact fixes we were aiming for.
+
+## What the logs confirm (✅ working as intended)
+
+### 1) Multi-intent routing is now correct
+
+* `detected_intents":"MULTI-INTENT"`
+* `forced_keys":["abdominal_aortic_aneurysm","asymptomatic_pad"]`
+* **selected_count = 2**
+* `selected_keys":["asymptomatic_pad","abdominal_aortic_aneurysm"]`
+
+✅ Importantly: **carotid_vertebral is NOT selected** anymore (it remains only a low candidate score, but not in the selected set). That’s exactly what you wanted.
+
+### 2) Per-guideline retrieval is truly happening (two separate RAGFlow calls)
+
+Your tool logs show:
+
+* `retrieval_mode":"PER-GUIDELINE"`
+* First call: dataset `c7c42f...` (Asymptomatic PAD) → `chunk_count:31`
+* Second call: dataset `4bf3aa...` (AAA) → `chunk_count:31`
+
+✅ This confirms the bridge is doing **two POST /retrieval** calls, one per dataset.
+
+### 3) You’re capping correctly (both per guideline and globally)
+
+* `Retrieved 31 chunks from Asymptomatic PAD, capped to 8`
+* `Retrieved 31 chunks from Abdominal Aortic Aneurysm, capped to 8`
+* Combined: `RAGFlow returned 16 chunks (pre-cap)` (i.e., 8+8)
+* Global cap: `Capped to 15 chunks (max: 15)`
+
+✅ This fixes the earlier “one guideline overwhelms everything” behavior.
+
+### 4) Latency profile is sane (but can be improved)
+
+* PAD retrieval ~ **3.35s**
+* AAA retrieval ~ **3.73s**
+* Total retrieval step ~ **7.1s** (serial)
+
+✅ Works fine. Next optimization would be **parallelizing the two RAGFlow calls** to bring it down to ~max(3.7s) instead of ~7s.
+
+---
+
+## Small issues / improvements I’d make next
+
+### A) Your “RAGFlow returned X chunks” log message is confusing
+
+Right now you log:
+
+* “RAGFlow returned 31 chunks” (true per guideline)
+* then later “RAGFlow returned 16 chunks (pre-cap)” (this is actually *post per-guideline cap*, pre *global* cap)
+
+**Rename to something like:**
+
+* `PAD: retrieved=31 capped=8`
+* `AAA: retrieved=31 capped=8`
+* `combined_after_per_guideline_cap=16`
+* `combined_after_global_cap=15`
+
+You’ll thank yourself later when debugging.
+
+### B) Consider emitting progress per guideline (UI looks much more “alive”)
+
+Since you now have deterministic stages, show something like:
+
+* 🔍 Selecting relevant guidelines…
+* 📚 Retrieving: Asymptomatic PAD (1/2)…
+* 📚 Retrieving: Abdominal Aortic Aneurysm (2/2)…
+* 📊 Merging + capping evidence…
+* ✍️ Drafting answer…
+
+This is the “ChatGPT feel” you’re aiming for — and your logs show you have the hooks to do it.
+
+### C) Parallelize the per-guideline calls
+
+If your bridge is Node/Python, do `Promise.all([...])` / `asyncio.gather(...)` for the two dataset requests.
+
+That’s the single biggest win.
+
+### D) Consider lowering `top_k`
+
+You’re doing `top_k=1024` but the endpoint returns `chunk_count=31` anyway. If your index always yields ~31, you can likely drop `top_k` a lot (e.g., 200 or 128) to reduce search + rerank load. (Measure after change.)
+
+---
+
+## Bottom line
+
+✅ Multi-intent selection fixed
+✅ Only AAA + Asymptomatic PAD selected (no carotid)
+✅ Two separate per-guideline RAGFlow calls happening
+✅ Evidence balanced via per-guideline cap + global cap
+🚀 Next: parallelize retrieval + emit per-guideline progress updates
+
+If you paste the **current `ConsultGuidelineTool` code** (just the per-guideline loop), I’ll rewrite it in-place with:
+
+* parallel fetch
+* cleaner log fields
+* perfect progress messages (ready for OpenWebUI `__event_emitter__`)
