@@ -43,7 +43,9 @@ This is a Laravel 12 PHP web application with the Vizra ADK framework for AI age
 - Workflow: `RAGFlow Bridge`
 
 ### Dataset IDs
-- ESVS Guidelines: `4fff3622eb1b11f09021f2381272676b`
+- ESVS Trauma 2025 (with KG): `8f58aeadec9411f0a38066bc68590b9b`
+- ESVS Trauma Recs (no KG): `4fff3622eb1b11f09021f2381272676b`
+- Default: queries both datasets simultaneously
 
 ### RAGFlow Usage
 ```php
