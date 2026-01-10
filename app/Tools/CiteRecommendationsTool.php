@@ -109,17 +109,37 @@ class CiteRecommendationsTool implements ToolInterface
         $filterLower = strtolower($guidelineFilter);
         $filterPatterns = $this->buildFilterPatterns($filterLower);
 
-        return array_filter($chunks, function ($chunk) use ($filterPatterns) {
-            $content = strtolower($chunk['content'] ?? '');
-            $docName = strtolower($chunk['document_keyword'] ?? $chunk['doc_name'] ?? '');
+        $filtered = array_filter($chunks, function ($chunk) use ($filterPatterns) {
+            $searchableFields = [
+                strtolower($chunk['content'] ?? ''),
+                strtolower($chunk['document_keyword'] ?? ''),
+                strtolower($chunk['doc_name'] ?? ''),
+                strtolower($chunk['kb_name'] ?? ''),
+                strtolower($chunk['dataset_name'] ?? ''),
+                strtolower($chunk['metadata']['guideline'] ?? ''),
+                strtolower($chunk['metadata']['guideline_id'] ?? ''),
+            ];
+            $searchText = implode(' ', $searchableFields);
             
             foreach ($filterPatterns as $pattern) {
-                if (str_contains($content, $pattern) || str_contains($docName, $pattern)) {
+                if (str_contains($searchText, $pattern)) {
                     return true;
                 }
             }
             return false;
         });
+
+        if (empty($filtered) && count($chunks) > 0) {
+            Log::warning("CiteRecommendationsTool: Guideline filter matched 0 chunks. Returning all for debugging.", [
+                'filter' => $guidelineFilter,
+                'patterns' => $filterPatterns,
+                'sample_chunk_keys' => array_keys($chunks[0] ?? []),
+                'sample_doc_name' => $chunks[0]['doc_name'] ?? 'none',
+            ]);
+            return $chunks;
+        }
+
+        return $filtered;
     }
 
     protected function buildFilterPatterns(string $filter): array
