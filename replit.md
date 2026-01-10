@@ -114,6 +114,9 @@ All 14 guideline datasets are registered in `config/guidelines.php` with:
 - Category groupings (Aortic, Peripheral, Venous, Specialty)
 
 ## Recent Changes
+- 2026-01-10: Parallel multi-dataset retrieval via `/retrieve_multi` bridge endpoint using asyncio.gather - reduces latency from ~7s to ~5.9s
+- 2026-01-10: Lowered default top_k from 1024 to 256 - reranker handles filtering, reduces search+rerank load
+- 2026-01-10: Cleaner retrieval logs: per-dataset retrieved/capped counts, combined_after_per_cap, combined_after_global_cap
 - 2026-01-10: Added streaming progress endpoint `/api/v1/chat/completions/stream` with 5 progress events: Selecting guidelines, Querying retrieval, KG expansion, Reranking, Drafting answer
 - 2026-01-10: Per-guideline retrieval for multi-intent queries - separate RAGFlow calls per dataset (8 chunks each), interleaved merge, capped at 15 total
 - 2026-01-10: Higher threshold (25 vs 5) for non-forced guidelines when ≥2 forced keys present - prevents carotid leakage in AAA+PAD queries

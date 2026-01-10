@@ -10,7 +10,7 @@ return [
     'bridge_secret' => env('RAGFLOW_BRIDGE_SECRET'),
 
     'retrieval' => [
-        'top_k' => (int) env('RAGFLOW_TOP_K', 1024),
+        'top_k' => (int) env('RAGFLOW_TOP_K', 256),  // Lowered from 1024 - reranker handles filtering
         'size' => (int) env('RAGFLOW_SIZE', 10),
         'page' => (int) env('RAGFLOW_PAGE', 1),
         'similarity_threshold' => (float) env('RAGFLOW_SIMILARITY_THRESHOLD', 0.2),

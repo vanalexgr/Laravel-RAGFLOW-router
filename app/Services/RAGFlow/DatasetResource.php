@@ -56,4 +56,21 @@ class DatasetResource
 
         return $this->client->post('retrieval', $payload);
     }
+
+    /**
+     * Parallel retrieval across multiple datasets with per-dataset capping.
+     * Uses the bridge's /retrieve_multi endpoint for asyncio.gather parallelization.
+     *
+     * @param array $datasets Array of ['id' => string, 'name' => string]
+     * @param array $parameters Query parameters
+     * @return array
+     */
+    public function retrieveMulti(array $datasets, array $parameters): array
+    {
+        $payload = array_merge($parameters, [
+            'datasets' => $datasets,
+        ]);
+
+        return $this->client->post('retrieve_multi', $payload);
+    }
 }
