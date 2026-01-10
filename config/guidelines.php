@@ -40,7 +40,7 @@ return [
                 'asymptomatic_pad' => [
                     'id' => 'c7c42f76507211f0b6356a892e29a549',
                     'name' => 'Asymptomatic PAD',
-                    'key_concepts' => ['Supervised Exercise Therapy', 'SET', 'risk factor optimization', 'claudication', 'walking distance', 'ABI screening'],
+                    'key_concepts' => ['peripheral arterial disease', 'PAD', 'LEAD', 'lower extremity arterial disease', 'Supervised Exercise Therapy', 'SET', 'risk factor optimization', 'claudication', 'intermittent claudication', 'walking distance', 'ABI screening', 'ankle brachial index', 'asymptomatic PAD'],
                 ],
                 'clti' => [
                     'id' => 'acd1930edc3411f09021f2381272676b',
