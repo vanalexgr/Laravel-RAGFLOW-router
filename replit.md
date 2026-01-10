@@ -88,7 +88,35 @@ $response = RAGFlow::chat()->sendMessage($chatId, ['message' => 'Hello']);
 ## Database
 Currently using SQLite at `database/database.sqlite`
 
+## Two-Stage Retrieval Architecture
+
+The VascularExpertAgent uses a sophisticated two-stage workflow:
+
+### Stage 1: Answer Synthesis
+1. `select_guidelines` - Analyzes question, picks 1-3 relevant guideline datasets based on key concepts
+2. `consult_guideline` - Queries selected datasets with KG enabled for rich contextual retrieval
+3. Agent synthesizes clinical answer from retrieved content
+
+### Stage 2: Evidence Citation
+4. `cite_recommendations` - Queries the recommendations-only dataset (no KG, strict meta-tags)
+5. Returns verbatim: recommendation number, guideline name, class, level, exact text
+6. Agent formats response with Clinical Answer + Evidence sections
+
+### Tools
+- `SelectGuidelinesTool` - Uses `config/guidelines.php` registry to match question to datasets
+- `ConsultGuidelineTool` - Accepts dynamic `dataset_ids`, queries with KG + reranking
+- `CiteRecommendationsTool` - Queries only the recommendations dataset for exact citations
+
+### Guideline Registry
+All 14 guideline datasets are registered in `config/guidelines.php` with:
+- Dataset IDs
+- Key concepts for automatic routing
+- Category groupings (Aortic, Peripheral, Venous, Specialty)
+
 ## Recent Changes
+- 2026-01-10: Implemented two-stage retrieval architecture with SelectGuidelinesTool, updated ConsultGuidelineTool (dynamic dataset_ids), and CiteRecommendationsTool for exact evidence citations
+- 2026-01-10: Added config/guidelines.php with full registry of 14 guideline datasets organized by category with key concepts
+- 2026-01-10: Updated VascularExpertAgent with multi-step workflow: select → retrieve → synthesize → cite
 - 2026-01-09: Added Python FastAPI bridge service (ragflow_service/) for reranking and knowledge graph support via official RAGFlow SDK patterns
 - 2026-01-09: Laravel RAGFlowClient now supports bridge mode (RAGFLOW_USE_BRIDGE=true) with shared secret authentication
 - 2026-01-09: Added dedicated RAGFlow logging channel - logs to storage/logs/ragflow-YYYY-MM-DD.log with full payload (dataset_ids, all params), response status, chunk count, timing
