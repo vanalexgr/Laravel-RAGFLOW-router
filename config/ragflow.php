@@ -22,6 +22,8 @@ return [
     ],
 
     'datasets' => [
-        'esvs_guidelines' => '4fff3622eb1b11f09021f2381272676b',
+        'esvs_trauma_2025' => '8f58aeadec9411f0a38066bc68590b9b',
+        'esvs_trauma_recs' => '4fff3622eb1b11f09021f2381272676b',
+        'default' => ['8f58aeadec9411f0a38066bc68590b9b', '4fff3622eb1b11f09021f2381272676b'],
     ],
 ];

@@ -1,0 +1,157 @@
+Got it — if Replit can only touch **Laravel**, then you **cannot fix KG** from the client side, because the server is currently *crashing inside the KG path*:
+
+> `AttributeError: 'LLMBundle' object has no attribute 'chat'`
+> That error happens inside `/ragflow/graphrag/search.py` on the RAGFlow server, so **any request that triggers KG query-rewrite will fail and KG will effectively be bypassed** (entities/relations empty).
+
+What Replit *can* do is:
+
+1. **Stop triggering the broken KG rewrite path**, while
+2. Keeping retrieval stable, and
+3. Still support reranking correctly.
+
+Below are the clear Laravel-only instructions.
+
+---
+
+## 1) Fix reranking (Laravel-only) ✅
+
+You already discovered the correct UI value:
+
+```json
+"rerank_id": "Cohere-rerank-v3-5-rdrns___OpenAI-API@OpenAI-API-Compatible"
+```
+
+**Instruction to Replit:**
+
+* Remove `rerank_model`
+* Send `rerank_id` exactly as above.
+
+This is the only safe rerank switch you can do from Laravel.
+
+---
+
+## 2) Disable KG from Laravel until the server is fixed ✅
+
+Your RAGFlow server currently errors when it tries KG query rewrite (entity extraction). Even though the endpoint still returns 200, the KG part is dead:
+
+* `Retrieved entities: []`
+* `Retrieved relations: []`
+* `Retrieved N-hops: []`
+
+**Instruction to Replit:**
+
+* Always send `use_kg: false` (or don’t send it at all if the server treats missing as false).
+* Also remove any Laravel flags that try to force GraphRAG:
+
+  * `use_knowledge_graph`
+  * `use_kg: true`
+  * anything TOC-related if not proven by UI payload
+
+**Why:** KG is not going to work until the RAGFlow container is updated/ patched. Laravel cannot fix that.
+
+---
+
+## 3) Use the UI-matching retrieval schema (Laravel-only improvement)
+
+You captured the UI endpoint:
+
+`POST https://ragflow.clinicalguidelines.io/v1/chunk/retrieval_test`
+
+and the UI payload includes:
+
+* `kb_ids` / `kb_id`
+* `use_kg`
+* `rerank_id`
+* `page`, `size`, `highlight`, `meta_data_filter`
+
+**Instruction to Replit:**
+
+* Call the **same endpoint the UI uses** (recommended), OR keep `/api/v1/retrieval` if that’s what your bridge expects.
+* If calling `/v1/chunk/retrieval_test`, Laravel should send:
+
+```json
+{
+  "question": "...",
+  "kb_ids": ["<KB_ID_FROM_UI>"],
+  "top_k": 1024,
+  "size": 10,
+  "page": 1,
+  "similarity_threshold": 0.2,
+  "vector_similarity_weight": 0.3,
+  "highlight": true,
+  "meta_data_filter": {},
+  "rerank_id": "Cohere-rerank-v3-5-rdrns___OpenAI-API@OpenAI-API-Compatible",
+  "use_kg": false
+}
+```
+
+### Critical: dataset_id vs kb_id
+
+Your Laravel logs use `dataset_ids: ["4fff..."]` but UI uses `kb_id: "8f58..."`.
+
+**Instruction to Replit:**
+
+* Store and use the **KB id** that the UI shows (`kb_id`) for that dataset.
+* Do **not** assume `dataset_id == kb_id`.
+
+If you don’t have a mapping table yet, implement a simple config map in Laravel (env or DB):
+
+* `ESVS_TRAUMA_2025_DATASET_ID => 4fff...`
+* `ESVS_TRAUMA_2025_KB_ID => 8f58...`
+
+Then use KB_ID for `/v1/chunk/retrieval_test`.
+
+---
+
+## 4) Confirm reranking is really happening (Laravel-only test)
+
+Because the server response doesn’t clearly include a rerank score, verify reranking like this:
+
+**Instruction to Replit:**
+
+* Run the same query twice:
+
+  1. with `rerank_id` omitted
+  2. with `rerank_id` set
+* Log the **top 10 chunk IDs** in both cases.
+
+If order changes → reranking works.
+If identical → reranking is not applied server-side.
+
+This requires only Laravel logging.
+
+---
+
+## 5) What you cannot do from Laravel
+
+* You cannot make KG work while RAGFlow throws `LLMBundle.chat` error.
+* You cannot “enable TOC” unless the UI payload shows a real `use_toc` flag for the same endpoint (your captured UI payload didn’t include it).
+
+---
+
+# The exact “Replit instruction” you can paste
+
+**Do these changes in Laravel:**
+
+1. Replace `rerank_model` with:
+
+   * `rerank_id = "Cohere-rerank-v3-5-rdrns___OpenAI-API@OpenAI-API-Compatible"`
+
+2. Disable KG in requests until server is fixed:
+
+   * send `use_kg = false` (or omit it)
+
+3. Prefer calling the same endpoint/schema as RAGFlow UI:
+
+   * POST `https://ragflow.clinicalguidelines.io/v1/chunk/retrieval_test`
+   * Use `kb_ids` instead of `dataset_ids`
+   * Include `page`, `size`, `highlight`, and `meta_data_filter: {}`
+
+4. Add rerank verification logs:
+
+   * Run one query with rerank_id unset and one with rerank_id set
+   * Log top 10 chunk IDs from each response so we can confirm reranking changes ordering.
+
+---
+
+If you paste your **Laravel config/environment** values for the dataset and the KB (the `4fff...` and the `8f58...`), I can tell you exactly which one should be used for which endpoint so Replit doesn’t accidentally query the wrong collection.
