@@ -206,4 +206,140 @@ class OpenAICompatibleController extends Controller
             'X-Accel-Buffering' => 'no',
         ]);
     }
+
+    /**
+     * Stream response with progress events (for real-time streaming).
+     * Shows processing steps before the final response.
+     */
+    public function chatCompletionsWithProgress(Request $request): StreamedResponse
+    {
+        $validated = $request->validate([
+            'model' => 'required|string',
+            'messages' => 'required|array',
+            'messages.*.role' => 'required|string|in:system,user,assistant',
+            'messages.*.content' => 'required|string',
+        ]);
+
+        $model = $validated['model'];
+        $messages = $validated['messages'];
+
+        $userMessage = '';
+        $conversationContext = [];
+        
+        foreach ($messages as $msg) {
+            if ($msg['role'] === 'user') {
+                $userMessage = $msg['content'];
+            }
+            if ($msg['role'] !== 'system') {
+                $conversationContext[] = $msg;
+            }
+        }
+
+        $contextString = '';
+        if (count($conversationContext) > 1) {
+            $history = array_slice($conversationContext, 0, -1);
+            $contextString = "CONVERSATION HISTORY:\n";
+            foreach ($history as $msg) {
+                $role = strtoupper($msg['role']);
+                $contextString .= "[{$role}]: {$msg['content']}\n\n";
+            }
+            $contextString .= "---\nCURRENT QUESTION:\n";
+        }
+        
+        $fullPrompt = $contextString . $userMessage;
+        $sessionId = $request->header('X-Session-ID', 'openwebui-session');
+        $completionId = 'chatcmpl-' . Str::random(29);
+
+        return response()->stream(function () use ($fullPrompt, $sessionId, $completionId, $model) {
+            if (ob_get_level()) {
+                ob_end_clean();
+            }
+
+            // Step 1: Selecting guidelines
+            $this->emitProgressEvent($completionId, $model, '🔍 Selecting relevant guidelines...');
+            usleep(200000);
+
+            // Step 2: Querying retrieval engine
+            $this->emitProgressEvent($completionId, $model, '📚 Querying retrieval engine...');
+            usleep(200000);
+
+            // Step 3: Knowledge Graph expansion
+            $this->emitProgressEvent($completionId, $model, '🕸️ Knowledge Graph expansion...');
+            usleep(200000);
+
+            // Step 4: Reranking
+            $this->emitProgressEvent($completionId, $model, '📊 Reranking retrieved knowledge...');
+            usleep(200000);
+
+            try {
+                $response = \Vizra\VizraADK\Facades\Agent::run('vascular_expert', $fullPrompt, $sessionId);
+                
+                // Step 5: Drafting answer
+                $this->emitProgressEvent($completionId, $model, '✍️ Drafting answer...');
+                usleep(200000);
+
+                // Clear progress and stream actual response
+                $chunkSize = 50;
+                $chunks = mb_str_split($response, $chunkSize);
+                
+                foreach ($chunks as $textChunk) {
+                    $chunk = [
+                        'id' => $completionId,
+                        'object' => 'chat.completion.chunk',
+                        'created' => time(),
+                        'model' => $model,
+                        'choices' => [
+                            [
+                                'index' => 0,
+                                'delta' => ['content' => $textChunk],
+                                'finish_reason' => null,
+                            ],
+                        ],
+                    ];
+                    echo "data: " . json_encode($chunk) . "\n\n";
+                    flush();
+                    usleep(10000);
+                }
+
+            } catch (\Exception $e) {
+                $this->emitProgressEvent($completionId, $model, '❌ Error: ' . $e->getMessage());
+            }
+
+            // Final chunk
+            echo "data: " . json_encode([
+                'id' => $completionId,
+                'object' => 'chat.completion.chunk',
+                'created' => time(),
+                'model' => $model,
+                'choices' => [['index' => 0, 'delta' => [], 'finish_reason' => 'stop']],
+            ]) . "\n\n";
+            echo "data: [DONE]\n\n";
+            flush();
+
+        }, 200, [
+            'Content-Type' => 'text/event-stream',
+            'Cache-Control' => 'no-cache',
+            'Connection' => 'keep-alive',
+            'X-Accel-Buffering' => 'no',
+        ]);
+    }
+
+    protected function emitProgressEvent(string $completionId, string $model, string $status): void
+    {
+        $event = [
+            'id' => $completionId,
+            'object' => 'chat.completion.chunk',
+            'created' => time(),
+            'model' => $model,
+            'choices' => [
+                [
+                    'index' => 0,
+                    'delta' => ['content' => "_{$status}_\n\n"],
+                    'finish_reason' => null,
+                ],
+            ],
+        ];
+        echo "data: " . json_encode($event) . "\n\n";
+        flush();
+    }
 }
