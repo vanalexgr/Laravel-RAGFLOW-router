@@ -114,6 +114,7 @@ All 14 guideline datasets are registered in `config/guidelines.php` with:
 - Category groupings (Aortic, Peripheral, Venous, Specialty)
 
 ## Recent Changes
+- 2026-01-10: Finalized V7.7 prompt implementation - added mandatory three-section format requirement (Clinical Synthesis, Recommendations, Supporting Statements) and improved CiteRecommendationsTool filter with metadata field fallback
 - 2026-01-10: Implemented V7.7 prompt engineering for VascularExpertAgent - strict verbatim rules, citation sanitizer, clean response architecture
 - 2026-01-10: Parallel multi-dataset retrieval via `/retrieve_multi` bridge endpoint using asyncio.gather - reduces latency from ~7s to ~5.9s
 - 2026-01-10: Lowered default top_k from 1024 to 256 - reranker handles filtering, reduces search+rerank load
