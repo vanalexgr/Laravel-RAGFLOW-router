@@ -9,32 +9,56 @@ use Vizra\VizraADK\System\AgentContext;
 
 class SelectGuidelinesTool implements ToolInterface
 {
-    protected const HARD_RULES = [
-        'carotid_exclusive' => [
-            'triggers' => ['carotid endarterectomy', 'cea', 'carotid stenosis', 'carotid stenting', 'cas', 'tcar', 'tia', 'stroke prevention', 'symptomatic stenosis', 'asymptomatic stenosis'],
-            'required' => 'carotid_vertebral',
-            'exclude_unless_explicit' => ['venous_thrombosis', 'chronic_venous_disease', 'descending_thoracic_aorta', 'abdominal_aortic_aneurysm'],
+    /**
+     * ADDITIVE hard rules: these force-include guidelines but DO NOT exclude others.
+     * Each rule adds a high boost to the forced guideline(s).
+     */
+    protected const FORCE_INCLUDE_RULES = [
+        'carotid' => [
+            'triggers' => ['carotid', 'cea', 'cas ', 'tcar', 'carotid endarterectomy', 'carotid stenting', 'carotid stenosis'],
+            'force_keys' => ['carotid_vertebral'],
+            'boost' => 50,
         ],
-        'aaa_exclusive' => [
-            'triggers' => ['aaa', 'abdominal aortic aneurysm', 'evar', 'open repair aortic', 'endoleak'],
-            'required' => 'abdominal_aortic_aneurysm',
-            'exclude_unless_explicit' => ['carotid_vertebral', 'venous_thrombosis'],
+        'aaa' => [
+            'triggers' => ['abdominal aortic aneurysm', 'aaa', 'evar', 'endoleak', 'aortic aneurysm screening'],
+            'force_keys' => ['abdominal_aortic_aneurysm'],
+            'boost' => 50,
         ],
-        'trauma_exclusive' => [
-            'triggers' => ['trauma', 'injury', 'reboa', 'mangled extremity', 'hemorrhage control', 'penetrating', 'blunt vascular'],
-            'required' => 'vascular_trauma',
-            'exclude_unless_explicit' => [],
+        'trauma' => [
+            'triggers' => ['trauma', 'reboa', 'mangled extremity', 'vascular injury', 'hemorrhage control', 'penetrating', 'blunt vascular'],
+            'force_keys' => ['vascular_trauma'],
+            'boost' => 50,
+        ],
+        'pad' => [
+            'triggers' => ['peripheral arterial disease', 'pad', 'asymptomatic pad', 'abi screening', 'ankle brachial index', 'claudication', 'lead', 'lower extremity arterial', 'intermittent claudication', 'walking distance'],
+            'force_keys' => ['asymptomatic_pad'],
+            'boost' => 50,
+        ],
+        'clti' => [
+            'triggers' => ['critical limb', 'clti', 'cli', 'rest pain', 'tissue loss', 'gangrene', 'limb salvage', 'wiwi', 'angiosome'],
+            'force_keys' => ['clti'],
+            'boost' => 50,
+        ],
+        'dvt' => [
+            'triggers' => ['dvt', 'deep vein thrombosis', 'pulmonary embolism', 'pe ', 'ivc filter', 'post-thrombotic'],
+            'force_keys' => ['venous_thrombosis'],
+            'boost' => 50,
+        ],
+        'thoracic' => [
+            'triggers' => ['type b dissection', 'tbad', 'tevar', 'thoracic aorta', 'descending aorta', 'intramural hematoma'],
+            'force_keys' => ['descending_thoracic_aorta'],
+            'boost' => 50,
         ],
     ];
 
-    protected const MIN_SCORE_THRESHOLD = 6;
-    protected const HIGH_CONFIDENCE_THRESHOLD = 15;
+    protected const MIN_SCORE_THRESHOLD = 5;
+    protected const MAX_GUIDELINES = 3;
 
     public function definition(): array
     {
         return [
             'name' => 'select_guidelines',
-            'description' => 'FIRST STEP: Analyze the clinical question and select 1-2 most relevant ESVS guideline datasets. Returns guideline KEYS to use with consult_guideline tool. Be conservative - only select guidelines that are clearly relevant.',
+            'description' => 'FIRST STEP: Analyze the clinical question and select 1-3 most relevant ESVS guideline datasets. Returns guideline KEYS to use with consult_guideline tool. Handles multi-intent queries (e.g., "AAA AND PAD screening").',
             'parameters' => [
                 'type' => 'object',
                 'properties' => [
@@ -58,81 +82,128 @@ class SelectGuidelinesTool implements ToolInterface
 
         $questionLower = strtolower($question);
         $categories = config('guidelines.categories', []);
+        $registry = $this->buildGuidelineRegistry($categories);
+
+        // Step 1: Detect forced guidelines (additive - can be multiple)
+        $forcedKeys = $this->detectForcedGuidelines($questionLower);
         
-        $hardRuleResult = $this->applyHardRules($questionLower);
-        $requiredGuideline = $hardRuleResult['required'];
-        $excludedGuidelines = $hardRuleResult['excluded'];
-
-        $matches = [];
-        $guidelineRegistry = $this->buildGuidelineRegistry($categories);
-
+        // Step 2: Score ALL guidelines normally
+        $candidates = [];
         foreach ($categories as $categoryKey => $category) {
             foreach ($category['guidelines'] as $guidelineKey => $guideline) {
-                if (in_array($guidelineKey, $excludedGuidelines)) {
-                    continue;
-                }
-
                 $score = $this->calculateRelevanceScore($questionLower, $guideline['key_concepts']);
+                $matchedConcepts = $this->getMatchedConcepts($questionLower, $guideline['key_concepts']);
                 
-                if ($guidelineKey === $requiredGuideline) {
-                    $score += 50;
-                }
-
-                if ($score >= self::MIN_SCORE_THRESHOLD) {
-                    $matches[] = [
-                        'key' => $guidelineKey,
-                        'id' => $guideline['id'],
-                        'name' => $guideline['name'],
-                        'category' => $category['name'],
-                        'score' => $score,
-                        'matched_concepts' => $this->getMatchedConcepts($questionLower, $guideline['key_concepts']),
-                        'is_required' => $guidelineKey === $requiredGuideline,
-                    ];
-                }
+                $candidates[$guidelineKey] = [
+                    'key' => $guidelineKey,
+                    'id' => $guideline['id'],
+                    'name' => $guideline['name'],
+                    'category' => $category['name'],
+                    'base_score' => $score,
+                    'score' => $score,
+                    'matched_concepts' => $matchedConcepts,
+                    'is_forced' => false,
+                ];
             }
         }
 
-        usort($matches, fn($a, $b) => $b['score'] <=> $a['score']);
-
-        $maxGuidelines = 2;
-        if (!empty($matches) && $matches[0]['score'] >= self::HIGH_CONFIDENCE_THRESHOLD) {
-            $maxGuidelines = 1;
-            if (count($matches) > 1 && $matches[1]['score'] >= self::HIGH_CONFIDENCE_THRESHOLD * 0.7) {
-                $maxGuidelines = 2;
+        // Step 3: Apply force-include boosts (ADDITIVE, not exclusive)
+        foreach ($forcedKeys as $forcedKey => $boost) {
+            if (isset($candidates[$forcedKey])) {
+                $candidates[$forcedKey]['score'] += $boost;
+                $candidates[$forcedKey]['is_forced'] = true;
             }
         }
 
-        $selected = array_slice($matches, 0, $maxGuidelines);
+        // Step 4: Sort by score descending
+        uasort($candidates, fn($a, $b) => $b['score'] <=> $a['score']);
+
+        // Step 5: Select top N, but ensure all forced keys are included
+        $selected = [];
+        $forcedIncluded = [];
+        
+        // First, add forced keys (they have highest priority)
+        foreach ($candidates as $key => $candidate) {
+            if ($candidate['is_forced'] && $candidate['score'] >= self::MIN_SCORE_THRESHOLD) {
+                $selected[$key] = $candidate;
+                $forcedIncluded[$key] = true;
+            }
+        }
+        
+        // Then add top scorers up to limit
+        foreach ($candidates as $key => $candidate) {
+            if (count($selected) >= self::MAX_GUIDELINES) {
+                break;
+            }
+            if (!isset($selected[$key]) && $candidate['score'] >= self::MIN_SCORE_THRESHOLD) {
+                $selected[$key] = $candidate;
+            }
+        }
+
+        // Build observability data
+        $top5Candidates = array_slice($candidates, 0, 5, true);
+        $candidateScoresTop5 = array_map(fn($c) => [
+            'key' => $c['key'],
+            'score' => $c['score'],
+            'base_score' => $c['base_score'],
+            'forced' => $c['is_forced'],
+            'matched_concepts' => array_slice($c['matched_concepts'], 0, 5), // Cap at 5 for log size
+        ], $top5Candidates);
+
+        // Log comprehensive debug info
+        Log::info("SelectGuidelinesTool: Analysis complete", [
+            'question' => $question,
+            'detected_intents' => count($forcedKeys) > 1 ? 'MULTI-INTENT' : 'SINGLE-INTENT',
+            'forced_keys' => array_keys($forcedKeys),
+            'candidate_scores_top5' => $candidateScoresTop5,
+            'selected_count' => count($selected),
+            'selected_keys' => array_keys($selected),
+            'registry_keys' => array_keys($registry),
+        ]);
 
         if (empty($selected)) {
-            Log::warning("SelectGuidelinesTool: No matching guidelines for question", ['question' => $question]);
             return json_encode([
                 'selected_guidelines' => [],
                 'guideline_keys' => [],
                 'message' => 'No specific guideline match found. Use general vascular surgery knowledge or ask for clarification.',
                 'available_categories' => array_map(fn($c) => $c['name'], $categories),
+                'debug' => [
+                    'forced_keys' => array_keys($forcedKeys),
+                    'top5_scores' => $candidateScoresTop5,
+                ],
             ]);
         }
 
-        $guidelineKeys = array_column($selected, 'key');
+        $guidelineKeys = array_keys($selected);
 
-        Log::info("SelectGuidelinesTool: Selected guidelines", [
-            'question' => $question,
-            'selected' => array_map(fn($s) => ['key' => $s['key'], 'name' => $s['name'], 'score' => $s['score']], $selected),
-            'hard_rule_applied' => $requiredGuideline ?? 'none',
-            'excluded_by_hard_rule' => $excludedGuidelines,
-        ]);
+        // Format output
+        $isMultiIntent = count($forcedKeys) > 1;
+        $output = "SELECTED GUIDELINES FOR RETRIEVAL";
+        if ($isMultiIntent) {
+            $output .= " [MULTI-INTENT QUERY DETECTED]";
+        }
+        $output .= "\n" . str_repeat("=", 60) . "\n\n";
 
-        $output = "SELECTED GUIDELINES FOR RETRIEVAL:\n";
-        $output .= str_repeat("=", 50) . "\n\n";
-
-        foreach ($selected as $i => $match) {
-            $num = $i + 1;
-            $requiredTag = $match['is_required'] ? ' [REQUIRED BY HARD RULE]' : '';
-            $output .= "{$num}. {$match['name']} ({$match['category']}){$requiredTag}\n";
+        $num = 1;
+        foreach ($selected as $key => $match) {
+            $forcedTag = $match['is_forced'] ? ' [FORCED by hard rule]' : '';
+            $output .= "{$num}. {$match['name']} ({$match['category']}){$forcedTag}\n";
             $output .= "   Guideline Key: {$match['key']}\n";
-            $output .= "   Relevance Score: {$match['score']}\n";
-            $output .= "   Matched Concepts: " . implode(', ', $match['matched_concepts']) . "\n\n";
+            $output .= "   Score: {$match['score']} (base: {$match['base_score']})\n";
+            if (!empty($match['matched_concepts'])) {
+                $output .= "   Matched Concepts: " . implode(', ', $match['matched_concepts']) . "\n";
+            }
+            $output .= "\n";
+            $num++;
+        }
+
+        // Debug section
+        $output .= "DEBUG INFO:\n";
+        $output .= "  Forced Keys: " . (empty($forcedKeys) ? 'none' : implode(', ', array_keys($forcedKeys))) . "\n";
+        $output .= "  Top 5 Candidates:\n";
+        foreach ($candidateScoresTop5 as $c) {
+            $fTag = $c['forced'] ? ' [F]' : '';
+            $output .= "    - {$c['key']}: {$c['score']} (base: {$c['base_score']}){$fTag}\n";
         }
 
         $output .= "\nGUIDELINE_KEYS: " . json_encode($guidelineKeys) . "\n";
@@ -141,20 +212,38 @@ class SelectGuidelinesTool implements ToolInterface
         return $output;
     }
 
-    protected function applyHardRules(string $question): array
+    /**
+     * Detect which guidelines should be force-included based on trigger words.
+     * Returns array of [guideline_key => boost_value]
+     */
+    protected function detectForcedGuidelines(string $question): array
     {
-        foreach (self::HARD_RULES as $ruleName => $rule) {
+        $forced = [];
+
+        foreach (self::FORCE_INCLUDE_RULES as $ruleName => $rule) {
             foreach ($rule['triggers'] as $trigger) {
-                if (str_contains($question, $trigger)) {
-                    return [
-                        'required' => $rule['required'],
-                        'excluded' => $rule['exclude_unless_explicit'],
-                    ];
+                // Use word boundary for short triggers to avoid false matches
+                if (strlen($trigger) <= 4) {
+                    // Short trigger - use word boundary regex
+                    if (preg_match('/\b' . preg_quote($trigger, '/') . '\b/i', $question)) {
+                        foreach ($rule['force_keys'] as $key) {
+                            $forced[$key] = $rule['boost'];
+                        }
+                        break; // Found match for this rule, move to next rule
+                    }
+                } else {
+                    // Longer trigger - simple contains
+                    if (str_contains($question, $trigger)) {
+                        foreach ($rule['force_keys'] as $key) {
+                            $forced[$key] = $rule['boost'];
+                        }
+                        break;
+                    }
                 }
             }
         }
 
-        return ['required' => null, 'excluded' => []];
+        return $forced;
     }
 
     protected function buildGuidelineRegistry(array $categories): array
@@ -174,15 +263,17 @@ class SelectGuidelinesTool implements ToolInterface
         foreach ($concepts as $concept) {
             $conceptLower = strtolower($concept);
             
+            // Exact phrase match
             if (str_contains($question, $conceptLower)) {
                 $score += 10;
                 continue;
             }
             
+            // Word-by-word partial match
             $words = explode(' ', $conceptLower);
             $wordMatches = 0;
             foreach ($words as $word) {
-                if (strlen($word) > 3 && str_contains($question, $word)) {
+                if (strlen($word) > 2 && str_contains($question, $word)) {
                     $wordMatches++;
                 }
             }
@@ -208,7 +299,7 @@ class SelectGuidelinesTool implements ToolInterface
             $words = explode(' ', $conceptLower);
             $wordMatches = 0;
             foreach ($words as $word) {
-                if (strlen($word) > 3 && str_contains($question, $word)) {
+                if (strlen($word) > 2 && str_contains($question, $word)) {
                     $wordMatches++;
                 }
             }
