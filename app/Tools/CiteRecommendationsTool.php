@@ -14,13 +14,17 @@ class CiteRecommendationsTool implements ToolInterface
     {
         return [
             'name' => 'cite_recommendations',
-            'description' => 'FINAL STEP: After synthesizing your answer, use this tool to retrieve exact recommendation citations from the structured recommendations dataset. Returns verbatim recommendation text, number, guideline name, class, and level of evidence. Use this to provide a "Hard Evidence" section.',
+            'description' => 'FINAL STEP: After synthesizing your answer, use this tool to retrieve exact recommendation citations. Filters by guideline name to prevent cross-guideline leakage. Returns verbatim recommendation text, number, guideline name, class, and level.',
             'parameters' => [
                 'type' => 'object',
                 'properties' => [
                     'search_terms' => [
                         'type' => 'string',
-                        'description' => 'Key clinical terms from your synthesized answer to find matching recommendations (e.g., "carotid endarterectomy symptomatic 14 days", "AAA 5.5cm repair threshold")',
+                        'description' => 'Key clinical terms from your synthesized answer (e.g., "carotid endarterectomy symptomatic 14 days")',
+                    ],
+                    'guideline_filter' => [
+                        'type' => 'string',
+                        'description' => 'Guideline name to filter by (e.g., "ESVS_CAROTID", "Carotid & Vertebral", "Vascular Trauma"). Must match the guideline used in synthesis step.',
                     ],
                 ],
                 'required' => ['search_terms'],
@@ -31,6 +35,7 @@ class CiteRecommendationsTool implements ToolInterface
     public function execute(array $arguments, AgentContext $context, AgentMemory $memory): string
     {
         $searchTerms = $arguments['search_terms'] ?? '';
+        $guidelineFilter = $arguments['guideline_filter'] ?? null;
 
         if (empty($searchTerms)) {
             return json_encode(['error' => 'Search terms are required to cite recommendations.']);
@@ -41,6 +46,7 @@ class CiteRecommendationsTool implements ToolInterface
 
         Log::info("CiteRecommendationsTool: Querying recommendations dataset", [
             'search_terms' => $searchTerms,
+            'guideline_filter' => $guidelineFilter,
             'dataset_id' => $recommendationsDatasetId,
         ]);
 
@@ -48,7 +54,7 @@ class CiteRecommendationsTool implements ToolInterface
             $retrievalParams = [
                 'question' => $searchTerms,
                 'top_k' => 1024,
-                'size' => 5,
+                'size' => 10,
                 'page' => 1,
                 'similarity_threshold' => $retrievalConfig['similarity_threshold'] ?? 0.2,
                 'keyword' => true,
@@ -62,15 +68,28 @@ class CiteRecommendationsTool implements ToolInterface
 
             Log::channel('ragflow')->info("CiteRecommendationsTool: Retrieval payload", [
                 'dataset_ids' => [$recommendationsDatasetId],
+                'guideline_filter' => $guidelineFilter,
                 'params' => $retrievalParams,
             ]);
 
             $response = RAGFlow::datasets()->retrieve([$recommendationsDatasetId], $retrievalParams);
 
-            Log::info("CiteRecommendationsTool: RAGFlow returned " . count($response['data']['chunks'] ?? []) . " chunks");
+            $allChunks = $response['data']['chunks'] ?? [];
+            Log::info("CiteRecommendationsTool: RAGFlow returned " . count($allChunks) . " chunks before filtering");
 
-            if (!empty($response['data']['chunks'])) {
-                return $this->formatCitations($response['data']['chunks']);
+            $filteredChunks = $this->filterByGuideline($allChunks, $guidelineFilter);
+            Log::info("CiteRecommendationsTool: After guideline filter: " . count($filteredChunks) . " chunks");
+
+            if (!empty($filteredChunks)) {
+                return $this->formatCitations($filteredChunks, $guidelineFilter);
+            }
+
+            if (!empty($allChunks) && !empty($guidelineFilter)) {
+                return "NO MATCHING RECOMMENDATIONS FOR GUIDELINE: {$guidelineFilter}\n\n" .
+                       "Retrieved " . count($allChunks) . " recommendations but none matched the specified guideline filter.\n" .
+                       "This may indicate the guideline dataset has different naming conventions.\n\n" .
+                       "Proceeding with unfiltered results for reference:\n\n" .
+                       $this->formatCitations(array_slice($allChunks, 0, 3), null);
             }
 
             return "NO MATCHING RECOMMENDATIONS FOUND\n\nThe recommendations dataset did not return matches for: {$searchTerms}\n\nNote: The synthesized answer should still be based on the guideline content retrieved in the previous step.";
@@ -81,9 +100,61 @@ class CiteRecommendationsTool implements ToolInterface
         }
     }
 
-    protected function formatCitations(array $chunks): string
+    protected function filterByGuideline(array $chunks, ?string $guidelineFilter): array
     {
-        $output = "HARD EVIDENCE - EXACT RECOMMENDATION CITATIONS\n";
+        if (empty($guidelineFilter)) {
+            return $chunks;
+        }
+
+        $filterLower = strtolower($guidelineFilter);
+        $filterPatterns = $this->buildFilterPatterns($filterLower);
+
+        return array_filter($chunks, function ($chunk) use ($filterPatterns) {
+            $content = strtolower($chunk['content'] ?? '');
+            $docName = strtolower($chunk['document_keyword'] ?? $chunk['doc_name'] ?? '');
+            
+            foreach ($filterPatterns as $pattern) {
+                if (str_contains($content, $pattern) || str_contains($docName, $pattern)) {
+                    return true;
+                }
+            }
+            return false;
+        });
+    }
+
+    protected function buildFilterPatterns(string $filter): array
+    {
+        $patterns = [$filter];
+        
+        $mappings = [
+            'carotid' => ['carotid', 'esvs_carotid', 'carotid_vertebral', 'stroke', 'cea'],
+            'trauma' => ['trauma', 'esvs_trauma', 'vascular_trauma', 'injury'],
+            'aortic' => ['aortic', 'aaa', 'evar', 'abdominal_aortic'],
+            'thoracic' => ['thoracic', 'tevar', 'tbad', 'descending'],
+            'venous' => ['venous', 'dvt', 'chronic_venous', 'varicose'],
+            'pad' => ['pad', 'peripheral', 'claudication', 'limb_ischemia'],
+            'clti' => ['clti', 'cli', 'critical_limb', 'limb_threatening'],
+            'access' => ['access', 'dialysis', 'fistula', 'avf'],
+            'graft' => ['graft_infection', 'prosthetic', 'magic'],
+            'antithrombotic' => ['antithrombotic', 'doac', 'warfarin', 'anticoagulation'],
+        ];
+
+        foreach ($mappings as $key => $aliases) {
+            foreach ($aliases as $alias) {
+                if (str_contains($filter, $alias) || str_contains($alias, $filter)) {
+                    $patterns = array_merge($patterns, $aliases);
+                    break 2;
+                }
+            }
+        }
+
+        return array_unique($patterns);
+    }
+
+    protected function formatCitations(array $chunks, ?string $guidelineFilter): string
+    {
+        $filterNote = $guidelineFilter ? " (filtered by: {$guidelineFilter})" : "";
+        $output = "HARD EVIDENCE - EXACT RECOMMENDATION CITATIONS{$filterNote}\n";
         $output .= str_repeat("=", 60) . "\n\n";
 
         foreach ($chunks as $index => $chunk) {

@@ -14,17 +14,17 @@ class ConsultGuidelineTool implements ToolInterface
     {
         return [
             'name' => 'consult_guideline',
-            'description' => 'REQUIRED: Always use this tool to consult ESVS vascular surgery guidelines before answering any clinical question. Queries official guideline datasets and returns evidence-based recommendations.',
+            'description' => 'REQUIRED: Consult ESVS vascular surgery guidelines. Queries official guideline datasets with Knowledge Graph enabled and returns evidence-based recommendations.',
             'parameters' => [
                 'type' => 'object',
                 'properties' => [
                     'topic' => [
                         'type' => 'string',
-                        'description' => 'The complete search query including guideline topic and clinical question (e.g., "Carotid stenosis management symptomatic", "Aortic aneurysm repair threshold", "Trauma carotid injury blunt")',
+                        'description' => 'The complete search query including guideline topic and clinical question (e.g., "Carotid stenosis management symptomatic", "Aortic aneurysm repair threshold")',
                     ],
-                    'dataset_ids' => [
+                    'guideline_keys' => [
                         'type' => 'string',
-                        'description' => 'JSON array of dataset IDs from select_guidelines tool output (e.g., ["be20b02c...", "fd679d82..."]). If not provided, queries all guideline datasets.',
+                        'description' => 'JSON array of guideline keys from select_guidelines output (e.g., ["carotid_vertebral", "vascular_trauma"]). If not provided, queries all guideline datasets.',
                     ],
                 ],
                 'required' => ['topic'],
@@ -41,19 +41,17 @@ class ConsultGuidelineTool implements ToolInterface
         }
 
         $query = $topic;
-
         $retrievalConfig = config('ragflow.retrieval', []);
         
-        $datasetIdsParam = $arguments['dataset_ids'] ?? null;
-        if (!empty($datasetIdsParam)) {
-            $decoded = json_decode($datasetIdsParam, true);
-            $datasetIds = is_array($decoded) ? $decoded : config('guidelines.all_guideline_datasets', []);
-        } else {
-            $datasetIds = config('guidelines.all_guideline_datasets', []);
-        }
+        $datasetIds = $this->resolveDatasetIds($arguments['guideline_keys'] ?? null);
+        $selectedGuidelineNames = $this->resolveGuidelineNames($arguments['guideline_keys'] ?? null);
         
-        $recommendationsDatasetId = config('guidelines.recommendations_dataset');
-        $datasetIds = array_filter($datasetIds, fn($id) => $id !== $recommendationsDatasetId);
+        if (empty($datasetIds)) {
+            Log::error("ConsultGuidelineTool: No valid dataset IDs resolved", [
+                'guideline_keys_input' => $arguments['guideline_keys'] ?? null,
+            ]);
+            return json_encode(['error' => 'No valid guideline datasets found for the provided keys.']);
+        }
 
         $topK = $retrievalConfig['top_k'] ?? 1024;
         $size = $retrievalConfig['size'] ?? 10;
@@ -67,10 +65,10 @@ class ConsultGuidelineTool implements ToolInterface
 
         Log::info("ConsultGuidelineTool: Querying RAGFlow", [
             'query' => $query,
+            'dataset_ids' => $datasetIds,
+            'guideline_names' => $selectedGuidelineNames,
             'top_k' => $topK,
             'size' => $size,
-            'similarity_threshold' => $similarityThreshold,
-            'keyword_mode' => $keywordMode,
             'rerank_id' => $rerankId,
             'use_kg' => $useKg,
         ]);
@@ -97,20 +95,29 @@ class ConsultGuidelineTool implements ToolInterface
             
             Log::channel('ragflow')->info("ConsultGuidelineTool: Full retrieval payload", [
                 'dataset_ids' => $datasetIds,
+                'dataset_ids_type' => gettype($datasetIds),
+                'dataset_ids_count' => count($datasetIds),
                 'params' => $retrievalParams,
             ]);
+
+            if (!is_array($datasetIds) || empty($datasetIds)) {
+                throw new \InvalidArgumentException("dataset_ids must be a non-empty array, got: " . gettype($datasetIds));
+            }
 
             $response = RAGFlow::datasets()->retrieve($datasetIds, $retrievalParams);
 
             Log::info("ConsultGuidelineTool: RAGFlow returned " . count($response['data']['chunks'] ?? []) . " chunks");
 
             if (!empty($response['data']['chunks'])) {
-                return $this->formatRetrievalResults($response['data']['chunks'], $topic);
+                return $this->formatRetrievalResults($response['data']['chunks'], $topic, $selectedGuidelineNames);
             }
 
             if (isset($response['code']) && $response['code'] !== 0) {
                 $errorMsg = $response['message'] ?? 'Unknown error';
-                Log::warning('RAGFlow returned error: ' . $errorMsg);
+                Log::warning('RAGFlow returned error: ' . $errorMsg, [
+                    'dataset_ids' => $datasetIds,
+                    'response' => $response,
+                ]);
                 return $this->getReferenceGuidelines($topic) . "\n\n[RAGFlow Error: {$errorMsg}]";
             }
 
@@ -118,14 +125,95 @@ class ConsultGuidelineTool implements ToolInterface
             return $this->getReferenceGuidelines($topic) . "\n\n[No matching documents found in RAGFlow datasets]";
 
         } catch (\Exception $e) {
-            Log::error('RAGFlow dataset query failed: ' . $e->getMessage());
+            Log::error('RAGFlow dataset query failed: ' . $e->getMessage(), [
+                'dataset_ids' => $datasetIds,
+                'exception' => $e->getTraceAsString(),
+            ]);
             return $this->getReferenceGuidelines($topic) . "\n\n[RAGFlow temporarily unavailable: " . $e->getMessage() . "]";
         }
     }
 
-    protected function formatRetrievalResults(array $chunks, string $topic): string
+    protected function resolveDatasetIds(?string $guidelineKeysJson): array
     {
-        $output = "[SOURCE: RAGFlow Direct Dataset Retrieval - " . count($chunks) . " chunks]\n\n";
+        $registry = $this->buildGuidelineRegistry();
+        $recommendationsDatasetId = config('guidelines.recommendations_dataset');
+        
+        if (empty($guidelineKeysJson)) {
+            $allIds = config('guidelines.all_guideline_datasets', []);
+            return array_values(array_filter($allIds, fn($id) => $id !== $recommendationsDatasetId));
+        }
+
+        $keys = json_decode($guidelineKeysJson, true);
+        if (!is_array($keys)) {
+            Log::warning("ConsultGuidelineTool: Invalid guideline_keys JSON, using all datasets", [
+                'input' => $guidelineKeysJson,
+            ]);
+            $allIds = config('guidelines.all_guideline_datasets', []);
+            return array_values(array_filter($allIds, fn($id) => $id !== $recommendationsDatasetId));
+        }
+
+        $validIds = [];
+        foreach ($keys as $key) {
+            if (isset($registry[$key])) {
+                $id = $registry[$key]['id'];
+                if ($id !== $recommendationsDatasetId) {
+                    $validIds[] = $id;
+                }
+            } else {
+                Log::warning("ConsultGuidelineTool: Unknown guideline key ignored", ['key' => $key]);
+            }
+        }
+
+        if (empty($validIds)) {
+            Log::warning("ConsultGuidelineTool: No valid keys found, using all datasets");
+            $allIds = config('guidelines.all_guideline_datasets', []);
+            return array_values(array_filter($allIds, fn($id) => $id !== $recommendationsDatasetId));
+        }
+
+        return array_values(array_unique($validIds));
+    }
+
+    protected function resolveGuidelineNames(?string $guidelineKeysJson): array
+    {
+        if (empty($guidelineKeysJson)) {
+            return ['All Guidelines'];
+        }
+
+        $keys = json_decode($guidelineKeysJson, true);
+        if (!is_array($keys)) {
+            return ['All Guidelines'];
+        }
+
+        $registry = $this->buildGuidelineRegistry();
+        $names = [];
+        foreach ($keys as $key) {
+            if (isset($registry[$key])) {
+                $names[] = $registry[$key]['name'];
+            }
+        }
+
+        return empty($names) ? ['All Guidelines'] : $names;
+    }
+
+    protected function buildGuidelineRegistry(): array
+    {
+        $categories = config('guidelines.categories', []);
+        $registry = [];
+        foreach ($categories as $category) {
+            foreach ($category['guidelines'] as $key => $guideline) {
+                $registry[$key] = [
+                    'id' => $guideline['id'],
+                    'name' => $guideline['name'],
+                ];
+            }
+        }
+        return $registry;
+    }
+
+    protected function formatRetrievalResults(array $chunks, string $topic, array $guidelineNames): string
+    {
+        $guidelinesStr = implode(', ', $guidelineNames);
+        $output = "[SOURCE: RAGFlow KG Retrieval - {$guidelinesStr} - " . count($chunks) . " chunks]\n\n";
         $output .= "ESVS Guidelines - {$topic}\n";
         $output .= str_repeat("=", 60) . "\n\n";
 
@@ -147,12 +235,14 @@ class ConsultGuidelineTool implements ToolInterface
             $output .= "  Territory: {$metadata['territory']}\n";
             $output .= "  Similarity: {$metadata['similarity']}% (Vector: {$metadata['vector_similarity']}%, Term: {$metadata['term_similarity']}%)\n";
             $output .= "  Document: {$metadata['document']}\n\n";
-            $output .= "RECOMMENDATION:\n{$metadata['recommendation_text']}\n\n";
+            $output .= "CONTENT:\n{$metadata['recommendation_text']}\n\n";
         }
 
         if (strlen($output) < 100) {
             return $this->getReferenceGuidelines($topic) . "\n\n[RAGFlow returned empty content]";
         }
+
+        $output .= "\n[SELECTED_GUIDELINES: " . json_encode($guidelineNames) . "]\n";
 
         return $output;
     }
