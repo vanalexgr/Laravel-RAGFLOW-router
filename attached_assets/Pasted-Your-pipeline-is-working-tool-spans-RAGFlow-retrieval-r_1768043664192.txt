@@ -1,0 +1,172 @@
+Your pipeline is working (tool spans, RAGFlow retrieval, rerank, KG on), but the routing is **silently collapsing a 2-topic question into a 1-guideline retrieval**.
+
+### What the logs actually show
+
+1. The question clearly contains **two intents**:
+
+* “screening recommendations for **abdominal aortic aneurysm**”
+* “screening recommendations for **asymptomatic peripheral arterial disease (PAD)**”
+
+2. `select_guidelines` applies a **HARD RULE** for AAA and then returns **only**:
+
+* `abdominal_aortic_aneurysm` (score 55)
+  …and **does not include any PAD guideline key**.
+
+3. `consult_guideline` then queries **only the AAA dataset** with `screening AAA vs asymptomatic PAD`, so even if your chunking/retrieval is perfect, it can only answer the AAA half from the right source.
+
+So the bug is not RAGFlow — it’s selection/routing.
+
+---
+
+## The root cause (almost certainly)
+
+Your “hard rule” is behaving like **“exclusive lock”** (or early return) instead of **“must-include”**.
+
+Even if the hard rule forces AAA, the selector should still add PAD when PAD is strongly present.
+
+---
+
+## Fix 1 (recommended): Make hard rules additive, not exclusive
+
+Change the semantics:
+
+* **Current (bad):** “If AAA mentioned → force AAA and stop / heavily prune others”
+* **Desired:** “If AAA mentioned → force-include AAA, but continue scoring other guidelines; then select top-N”
+
+### Pseudocode for SelectGuidelinesTool
+
+```php
+$question = strtolower($question);
+
+// 1) Detect forced guidelines (hard rules) — can be multiple
+$forced = []; // array of guideline keys
+if (str_contains($question, 'abdominal aortic aneurysm') || preg_match('/\baaa\b/', $question)) {
+  $forced[] = 'abdominal_aortic_aneurysm';
+}
+
+// PAD detection (see Fix 2 below)
+if (preg_match('/\bpad\b/', $question) || str_contains($question, 'peripheral arterial disease') || str_contains($question, 'asymptomatic pad')) {
+  $forced[] = 'peripheral_arterial_disease'; // or your real key
+}
+
+// 2) Score ALL guidelines normally
+$candidates = $this->scoreAllGuidelines($question); // returns [key => score, ...]
+
+// 3) Force-include: boost forced ones but DO NOT exclude others
+foreach ($forced as $k) {
+  $candidates[$k] = max($candidates[$k] ?? 0, 999); // or add +X boost
+  $forcedSet[$k] = true;
+}
+
+// 4) Pick top-N with a cap, but always include forced
+$N = 3;
+$selected = $this->pickTopN($candidates, $N);
+
+// Ensure forced keys included
+foreach ($forced as $k) {
+  if (!in_array($k, $selected, true)) $selected[] = $k;
+}
+
+// 5) Return selected + debug (matched terms, forced keys, scores)
+return $this->formatSelection($selected, $candidates, $forced);
+```
+
+Key point: **stop producing `excluded_by_hard_rule` lists** unless you *truly* need a safety exclusion. For clinical guideline routing, hard rules should almost never *exclude* other relevant domains in a multi-intent query.
+
+---
+
+## Fix 2: You’re not matching PAD at all (missing key or missing synonyms)
+
+Your log shows only AAA got scored/selected. That usually means one of these is true:
+
+### A) PAD guideline isn’t in the selector registry
+
+Check you actually have a guideline key like:
+
+* `peripheral_arterial_disease`
+* `lower_extremity_arterial_disease`
+* `pad_2017` / `esc_esvs_pad_2017`
+* etc.
+
+If it’s not registered, it can’t be selected.
+
+### B) PAD synonyms aren’t in your keyword map
+
+Add a PAD synonym bundle to the selector:
+
+* “peripheral arterial disease”
+* “asymptomatic PAD”
+* “ABI screening”, “ankle brachial index”
+* “claudication” (even though asymptomatic is stated, users mix terms)
+* “lower extremity arterial disease”, “LEAD”
+* “atherosclerotic limb disease”
+
+If you do hybrid scoring (keyword + vector), make sure “PAD” isn’t being treated as too short/noisy and discarded.
+
+---
+
+## Fix 3: Consult should run per-guideline (and optionally per-subquestion)
+
+Once `select_guidelines` returns `["abdominal_aortic_aneurysm","peripheral_arterial_disease"]`, make `consult_guideline` iterate:
+
+* Call RAGFlow once per dataset
+* Keep results separated by guideline in the final synthesis (prevents “AAA chunks answering PAD” hallucinations)
+
+### Practical pattern
+
+* Step 1: retrieve AAA screening recs from AAA KB
+* Step 2: retrieve asymptomatic PAD screening recs from PAD KB
+* Step 3: synthesize a combined answer with headings:
+
+  * AAA screening
+  * Asymptomatic PAD screening
+  * Overlap / differences
+
+---
+
+## Fix 4: Add selector observability so this never hides again
+
+Right now you log only the final selection. Add these to the `SelectGuidelinesTool` log payload:
+
+* top 5 candidates with scores (even if not selected)
+* matched synonyms/keywords per guideline
+* whether PAD key existed in registry
+* whether the question was detected as multi-intent (simple heuristic: multiple strong matches)
+
+Example (log fields):
+
+* `candidate_scores_top5`
+* `matched_terms`
+* `forced_keys`
+* `registry_has_key.peripheral_arterial_disease=true/false`
+
+This will immediately show whether PAD was “not found” vs “found but scored low” vs “excluded by early return”.
+
+---
+
+## One more thing I noticed (minor, but worth tightening)
+
+Your retrieval payload uses:
+
+* `top_k: 1024`, `size: 10`, `chunk_count: 31`, `similarity_threshold: 0.2`, `vector_similarity_weight: 0.3`, `keyword: true`
+
+That’s okay, but once you go multi-guideline, don’t keep `top_k=1024` everywhere unless you need it; it inflates compute and can increase noise. For “screening recommendations” style questions, you usually want **high precision**:
+
+* smaller `top_k` (e.g., 128–256)
+* keep rerank on
+* maybe slightly higher similarity threshold if your chunks are dense
+
+Not required to fix the routing bug, but it will make the combined answer cleaner.
+
+---
+
+### Bottom line
+
+To answer “AAA screening AND asymptomatic PAD screening”, your router must return **at least two guideline keys**. The cleanest fix is:
+
+1. **Hard rules become “must-include” (additive)**
+2. **PAD guideline exists + PAD synonyms map**
+3. **consult_guideline runs per selected guideline**
+4. **log candidate scores + matched terms**
+
+If you paste your current `select_guidelines` rules/registry (the part that defines guideline keys + synonyms + hard-rule logic), I can rewrite it directly in the style you’re already using so it becomes multi-intent-safe without breaking your existing hard rules.
