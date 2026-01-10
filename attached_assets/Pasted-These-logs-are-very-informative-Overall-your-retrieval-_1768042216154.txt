@@ -1,0 +1,187 @@
+These logs are very informative. Overall: your retrieval plumbing is working, rerank+KG can work, but you currently have two structural problems that will keep biting you until you fix them in Laravel (not in RAGFlow).
+
+1) The early trauma queries look healthy
+
+All of these are “good”:
+
+ConsultGuidelineTool: Querying RAGFlow ... use_kg:true ... rerank_id:...
+
+RAGFlow returned 30 chunks / 31 chunks
+
+Tool span ends successfully
+
+This means:
+
+Your Laravel → Python bridge → RAGFlow /api/v1/retrieval call is correctly formed.
+
+rerank_id is accepted.
+
+use_kg:true does not crash retrieval even if KG query-rewrite has internal warnings (you saw that earlier).
+
+✅ Verdict: the baseline retrieval path is solid.
+
+2) Your router is over-selecting irrelevant guidelines
+
+This line is a red flag:
+
+Selected: Carotid & Vertebral, Venous Thrombosis (DVT/PE), Descending Thoracic Aorta
+
+For the question:
+
+“When should carotid endarterectomy be performed in symptomatic carotid stenosis…”
+
+Only Carotid & Vertebral is justified.
+
+So: your select_guidelines tool prompt is not strict enough about:
+
+limiting to 1–2 when confidence is high
+
+penalizing “broad vascular surgery” matches
+
+requiring a why and confidence per guideline
+
+✅ Fix in Laravel prompt:
+
+enforce max_guidelines=3 but require explicit justification and allow returning only 1.
+
+add a “hard negative”: if the question contains “carotid endarterectomy / CEA / stenosis / TIA / stroke” then Carotid & Vertebral must be included and others must be excluded unless clearly needed.
+
+3) You have a dataset ownership / access bug (this is the main failure)
+
+This is the core problem:
+
+RAGFlow returned 0 chunks
+RAGFlow returned error: You don't own the dataset 7104532adc...
+
+Two issues here:
+
+(A) The “dataset_ids” passed to consult_guideline is malformed AND wrong
+
+Log shows:
+
+arguments:{
+  "topic":"symptomatic carotid stenosis carotid endarterectomy timing",
+  "dataset_ids":"[\"29b2...\",\"7104532adc4311f0b3bb3aabfab5e99c\",\"fd679...\"]"
+}
+
+
+It’s being passed as a stringified JSON array, not an actual array.
+
+Worse: the second dataset id is wrong: it’s missing characters vs the correct DVT/PE id you posted earlier (should be 7104532adc4311f09021f2381272676b). In the log it appears as 7104532adc4311f0b3bb3aabfab5e99c (looks like it got “mixed” with the carotid id tail).
+
+That mismatch can absolutely produce “you don’t own this dataset” because that dataset may not exist under your tenant, or belongs to another tenant.
+
+✅ Fix in Laravel:
+
+Treat dataset_ids as a real array end-to-end. Never store/pass it as a JSON string.
+
+Validate every dataset id against your config/ragflow.php registry before calling retrieval.
+
+If router returns a name not in registry → drop it.
+
+(B) Even if valid, RAGFlow enforces tenant ownership
+
+RAGFlow is telling you that the API key you used cannot access that kb.
+
+✅ Fix in Laravel:
+
+ensure your Python bridge uses the correct RAGFlow token for the tenant that owns those KBs
+
+add a startup check that calls retrieval on each KB once and caches “accessible KBs”
+
+4) Your consult_guideline tool ignores the dataset_ids anyway
+
+This line:
+
+ConsultGuidelineTool: Querying RAGFlow {"query":"...", ...}
+
+Notice it does not show dataset_ids or kb_ids in the RAGFlow query log line.
+
+That implies one of these is true:
+
+The tool doesn’t actually forward dataset ids to RAGFlow, so it queries a default KB.
+
+It forwards them but you’re not logging them.
+
+Because the ids are passed as a string, they are being dropped.
+
+Given you get 0 chunks + ownership error, it’s probably attempting to use the “bad” dataset id and failing.
+
+✅ Fix in Laravel:
+
+Log the final outbound payload including kb_ids/kb_id/dataset_ids (whatever your endpoint expects) every time.
+
+Hard fail if the payload does not include an array of ids.
+
+5) Your “Hard Evidence” tool is working, but it retrieved the wrong guideline
+
+This is another big signal:
+
+CiteRecommendationsTool query: “symptomatic carotid stenosis endarterectomy timing 14 days”
+returned citations where CITATION 1 guideline: ESVS_TRAUMA_2025
+
+So your recommendations dataset retrieval is working, but your search strategy is too loose, allowing cross-guideline leakage.
+
+✅ Fix:
+When you do the Evidence step, you should always constrain by metadata:
+
+guideline = ESVS_CAROTID_2023 (or your internal key)
+
+territory = carotid/cervical
+
+rec_number if known, else keywords
+
+In other words: evidence retrieval must be:
+
+filter-first
+
+keyword second
+
+What I think overall
+✅ What’s good
+
+Retrieval endpoint calls succeed and return chunks reliably.
+
+rerank_id and use_kg are being accepted and you can see retrieval_info/top_chunks (great).
+
+Your “two-stage” concept (KG synthesis → rec-only citations) is exactly the right architecture.
+
+❌ What must be fixed now (in Laravel)
+
+Router discipline (stop picking irrelevant guidelines).
+
+Dataset id integrity (no stringified arrays; no ID mixing).
+
+Ownership/access validation (only query KBs you can access).
+
+Evidence retrieval must be metadata-filtered to the guideline(s) used in synthesis.
+
+Minimal concrete changes Replit should make
+
+Registry lock
+
+Maintain a single source of truth: guideline_key -> kb_id.
+
+Router returns keys only, Laravel maps keys → ids.
+
+Reject unknown keys.
+
+Type safety
+
+Ensure dataset_ids is an array in PHP, JSON, Python, and back.
+
+Add assertions: if not array → throw and log.
+
+Access preflight
+
+On boot (or daily cache), run a tiny retrieval query per kb_id.
+
+Mark kb_id accessible/unavailable.
+
+Router output is intersected with accessible set.
+
+Evidence constraints
+
+In cite_recommendations, always apply meta_data_filter.guideline = selected_guideline_key
+
+Never do free-text-only evidence search.
