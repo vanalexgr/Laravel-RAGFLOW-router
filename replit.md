@@ -114,7 +114,11 @@ All 14 guideline datasets are registered in `config/guidelines.php` with:
 - Category groupings (Aortic, Peripheral, Venous, Specialty)
 
 ## Recent Changes
-- 2026-01-10: Fixed guideline routing - added hard rules for exclusive conditions (carotid, AAA, trauma) to prevent over-selection
+- 2026-01-10: **CRITICAL FIX** - Changed hard rules from exclusive to additive (force-include). Multi-intent queries (AAA + PAD) now correctly select both guidelines
+- 2026-01-10: Added FORCE_INCLUDE_RULES for PAD, CLTI, DVT, Thoracic with comprehensive trigger synonyms
+- 2026-01-10: Added observability logging - top 5 candidates with scores, matched concepts, forced keys for debugging
+- 2026-01-10: Expanded PAD key_concepts in registry: added peripheral arterial disease, LEAD, ABI, intermittent claudication
+- 2026-01-10: Fixed guideline routing - hard rules now boost (+50) but continue scoring all guidelines
 - 2026-01-10: Switched from dataset_ids to guideline_keys routing - SelectGuidelinesTool returns keys, ConsultGuidelineTool maps via registry
 - 2026-01-10: Added guideline_filter to CiteRecommendationsTool to prevent cross-guideline citation leakage
 - 2026-01-10: Added registry validation - unknown dataset IDs are rejected with proper logging
