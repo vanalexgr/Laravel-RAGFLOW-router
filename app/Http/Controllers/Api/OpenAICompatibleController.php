@@ -11,6 +11,48 @@ use Illuminate\Support\Str;
 
 class OpenAICompatibleController extends Controller
 {
+    protected const MAX_CONTEXT_TOKENS = 128000;
+    protected const RESERVED_TOKENS = 30000;
+    protected const MAX_HISTORY_TOKENS = 95000;
+
+    protected function estimateTokens(string $text): int
+    {
+        return (int) ceil(strlen($text) / 4);
+    }
+
+    protected function truncateHistory(array $history, int $maxTokens): array
+    {
+        if (empty($history)) {
+            return [];
+        }
+
+        $totalTokens = 0;
+        $truncated = [];
+
+        $reversed = array_reverse($history);
+
+        foreach ($reversed as $msg) {
+            $msgTokens = $this->estimateTokens($msg['content'] ?? '');
+            
+            if ($totalTokens + $msgTokens > $maxTokens) {
+                break;
+            }
+            
+            $totalTokens += $msgTokens;
+            array_unshift($truncated, $msg);
+        }
+
+        if (count($truncated) < count($history)) {
+            \Log::info('Context truncation applied', [
+                'original_messages' => count($history),
+                'kept_messages' => count($truncated),
+                'estimated_tokens' => $totalTokens,
+            ]);
+        }
+
+        return $truncated;
+    }
+
     public function listModels(): JsonResponse
     {
         return response()->json([
@@ -99,12 +141,16 @@ class OpenAICompatibleController extends Controller
         $contextString = '';
         if (count($conversationContext) > 1) {
             $history = array_slice($conversationContext, 0, -1);
-            $contextString = "CONVERSATION HISTORY:\n";
-            foreach ($history as $msg) {
-                $role = strtoupper($msg['role']);
-                $contextString .= "[{$role}]: {$msg['content']}\n\n";
+            $history = $this->truncateHistory($history, self::MAX_HISTORY_TOKENS);
+            
+            if (!empty($history)) {
+                $contextString = "CONVERSATION HISTORY:\n";
+                foreach ($history as $msg) {
+                    $role = strtoupper($msg['role']);
+                    $contextString .= "[{$role}]: {$msg['content']}\n\n";
+                }
+                $contextString .= "---\nCURRENT QUESTION:\n";
             }
-            $contextString .= "---\nCURRENT QUESTION:\n";
         }
         
         $fullPrompt = $contextString . $userMessage;
@@ -238,12 +284,16 @@ class OpenAICompatibleController extends Controller
         $contextString = '';
         if (count($conversationContext) > 1) {
             $history = array_slice($conversationContext, 0, -1);
-            $contextString = "CONVERSATION HISTORY:\n";
-            foreach ($history as $msg) {
-                $role = strtoupper($msg['role']);
-                $contextString .= "[{$role}]: {$msg['content']}\n\n";
+            $history = $this->truncateHistory($history, self::MAX_HISTORY_TOKENS);
+            
+            if (!empty($history)) {
+                $contextString = "CONVERSATION HISTORY:\n";
+                foreach ($history as $msg) {
+                    $role = strtoupper($msg['role']);
+                    $contextString .= "[{$role}]: {$msg['content']}\n\n";
+                }
+                $contextString .= "---\nCURRENT QUESTION:\n";
             }
-            $contextString .= "---\nCURRENT QUESTION:\n";
         }
         
         $fullPrompt = $contextString . $userMessage;
