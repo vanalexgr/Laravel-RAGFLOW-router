@@ -9,11 +9,32 @@ use Vizra\VizraADK\System\AgentContext;
 
 class SelectGuidelinesTool implements ToolInterface
 {
+    protected const HARD_RULES = [
+        'carotid_exclusive' => [
+            'triggers' => ['carotid endarterectomy', 'cea', 'carotid stenosis', 'carotid stenting', 'cas', 'tcar', 'tia', 'stroke prevention', 'symptomatic stenosis', 'asymptomatic stenosis'],
+            'required' => 'carotid_vertebral',
+            'exclude_unless_explicit' => ['venous_thrombosis', 'chronic_venous_disease', 'descending_thoracic_aorta', 'abdominal_aortic_aneurysm'],
+        ],
+        'aaa_exclusive' => [
+            'triggers' => ['aaa', 'abdominal aortic aneurysm', 'evar', 'open repair aortic', 'endoleak'],
+            'required' => 'abdominal_aortic_aneurysm',
+            'exclude_unless_explicit' => ['carotid_vertebral', 'venous_thrombosis'],
+        ],
+        'trauma_exclusive' => [
+            'triggers' => ['trauma', 'injury', 'reboa', 'mangled extremity', 'hemorrhage control', 'penetrating', 'blunt vascular'],
+            'required' => 'vascular_trauma',
+            'exclude_unless_explicit' => [],
+        ],
+    ];
+
+    protected const MIN_SCORE_THRESHOLD = 6;
+    protected const HIGH_CONFIDENCE_THRESHOLD = 15;
+
     public function definition(): array
     {
         return [
             'name' => 'select_guidelines',
-            'description' => 'FIRST STEP: Analyze the clinical question and select 1-3 most relevant ESVS guideline datasets. Returns dataset IDs to use with consult_guideline tool. Always call this before consulting guidelines.',
+            'description' => 'FIRST STEP: Analyze the clinical question and select 1-2 most relevant ESVS guideline datasets. Returns guideline KEYS to use with consult_guideline tool. Be conservative - only select guidelines that are clearly relevant.',
             'parameters' => [
                 'type' => 'object',
                 'properties' => [
@@ -37,18 +58,35 @@ class SelectGuidelinesTool implements ToolInterface
 
         $questionLower = strtolower($question);
         $categories = config('guidelines.categories', []);
+        
+        $hardRuleResult = $this->applyHardRules($questionLower);
+        $requiredGuideline = $hardRuleResult['required'];
+        $excludedGuidelines = $hardRuleResult['excluded'];
+
         $matches = [];
+        $guidelineRegistry = $this->buildGuidelineRegistry($categories);
 
         foreach ($categories as $categoryKey => $category) {
             foreach ($category['guidelines'] as $guidelineKey => $guideline) {
+                if (in_array($guidelineKey, $excludedGuidelines)) {
+                    continue;
+                }
+
                 $score = $this->calculateRelevanceScore($questionLower, $guideline['key_concepts']);
-                if ($score > 0) {
+                
+                if ($guidelineKey === $requiredGuideline) {
+                    $score += 50;
+                }
+
+                if ($score >= self::MIN_SCORE_THRESHOLD) {
                     $matches[] = [
+                        'key' => $guidelineKey,
                         'id' => $guideline['id'],
                         'name' => $guideline['name'],
                         'category' => $category['name'],
                         'score' => $score,
                         'matched_concepts' => $this->getMatchedConcepts($questionLower, $guideline['key_concepts']),
+                        'is_required' => $guidelineKey === $requiredGuideline,
                     ];
                 }
             }
@@ -56,24 +94,33 @@ class SelectGuidelinesTool implements ToolInterface
 
         usort($matches, fn($a, $b) => $b['score'] <=> $a['score']);
 
-        $selected = array_slice($matches, 0, 3);
+        $maxGuidelines = 2;
+        if (!empty($matches) && $matches[0]['score'] >= self::HIGH_CONFIDENCE_THRESHOLD) {
+            $maxGuidelines = 1;
+            if (count($matches) > 1 && $matches[1]['score'] >= self::HIGH_CONFIDENCE_THRESHOLD * 0.7) {
+                $maxGuidelines = 2;
+            }
+        }
+
+        $selected = array_slice($matches, 0, $maxGuidelines);
 
         if (empty($selected)) {
             Log::warning("SelectGuidelinesTool: No matching guidelines for question", ['question' => $question]);
             return json_encode([
                 'selected_guidelines' => [],
-                'dataset_ids' => [],
+                'guideline_keys' => [],
                 'message' => 'No specific guideline match found. Use general vascular surgery knowledge or ask for clarification.',
                 'available_categories' => array_map(fn($c) => $c['name'], $categories),
             ]);
         }
 
-        $datasetIds = array_column($selected, 'id');
+        $guidelineKeys = array_column($selected, 'key');
 
         Log::info("SelectGuidelinesTool: Selected guidelines", [
             'question' => $question,
-            'selected' => array_map(fn($s) => $s['name'], $selected),
-            'dataset_ids' => $datasetIds,
+            'selected' => array_map(fn($s) => ['key' => $s['key'], 'name' => $s['name'], 'score' => $s['score']], $selected),
+            'hard_rule_applied' => $requiredGuideline ?? 'none',
+            'excluded_by_hard_rule' => $excludedGuidelines,
         ]);
 
         $output = "SELECTED GUIDELINES FOR RETRIEVAL:\n";
@@ -81,16 +128,44 @@ class SelectGuidelinesTool implements ToolInterface
 
         foreach ($selected as $i => $match) {
             $num = $i + 1;
-            $output .= "{$num}. {$match['name']} ({$match['category']})\n";
-            $output .= "   Dataset ID: {$match['id']}\n";
+            $requiredTag = $match['is_required'] ? ' [REQUIRED BY HARD RULE]' : '';
+            $output .= "{$num}. {$match['name']} ({$match['category']}){$requiredTag}\n";
+            $output .= "   Guideline Key: {$match['key']}\n";
             $output .= "   Relevance Score: {$match['score']}\n";
             $output .= "   Matched Concepts: " . implode(', ', $match['matched_concepts']) . "\n\n";
         }
 
-        $output .= "\nDATASET_IDS: " . json_encode($datasetIds) . "\n";
-        $output .= "\nNEXT STEP: Use these dataset_ids with consult_guideline tool to retrieve relevant content.";
+        $output .= "\nGUIDELINE_KEYS: " . json_encode($guidelineKeys) . "\n";
+        $output .= "\nNEXT STEP: Use these guideline_keys with consult_guideline tool to retrieve relevant content.";
 
         return $output;
+    }
+
+    protected function applyHardRules(string $question): array
+    {
+        foreach (self::HARD_RULES as $ruleName => $rule) {
+            foreach ($rule['triggers'] as $trigger) {
+                if (str_contains($question, $trigger)) {
+                    return [
+                        'required' => $rule['required'],
+                        'excluded' => $rule['exclude_unless_explicit'],
+                    ];
+                }
+            }
+        }
+
+        return ['required' => null, 'excluded' => []];
+    }
+
+    protected function buildGuidelineRegistry(array $categories): array
+    {
+        $registry = [];
+        foreach ($categories as $category) {
+            foreach ($category['guidelines'] as $key => $guideline) {
+                $registry[$key] = $guideline['id'];
+            }
+        }
+        return $registry;
     }
 
     protected function calculateRelevanceScore(string $question, array $concepts): int
@@ -98,16 +173,24 @@ class SelectGuidelinesTool implements ToolInterface
         $score = 0;
         foreach ($concepts as $concept) {
             $conceptLower = strtolower($concept);
-            $words = explode(' ', $conceptLower);
             
             if (str_contains($question, $conceptLower)) {
                 $score += 10;
+                continue;
             }
             
+            $words = explode(' ', $conceptLower);
+            $wordMatches = 0;
             foreach ($words as $word) {
-                if (strlen($word) > 2 && str_contains($question, $word)) {
-                    $score += 3;
+                if (strlen($word) > 3 && str_contains($question, $word)) {
+                    $wordMatches++;
                 }
+            }
+            
+            if ($wordMatches > 0 && $wordMatches >= count($words) * 0.5) {
+                $score += 5;
+            } elseif ($wordMatches > 0) {
+                $score += 2;
             }
         }
         return $score;
@@ -123,11 +206,14 @@ class SelectGuidelinesTool implements ToolInterface
                 continue;
             }
             $words = explode(' ', $conceptLower);
+            $wordMatches = 0;
             foreach ($words as $word) {
-                if (strlen($word) > 2 && str_contains($question, $word)) {
-                    $matched[] = $concept;
-                    break;
+                if (strlen($word) > 3 && str_contains($question, $word)) {
+                    $wordMatches++;
                 }
+            }
+            if ($wordMatches > 0 && $wordMatches >= count($words) * 0.5) {
+                $matched[] = $concept;
             }
         }
         return array_unique($matched);
