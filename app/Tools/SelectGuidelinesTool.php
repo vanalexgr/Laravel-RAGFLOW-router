@@ -52,6 +52,7 @@ class SelectGuidelinesTool implements ToolInterface
     ];
 
     protected const MIN_SCORE_THRESHOLD = 5;
+    protected const MIN_SCORE_THRESHOLD_MULTI_INTENT = 25; // Higher threshold when ≥2 forced keys present
     protected const MAX_GUIDELINES = 3;
 
     public function definition(): array
@@ -131,11 +132,16 @@ class SelectGuidelinesTool implements ToolInterface
         }
         
         // Then add top scorers up to limit
+        // When ≥2 forced keys are present, use higher threshold for non-forced extras
+        $extraThreshold = count($forcedKeys) >= 2 
+            ? self::MIN_SCORE_THRESHOLD_MULTI_INTENT 
+            : self::MIN_SCORE_THRESHOLD;
+        
         foreach ($candidates as $key => $candidate) {
             if (count($selected) >= self::MAX_GUIDELINES) {
                 break;
             }
-            if (!isset($selected[$key]) && $candidate['score'] >= self::MIN_SCORE_THRESHOLD) {
+            if (!isset($selected[$key]) && $candidate['score'] >= $extraThreshold) {
                 $selected[$key] = $candidate;
             }
         }

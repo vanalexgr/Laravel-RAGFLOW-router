@@ -10,6 +10,9 @@ use Vizra\VizraADK\System\AgentContext;
 
 class ConsultGuidelineTool implements ToolInterface
 {
+    protected const MAX_CHUNKS_TOTAL = 15; // Cap total chunks to prevent context bloat
+    protected const MAX_CHUNKS_PER_GUIDELINE = 8; // Cap per guideline for per-guideline retrieval
+
     public function definition(): array
     {
         return [
@@ -63,10 +66,13 @@ class ConsultGuidelineTool implements ToolInterface
         $useKg = $retrievalConfig['use_kg'] ?? true;
         $highlight = $retrievalConfig['highlight'] ?? true;
 
+        $usePerGuidelineRetrieval = count($datasetIds) > 1;
+        
         Log::info("ConsultGuidelineTool: Querying RAGFlow", [
             'query' => $query,
             'dataset_ids' => $datasetIds,
             'guideline_names' => $selectedGuidelineNames,
+            'retrieval_mode' => $usePerGuidelineRetrieval ? 'PER-GUIDELINE' : 'SINGLE',
             'top_k' => $topK,
             'size' => $size,
             'rerank_id' => $rerankId,
@@ -92,24 +98,34 @@ class ConsultGuidelineTool implements ToolInterface
             if ($useKg) {
                 $retrievalParams['use_kg'] = true;
             }
-            
-            Log::channel('ragflow')->info("ConsultGuidelineTool: Full retrieval payload", [
-                'dataset_ids' => $datasetIds,
-                'dataset_ids_type' => gettype($datasetIds),
-                'dataset_ids_count' => count($datasetIds),
-                'params' => $retrievalParams,
-            ]);
 
             if (!is_array($datasetIds) || empty($datasetIds)) {
                 throw new \InvalidArgumentException("dataset_ids must be a non-empty array, got: " . gettype($datasetIds));
             }
 
-            $response = RAGFlow::datasets()->retrieve($datasetIds, $retrievalParams);
+            // Per-guideline retrieval for multi-intent queries
+            if ($usePerGuidelineRetrieval) {
+                $allChunks = $this->retrievePerGuideline($datasetIds, $retrievalParams, $selectedGuidelineNames);
+            } else {
+                // Single guideline - direct retrieval
+                Log::channel('ragflow')->info("ConsultGuidelineTool: Single guideline retrieval", [
+                    'dataset_ids' => $datasetIds,
+                    'params' => $retrievalParams,
+                ]);
+                
+                $response = RAGFlow::datasets()->retrieve($datasetIds, $retrievalParams);
+                $allChunks = $response['data']['chunks'] ?? [];
+            }
 
-            Log::info("ConsultGuidelineTool: RAGFlow returned " . count($response['data']['chunks'] ?? []) . " chunks");
+            Log::info("ConsultGuidelineTool: RAGFlow returned " . count($allChunks) . " chunks (pre-cap)");
 
-            if (!empty($response['data']['chunks'])) {
-                return $this->formatRetrievalResults($response['data']['chunks'], $topic, $selectedGuidelineNames);
+            // Cap total chunks to prevent context bloat
+            $cappedChunks = array_slice($allChunks, 0, self::MAX_CHUNKS_TOTAL);
+            
+            Log::info("ConsultGuidelineTool: Capped to " . count($cappedChunks) . " chunks (max: " . self::MAX_CHUNKS_TOTAL . ")");
+
+            if (!empty($cappedChunks)) {
+                return $this->formatRetrievalResults($cappedChunks, $topic, $selectedGuidelineNames);
             }
 
             if (isset($response['code']) && $response['code'] !== 0) {
@@ -195,6 +211,64 @@ class ConsultGuidelineTool implements ToolInterface
         return empty($names) ? ['All Guidelines'] : $names;
     }
 
+    /**
+     * Retrieve chunks per-guideline and merge results.
+     * This prevents one guideline from dominating results in multi-intent queries.
+     */
+    protected function retrievePerGuideline(array $datasetIds, array $baseParams, array $guidelineNames): array
+    {
+        $registry = $this->buildGuidelineRegistry();
+        $idToName = [];
+        foreach ($registry as $key => $info) {
+            $idToName[$info['id']] = $info['name'];
+        }
+
+        $allChunks = [];
+        $chunksPerGuideline = [];
+
+        foreach ($datasetIds as $datasetId) {
+            $guidelineName = $idToName[$datasetId] ?? 'Unknown';
+            
+            Log::channel('ragflow')->info("ConsultGuidelineTool: Per-guideline retrieval", [
+                'dataset_id' => $datasetId,
+                'guideline_name' => $guidelineName,
+                'params' => $baseParams,
+            ]);
+
+            try {
+                $response = RAGFlow::datasets()->retrieve([$datasetId], $baseParams);
+                $chunks = $response['data']['chunks'] ?? [];
+                
+                // Cap per guideline to ensure balanced results
+                $cappedChunks = array_slice($chunks, 0, self::MAX_CHUNKS_PER_GUIDELINE);
+                
+                // Tag chunks with source guideline
+                foreach ($cappedChunks as &$chunk) {
+                    $chunk['_source_guideline'] = $guidelineName;
+                }
+                
+                $chunksPerGuideline[$guidelineName] = $cappedChunks;
+                
+                Log::info("ConsultGuidelineTool: Retrieved " . count($chunks) . " chunks from {$guidelineName}, capped to " . count($cappedChunks));
+                
+            } catch (\Exception $e) {
+                Log::warning("ConsultGuidelineTool: Failed to retrieve from {$guidelineName}: " . $e->getMessage());
+            }
+        }
+
+        // Interleave results from different guidelines (round-robin) for balanced coverage
+        $maxRounds = max(array_map('count', $chunksPerGuideline) ?: [0]);
+        for ($i = 0; $i < $maxRounds; $i++) {
+            foreach ($chunksPerGuideline as $guidelineName => $chunks) {
+                if (isset($chunks[$i])) {
+                    $allChunks[] = $chunks[$i];
+                }
+            }
+        }
+
+        return $allChunks;
+    }
+
     protected function buildGuidelineRegistry(): array
     {
         $categories = config('guidelines.categories', []);
@@ -227,7 +301,10 @@ class ConsultGuidelineTool implements ToolInterface
 
             $metadata = $this->extractMetadata($chunk, $content);
             
-            $output .= "--- Result {$num} ---\n";
+            $sourceGuideline = $chunk['_source_guideline'] ?? null;
+            $sourceTag = $sourceGuideline ? " [from: {$sourceGuideline}]" : "";
+            
+            $output .= "--- Result {$num}{$sourceTag} ---\n";
             $output .= "METADATA:\n";
             $output .= "  Guideline: {$metadata['guideline_id']} ({$metadata['guideline_year']})\n";
             $output .= "  Recommendation: {$metadata['recommendation_id']}\n";
