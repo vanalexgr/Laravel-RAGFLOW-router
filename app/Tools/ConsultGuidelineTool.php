@@ -103,9 +103,9 @@ class ConsultGuidelineTool implements ToolInterface
                 throw new \InvalidArgumentException("dataset_ids must be a non-empty array, got: " . gettype($datasetIds));
             }
 
-            // Per-guideline retrieval for multi-intent queries
+            // Per-guideline parallel retrieval for multi-intent queries
             if ($usePerGuidelineRetrieval) {
-                $allChunks = $this->retrievePerGuideline($datasetIds, $retrievalParams, $selectedGuidelineNames);
+                $allChunks = $this->retrieveMultiParallel($datasetIds, $retrievalParams, $selectedGuidelineNames);
             } else {
                 // Single guideline - direct retrieval
                 Log::channel('ragflow')->info("ConsultGuidelineTool: Single guideline retrieval", [
@@ -212,10 +212,10 @@ class ConsultGuidelineTool implements ToolInterface
     }
 
     /**
-     * Retrieve chunks per-guideline and merge results.
-     * This prevents one guideline from dominating results in multi-intent queries.
+     * Parallel retrieval across multiple datasets using bridge's asyncio.gather.
+     * This prevents one guideline from dominating results and reduces latency.
      */
-    protected function retrievePerGuideline(array $datasetIds, array $baseParams, array $guidelineNames): array
+    protected function retrieveMultiParallel(array $datasetIds, array $baseParams, array $guidelineNames): array
     {
         $registry = $this->buildGuidelineRegistry();
         $idToName = [];
@@ -223,50 +223,39 @@ class ConsultGuidelineTool implements ToolInterface
             $idToName[$info['id']] = $info['name'];
         }
 
-        $allChunks = [];
-        $chunksPerGuideline = [];
-
+        // Build datasets array for the multi-retrieval endpoint
+        $datasets = [];
         foreach ($datasetIds as $datasetId) {
-            $guidelineName = $idToName[$datasetId] ?? 'Unknown';
-            
-            Log::channel('ragflow')->info("ConsultGuidelineTool: Per-guideline retrieval", [
-                'dataset_id' => $datasetId,
-                'guideline_name' => $guidelineName,
-                'params' => $baseParams,
-            ]);
-
-            try {
-                $response = RAGFlow::datasets()->retrieve([$datasetId], $baseParams);
-                $chunks = $response['data']['chunks'] ?? [];
-                
-                // Cap per guideline to ensure balanced results
-                $cappedChunks = array_slice($chunks, 0, self::MAX_CHUNKS_PER_GUIDELINE);
-                
-                // Tag chunks with source guideline
-                foreach ($cappedChunks as &$chunk) {
-                    $chunk['_source_guideline'] = $guidelineName;
-                }
-                
-                $chunksPerGuideline[$guidelineName] = $cappedChunks;
-                
-                Log::info("ConsultGuidelineTool: Retrieved " . count($chunks) . " chunks from {$guidelineName}, capped to " . count($cappedChunks));
-                
-            } catch (\Exception $e) {
-                Log::warning("ConsultGuidelineTool: Failed to retrieve from {$guidelineName}: " . $e->getMessage());
-            }
+            $datasets[] = [
+                'id' => $datasetId,
+                'name' => $idToName[$datasetId] ?? 'Unknown',
+            ];
         }
 
-        // Interleave results from different guidelines (round-robin) for balanced coverage
-        $maxRounds = max(array_map('count', $chunksPerGuideline) ?: [0]);
-        for ($i = 0; $i < $maxRounds; $i++) {
-            foreach ($chunksPerGuideline as $guidelineName => $chunks) {
-                if (isset($chunks[$i])) {
-                    $allChunks[] = $chunks[$i];
-                }
-            }
-        }
+        Log::channel('ragflow')->info("ConsultGuidelineTool: PARALLEL multi-retrieval", [
+            'datasets' => $datasets,
+            'params' => $baseParams,
+        ]);
 
-        return $allChunks;
+        // Call the bridge's parallel endpoint
+        $params = array_merge($baseParams, [
+            'max_per_dataset' => self::MAX_CHUNKS_PER_GUIDELINE,
+            'max_total' => self::MAX_CHUNKS_TOTAL,
+        ]);
+
+        $response = RAGFlow::datasets()->retrieveMulti($datasets, $params);
+        
+        $chunks = $response['data']['chunks'] ?? [];
+        $retrievalInfo = $response['retrieval_info'] ?? [];
+        
+        Log::info("ConsultGuidelineTool: Parallel retrieval complete", [
+            'per_dataset' => $retrievalInfo['per_dataset'] ?? [],
+            'combined_pre_global_cap' => $retrievalInfo['combined_pre_global_cap'] ?? 0,
+            'combined_after_global_cap' => $retrievalInfo['combined_after_global_cap'] ?? count($chunks),
+            'duration_ms' => $response['duration_ms'] ?? 0,
+        ]);
+
+        return $chunks;
     }
 
     protected function buildGuidelineRegistry(): array
