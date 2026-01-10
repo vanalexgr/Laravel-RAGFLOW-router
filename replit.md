@@ -114,6 +114,9 @@ All 14 guideline datasets are registered in `config/guidelines.php` with:
 - Category groupings (Aortic, Peripheral, Venous, Specialty)
 
 ## Recent Changes
+- 2026-01-10: Added streaming progress endpoint `/api/v1/chat/completions/stream` with 5 progress events: Selecting guidelines, Querying retrieval, KG expansion, Reranking, Drafting answer
+- 2026-01-10: Per-guideline retrieval for multi-intent queries - separate RAGFlow calls per dataset (8 chunks each), interleaved merge, capped at 15 total
+- 2026-01-10: Higher threshold (25 vs 5) for non-forced guidelines when ≥2 forced keys present - prevents carotid leakage in AAA+PAD queries
 - 2026-01-10: **CRITICAL FIX** - Changed hard rules from exclusive to additive (force-include). Multi-intent queries (AAA + PAD) now correctly select both guidelines
 - 2026-01-10: Added FORCE_INCLUDE_RULES for PAD, CLTI, DVT, Thoracic with comprehensive trigger synonyms
 - 2026-01-10: Added observability logging - top 5 candidates with scores, matched concepts, forced keys for debugging
