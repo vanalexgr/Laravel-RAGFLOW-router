@@ -114,6 +114,10 @@ All 14 guideline datasets are registered in `config/guidelines.php` with:
 - Category groupings (Aortic, Peripheral, Venous, Specialty)
 
 ## Recent Changes
+- 2026-01-10: Fixed guideline routing - added hard rules for exclusive conditions (carotid, AAA, trauma) to prevent over-selection
+- 2026-01-10: Switched from dataset_ids to guideline_keys routing - SelectGuidelinesTool returns keys, ConsultGuidelineTool maps via registry
+- 2026-01-10: Added guideline_filter to CiteRecommendationsTool to prevent cross-guideline citation leakage
+- 2026-01-10: Added registry validation - unknown dataset IDs are rejected with proper logging
 - 2026-01-10: Implemented two-stage retrieval architecture with SelectGuidelinesTool, updated ConsultGuidelineTool (dynamic dataset_ids), and CiteRecommendationsTool for exact evidence citations
 - 2026-01-10: Added config/guidelines.php with full registry of 14 guideline datasets organized by category with key concepts
 - 2026-01-10: Updated VascularExpertAgent with multi-step workflow: select → retrieve → synthesize → cite
