@@ -483,11 +483,15 @@ class OpenAICompatibleController extends Controller
                 ], 404);
             }
 
-            // Step 2: Dual retrieval - narrative chunks (KG) + citation chunks (no KG)
+            // Step 2: Query expansion for better retrieval
+            $router = new \App\Services\GuidelineRouterService();
+            $expandedQuery = $router->expandQuery($question);
+            
+            // Step 3: Dual retrieval - narrative chunks (KG) + citation chunks (no KG)
             $narrativeMax = 12;
             $citationMax = 5;
             
-            $dualResult = $this->retrieveDualChunks($question, $selectedGuidelines, $narrativeMax, $citationMax);
+            $dualResult = $this->retrieveDualChunks($expandedQuery, $selectedGuidelines, $narrativeMax, $citationMax);
 
             $duration = round((microtime(true) - $startTime) * 1000);
 
