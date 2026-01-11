@@ -41,8 +41,8 @@ class RetrieveMultiRequest(BaseModel):
     datasets: list[DatasetInfo]
     top_k: int = 256
     size: int = 10
-    max_per_dataset: int = 8
-    max_total: int = 15
+    max_per_dataset: int = 6
+    max_total: int = 12
     page: int = 1
     similarity_threshold: float = 0.2
     vector_similarity_weight: float = 0.3

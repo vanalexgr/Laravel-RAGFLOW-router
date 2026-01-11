@@ -12,8 +12,8 @@ use Illuminate\Support\Str;
 class OpenAICompatibleController extends Controller
 {
     protected const MAX_CONTEXT_TOKENS = 128000;
-    protected const RESERVED_TOKENS = 30000;
-    protected const MAX_HISTORY_TOKENS = 95000;
+    protected const RESERVED_TOKENS = 45000;  // Increased for system prompt + retrieval + response buffer
+    protected const MAX_HISTORY_TOKENS = 80000;
 
     protected function estimateTokens(string $text): int
     {

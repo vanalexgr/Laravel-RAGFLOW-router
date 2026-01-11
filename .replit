@@ -39,7 +39,7 @@ outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd ragflow_service && python -m uvicorn app:app --host 0.0.0.0 --port 8000"
+args = "cd ragflow_service && python -m uvicorn app:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 120 --timeout-graceful-shutdown 30"
 waitForPort = 8000
 
 [[ports]]

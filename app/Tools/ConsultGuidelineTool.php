@@ -10,8 +10,8 @@ use Vizra\VizraADK\System\AgentContext;
 
 class ConsultGuidelineTool implements ToolInterface
 {
-    protected const MAX_CHUNKS_TOTAL = 15; // Cap total chunks to prevent context bloat
-    protected const MAX_CHUNKS_PER_GUIDELINE = 8; // Cap per guideline for per-guideline retrieval
+    protected const MAX_CHUNKS_TOTAL = 12; // Cap total chunks to prevent context bloat
+    protected const MAX_CHUNKS_PER_GUIDELINE = 6; // Cap per guideline for per-guideline retrieval
 
     public function definition(): array
     {
@@ -273,12 +273,12 @@ class ConsultGuidelineTool implements ToolInterface
         return $registry;
     }
 
+    protected const MAX_CONTENT_CHARS = 800; // Truncate chunk content to prevent context bloat
+
     protected function formatRetrievalResults(array $chunks, string $topic, array $guidelineNames): string
     {
         $guidelinesStr = implode(', ', $guidelineNames);
-        $output = "[SOURCE: RAGFlow KG Retrieval - {$guidelinesStr} - " . count($chunks) . " chunks]\n\n";
-        $output .= "ESVS Guidelines - {$topic}\n";
-        $output .= str_repeat("=", 60) . "\n\n";
+        $output = "[SOURCE: {$guidelinesStr} - " . count($chunks) . " chunks]\n\n";
 
         foreach ($chunks as $index => $chunk) {
             $num = $index + 1;
@@ -290,25 +290,23 @@ class ConsultGuidelineTool implements ToolInterface
 
             $metadata = $this->extractMetadata($chunk, $content);
             
-            $sourceGuideline = $chunk['_source_guideline'] ?? null;
-            $sourceTag = $sourceGuideline ? " [from: {$sourceGuideline}]" : "";
+            // Truncate content to prevent context bloat
+            $truncatedText = $metadata['recommendation_text'];
+            if (strlen($truncatedText) > self::MAX_CONTENT_CHARS) {
+                $truncatedText = substr($truncatedText, 0, self::MAX_CONTENT_CHARS) . '...';
+            }
             
-            $output .= "--- Result {$num}{$sourceTag} ---\n";
-            $output .= "METADATA:\n";
-            $output .= "  Guideline: {$metadata['guideline_id']} ({$metadata['guideline_year']})\n";
-            $output .= "  Recommendation: {$metadata['recommendation_id']}\n";
-            $output .= "  Class: {$metadata['class']} | Level: {$metadata['level']}\n";
-            $output .= "  Territory: {$metadata['territory']}\n";
-            $output .= "  Similarity: {$metadata['similarity']}% (Vector: {$metadata['vector_similarity']}%, Term: {$metadata['term_similarity']}%)\n";
-            $output .= "  Document: {$metadata['document']}\n\n";
-            $output .= "CONTENT:\n{$metadata['recommendation_text']}\n\n";
+            $sourceGuideline = $chunk['_source_guideline'] ?? null;
+            $sourceTag = $sourceGuideline ? " [{$sourceGuideline}]" : "";
+            
+            // Compact format: key info only
+            $output .= "#{$num}{$sourceTag} {$metadata['recommendation_id']} ({$metadata['class']}, {$metadata['level']})\n";
+            $output .= "{$truncatedText}\n\n";
         }
 
         if (strlen($output) < 100) {
             return $this->getReferenceGuidelines($topic) . "\n\n[RAGFlow returned empty content]";
         }
-
-        $output .= "\n[SELECTED_GUIDELINES: " . json_encode($guidelineNames) . "]\n";
 
         return $output;
     }
