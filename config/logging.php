@@ -143,6 +143,14 @@ return [
             'replace_placeholders' => true,
         ],
 
+        'retrieval' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/retrieval.log'),
+            'level' => 'debug',
+            'days' => 7,
+            'replace_placeholders' => true,
+        ],
+
     ],
 
 ];

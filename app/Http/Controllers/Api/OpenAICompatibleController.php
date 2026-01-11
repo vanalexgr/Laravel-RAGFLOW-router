@@ -446,21 +446,32 @@ class OpenAICompatibleController extends Controller
         $requestedKeys = $validated['guideline_keys'] ?? null;
         $topK = $validated['top_k'] ?? 12;
 
-        \Log::info('Retrieve endpoint called', [
+        $log = \Log::channel('retrieval');
+        $log->info('=== RETRIEVE REQUEST ===', [
+            'timestamp' => now()->toIso8601String(),
             'question' => $question,
             'requested_keys' => $requestedKeys,
             'top_k' => $topK,
+            'client_ip' => $request->ip(),
         ]);
 
         try {
             // Step 1: Select guidelines (if not specified)
             if (empty($requestedKeys)) {
                 $selectedGuidelines = $this->selectGuidelines($question);
+                $log->info('Guidelines auto-selected', [
+                    'keys' => array_keys($selectedGuidelines),
+                    'names' => array_column($selectedGuidelines, 'name'),
+                ]);
             } else {
                 $selectedGuidelines = $this->validateGuidelineKeys($requestedKeys);
+                $log->info('Guidelines from request', [
+                    'keys' => array_keys($selectedGuidelines),
+                ]);
             }
 
             if (empty($selectedGuidelines)) {
+                $log->warning('No guidelines matched query');
                 return response()->json([
                     'success' => false,
                     'error' => 'No matching guidelines found for query',
@@ -473,9 +484,16 @@ class OpenAICompatibleController extends Controller
 
             $duration = round((microtime(true) - $startTime) * 1000);
 
-            \Log::info('Retrieve endpoint complete', [
-                'guidelines_selected' => count($selectedGuidelines),
+            // Log top chunk scores
+            $topScores = array_slice(array_map(fn($c) => [
+                'similarity' => $c['similarity'] ?? 0,
+                'guideline' => $c['guideline'] ?? 'unknown',
+            ], $chunks), 0, 3);
+
+            $log->info('=== RETRIEVE COMPLETE ===', [
+                'guidelines_count' => count($selectedGuidelines),
                 'chunks_returned' => count($chunks),
+                'top_3_scores' => $topScores,
                 'duration_ms' => $duration,
             ]);
 
@@ -490,7 +508,10 @@ class OpenAICompatibleController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            \Log::error('Retrieve endpoint error: ' . $e->getMessage());
+            $log->error('Retrieve endpoint error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
             return response()->json([
                 'success' => false,
                 'error' => $e->getMessage(),
