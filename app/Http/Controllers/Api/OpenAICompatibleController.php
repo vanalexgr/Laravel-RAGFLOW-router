@@ -460,15 +460,37 @@ class OpenAICompatibleController extends Controller
         ]);
 
         try {
-            // Step 1: Select guidelines (if not specified)
+            // Step 1: Parallel LLM calls - routing + query expansion
             if (empty($requestedKeys)) {
-                $selectedGuidelines = $this->selectGuidelines($question);
+                $router = new \App\Services\GuidelineRouterService();
+                $llmResult = $router->selectAndExpand($question, 3);
+                
+                $selectedKeys = $llmResult['selected'];
+                $expandedQuery = $llmResult['expanded'];
+                
+                // Convert keys to full guideline info
+                if (!empty($selectedKeys)) {
+                    $registry = $this->buildGuidelineRegistry();
+                    $selectedGuidelines = [];
+                    foreach ($selectedKeys as $key) {
+                        if (isset($registry[$key])) {
+                            $selectedGuidelines[$key] = $registry[$key];
+                        }
+                    }
+                } else {
+                    // Fallback to rule-based
+                    $log->info('Falling back to rule-based routing');
+                    $selectedGuidelines = $this->selectGuidelinesRuleBased($question);
+                }
+                
                 $log->info('Guidelines auto-selected', [
                     'keys' => array_keys($selectedGuidelines),
                     'names' => array_column($selectedGuidelines, 'name'),
                 ]);
             } else {
                 $selectedGuidelines = $this->validateGuidelineKeys($requestedKeys);
+                $router = new \App\Services\GuidelineRouterService();
+                $expandedQuery = $router->expandQuery($question);
                 $log->info('Guidelines from request', [
                     'keys' => array_keys($selectedGuidelines),
                 ]);
@@ -482,12 +504,8 @@ class OpenAICompatibleController extends Controller
                     'duration_ms' => round((microtime(true) - $startTime) * 1000),
                 ], 404);
             }
-
-            // Step 2: Query expansion for better retrieval
-            $router = new \App\Services\GuidelineRouterService();
-            $expandedQuery = $router->expandQuery($question);
             
-            // Step 3: Dual retrieval - narrative chunks (KG) + citation chunks (no KG)
+            // Step 2: Dual retrieval - narrative chunks (KG) + citation chunks (no KG)
             $narrativeMax = 12;
             $citationMax = 5;
             
