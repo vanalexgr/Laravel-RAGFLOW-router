@@ -135,6 +135,9 @@ Two pathways are available for different use cases:
 - See `openwebui_pipeline/README.md` for installation
 
 ## Recent Changes
+- 2026-01-11: Implemented dual-source retrieval in /api/v1/retrieve - narrative_chunks (KG enabled) for synthesis + citation_chunks (no KG, metatags) for verbatim recommendations
+- 2026-01-11: Added /retrieve_dual endpoint to RAGFlow bridge for parallel narrative + citation retrieval
+- 2026-01-11: Updated OpenWebUI Filter Pipeline (v2.0) to handle dual-chunk injection with structured context
 - 2026-01-11: Added dedicated 'retrieval' logging channel - logs to storage/logs/retrieval-YYYY-MM-DD.log with structured data (question, guidelines selected, chunks returned, duration)
 - 2026-01-11: Added dual-architecture approach - retrieval-only API for fast OpenWebUI integration + existing agent for compliance-critical workflows
 - 2026-01-11: Created POST /api/v1/retrieve endpoint returning structured chunks (3-5s response time)

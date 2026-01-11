@@ -479,21 +479,18 @@ class OpenAICompatibleController extends Controller
                 ], 404);
             }
 
-            // Step 2: Retrieve chunks from RAGFlow
-            $chunks = $this->retrieveChunks($question, $selectedGuidelines, $topK);
+            // Step 2: Dual retrieval - narrative chunks (KG) + citation chunks (no KG)
+            $narrativeMax = 8;
+            $citationMax = 4;
+            
+            $dualResult = $this->retrieveDualChunks($question, $selectedGuidelines, $narrativeMax, $citationMax);
 
             $duration = round((microtime(true) - $startTime) * 1000);
 
-            // Log top chunk scores
-            $topScores = array_slice(array_map(fn($c) => [
-                'similarity' => $c['similarity'] ?? 0,
-                'guideline' => $c['guideline'] ?? 'unknown',
-            ], $chunks), 0, 3);
-
             $log->info('=== RETRIEVE COMPLETE ===', [
                 'guidelines_count' => count($selectedGuidelines),
-                'chunks_returned' => count($chunks),
-                'top_3_scores' => $topScores,
+                'narrative_chunks' => count($dualResult['narrative_chunks']),
+                'citation_chunks' => count($dualResult['citation_chunks']),
                 'duration_ms' => $duration,
             ]);
 
@@ -501,10 +498,12 @@ class OpenAICompatibleController extends Controller
                 'success' => true,
                 'question' => $question,
                 'selected_guidelines' => $selectedGuidelines,
-                'chunks' => $chunks,
-                'chunk_count' => count($chunks),
+                'narrative_chunks' => $dualResult['narrative_chunks'],
+                'citation_chunks' => $dualResult['citation_chunks'],
+                'narrative_count' => count($dualResult['narrative_chunks']),
+                'citation_count' => count($dualResult['citation_chunks']),
                 'duration_ms' => $duration,
-                'system_prompt' => $this->getRecommendedSystemPrompt(),
+                'system_prompt' => $this->getDualSystemPrompt(),
             ]);
 
         } catch (\Exception $e) {
@@ -709,5 +708,205 @@ class OpenAICompatibleController extends Controller
     protected function getRecommendedSystemPrompt(): string
     {
         return "You are a vascular surgery expert. Answer the question using ONLY the provided guideline evidence. For each claim, cite the exact recommendation (e.g., 'Rec 12, Class I, Level A'). If the evidence doesn't cover the question, say so clearly. Never invent recommendations.";
+    }
+
+    /**
+     * Dual retrieval: narrative chunks (KG enabled) + citation chunks (no KG, metatags).
+     */
+    protected function retrieveDualChunks(string $question, array $guidelines, int $narrativeMax, int $citationMax): array
+    {
+        $narrativeDatasets = [];
+        foreach ($guidelines as $key => $info) {
+            $narrativeDatasets[] = ['id' => $info['id'], 'name' => $info['name']];
+        }
+
+        $citationDatasetId = config('guidelines.recommendations_dataset');
+        
+        if (empty($citationDatasetId)) {
+            \Log::channel('retrieval')->error('Citation dataset ID not configured in guidelines.recommendations_dataset');
+            throw new \RuntimeException('Citation dataset not configured. Please set guidelines.recommendations_dataset in config.');
+        }
+        
+        $retrievalConfig = config('ragflow.retrieval', []);
+
+        $params = [
+            'question' => $question,
+            'narrative_max' => $narrativeMax,
+            'citation_max' => $citationMax,
+            'top_k' => $retrievalConfig['top_k'] ?? 256,
+            'similarity_threshold' => $retrievalConfig['similarity_threshold'] ?? 0.2,
+            'keyword' => true,
+            'vector_similarity_weight' => 0.3,
+            'highlight' => true,
+        ];
+
+        if (!empty($retrievalConfig['rerank_id'])) {
+            $params['rerank_id'] = $retrievalConfig['rerank_id'];
+        }
+
+        try {
+            $response = \App\Facades\RAGFlow::datasets()->retrieveDual(
+                $narrativeDatasets,
+                $citationDatasetId,
+                $params
+            );
+        } catch (\Exception $e) {
+            \Log::channel('retrieval')->error('Bridge retrieve_dual failed', [
+                'error' => $e->getMessage(),
+                'narrative_datasets' => count($narrativeDatasets),
+                'citation_dataset_id' => $citationDatasetId,
+            ]);
+            throw new \RuntimeException('RAGFlow bridge error: ' . $e->getMessage());
+        }
+
+        if (($response['status'] ?? 0) !== 200) {
+            $errorMsg = $response['message'] ?? $response['detail'] ?? 'Unknown bridge error';
+            \Log::channel('retrieval')->error('Bridge retrieve_dual returned non-200', [
+                'status' => $response['status'] ?? 'unknown',
+                'message' => $errorMsg,
+            ]);
+            throw new \RuntimeException('RAGFlow retrieval failed: ' . $errorMsg);
+        }
+
+        // Format narrative chunks (for synthesis)
+        $narrativeChunks = $this->formatNarrativeChunks(
+            $response['narrative']['chunks'] ?? [],
+            array_column($narrativeDatasets, 'name')
+        );
+
+        // Format citation chunks (preserve metatags)
+        $citationChunks = $this->formatCitationChunks(
+            $response['citations']['chunks'] ?? []
+        );
+
+        return [
+            'narrative_chunks' => $narrativeChunks,
+            'citation_chunks' => $citationChunks,
+        ];
+    }
+
+    /**
+     * Format narrative chunks for clinical synthesis.
+     */
+    protected function formatNarrativeChunks(array $rawChunks, array $guidelineNames): array
+    {
+        $formatted = [];
+
+        foreach ($rawChunks as $chunk) {
+            $content = $chunk['content'] ?? $chunk['content_with_weight'] ?? '';
+            if (empty($content)) continue;
+
+            // Truncate long content
+            if (strlen($content) > 1000) {
+                $content = substr($content, 0, 1000) . '...';
+            }
+
+            $formatted[] = [
+                'type' => 'narrative',
+                'content' => $content,
+                'source_guideline' => $chunk['_source_guideline'] ?? ($guidelineNames[0] ?? 'ESVS Guidelines'),
+                'similarity' => round(($chunk['similarity'] ?? 0) * 100, 1),
+            ];
+        }
+
+        return $formatted;
+    }
+
+    /**
+     * Format citation chunks with preserved metatags for verbatim citation.
+     */
+    protected function formatCitationChunks(array $rawChunks): array
+    {
+        $formatted = [];
+
+        foreach ($rawChunks as $chunk) {
+            $content = $chunk['content'] ?? $chunk['content_with_weight'] ?? '';
+            if (empty($content)) continue;
+
+            // Extract metatags
+            $recId = '';
+            $class = '';
+            $level = '';
+            $guideline = '';
+            $text = $content;
+
+            if (preg_match('/RECOMMENDATION_ID:\s*(Rec\s*\d+)/i', $content, $m)) {
+                $recId = $m[1];
+            }
+            if (preg_match('/CLASS:\s*(Class\s*\S+)/i', $content, $m)) {
+                $class = $m[1];
+            }
+            if (preg_match('/LEVEL:\s*(Level\s*\S+)/i', $content, $m)) {
+                $level = $m[1];
+            }
+            if (preg_match('/GUIDELINE:\s*(.+?)(?:\n|RECOMMENDATION_ID:|$)/i', $content, $m)) {
+                $guideline = trim($m[1]);
+            }
+            if (preg_match('/RECOMMENDATION_TEXT:\s*(.+?)(?=TRIPLES:|CLASS:|LEVEL:|$)/is', $content, $m)) {
+                $text = trim($m[1]);
+            }
+
+            // Keep citation text clean and complete (no truncation for citations)
+            if (strlen($text) > 500) {
+                $text = substr($text, 0, 500) . '...';
+            }
+
+            $formatted[] = [
+                'type' => 'citation',
+                'recommendation_id' => $recId,
+                'class' => $class,
+                'level' => $level,
+                'guideline' => $guideline,
+                'text' => $text,
+                'similarity' => round(($chunk['similarity'] ?? 0) * 100, 1),
+            ];
+        }
+
+        return $formatted;
+    }
+
+    /**
+     * System prompt for dual-source retrieval.
+     */
+    protected function getDualSystemPrompt(): string
+    {
+        return <<<'PROMPT'
+You are an ESVS (European Society for Vascular Surgery) clinical guideline assistant.
+
+## YOUR TASK
+Answer vascular surgery questions using the provided evidence. You receive TWO types of chunks:
+
+### NARRATIVE_CHUNKS (use_kg=true)
+- Rich clinical context from full guideline text with knowledge graph expansion
+- Use these for understanding and synthesizing your clinical answer
+- Do NOT quote verbatim from these
+
+### CITATION_CHUNKS (use_kg=false) 
+- Exact recommendations with metatags: recommendation_id, class, level, guideline
+- Use these for VERBATIM citations only
+- Copy the exact text without modification
+
+## RESPONSE FORMAT
+
+🩺 **Clinical Synthesis**
+- 3-6 bullet points answering the clinical question
+- Draw insights from NARRATIVE_CHUNKS
+- Reference recommendation numbers (e.g., "per Rec 12")
+- End with: (ESVS [guideline name])
+
+📑 **Recommendations used in this answer**
+- ONLY use recommendations from CITATION_CHUNKS
+- Format: **Rec [ID]** (Class [X], Level [Y]) — [Guideline]
+  > "[EXACT verbatim text from citation_chunks]"
+
+📌 **Guideline supporting statements**
+- Include if relevant supporting statements exist
+- Otherwise write: "No additional supporting statements retrieved."
+
+## RULES
+1. Never invent recommendations or class/level ratings
+2. If CITATION_CHUNKS don't support your synthesis, note: "Direct recommendation not retrieved"
+3. Keep synthesis concise but clinically complete
+PROMPT;
     }
 }

@@ -2,9 +2,9 @@
 title: ESVS Vascular Guidelines RAG Filter
 author: Medical AI Team
 date: 2026-01-11
-version: 1.1
+version: 2.0
 license: MIT
-description: Filter pipeline that retrieves ESVS vascular surgery guidelines from Laravel API and injects as context before LLM synthesis. Enables fast (<5s) retrieval with native OpenWebUI streaming.
+description: Filter pipeline that retrieves ESVS vascular surgery guidelines from Laravel API with dual-source retrieval (narrative + citations) and injects as context before LLM synthesis.
 requirements: httpx
 """
 
@@ -13,7 +13,6 @@ import httpx
 from pydantic import BaseModel, Field
 
 
-# RENAMED FROM Pipeline TO Filter TO FIX "No Function class" ERROR
 class Filter:
     class Valves(BaseModel):
         RETRIEVE_API_URL: str = Field(
@@ -24,7 +23,7 @@ class Filter:
             default="", description="API secret key for authentication (API_SECRET_KEY)"
         )
         TOP_K: int = Field(
-            default=12, description="Number of chunks to retrieve (1-50)"
+            default=12, description="Total chunks to retrieve (narrative + citations)"
         )
         ENABLE_RAG: bool = Field(
             default=True, description="Enable/disable guideline retrieval"
@@ -43,9 +42,7 @@ class Filter:
         self._client = None
 
     async def on_startup(self):
-        # Note: on_startup may not trigger in all Function contexts,
-        # so we also check for client existence in inlet
-        print(f"[{self.name}] Pipeline initialized")
+        print(f"[{self.name}] Pipeline initialized (v2.0 - dual retrieval)")
         print(f"[{self.name}] API URL: {self.valves.RETRIEVE_API_URL}")
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(self.valves.TIMEOUT_SECONDS)
@@ -59,7 +56,7 @@ class Filter:
     async def inlet(self, body: dict, user: Optional[dict] = None) -> dict:
         """
         Called before request goes to LLM.
-        Retrieves guideline chunks and injects them as context.
+        Retrieves guideline chunks (narrative + citations) and injects them as context.
         """
         if not self.valves.ENABLE_RAG:
             return body
@@ -80,7 +77,6 @@ class Filter:
         print(f"[{self.name}] Retrieving guidelines for: {user_message[:100]}...")
 
         try:
-            # Ensure client exists (in case on_startup didn't fire)
             if not self._client:
                 self._client = httpx.AsyncClient(
                     timeout=httpx.Timeout(self.valves.TIMEOUT_SECONDS)
@@ -103,31 +99,28 @@ class Filter:
                     print(f"[{self.name}] API returned error: {data.get('error')}")
                     return body
 
-                chunks = data.get("chunks", [])
+                narrative_chunks = data.get("narrative_chunks", [])
+                citation_chunks = data.get("citation_chunks", [])
                 selected_guidelines = data.get("selected_guidelines", {})
                 duration_ms = data.get("duration_ms", 0)
                 system_prompt = data.get("system_prompt", "")
 
                 print(
-                    f"[{self.name}] Retrieved {len(chunks)} chunks in {duration_ms}ms"
+                    f"[{self.name}] Retrieved {len(narrative_chunks)} narrative + {len(citation_chunks)} citation chunks in {duration_ms}ms"
                 )
                 print(f"[{self.name}] Guidelines: {list(selected_guidelines.keys())}")
 
-                if not chunks:
+                if not narrative_chunks and not citation_chunks:
                     return body
 
-                context = self._format_context(chunks, selected_guidelines)
+                context = self._format_dual_context(
+                    narrative_chunks, citation_chunks, selected_guidelines
+                )
 
                 if self.valves.INJECT_SYSTEM_PROMPT and system_prompt:
                     has_system = any(m.get("role") == "system" for m in messages)
                     if not has_system:
-                        # Insert new system prompt at the start
                         messages.insert(0, {"role": "system", "content": system_prompt})
-                    else:
-                        # Optional: Append to existing system prompt instead?
-                        # For now, we leave existing system prompts alone if present
-                        pass
-
                     body["messages"] = messages
 
                 rag_prompt = f"""## ESVS Vascular Surgery Guidelines Evidence
@@ -141,7 +134,11 @@ class Filter:
 
 ---
 
-**Instructions**: Answer using ONLY the guideline evidence above. Cite specific recommendations (e.g., "Rec 12, Class I, Level A"). If the evidence doesn't cover the question, state this clearly."""
+**Instructions**: 
+1. Synthesize your clinical answer using the NARRATIVE CONTEXT above
+2. Cite ONLY from the CITATION EVIDENCE using exact recommendation text
+3. Format: Rec [ID] (Class [X], Level [Y]) with verbatim quote
+4. If evidence doesn't cover the question, state this clearly"""
 
                 for i, msg in enumerate(body["messages"]):
                     if msg.get("role") == "user" and msg.get("content") == user_message:
@@ -162,28 +159,52 @@ class Filter:
 
         return body
 
-    def _format_context(self, chunks: list, guidelines: dict) -> str:
-        """Format retrieved chunks into readable context."""
+    def _format_dual_context(
+        self, narrative_chunks: list, citation_chunks: list, guidelines: dict
+    ) -> str:
+        """Format dual-source chunks into structured context."""
         guideline_names = [g.get("name", k) for k, g in guidelines.items()]
-        header = f"**Sources**: {', '.join(guideline_names)}\n\n"
-
-        formatted_chunks = []
-        for i, chunk in enumerate(chunks, 1):
-            rec_id = chunk.get("recommendation_id", "Unknown")
-            cls = chunk.get("class", "")
-            level = chunk.get("level", "")
-            content = chunk.get("content", "")
-            source = chunk.get("source_guideline", "")
-
-            meta = f"**{rec_id}**"
-            if cls or level:
-                meta += f" ({cls}, {level})"
-            if source:
-                meta += f" - {source}"
-
-            formatted_chunks.append(f"{i}. {meta}\n   {content}\n")
-
-        return header + "\n".join(formatted_chunks)
+        
+        sections = []
+        
+        # Narrative section (for synthesis)
+        if narrative_chunks:
+            sections.append("### NARRATIVE CONTEXT (for clinical synthesis)")
+            sections.append(f"**Sources**: {', '.join(guideline_names)}\n")
+            
+            for i, chunk in enumerate(narrative_chunks, 1):
+                content = chunk.get("content", "")
+                source = chunk.get("source_guideline", "")
+                similarity = chunk.get("similarity", 0)
+                
+                sections.append(f"**[{i}] {source}** (relevance: {similarity}%)")
+                sections.append(f"{content}\n")
+        
+        # Citation section (for verbatim quotes)
+        if citation_chunks:
+            sections.append("\n### CITATION EVIDENCE (for verbatim recommendations)")
+            sections.append("Use these EXACT texts when citing recommendations:\n")
+            
+            for i, chunk in enumerate(citation_chunks, 1):
+                rec_id = chunk.get("recommendation_id", "")
+                cls = chunk.get("class", "")
+                level = chunk.get("level", "")
+                guideline = chunk.get("guideline", "")
+                text = chunk.get("text", "")
+                
+                meta_parts = []
+                if rec_id:
+                    meta_parts.append(f"**{rec_id}**")
+                if cls and level:
+                    meta_parts.append(f"({cls}, {level})")
+                if guideline:
+                    meta_parts.append(f"— {guideline}")
+                
+                meta = " ".join(meta_parts) if meta_parts else f"Citation {i}"
+                sections.append(f"{meta}")
+                sections.append(f"> \"{text}\"\n")
+        
+        return "\n".join(sections)
 
     async def outlet(self, body: dict, user: Optional[dict] = None) -> dict:
         """Called after LLM response. Pass through without modification."""
