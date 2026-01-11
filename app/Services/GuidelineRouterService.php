@@ -7,23 +7,36 @@ use Illuminate\Support\Facades\Log;
 
 class GuidelineRouterService
 {
-    protected string $endpoint;
-    protected string $apiKey;
-    protected string $deployment;
-    protected string $apiVersion;
+    protected ?string $endpoint;
+    protected ?string $apiKey;
+    protected ?string $deployment;
+    protected ?string $apiVersion;
+    protected bool $isConfigured = false;
 
     public function __construct()
     {
         $this->endpoint = config('prism.providers.azure.endpoint');
         $this->apiKey = config('prism.providers.azure.api_key');
-        $this->deployment = config('prism.providers.azure.deployment');
-        $this->apiVersion = config('prism.providers.azure.api_version');
+        $this->deployment = config('prism.providers.azure.deployment', 'gpt-5-chat');
+        $this->apiVersion = config('prism.providers.azure.api_version', '2024-12-01-preview');
+        
+        $this->isConfigured = !empty($this->endpoint) && !empty($this->apiKey);
     }
 
     public function selectGuidelines(string $question, int $maxGuidelines = 3): array
     {
         $startTime = microtime(true);
         $log = Log::channel('retrieval');
+
+        $log->info('[LLM ROUTER] Question received for routing', [
+            'question_preview' => substr($question, 0, 80) . (strlen($question) > 80 ? '...' : ''),
+            'question_length' => strlen($question),
+        ]);
+
+        if (!$this->isConfigured) {
+            $log->warning('[LLM ROUTER] Azure OpenAI not configured, skipping LLM routing');
+            return [];
+        }
 
         $guidelineList = $this->buildGuidelineList();
         $prompt = $this->buildPrompt($question, $guidelineList, $maxGuidelines);

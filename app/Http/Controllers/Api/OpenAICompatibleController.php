@@ -447,9 +447,13 @@ class OpenAICompatibleController extends Controller
         $topK = $validated['top_k'] ?? 12;
 
         $log = \Log::channel('retrieval');
+        $log->info('[RAW QUERY] Received from OpenWebUI', [
+            'question_preview' => substr($question, 0, 80) . (strlen($question) > 80 ? '...' : ''),
+            'question_length' => strlen($question),
+        ]);
         $log->info('=== RETRIEVE REQUEST ===', [
             'timestamp' => now()->toIso8601String(),
-            'question' => $question,
+            'question_preview' => substr($question, 0, 80) . (strlen($question) > 80 ? '...' : ''),
             'requested_keys' => $requestedKeys,
             'top_k' => $topK,
             'client_ip' => $request->ip(),
