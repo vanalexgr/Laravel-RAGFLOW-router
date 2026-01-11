@@ -13,31 +13,28 @@ import httpx
 from pydantic import BaseModel, Field
 
 
-class Pipeline:
+# RENAMED FROM Pipeline TO Filter TO FIX "No Function class" ERROR
+class Filter:
     class Valves(BaseModel):
         RETRIEVE_API_URL: str = Field(
             default="https://your-replit-app.replit.app/api/v1/retrieve",
-            description="Laravel retrieval API endpoint URL"
+            description="Laravel retrieval API endpoint URL",
         )
         API_KEY: str = Field(
-            default="",
-            description="API secret key for authentication (API_SECRET_KEY)"
+            default="", description="API secret key for authentication (API_SECRET_KEY)"
         )
         TOP_K: int = Field(
-            default=12,
-            description="Number of chunks to retrieve (1-50)"
+            default=12, description="Number of chunks to retrieve (1-50)"
         )
         ENABLE_RAG: bool = Field(
-            default=True,
-            description="Enable/disable guideline retrieval"
+            default=True, description="Enable/disable guideline retrieval"
         )
         TIMEOUT_SECONDS: int = Field(
-            default=30,
-            description="Request timeout in seconds"
+            default=30, description="Request timeout in seconds"
         )
         INJECT_SYSTEM_PROMPT: bool = Field(
             default=True,
-            description="Inject recommended system prompt from API response"
+            description="Inject recommended system prompt from API response",
         )
 
     def __init__(self):
@@ -46,9 +43,13 @@ class Pipeline:
         self._client = None
 
     async def on_startup(self):
+        # Note: on_startup may not trigger in all Function contexts,
+        # so we also check for client existence in inlet
         print(f"[{self.name}] Pipeline initialized")
         print(f"[{self.name}] API URL: {self.valves.RETRIEVE_API_URL}")
-        self._client = httpx.AsyncClient(timeout=httpx.Timeout(self.valves.TIMEOUT_SECONDS))
+        self._client = httpx.AsyncClient(
+            timeout=httpx.Timeout(self.valves.TIMEOUT_SECONDS)
+        )
 
     async def on_shutdown(self):
         print(f"[{self.name}] Pipeline shutting down")
@@ -79,20 +80,20 @@ class Pipeline:
         print(f"[{self.name}] Retrieving guidelines for: {user_message[:100]}...")
 
         try:
+            # Ensure client exists (in case on_startup didn't fire)
             if not self._client:
-                self._client = httpx.AsyncClient(timeout=httpx.Timeout(self.valves.TIMEOUT_SECONDS))
-            
+                self._client = httpx.AsyncClient(
+                    timeout=httpx.Timeout(self.valves.TIMEOUT_SECONDS)
+                )
+
             response = await self._client.post(
                 self.valves.RETRIEVE_API_URL,
-                json={
-                    "question": user_message,
-                    "top_k": self.valves.TOP_K
-                },
+                json={"question": user_message, "top_k": self.valves.TOP_K},
                 headers={
                     "Authorization": f"Bearer {self.valves.API_KEY}",
                     "Content-Type": "application/json",
-                    "Accept": "application/json"
-                }
+                    "Accept": "application/json",
+                },
             )
 
             if response.status_code == 200:
@@ -107,7 +108,9 @@ class Pipeline:
                 duration_ms = data.get("duration_ms", 0)
                 system_prompt = data.get("system_prompt", "")
 
-                print(f"[{self.name}] Retrieved {len(chunks)} chunks in {duration_ms}ms")
+                print(
+                    f"[{self.name}] Retrieved {len(chunks)} chunks in {duration_ms}ms"
+                )
                 print(f"[{self.name}] Guidelines: {list(selected_guidelines.keys())}")
 
                 if not chunks:
@@ -118,10 +121,13 @@ class Pipeline:
                 if self.valves.INJECT_SYSTEM_PROMPT and system_prompt:
                     has_system = any(m.get("role") == "system" for m in messages)
                     if not has_system:
-                        messages.insert(0, {
-                            "role": "system",
-                            "content": system_prompt
-                        })
+                        # Insert new system prompt at the start
+                        messages.insert(0, {"role": "system", "content": system_prompt})
+                    else:
+                        # Optional: Append to existing system prompt instead?
+                        # For now, we leave existing system prompts alone if present
+                        pass
+
                     body["messages"] = messages
 
                 rag_prompt = f"""## ESVS Vascular Surgery Guidelines Evidence
@@ -143,7 +149,9 @@ class Pipeline:
                         break
 
             else:
-                print(f"[{self.name}] API error: {response.status_code} - {response.text[:200]}")
+                print(
+                    f"[{self.name}] API error: {response.status_code} - {response.text[:200]}"
+                )
 
         except httpx.TimeoutException:
             print(f"[{self.name}] Request timeout after {self.valves.TIMEOUT_SECONDS}s")
@@ -166,7 +174,6 @@ class Pipeline:
             level = chunk.get("level", "")
             content = chunk.get("content", "")
             source = chunk.get("source_guideline", "")
-            similarity = chunk.get("similarity", 0)
 
             meta = f"**{rec_id}**"
             if cls or level:
