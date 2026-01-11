@@ -114,6 +114,9 @@ All 14 guideline datasets are registered in `config/guidelines.php` with:
 - Category groupings (Aortic, Peripheral, Venous, Specialty)
 
 ## Recent Changes
+- 2026-01-11: Fixed 128k token limit errors on complex multi-guideline queries - reduced MAX_CHUNKS_TOTAL from 15→12, MAX_CHUNKS_PER_GUIDELINE from 8→6, added 800-char content truncation per chunk, simplified output format
+- 2026-01-11: Increased RESERVED_TOKENS from 30k→45k to account for system prompt + retrieval + response buffer
+- 2026-01-11: Added uvicorn keep-alive settings (timeout-keep-alive=120, timeout-graceful-shutdown=30) to RAGFlow Bridge to prevent workflow hanging
 - 2026-01-10: Added context truncation for 128k token limit - dynamic history budget based on user message size, validation error for oversized messages
 - 2026-01-10: Finalized V7.7 prompt implementation - added mandatory three-section format requirement (Clinical Synthesis, Recommendations, Supporting Statements) and improved CiteRecommendationsTool filter with metadata field fallback
 - 2026-01-10: Implemented V7.7 prompt engineering for VascularExpertAgent - strict verbatim rules, citation sanitizer, clean response architecture
