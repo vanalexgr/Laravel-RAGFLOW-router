@@ -280,6 +280,201 @@ async def retrieve_multi(request: Request, body: RetrieveMultiRequest):
         logger.error(f"Retrieve MULTI failed: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+class RetrieveDualRequest(BaseModel):
+    """Dual retrieval: narrative chunks (KG on) + citation chunks (KG off, metatags)."""
+    question: str
+    narrative_datasets: list[DatasetInfo]
+    citation_dataset_id: str
+    narrative_max: int = 8
+    citation_max: int = 4
+    top_k: int = 256
+    similarity_threshold: float = 0.2
+    vector_similarity_weight: float = 0.3
+    keyword: bool = True
+    rerank_id: Optional[str] = None
+    highlight: bool = True
+
+@app.post("/retrieve_dual")
+async def retrieve_dual(request: Request, body: RetrieveDualRequest):
+    """
+    Parallel dual retrieval:
+    - Narrative chunks: from full guideline datasets WITH KG enabled (for synthesis)
+    - Citation chunks: from recommendations-only dataset WITHOUT KG (for verbatim citations)
+    """
+    if SHARED_SECRET:
+        provided_secret = request.headers.get("X-Bridge-Secret")
+        if provided_secret != SHARED_SECRET:
+            raise HTTPException(status_code=403, detail="Unauthorized")
+
+    if not RAGFLOW_API_KEY:
+        raise HTTPException(status_code=500, detail="RAGFLOW_API_KEY not configured")
+
+    logger.info(f"Retrieve DUAL request: question='{body.question[:50]}...'")
+    logger.info(f"  Narrative datasets: {len(body.narrative_datasets)}, Citation dataset: {body.citation_dataset_id}")
+
+    start_time = datetime.now()
+
+    async def fetch_narrative_chunks(client: httpx.AsyncClient) -> dict:
+        """Fetch narrative chunks with KG enabled from full guideline datasets."""
+        if not body.narrative_datasets:
+            return {"chunks": [], "duration_ms": 0, "per_dataset": []}
+
+        # Parallel fetch per narrative dataset
+        async def fetch_single(ds: DatasetInfo) -> dict:
+            ds_start = datetime.now()
+            payload = {
+                "question": body.question,
+                "dataset_ids": [ds.id],
+                "top_k": body.top_k,
+                "page": 1,
+                "size": body.narrative_max,
+                "similarity_threshold": body.similarity_threshold,
+                "vector_similarity_weight": body.vector_similarity_weight,
+                "keyword": body.keyword,
+                "highlight": body.highlight,
+                "use_kg": True,  # KG enabled for narrative
+            }
+            if body.rerank_id:
+                payload["rerank_id"] = body.rerank_id
+
+            try:
+                response = await client.post(
+                    f"{RAGFLOW_BASE_URL}/retrieval",
+                    json=payload,
+                    headers={
+                        "Authorization": f"Bearer {RAGFLOW_API_KEY}",
+                        "Content-Type": "application/json",
+                    }
+                )
+                ds_duration = (datetime.now() - ds_start).total_seconds() * 1000
+                result = response.json()
+                chunks = result.get("data", {}).get("chunks", [])
+                
+                # Tag chunks with source
+                for chunk in chunks:
+                    chunk["_source_guideline"] = ds.name
+                    chunk["_source_dataset_id"] = ds.id
+                    chunk["_chunk_type"] = "narrative"
+                
+                max_per = min(6, body.narrative_max // max(1, len(body.narrative_datasets)))
+                capped = chunks[:max_per]
+                logger.info(f"  Narrative {ds.name}: retrieved={len(chunks)} capped={len(capped)} ({ds_duration:.0f}ms)")
+                return {
+                    "dataset_name": ds.name,
+                    "chunks": capped,
+                    "total": len(chunks),
+                    "duration_ms": ds_duration,
+                }
+            except Exception as e:
+                logger.warning(f"  Narrative {ds.name}: FAILED - {str(e)}")
+                return {"dataset_name": ds.name, "chunks": [], "total": 0, "error": str(e)}
+
+        tasks = [fetch_single(ds) for ds in body.narrative_datasets]
+        results = await asyncio.gather(*tasks)
+        
+        # Interleave chunks from all datasets
+        all_chunks_lists = [r["chunks"] for r in results]
+        max_rounds = max((len(c) for c in all_chunks_lists), default=0)
+        interleaved = []
+        for i in range(max_rounds):
+            for chunks in all_chunks_lists:
+                if i < len(chunks):
+                    interleaved.append(chunks[i])
+        
+        capped = interleaved[:body.narrative_max]
+        total_duration = max((r.get("duration_ms", 0) for r in results), default=0)
+        
+        return {
+            "chunks": capped,
+            "duration_ms": total_duration,
+            "per_dataset": [{"name": r["dataset_name"], "count": len(r["chunks"])} for r in results],
+        }
+
+    async def fetch_citation_chunks(client: httpx.AsyncClient) -> dict:
+        """Fetch citation chunks WITHOUT KG from recommendations-only dataset."""
+        cit_start = datetime.now()
+        payload = {
+            "question": body.question,
+            "dataset_ids": [body.citation_dataset_id],
+            "top_k": body.top_k,
+            "page": 1,
+            "size": body.citation_max,
+            "similarity_threshold": body.similarity_threshold,
+            "vector_similarity_weight": body.vector_similarity_weight,
+            "keyword": body.keyword,
+            "highlight": body.highlight,
+            # NO use_kg - recommendations dataset doesn't have KG
+        }
+        if body.rerank_id:
+            payload["rerank_id"] = body.rerank_id
+
+        try:
+            response = await client.post(
+                f"{RAGFLOW_BASE_URL}/retrieval",
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {RAGFLOW_API_KEY}",
+                    "Content-Type": "application/json",
+                }
+            )
+            cit_duration = (datetime.now() - cit_start).total_seconds() * 1000
+            result = response.json()
+            chunks = result.get("data", {}).get("chunks", [])
+            
+            # Tag chunks
+            for chunk in chunks:
+                chunk["_source_guideline"] = "ESVS Recommendations"
+                chunk["_source_dataset_id"] = body.citation_dataset_id
+                chunk["_chunk_type"] = "citation"
+            
+            capped = chunks[:body.citation_max]
+            logger.info(f"  Citations: retrieved={len(chunks)} capped={len(capped)} ({cit_duration:.0f}ms)")
+            return {
+                "chunks": capped,
+                "total": len(chunks),
+                "duration_ms": cit_duration,
+            }
+        except Exception as e:
+            logger.warning(f"  Citations: FAILED - {str(e)}")
+            return {"chunks": [], "total": 0, "error": str(e), "duration_ms": 0}
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            narrative_task = fetch_narrative_chunks(client)
+            citation_task = fetch_citation_chunks(client)
+            narrative_result, citation_result = await asyncio.gather(narrative_task, citation_task)
+
+        total_duration = (datetime.now() - start_time).total_seconds() * 1000
+
+        logger.info(f"Retrieve DUAL complete: narrative={len(narrative_result['chunks'])} citations={len(citation_result['chunks'])} total_duration={total_duration:.0f}ms")
+
+        return {
+            "status": 200,
+            "duration_ms": total_duration,
+            "narrative": {
+                "chunks": narrative_result["chunks"],
+                "count": len(narrative_result["chunks"]),
+                "per_dataset": narrative_result.get("per_dataset", []),
+                "duration_ms": narrative_result.get("duration_ms", 0),
+            },
+            "citations": {
+                "chunks": citation_result["chunks"],
+                "count": len(citation_result["chunks"]),
+                "duration_ms": citation_result.get("duration_ms", 0),
+            },
+            "retrieval_info": {
+                "rerank_id": body.rerank_id,
+                "narrative_use_kg": True,
+                "citation_use_kg": False,
+                "narrative_max": body.narrative_max,
+                "citation_max": body.citation_max,
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Retrieve DUAL failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "ragflow-bridge"}

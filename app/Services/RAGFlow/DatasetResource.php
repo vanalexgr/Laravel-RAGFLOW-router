@@ -73,4 +73,26 @@ class DatasetResource
 
         return $this->client->post('retrieve_multi', $payload);
     }
+
+    /**
+     * Dual retrieval: narrative chunks (KG on) + citation chunks (KG off).
+     * Uses the bridge's /retrieve_dual endpoint for parallel fetching.
+     *
+     * @param array $narrativeDatasets Array of ['id' => string, 'name' => string] for narrative retrieval
+     * @param string $citationDatasetId ID of the recommendations-only dataset
+     * @param array $parameters Query parameters including:
+     *   - question (required): Query text
+     *   - narrative_max (optional): Max narrative chunks (default: 8)
+     *   - citation_max (optional): Max citation chunks (default: 4)
+     * @return array
+     */
+    public function retrieveDual(array $narrativeDatasets, string $citationDatasetId, array $parameters): array
+    {
+        $payload = array_merge($parameters, [
+            'narrative_datasets' => $narrativeDatasets,
+            'citation_dataset_id' => $citationDatasetId,
+        ]);
+
+        return $this->client->post('retrieve_dual', $payload);
+    }
 }

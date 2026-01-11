@@ -1,21 +1,27 @@
 # ESVS Vascular Guidelines RAG Filter Pipeline for OpenWebUI
 
-This filter pipeline enables fast (<5 second) retrieval of ESVS vascular surgery guidelines, letting OpenWebUI handle answer synthesis with native streaming.
+This filter pipeline enables fast (<5 second) retrieval of ESVS vascular surgery guidelines with **dual-source retrieval**:
+- **Narrative chunks** (KG-enabled) for clinical synthesis
+- **Citation chunks** (metatag-rich) for verbatim recommendations
 
-## Architecture
+## Architecture (v2.0)
 
 ```
 User Question
      ↓
 [OpenWebUI Filter Pipeline]
      ↓
-[Laravel /api/v1/retrieve] ← Guideline selection + RAGFlow retrieval
+[Laravel /api/v1/retrieve]
      ↓
-[Chunks injected as context]
+[RAGFlow Bridge /retrieve_dual]
+     ├── Narrative: Full guideline datasets (use_kg=true)
+     └── Citations: Recommendations dataset (use_kg=false, metatags)
+     ↓
+[Dual chunks injected as context]
      ↓
 [OpenWebUI's LLM] ← Native streaming to user
      ↓
-Answer with citations
+Answer with synthesis + verbatim citations
 ```
 
 ## Installation
@@ -40,7 +46,7 @@ Click on the pipeline to configure these settings ("Valves"):
 |---------|-------|
 | `RETRIEVE_API_URL` | `https://your-app.replit.app/api/v1/retrieve` |
 | `API_KEY` | Your `API_SECRET_KEY` value |
-| `TOP_K` | `12` (default, adjust 1-50) |
+| `TOP_K` | `12` (default, 8 narrative + 4 citations) |
 | `ENABLE_RAG` | `true` |
 | `TIMEOUT_SECONDS` | `30` |
 | `INJECT_SYSTEM_PROMPT` | `true` |
@@ -56,11 +62,11 @@ Click on the pipeline to configure these settings ("Valves"):
 Once configured, simply chat with your model. The pipeline will:
 
 1. Intercept your question
-2. Call the Laravel API to retrieve relevant guideline chunks
-3. Inject the chunks as context into your prompt
+2. Call the Laravel API for dual-source retrieval
+3. Inject **narrative chunks** (for synthesis) and **citation chunks** (for verbatim quotes)
 4. Pass to OpenWebUI's LLM for synthesis with streaming
 
-## API Response Format
+## API Response Format (v2.0)
 
 The Laravel `/api/v1/retrieve` endpoint returns:
 
@@ -74,21 +80,42 @@ The Laravel `/api/v1/retrieve` endpoint returns:
       "name": "ESVS Carotid Guidelines 2023"
     }
   },
-  "chunks": [
+  "narrative_chunks": [
     {
+      "type": "narrative",
+      "content": "Full guideline text with KG expansion...",
+      "source_guideline": "ESVS Carotid Guidelines 2023",
+      "similarity": 92.5
+    }
+  ],
+  "citation_chunks": [
+    {
+      "type": "citation",
       "recommendation_id": "Rec 12",
       "class": "Class I",
       "level": "Level A",
-      "content": "In symptomatic patients with carotid stenosis...",
-      "source_guideline": "ESVS Carotid Guidelines 2023",
+      "guideline": "Carotid",
+      "text": "In symptomatic patients with carotid stenosis...",
       "similarity": 89.5
     }
   ],
-  "chunk_count": 12,
-  "duration_ms": 1850,
-  "system_prompt": "You are a vascular surgery expert..."
+  "narrative_count": 8,
+  "citation_count": 4,
+  "duration_ms": 3500,
+  "system_prompt": "You are an ESVS clinical guideline assistant..."
 }
 ```
+
+## Dual-Source Retrieval
+
+| Source | Purpose | KG | Metatags |
+|--------|---------|-----|----------|
+| Narrative chunks | Clinical synthesis | Enabled | Limited |
+| Citation chunks | Verbatim quotes | Disabled | Full (rec_id, class, level) |
+
+**Why dual sources?**
+- Narrative chunks provide rich context from knowledge graph expansion
+- Citation chunks preserve exact recommendation text with metadata for proper citation
 
 ## Troubleshooting
 
@@ -98,12 +125,13 @@ The Laravel `/api/v1/retrieve` endpoint returns:
 - Ensure the API key matches your Laravel `API_SECRET_KEY`
 
 ### Slow responses
-- Reduce `TOP_K` to retrieve fewer chunks
-- Check RAGFlow bridge is running
+- Normal response time is 3-5 seconds
+- Check RAGFlow bridge is running: `RAGFlow Bridge` workflow
+- Reduce TOP_K if still slow
 
 ### No chunks returned
 - The question may not match any guideline topics
-- Check Laravel logs: `storage/logs/laravel-YYYY-MM-DD.log`
+- Check retrieval logs: `storage/logs/retrieval-YYYY-MM-DD.log`
 
 ## Comparison: Filter Pipeline vs Agent
 
@@ -111,7 +139,7 @@ The Laravel `/api/v1/retrieve` endpoint returns:
 |---------|----------------------|--------------|
 | Response time | 3-5 seconds | 25-30 seconds |
 | Streaming | Native OpenWebUI | Simulated |
-| V7.7 prompt enforcement | No | Yes |
+| Dual retrieval | Yes (v2.0) | Yes |
 | Multi-turn memory | OpenWebUI handles | Laravel handles |
-| Citation formatting | LLM-dependent | Enforced |
+| Citation formatting | LLM-guided | V7.7 enforced |
 | Best for | General queries | Compliance-critical |
