@@ -480,7 +480,7 @@ class OpenAICompatibleController extends Controller
             }
 
             // Step 2: Dual retrieval - narrative chunks (KG) + citation chunks (no KG)
-            $narrativeMax = 8;
+            $narrativeMax = 12;
             $citationMax = 5;
             
             $dualResult = $this->retrieveDualChunks($question, $selectedGuidelines, $narrativeMax, $citationMax);
