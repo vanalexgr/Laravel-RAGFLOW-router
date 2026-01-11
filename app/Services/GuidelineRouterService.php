@@ -15,12 +15,12 @@ class GuidelineRouterService
 
     public function __construct()
     {
-        $this->endpoint = config('prism.providers.azure.endpoint');
-        $this->apiKey = config('prism.providers.azure.api_key');
-        $this->deployment = config('prism.providers.azure.deployment', 'gpt-5-chat');
-        $this->apiVersion = config('prism.providers.azure.api_version', '2024-12-01-preview');
+        $this->endpoint = config('prism.providers.azure.endpoint') ?: env('AZURE_OPENAI_ENDPOINT');
+        $this->apiKey = config('prism.providers.azure.api_key') ?: env('AZURE_OPENAI_API_KEY');
+        $this->deployment = config('prism.providers.azure.deployment') ?: env('AZURE_OPENAI_DEPLOYMENT', 'gpt-5-chat');
+        $this->apiVersion = config('prism.providers.azure.api_version') ?: env('AZURE_OPENAI_VERSION', '2024-12-01-preview');
         
-        $this->isConfigured = !empty($this->endpoint) && !empty($this->apiKey);
+        $this->isConfigured = !empty($this->endpoint) && !empty($this->apiKey) && !empty($this->deployment);
     }
 
     public function selectGuidelines(string $question, int $maxGuidelines = 3): array
@@ -43,6 +43,11 @@ class GuidelineRouterService
 
         try {
             $url = rtrim($this->endpoint, '/') . "/openai/deployments/{$this->deployment}/chat/completions?api-version={$this->apiVersion}";
+            
+            $log->debug('[LLM ROUTER] Calling Azure OpenAI', [
+                'url' => $url,
+                'deployment' => $this->deployment,
+            ]);
 
             $response = Http::timeout(10)
                 ->withHeaders([
