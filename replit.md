@@ -43,3 +43,14 @@ The application is built on Laravel 12 and uses the Vizra ADK for AI agent orche
 - **Uvicorn:** ASGI web server for the optional Python RAGFlow bridge.
 - **FastAPI:** Python web framework used for the optional RAGFlow bridge.
 - **httpx:** Asynchronous HTTP client used in the OpenWebUI filter pipeline.
+
+## Recent Changes
+- 2026-01-11: Added pipeline resilience (v2.1):
+  - Retry logic with exponential backoff (2 attempts) for retrieval API calls
+  - User-visible warning when retrieval fails or returns empty (prevents silent hallucination)
+  - Warm-up ping on pipeline startup to wake Laravel/RAGFlow services
+  - Correlation ID (X-Correlation-ID) for cross-service request tracing
+  - `/api/v1/health/retrieval` endpoint for quick status checks
+  - `/health` endpoint on RAGFlow Bridge for monitoring
+- 2026-01-11: Parallelized LLM routing + query expansion using Http::pool() - both calls run concurrently, reducing LLM overhead from ~3.8s to ~2.7s
+- 2026-01-11: Added LLM-based query expansion for better retrieval - expands medical terminology (e.g., "blunt carotid trauma" → "blunt cerebrovascular injury BCVI") before RAGFlow retrieval
