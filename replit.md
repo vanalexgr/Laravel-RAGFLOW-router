@@ -113,7 +113,31 @@ All 14 guideline datasets are registered in `config/guidelines.php` with:
 - Key concepts for automatic routing
 - Category groupings (Aortic, Peripheral, Venous, Specialty)
 
+## Dual Architecture
+
+Two pathways are available for different use cases:
+
+### 1. Fast Retrieval API (POST /api/v1/retrieve)
+- Target latency: <5 seconds (vs 25-30s agent)
+- Returns structured chunks without LLM processing
+- OpenWebUI handles answer synthesis with native streaming
+- Best for: General queries, fast responses
+
+### 2. Full Agent (POST /api/v1/chat/completions)
+- Uses VascularExpertAgent with V7.7 prompt engineering
+- Multi-step workflow: select → retrieve → synthesize → cite
+- Best for: Compliance-critical cases requiring strict citation formatting
+
+### OpenWebUI Filter Pipeline
+- Location: `openwebui_pipeline/esvs_rag_filter.py`
+- Uses async httpx for non-blocking HTTP calls
+- Configure via OpenWebUI Admin Panel → Pipelines
+- See `openwebui_pipeline/README.md` for installation
+
 ## Recent Changes
+- 2026-01-11: Added dual-architecture approach - retrieval-only API for fast OpenWebUI integration + existing agent for compliance-critical workflows
+- 2026-01-11: Created POST /api/v1/retrieve endpoint returning structured chunks (3-5s response time)
+- 2026-01-11: Created OpenWebUI Filter Pipeline (openwebui_pipeline/esvs_rag_filter.py) using async httpx
 - 2026-01-11: Fixed 128k token limit errors on complex multi-guideline queries - reduced MAX_CHUNKS_TOTAL from 15→12, MAX_CHUNKS_PER_GUIDELINE from 8→6, added 800-char content truncation per chunk, simplified output format
 - 2026-01-11: Increased RESERVED_TOKENS from 30k→45k to account for system prompt + retrieval + response buffer
 - 2026-01-11: Added uvicorn keep-alive settings (timeout-keep-alive=120, timeout-graceful-shutdown=30) to RAGFlow Bridge to prevent workflow hanging

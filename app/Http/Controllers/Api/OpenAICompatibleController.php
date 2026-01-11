@@ -426,4 +426,267 @@ class OpenAICompatibleController extends Controller
         echo "data: " . json_encode($event) . "\n\n";
         flush();
     }
+
+    /**
+     * Retrieval-only endpoint for OpenWebUI Filter Pipeline.
+     * Returns chunks without LLM processing - OpenWebUI handles synthesis.
+     */
+    public function retrieve(Request $request): JsonResponse
+    {
+        $startTime = microtime(true);
+        
+        $validated = $request->validate([
+            'question' => 'required|string|max:2000',
+            'guideline_keys' => 'array',
+            'guideline_keys.*' => 'string',
+            'top_k' => 'integer|min:1|max:50',
+        ]);
+
+        $question = $validated['question'];
+        $requestedKeys = $validated['guideline_keys'] ?? null;
+        $topK = $validated['top_k'] ?? 12;
+
+        \Log::info('Retrieve endpoint called', [
+            'question' => $question,
+            'requested_keys' => $requestedKeys,
+            'top_k' => $topK,
+        ]);
+
+        try {
+            // Step 1: Select guidelines (if not specified)
+            if (empty($requestedKeys)) {
+                $selectedGuidelines = $this->selectGuidelines($question);
+            } else {
+                $selectedGuidelines = $this->validateGuidelineKeys($requestedKeys);
+            }
+
+            if (empty($selectedGuidelines)) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'No matching guidelines found for query',
+                    'duration_ms' => round((microtime(true) - $startTime) * 1000),
+                ], 404);
+            }
+
+            // Step 2: Retrieve chunks from RAGFlow
+            $chunks = $this->retrieveChunks($question, $selectedGuidelines, $topK);
+
+            $duration = round((microtime(true) - $startTime) * 1000);
+
+            \Log::info('Retrieve endpoint complete', [
+                'guidelines_selected' => count($selectedGuidelines),
+                'chunks_returned' => count($chunks),
+                'duration_ms' => $duration,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'question' => $question,
+                'selected_guidelines' => $selectedGuidelines,
+                'chunks' => $chunks,
+                'chunk_count' => count($chunks),
+                'duration_ms' => $duration,
+                'system_prompt' => $this->getRecommendedSystemPrompt(),
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Retrieve endpoint error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+                'duration_ms' => round((microtime(true) - $startTime) * 1000),
+            ], 500);
+        }
+    }
+
+    protected function selectGuidelines(string $question): array
+    {
+        $questionLower = strtolower($question);
+        $categories = config('guidelines.categories', []);
+        
+        $forceRules = [
+            'carotid' => ['triggers' => ['carotid', 'cea', 'cas ', 'tcar'], 'keys' => ['carotid_vertebral']],
+            'aaa' => ['triggers' => ['abdominal aortic aneurysm', 'aaa', 'evar', 'endoleak'], 'keys' => ['abdominal_aortic_aneurysm']],
+            'trauma' => ['triggers' => ['trauma', 'reboa', 'vascular injury'], 'keys' => ['vascular_trauma']],
+            'pad' => ['triggers' => ['peripheral arterial', 'pad', 'claudication', 'abi'], 'keys' => ['asymptomatic_pad']],
+            'clti' => ['triggers' => ['critical limb', 'clti', 'rest pain', 'gangrene'], 'keys' => ['clti']],
+            'dvt' => ['triggers' => ['dvt', 'deep vein', 'pulmonary embolism'], 'keys' => ['venous_thrombosis']],
+            'thoracic' => ['triggers' => ['type b dissection', 'tbad', 'tevar', 'thoracic aorta'], 'keys' => ['descending_thoracic_aorta']],
+        ];
+
+        $selected = [];
+        $registry = $this->buildGuidelineRegistry();
+
+        // Check force rules
+        foreach ($forceRules as $rule) {
+            foreach ($rule['triggers'] as $trigger) {
+                if (str_contains($questionLower, $trigger)) {
+                    foreach ($rule['keys'] as $key) {
+                        if (isset($registry[$key]) && !isset($selected[$key])) {
+                            $selected[$key] = $registry[$key];
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+
+        // If no forced matches, score all guidelines
+        if (empty($selected)) {
+            $candidates = [];
+            foreach ($categories as $category) {
+                foreach ($category['guidelines'] as $key => $guideline) {
+                    $score = 0;
+                    foreach ($guideline['key_concepts'] as $concept) {
+                        if (str_contains($questionLower, strtolower($concept))) {
+                            $score += 10;
+                        }
+                    }
+                    if ($score > 0) {
+                        $candidates[$key] = ['info' => $registry[$key], 'score' => $score];
+                    }
+                }
+            }
+            
+            uasort($candidates, fn($a, $b) => $b['score'] <=> $a['score']);
+            $topCandidates = array_slice($candidates, 0, 3, true);
+            
+            foreach ($topCandidates as $key => $data) {
+                $selected[$key] = $data['info'];
+            }
+        }
+
+        // Limit to 3 guidelines max
+        return array_slice($selected, 0, 3, true);
+    }
+
+    protected function validateGuidelineKeys(array $keys): array
+    {
+        $registry = $this->buildGuidelineRegistry();
+        $validated = [];
+        
+        foreach ($keys as $key) {
+            if (isset($registry[$key])) {
+                $validated[$key] = $registry[$key];
+            }
+        }
+        
+        return $validated;
+    }
+
+    protected function buildGuidelineRegistry(): array
+    {
+        $categories = config('guidelines.categories', []);
+        $registry = [];
+        
+        foreach ($categories as $category) {
+            foreach ($category['guidelines'] as $key => $guideline) {
+                $registry[$key] = [
+                    'id' => $guideline['id'],
+                    'name' => $guideline['name'],
+                ];
+            }
+        }
+        
+        return $registry;
+    }
+
+    protected function retrieveChunks(string $question, array $guidelines, int $topK): array
+    {
+        $datasetIds = array_map(fn($g) => $g['id'], array_values($guidelines));
+        $guidelineNames = array_map(fn($g) => $g['name'], array_values($guidelines));
+        
+        $retrievalConfig = config('ragflow.retrieval', []);
+        
+        $params = [
+            'question' => $question,
+            'top_k' => $retrievalConfig['top_k'] ?? 256,
+            'size' => $topK,
+            'page' => 1,
+            'similarity_threshold' => $retrievalConfig['similarity_threshold'] ?? 0.2,
+            'keyword' => true,
+            'vector_similarity_weight' => 0.3,
+            'highlight' => true,
+        ];
+
+        if (!empty($retrievalConfig['rerank_id'])) {
+            $params['rerank_id'] = $retrievalConfig['rerank_id'];
+        }
+        if ($retrievalConfig['use_kg'] ?? true) {
+            $params['use_kg'] = true;
+        }
+
+        // Use parallel retrieval for multiple guidelines
+        if (count($datasetIds) > 1) {
+            $datasets = [];
+            foreach ($guidelines as $key => $info) {
+                $datasets[] = ['id' => $info['id'], 'name' => $info['name']];
+            }
+            
+            $params['max_per_dataset'] = min(6, $topK);
+            $params['max_total'] = $topK;
+            
+            $response = \App\Facades\RAGFlow::datasets()->retrieveMulti($datasets, $params);
+            $rawChunks = $response['data']['chunks'] ?? [];
+        } else {
+            $response = \App\Facades\RAGFlow::datasets()->retrieve($datasetIds, $params);
+            $rawChunks = $response['data']['chunks'] ?? [];
+        }
+
+        // Cap to requested topK before formatting
+        $rawChunks = array_slice($rawChunks, 0, $topK);
+
+        // Format chunks for OpenWebUI consumption
+        return $this->formatChunksForPipeline($rawChunks, $guidelineNames);
+    }
+
+    protected function formatChunksForPipeline(array $rawChunks, array $guidelineNames): array
+    {
+        $formatted = [];
+        
+        foreach ($rawChunks as $chunk) {
+            $content = $chunk['content'] ?? $chunk['content_with_weight'] ?? '';
+            if (empty($content)) continue;
+
+            // Extract metadata
+            $recId = 'Unknown';
+            $class = '';
+            $level = '';
+            $text = $content;
+
+            if (preg_match('/RECOMMENDATION_ID:\s*(Rec\s*\d+)/i', $content, $m)) {
+                $recId = $m[1];
+            }
+            if (preg_match('/CLASS:\s*(Class\s*\S+)/i', $content, $m)) {
+                $class = $m[1];
+            }
+            if (preg_match('/LEVEL:\s*(Level\s*\S+)/i', $content, $m)) {
+                $level = $m[1];
+            }
+            if (preg_match('/RECOMMENDATION_TEXT:\s*(.+?)(?=TRIPLES:|$)/is', $content, $m)) {
+                $text = trim($m[1]);
+            }
+
+            // Truncate long content
+            if (strlen($text) > 800) {
+                $text = substr($text, 0, 800) . '...';
+            }
+
+            $formatted[] = [
+                'recommendation_id' => $recId,
+                'class' => $class,
+                'level' => $level,
+                'content' => $text,
+                'source_guideline' => $chunk['_source_guideline'] ?? ($guidelineNames[0] ?? 'ESVS Guidelines'),
+                'similarity' => round(($chunk['similarity'] ?? 0) * 100, 1),
+            ];
+        }
+
+        return $formatted;
+    }
+
+    protected function getRecommendedSystemPrompt(): string
+    {
+        return "You are a vascular surgery expert. Answer the question using ONLY the provided guideline evidence. For each claim, cite the exact recommendation (e.g., 'Rec 12, Class I, Level A'). If the evidence doesn't cover the question, say so clearly. Never invent recommendations.";
+    }
 }
