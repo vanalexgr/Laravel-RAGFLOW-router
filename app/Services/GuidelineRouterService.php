@@ -163,6 +163,97 @@ PROMPT;
         return $keys;
     }
 
+    public function selectAndExpand(string $question, int $maxGuidelines = 3): array
+    {
+        $startTime = microtime(true);
+        $log = Log::channel('retrieval');
+
+        if (!$this->isConfigured) {
+            $log->warning('[PARALLEL LLM] Azure OpenAI not configured');
+            return ['selected' => [], 'expanded' => $question];
+        }
+
+        $guidelineList = $this->buildGuidelineList();
+        $routingPrompt = $this->buildPrompt($question, $guidelineList, $maxGuidelines);
+        $expansionPrompt = $this->buildExpansionPrompt($question);
+
+        $url = rtrim($this->endpoint, '/') . "/openai/deployments/{$this->deployment}/chat/completions?api-version={$this->apiVersion}";
+
+        $log->info('[PARALLEL LLM] Starting routing + expansion', [
+            'question_preview' => substr($question, 0, 80),
+        ]);
+
+        try {
+            $responses = Http::pool(fn ($pool) => [
+                $pool->as('routing')
+                    ->timeout(10)
+                    ->withHeaders(['api-key' => $this->apiKey, 'Content-Type' => 'application/json'])
+                    ->post($url, [
+                        'messages' => [
+                            ['role' => 'system', 'content' => 'You are a medical guideline router. Return ONLY valid JSON.'],
+                            ['role' => 'user', 'content' => $routingPrompt],
+                        ],
+                        'max_tokens' => 150,
+                        'temperature' => 0,
+                    ]),
+                $pool->as('expansion')
+                    ->timeout(10)
+                    ->withHeaders(['api-key' => $this->apiKey, 'Content-Type' => 'application/json'])
+                    ->post($url, [
+                        'messages' => [
+                            ['role' => 'system', 'content' => 'You are a medical terminology expert. Return only the expanded query, nothing else.'],
+                            ['role' => 'user', 'content' => $expansionPrompt],
+                        ],
+                        'max_tokens' => 200,
+                        'temperature' => 0,
+                    ]),
+            ]);
+
+            $selected = [];
+            if ($responses['routing']->successful()) {
+                $content = $responses['routing']->json('choices.0.message.content', '');
+                $selected = $this->parseResponse($content);
+            }
+
+            $expanded = $question;
+            if ($responses['expansion']->successful()) {
+                $exp = trim($responses['expansion']->json('choices.0.message.content', ''));
+                if (!empty($exp) && strlen($exp) >= strlen($question)) {
+                    $expanded = $exp;
+                }
+            }
+
+            $duration = round((microtime(true) - $startTime) * 1000);
+            $log->info('[PARALLEL LLM] Complete', [
+                'selected_keys' => $selected,
+                'expanded_preview' => substr($expanded, 0, 100),
+                'duration_ms' => $duration,
+            ]);
+
+            return ['selected' => $selected, 'expanded' => $expanded];
+
+        } catch (\Exception $e) {
+            $log->error('[PARALLEL LLM] Exception', ['error' => $e->getMessage()]);
+            return ['selected' => [], 'expanded' => $question];
+        }
+    }
+
+    protected function buildExpansionPrompt(string $question): string
+    {
+        return <<<PROMPT
+Expand this vascular surgery clinical query with medical synonyms and terminology to improve document retrieval.
+
+Add relevant:
+- Medical abbreviations (BCVI, AAA, PAD, CLI, CLTI, LEAD, DVT, PE, VTE, CAS, CEA, EVAR, TEVAR, FEVAR, TAA, TAAA)
+- Alternate terms (e.g., "blunt carotid trauma" → "blunt cerebrovascular injury", "leg pain" → "intermittent claudication")
+- Related anatomical terms and procedures
+
+Return ONLY the expanded query as a single line. Keep original terms and add synonyms.
+
+Original query: "{$question}"
+PROMPT;
+    }
+
     public function expandQuery(string $question): string
     {
         $startTime = microtime(true);
