@@ -135,6 +135,8 @@ Two pathways are available for different use cases:
 - See `openwebui_pipeline/README.md` for installation
 
 ## Recent Changes
+- 2026-01-11: Added LLM-based guideline routing using Azure GPT-5 - semantic understanding replaces keyword matching, with fallback to rule-based selection
+- 2026-01-11: Created GuidelineRouterService for fast LLM routing (~500ms, max_tokens=150, temperature=0)
 - 2026-01-11: Implemented dual-source retrieval in /api/v1/retrieve - narrative_chunks (KG enabled) for synthesis + citation_chunks (no KG, metatags) for verbatim recommendations
 - 2026-01-11: Added /retrieve_dual endpoint to RAGFlow bridge for parallel narrative + citation retrieval
 - 2026-01-11: Updated OpenWebUI Filter Pipeline (v2.0) to handle dual-chunk injection with structured context

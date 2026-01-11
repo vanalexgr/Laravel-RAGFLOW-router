@@ -521,6 +521,31 @@ class OpenAICompatibleController extends Controller
 
     protected function selectGuidelines(string $question): array
     {
+        $registry = $this->buildGuidelineRegistry();
+        $log = \Log::channel('retrieval');
+
+        $router = new \App\Services\GuidelineRouterService();
+        $selectedKeys = $router->selectGuidelines($question, 3);
+
+        if (!empty($selectedKeys)) {
+            $selected = [];
+            foreach ($selectedKeys as $key) {
+                if (isset($registry[$key])) {
+                    $selected[$key] = $registry[$key];
+                }
+            }
+            if (!empty($selected)) {
+                $log->info('LLM routing succeeded', ['keys' => array_keys($selected)]);
+                return $selected;
+            }
+        }
+
+        $log->info('Falling back to rule-based routing');
+        return $this->selectGuidelinesRuleBased($question);
+    }
+
+    protected function selectGuidelinesRuleBased(string $question): array
+    {
         $questionLower = strtolower($question);
         $categories = config('guidelines.categories', []);
         
@@ -537,7 +562,6 @@ class OpenAICompatibleController extends Controller
         $selected = [];
         $registry = $this->buildGuidelineRegistry();
 
-        // Check force rules
         foreach ($forceRules as $rule) {
             foreach ($rule['triggers'] as $trigger) {
                 if (str_contains($questionLower, $trigger)) {
@@ -551,7 +575,6 @@ class OpenAICompatibleController extends Controller
             }
         }
 
-        // If no forced matches, score all guidelines
         if (empty($selected)) {
             $candidates = [];
             foreach ($categories as $category) {
@@ -576,7 +599,6 @@ class OpenAICompatibleController extends Controller
             }
         }
 
-        // Limit to 3 guidelines max
         return array_slice($selected, 0, 3, true);
     }
 
