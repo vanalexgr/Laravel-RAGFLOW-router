@@ -554,24 +554,29 @@ class OpenAICompatibleController extends Controller
         $categories = config('guidelines.categories', []);
         
         $forceRules = [
-            'carotid' => ['triggers' => ['carotid', 'cea', 'cas ', 'tcar'], 'keys' => ['carotid_vertebral']],
-            'aaa' => ['triggers' => ['abdominal aortic aneurysm', 'aaa', 'evar', 'endoleak'], 'keys' => ['abdominal_aortic_aneurysm']],
-            'trauma' => ['triggers' => ['trauma', 'reboa', 'vascular injury'], 'keys' => ['vascular_trauma']],
-            'pad' => ['triggers' => ['peripheral arterial', 'pad', 'claudication', 'abi'], 'keys' => ['asymptomatic_pad']],
-            'clti' => ['triggers' => ['critical limb', 'clti', 'rest pain', 'gangrene'], 'keys' => ['clti']],
-            'dvt' => ['triggers' => ['dvt', 'deep vein', 'pulmonary embolism'], 'keys' => ['venous_thrombosis']],
-            'thoracic' => ['triggers' => ['type b dissection', 'tbad', 'tevar', 'thoracic aorta'], 'keys' => ['descending_thoracic_aorta']],
+            'carotid' => ['triggers' => ['carotid', 'corotid', 'carotis', 'cea', 'cas ', 'tcar', 'endarterectomy'], 'keys' => ['carotid_vertebral']],
+            'aaa' => ['triggers' => ['abdominal aortic aneurysm', 'aaa', 'evar', 'endoleak', 'infrarenal'], 'keys' => ['abdominal_aortic_aneurysm']],
+            'trauma' => ['triggers' => ['trauma', 'reboa', 'vascular injury', 'mangled', 'penetrating', 'blunt'], 'keys' => ['vascular_trauma']],
+            'pad' => ['triggers' => ['peripheral arterial', 'pad', 'claudication', 'abi', 'intermittent claudication'], 'keys' => ['asymptomatic_pad']],
+            'clti' => ['triggers' => ['critical limb', 'clti', 'rest pain', 'gangrene', 'tissue loss', 'limb salvage'], 'keys' => ['clti']],
+            'dvt' => ['triggers' => ['dvt', 'deep vein', 'pulmonary embolism', 'venous thrombosis', 'pe '], 'keys' => ['venous_thrombosis']],
+            'thoracic' => ['triggers' => ['type b dissection', 'tbad', 'tevar', 'thoracic aorta', 'descending aorta'], 'keys' => ['descending_thoracic_aorta']],
+            'arch' => ['triggers' => ['aortic arch', 'frozen elephant', 'zone 0', 'zone 1', 'zone 2'], 'keys' => ['aortic_arch']],
+            'mesenteric' => ['triggers' => ['mesenteric', 'bowel ischemia', 'sma', 'celiac', 'renal artery'], 'keys' => ['mesenteric_renal']],
+            'ali' => ['triggers' => ['acute limb', 'ali', 'embolectomy', 'pulseless'], 'keys' => ['acute_limb_ischaemia']],
         ];
 
         $selected = [];
         $registry = $this->buildGuidelineRegistry();
+        $log = \Log::channel('retrieval');
 
-        foreach ($forceRules as $rule) {
+        foreach ($forceRules as $ruleName => $rule) {
             foreach ($rule['triggers'] as $trigger) {
                 if (str_contains($questionLower, $trigger)) {
                     foreach ($rule['keys'] as $key) {
                         if (isset($registry[$key]) && !isset($selected[$key])) {
                             $selected[$key] = $registry[$key];
+                            $log->debug("Rule-based match: '{$trigger}' → {$key}");
                         }
                     }
                     break;
