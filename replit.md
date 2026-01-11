@@ -135,6 +135,7 @@ Two pathways are available for different use cases:
 - See `openwebui_pipeline/README.md` for installation
 
 ## Recent Changes
+- 2026-01-11: Added dedicated 'retrieval' logging channel - logs to storage/logs/retrieval-YYYY-MM-DD.log with structured data (question, guidelines selected, chunks returned, duration)
 - 2026-01-11: Added dual-architecture approach - retrieval-only API for fast OpenWebUI integration + existing agent for compliance-critical workflows
 - 2026-01-11: Created POST /api/v1/retrieve endpoint returning structured chunks (3-5s response time)
 - 2026-01-11: Created OpenWebUI Filter Pipeline (openwebui_pipeline/esvs_rag_filter.py) using async httpx
