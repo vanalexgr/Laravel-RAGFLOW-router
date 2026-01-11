@@ -19,6 +19,16 @@ RAGFLOW_API_KEY = os.getenv("RAGFLOW_API_KEY")
 RAGFLOW_BASE_URL = os.getenv("RAGFLOW_ENDPOINT", "https://ragflow.clinicalguidelines.io/api/v1")
 SHARED_SECRET = os.getenv("RAGFLOW_BRIDGE_SECRET")
 
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for service monitoring."""
+    return {
+        "status": "ok",
+        "service": "ragflow_bridge",
+        "ragflow_configured": bool(RAGFLOW_API_KEY),
+        "ragflow_endpoint": RAGFLOW_BASE_URL,
+    }
+
 class RetrieveRequest(BaseModel):
     question: str
     dataset_ids: list[str]

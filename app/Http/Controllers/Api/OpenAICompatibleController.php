@@ -545,6 +545,98 @@ class OpenAICompatibleController extends Controller
         }
     }
 
+    /**
+     * Health check endpoint for retrieval pipeline.
+     * Validates RAGFlow bridge connectivity and performs a quick retrieval test.
+     */
+    public function healthRetrieval(Request $request): JsonResponse
+    {
+        $startTime = microtime(true);
+        $log = \Log::channel('retrieval');
+        $correlationId = $request->header('X-Correlation-ID', substr(uniqid(), -8));
+        
+        $log->info("[HEALTH] Retrieval health check", ['correlation_id' => $correlationId]);
+        
+        $checks = [
+            'ragflow_bridge' => ['status' => 'unknown', 'latency_ms' => null],
+            'ragflow_api' => ['status' => 'unknown', 'latency_ms' => null],
+            'retrieval_test' => ['status' => 'unknown', 'chunks' => 0, 'latency_ms' => null],
+        ];
+        
+        try {
+            // Check 1: RAGFlow Bridge connectivity
+            $bridgeStart = microtime(true);
+            $bridgeUrl = rtrim(config('services.ragflow.bridge_url', 'http://localhost:8000'), '/');
+            $bridgeResponse = \Illuminate\Support\Facades\Http::timeout(5)->get("{$bridgeUrl}/health");
+            $checks['ragflow_bridge']['latency_ms'] = round((microtime(true) - $bridgeStart) * 1000);
+            $checks['ragflow_bridge']['status'] = $bridgeResponse->successful() ? 'ok' : 'error';
+        } catch (\Exception $e) {
+            $checks['ragflow_bridge']['status'] = 'error';
+            $checks['ragflow_bridge']['error'] = $e->getMessage();
+        }
+        
+        try {
+            // Check 2: Quick retrieval test with minimal query
+            $testStart = microtime(true);
+            $router = new \App\Services\GuidelineRouterService();
+            $registry = $this->buildGuidelineRegistry();
+            $firstGuideline = array_slice($registry, 0, 1, true);
+            
+            if (!empty($firstGuideline)) {
+                $datasetId = array_values($firstGuideline)[0]['id'];
+                $bridgeUrl = rtrim(config('services.ragflow.bridge_url', 'http://localhost:8000'), '/');
+                
+                $testResponse = \Illuminate\Support\Facades\Http::timeout(10)
+                    ->post("{$bridgeUrl}/retrieve", [
+                        'question' => 'health check test',
+                        'dataset_ids' => [$datasetId],
+                        'top_k' => 1,
+                        'enable_kg' => false,
+                    ]);
+                
+                $checks['retrieval_test']['latency_ms'] = round((microtime(true) - $testStart) * 1000);
+                
+                if ($testResponse->successful()) {
+                    $testData = $testResponse->json();
+                    $chunks = $testData['chunks'] ?? [];
+                    $checks['retrieval_test']['chunks'] = count($chunks);
+                    $checks['retrieval_test']['status'] = count($chunks) > 0 ? 'ok' : 'empty';
+                    $checks['ragflow_api']['status'] = 'ok';
+                    $checks['ragflow_api']['latency_ms'] = $checks['retrieval_test']['latency_ms'];
+                } else {
+                    $checks['retrieval_test']['status'] = 'error';
+                    $checks['ragflow_api']['status'] = 'error';
+                }
+            }
+        } catch (\Exception $e) {
+            $checks['retrieval_test']['status'] = 'error';
+            $checks['retrieval_test']['error'] = $e->getMessage();
+        }
+        
+        $overallStatus = 'ok';
+        foreach ($checks as $check) {
+            if ($check['status'] === 'error') {
+                $overallStatus = 'degraded';
+                break;
+            }
+        }
+        
+        $duration = round((microtime(true) - $startTime) * 1000);
+        
+        $log->info("[HEALTH] Check complete", [
+            'correlation_id' => $correlationId,
+            'status' => $overallStatus,
+            'duration_ms' => $duration,
+        ]);
+        
+        return response()->json([
+            'status' => $overallStatus,
+            'checks' => $checks,
+            'duration_ms' => $duration,
+            'timestamp' => now()->toIso8601String(),
+        ], $overallStatus === 'ok' ? 200 : 503);
+    }
+
     protected function selectGuidelines(string $question): array
     {
         $registry = $this->buildGuidelineRegistry();
