@@ -492,16 +492,22 @@ class OpenAICompatibleController extends Controller
         ]);
 
         try {
+            // IMPORTANT: Route based on QUESTION ONLY to avoid patient context terms 
+            // confusing guideline selection (e.g., patient with diabetes shouldn't 
+            // trigger diabetes guidelines when asking about carotid stenosis)
             $routingQuery = $scrubbedQuestion;
+            
+            // Query expansion can use patient context for better retrieval terms
+            $expansionQuery = $scrubbedQuestion;
             if (!empty($scrubbedPatientContext)) {
-                $contextSummary = substr($scrubbedPatientContext, 0, 500);
-                $routingQuery = $scrubbedQuestion . "\n\nPatient context: " . $contextSummary;
+                $contextSummary = substr($scrubbedPatientContext, 0, 300);
+                $expansionQuery = $scrubbedQuestion . "\n\nClinical context: " . $contextSummary;
             }
 
-            // Step 1: Parallel LLM calls - routing + query expansion (using scrubbed question + context)
+            // Step 1: Parallel LLM calls - routing (question only) + query expansion (with context)
             if (empty($requestedKeys)) {
                 $router = new \App\Services\GuidelineRouterService();
-                $llmResult = $router->selectAndExpand($routingQuery, 3);
+                $llmResult = $router->selectAndExpand($routingQuery, 3, $expansionQuery);
                 
                 $selectedKeys = $llmResult['selected'];
                 $expandedQuery = $llmResult['expanded'];

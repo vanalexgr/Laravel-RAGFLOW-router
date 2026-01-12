@@ -45,6 +45,10 @@ The application is built on Laravel 12 and uses the Vizra ADK for AI agent orche
 - **httpx:** Asynchronous HTTP client used in the OpenWebUI filter pipeline.
 
 ## Recent Changes
+- 2026-01-12: Fixed guideline routing when file attachments present:
+  - Routing now uses question-only (patient context excluded from guideline selection)
+  - Query expansion still uses patient context for better retrieval terms
+  - Prevents patient conditions (diabetes, etc.) from triggering wrong guidelines
 - 2026-01-12: Filter v2.6 with OpenWebUI v0.3+ attachment support:
   - Fixed file attachment processing for newer OpenWebUI versions
   - Supports file path, URL, base64, and nested file objects
