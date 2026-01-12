@@ -2,9 +2,9 @@
 title: ESVS Vascular Guidelines RAG Filter
 author: Medical AI Team
 date: 2026-01-12
-version: 2.2
+version: 2.6
 license: MIT
-description: Filter pipeline that retrieves ESVS vascular surgery guidelines from Laravel API with dual-source retrieval (narrative + citations), document attachment processing, and PHI de-identification. Includes retry logic, warm-up, and failure visibility.
+description: Filter pipeline that retrieves ESVS vascular surgery guidelines from Laravel API with dual-source retrieval (narrative + citations), document attachment processing, and PHI de-identification. Includes retry logic, warm-up, cold-start resilience, and OpenWebUI v0.3+ attachment support.
 requirements: httpx, pdfminer.six, python-docx
 """
 
@@ -85,7 +85,7 @@ class Filter:
         self._warmup_complete = False
 
     async def on_startup(self):
-        print(f"[{self.name}] Pipeline initialized (v2.5 - cold-start resilience)")
+        print(f"[{self.name}] Pipeline initialized (v2.6 - OpenWebUI attachment fix)")
         print(f"[{self.name}] API URL: {self.valves.RETRIEVE_API_URL}")
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(self.valves.TIMEOUT_SECONDS)
@@ -162,21 +162,70 @@ class Filter:
             return f"[Text extraction error: {str(e)[:50]}]"
 
     def _get_file_content(self, file_info: dict) -> Optional[bytes]:
-        """Get file content from OpenWebUI file info structure."""
+        """
+        Get file content from OpenWebUI file info structure.
+        Supports multiple formats:
+        - base64 data in 'data' field (legacy)
+        - raw content in 'content' field
+        - file path in 'path' field (OpenWebUI v0.3+)
+        - URL in 'url' field (OpenWebUI v0.3+)
+        """
+        # Debug: Log only structural info (keys present), no PHI including filenames
+        keys = list(file_info.keys())
+        print(f"[{self.name}] File structure: available_keys={keys}")
+        
+        # Method 1: Base64 data field (legacy format)
         if "data" in file_info and file_info["data"]:
             data = file_info["data"]
-            if "," in data:
-                data = data.split(",", 1)[1]
-            try:
-                return base64.b64decode(data)
-            except Exception:
-                return None
+            if isinstance(data, str):
+                if "," in data:
+                    data = data.split(",", 1)[1]
+                try:
+                    print(f"[{self.name}]   -> extracted from base64 data")
+                    return base64.b64decode(data)
+                except Exception as e:
+                    print(f"[{self.name}]   -> base64 decode failed: {type(e).__name__}")
+        
+        # Method 2: Raw content field
         if "content" in file_info:
             content = file_info["content"]
             if isinstance(content, bytes):
+                print(f"[{self.name}]   -> using raw bytes content ({len(content)} bytes)")
                 return content
-            elif isinstance(content, str):
+            elif isinstance(content, str) and len(content) > 0:
+                print(f"[{self.name}]   -> using string content ({len(content)} chars)")
                 return content.encode('utf-8')
+        
+        # Method 3: File path (OpenWebUI v0.3+ stores files on disk)
+        if "path" in file_info and file_info["path"]:
+            print(f"[{self.name}]   -> reading from local path")
+            try:
+                with open(file_info["path"], "rb") as f:
+                    return f.read()
+            except Exception as e:
+                print(f"[{self.name}]   -> path read failed: {type(e).__name__}")
+        
+        # Method 4: URL (fetch from URL if provided - only for trusted OpenWebUI endpoints)
+        if "url" in file_info and file_info["url"]:
+            url = file_info["url"]
+            # Only allow localhost/OpenWebUI URLs for security
+            if url.startswith(("http://localhost", "http://127.0.0.1", "https://localhost")):
+                print(f"[{self.name}]   -> fetching from local URL")
+                try:
+                    import urllib.request
+                    with urllib.request.urlopen(url, timeout=10) as response:
+                        return response.read()
+                except Exception as e:
+                    print(f"[{self.name}]   -> URL fetch failed: {type(e).__name__}")
+            else:
+                print(f"[{self.name}]   -> skipping external URL for security")
+        
+        # Method 5: Check for nested file object
+        if "file" in file_info and isinstance(file_info["file"], dict):
+            print(f"[{self.name}]   -> found nested file object, recursing")
+            return self._get_file_content(file_info["file"])
+        
+        print(f"[{self.name}]   -> no content source found")
         return None
 
     def _extract_attachments(self, body: dict) -> Tuple[str, List[Dict[str, Any]]]:
@@ -190,6 +239,19 @@ class Filter:
 
         extracted_texts = []
         metadata = []
+        
+        # Log structural info only (no content/PHI)
+        body_keys = [k for k in body.keys() if k != "messages"]
+        files_in_body = len(body.get("files", []))
+        files_in_metadata = len(body.get("metadata", {}).get("files", [])) if isinstance(body.get("metadata"), dict) else 0
+        
+        # Count files in messages
+        files_in_messages = 0
+        for msg in body.get("messages", []):
+            if msg.get("role") == "user" and "files" in msg:
+                files_in_messages += len(msg.get("files", []))
+        
+        print(f"[{self.name}] Attachment scan: body_keys={body_keys}, files_in_body={files_in_body}, files_in_metadata={files_in_metadata}, files_in_messages={files_in_messages}")
 
         # Method 1: Check for OpenWebUI's pre-processed document context
         # OpenWebUI may inject document content into messages as context
@@ -200,24 +262,25 @@ class Filter:
                 # Look for OpenWebUI's document injection patterns
                 if "### Document:" in content or "File:" in content or "Attached:" in content:
                     extracted_texts.append(content)
-                    metadata.append({"name": "system_context", "status": "extracted", "chars": len(content)})
+                    metadata.append({"id": "system_context", "status": "extracted", "chars": len(content)})
             
             # Check for context field in messages (OpenWebUI injects here sometimes)
             if "context" in msg:
                 ctx = msg.get("context", "")
                 if isinstance(ctx, str) and len(ctx) > 50:
                     extracted_texts.append(ctx)
-                    metadata.append({"name": "msg_context", "status": "extracted", "chars": len(ctx)})
+                    metadata.append({"id": "msg_context", "status": "extracted", "chars": len(ctx)})
             
             # Check for files array with pre-extracted content
             if msg.get("role") == "user" and "files" in msg:
-                for f in msg.get("files", []):
+                for idx, f in enumerate(msg.get("files", [])):
                     if isinstance(f, dict):
                         # OpenWebUI may include extracted_content or text field
                         for key in ["extracted_content", "text", "content", "summary"]:
                             if key in f and isinstance(f[key], str) and len(f[key]) > 20:
-                                extracted_texts.append(f"--- {f.get('name', 'Document')} ---\n{f[key]}")
-                                metadata.append({"name": f.get('name', 'file'), "status": "pre_extracted", "chars": len(f[key])})
+                                attachment_id = f"attachment_{len(metadata)+1}"
+                                extracted_texts.append(f"--- {attachment_id} ---\n{f[key]}")
+                                metadata.append({"id": attachment_id, "status": "pre_extracted", "chars": len(f[key])})
                                 break
 
         # Method 2: Check top-level context field
@@ -225,10 +288,19 @@ class Filter:
             ctx = body.get("context", "")
             if isinstance(ctx, str) and len(ctx) > 50:
                 extracted_texts.append(ctx)
-                metadata.append({"name": "body_context", "status": "extracted", "chars": len(ctx)})
+                metadata.append({"id": "body_context", "status": "extracted", "chars": len(ctx)})
 
         # Method 3: Try raw file extraction (original method)
         files = body.get("files", [])
+        
+        # Also check metadata.files (OpenWebUI v0.3+)
+        if not files and "metadata" in body and isinstance(body.get("metadata"), dict):
+            meta_files = body.get("metadata", {}).get("files", [])
+            if meta_files:
+                print(f"[{self.name}] DEBUG   Found {len(meta_files)} files in metadata.files")
+                files = meta_files
+        
+        # Check messages for files
         if not files:
             for msg in body.get("messages", []):
                 if msg.get("role") == "user" and "files" in msg:
@@ -239,20 +311,21 @@ class Filter:
 
         max_size = self.valves.MAX_ATTACHMENT_SIZE_KB * 1024
 
-        for file_info in files:
+        for idx, file_info in enumerate(files):
             if isinstance(file_info, str):
                 continue
 
+            attachment_id = f"attachment_{len(metadata)+1}"
             filename = file_info.get("name", file_info.get("filename", "unknown"))
             file_type = file_info.get("type", file_info.get("mime_type", ""))
             
             content = self._get_file_content(file_info)
             if not content:
-                metadata.append({"name": filename, "status": "no_content"})
+                metadata.append({"id": attachment_id, "status": "no_content"})
                 continue
 
             if len(content) > max_size:
-                metadata.append({"name": filename, "status": "too_large", "size_kb": len(content) // 1024})
+                metadata.append({"id": attachment_id, "status": "too_large", "size_kb": len(content) // 1024})
                 continue
 
             ext = filename.lower().split(".")[-1] if "." in filename else ""
@@ -264,18 +337,23 @@ class Filter:
             elif ext in ["txt", "text", "rtf", "md"] or "text/" in file_type.lower():
                 text = self._extract_text_from_txt(content)
             else:
-                metadata.append({"name": filename, "status": "unsupported_type", "type": file_type})
+                metadata.append({"id": attachment_id, "status": "unsupported_type", "ext": ext})
                 continue
 
             if text and not text.startswith("["):
-                extracted_texts.append(f"--- Document: {filename} ---\n{text}")
-                metadata.append({"name": filename, "status": "extracted", "chars": len(text)})
+                extracted_texts.append(f"--- {attachment_id} ---\n{text}")
+                metadata.append({"id": attachment_id, "status": "extracted", "chars": len(text)})
             else:
-                metadata.append({"name": filename, "status": "extraction_failed", "error": text})
+                metadata.append({"id": attachment_id, "status": "extraction_failed"})
 
         combined = "\n\n".join(extracted_texts)
         if len(combined) > self.valves.MAX_EXTRACTED_CHARS:
             combined = combined[:self.valves.MAX_EXTRACTED_CHARS] + "\n[...truncated due to length...]"
+
+        # Summary log (counts only, no PHI)
+        extracted_count = sum(1 for m in metadata if m.get("status") == "extracted")
+        failed_count = len(metadata) - extracted_count
+        print(f"[{self.name}] Attachment result: extracted={extracted_count}, failed={failed_count}, total_chars={len(combined)}")
 
         return (combined, metadata)
 
@@ -409,9 +487,8 @@ Please retry your question, or verify the RAG service is available.
         patient_context, attachment_metadata = self._extract_attachments(body)
         
         if patient_context:
-            print(f"[{self.name}] [{correlation_id}] Extracted {len(patient_context)} chars from {len(attachment_metadata)} attachment(s)")
-            for meta in attachment_metadata:
-                print(f"[{self.name}] [{correlation_id}]   - {meta.get('name')}: {meta.get('status')}")
+            extracted_count = sum(1 for m in attachment_metadata if m.get("status") == "extracted")
+            print(f"[{self.name}] [{correlation_id}] Extracted {len(patient_context)} chars from {extracted_count}/{len(attachment_metadata)} attachment(s)")
         
         print(f"[{self.name}] [{correlation_id}] Retrieving guidelines for: {user_message[:100]}...")
 

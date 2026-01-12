@@ -45,11 +45,13 @@ The application is built on Laravel 12 and uses the Vizra ADK for AI agent orche
 - **httpx:** Asynchronous HTTP client used in the OpenWebUI filter pipeline.
 
 ## Recent Changes
-- 2026-01-12: Added cold-start resilience to prevent service sleep:
+- 2026-01-12: Filter v2.6 with OpenWebUI v0.3+ attachment support:
+  - Fixed file attachment processing for newer OpenWebUI versions
+  - Supports file path, URL, base64, and nested file objects
+  - Sanitized logging to prevent PHI leakage (only counts/keys logged)
+  - SSRF protection: only localhost URLs allowed for file fetching
+  - Cold-start resilience: 60s timeout on first attempt, 45s thereafter
   - KeepAlive workflow pings Laravel and RAGFlow every 3 minutes
-  - Filter v2.5 uses 60s cold-start timeout on first attempt, 45s thereafter
-  - Cascading warmup: Laravel health check wakes RAGFlow Bridge automatically
-  - Retry logic with longer delays after timeout to allow services to fully wake
 - 2026-01-12: Added document attachment processing for OpenWebUI:
   - Filter pipeline (v2.2) extracts text from PDF, DOCX, TXT attachments
   - Patient context is de-identified before retrieval
