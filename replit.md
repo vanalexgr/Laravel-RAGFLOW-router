@@ -45,16 +45,19 @@ The application is built on Laravel 12 and uses the Vizra ADK for AI agent orche
 - **httpx:** Asynchronous HTTP client used in the OpenWebUI filter pipeline.
 
 ## Recent Changes
+- 2026-01-12: Document-aware guideline routing:
+  - Created DocumentContextAnalyzerService to extract clinical entities from patient documents
+  - Routing now uses BOTH patient document content AND the question for guideline selection
+  - Matches conditions (gangrene, rest pain, DVT) and procedures against key_concepts in guidelines
+  - LLM routing is merged with document analysis for optimal guideline selection
+  - Falls back to document analysis when LLM is unavailable or fails
+  - Example: Patient with gangrene + tissue loss + generic question → correctly routes to CLTI guideline
 - 2026-01-12: Fixed guideline knowledge injection when routing fails:
   - Added keyword-based fallback scoring using key_concepts from config/guidelines.php
   - When LLM and rule-based routing both fail, top 4 matching guidelines are selected by keyword overlap
   - Prevents 404 errors for vague queries, ensures ESVS content is always available
   - Added detailed logging for dataset selection and retrieval
   - Response time maintained at ~8s instead of timeout (>30s when querying all 14 datasets)
-- 2026-01-12: Fixed guideline routing when file attachments present:
-  - Routing now uses question-only (patient context excluded from guideline selection)
-  - Query expansion still uses patient context for better retrieval terms
-  - Prevents patient conditions (diabetes, etc.) from triggering wrong guidelines
 - 2026-01-12: Filter v2.6 with OpenWebUI v0.3+ attachment support:
   - Fixed file attachment processing for newer OpenWebUI versions
   - Supports file path, URL, base64, and nested file objects
@@ -65,7 +68,6 @@ The application is built on Laravel 12 and uses the Vizra ADK for AI agent orche
 - 2026-01-12: Added document attachment processing for OpenWebUI:
   - Filter pipeline (v2.2) extracts text from PDF, DOCX, TXT attachments
   - Patient context is de-identified before retrieval
-  - Combined question + context routing for better guideline selection
   - Scrubbed patient context returned to LLM for clinical synthesis
 - 2026-01-12: Added European date and identifier formats:
   - European dates: DD/MM/YYYY, DD.MM.YYYY, DD-MM-YYYY
