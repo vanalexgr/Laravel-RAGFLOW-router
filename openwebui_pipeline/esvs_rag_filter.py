@@ -242,38 +242,39 @@ class Filter:
         
         # Log structural info only (no content/PHI)
         body_keys = [k for k in body.keys() if k != "messages"]
-        files_in_body = len(body.get("files", []))
-        files_in_metadata = len(body.get("metadata", {}).get("files", [])) if isinstance(body.get("metadata"), dict) else 0
+        files_in_body = len(body.get("files") or [])
+        files_in_metadata = len((body.get("metadata") or {}).get("files") or []) if isinstance(body.get("metadata"), dict) else 0
         
         # Count files in messages
         files_in_messages = 0
-        for msg in body.get("messages", []):
-            if msg.get("role") == "user" and "files" in msg:
-                files_in_messages += len(msg.get("files", []))
+        for msg in body.get("messages") or []:
+            if msg.get("role") == "user":
+                msg_files = msg.get("files") or []
+                files_in_messages += len(msg_files)
         
         print(f"[{self.name}] Attachment scan: body_keys={body_keys}, files_in_body={files_in_body}, files_in_metadata={files_in_metadata}, files_in_messages={files_in_messages}")
 
         # Method 1: Check for OpenWebUI's pre-processed document context
         # OpenWebUI may inject document content into messages as context
-        for msg in body.get("messages", []):
+        for msg in body.get("messages") or []:
             # Check for document context in system messages
             if msg.get("role") == "system":
-                content = msg.get("content", "")
+                content = msg.get("content") or ""
                 # Look for OpenWebUI's document injection patterns
-                if "### Document:" in content or "File:" in content or "Attached:" in content:
+                if content and ("### Document:" in content or "File:" in content or "Attached:" in content):
                     extracted_texts.append(content)
                     metadata.append({"id": "system_context", "status": "extracted", "chars": len(content)})
             
             # Check for context field in messages (OpenWebUI injects here sometimes)
             if "context" in msg:
-                ctx = msg.get("context", "")
+                ctx = msg.get("context") or ""
                 if isinstance(ctx, str) and len(ctx) > 50:
                     extracted_texts.append(ctx)
                     metadata.append({"id": "msg_context", "status": "extracted", "chars": len(ctx)})
             
             # Check for files array with pre-extracted content
             if msg.get("role") == "user" and "files" in msg:
-                for idx, f in enumerate(msg.get("files", [])):
+                for idx, f in enumerate(msg.get("files") or []):
                     if isinstance(f, dict):
                         # OpenWebUI may include extracted_content or text field
                         for key in ["extracted_content", "text", "content", "summary"]:
@@ -285,26 +286,26 @@ class Filter:
 
         # Method 2: Check top-level context field
         if "context" in body:
-            ctx = body.get("context", "")
+            ctx = body.get("context") or ""
             if isinstance(ctx, str) and len(ctx) > 50:
                 extracted_texts.append(ctx)
                 metadata.append({"id": "body_context", "status": "extracted", "chars": len(ctx)})
 
         # Method 3: Try raw file extraction (original method)
-        files = body.get("files", [])
+        files = body.get("files") or []
         
         # Also check metadata.files (OpenWebUI v0.3+)
         if not files and "metadata" in body and isinstance(body.get("metadata"), dict):
-            meta_files = body.get("metadata", {}).get("files", [])
+            meta_files = (body.get("metadata") or {}).get("files") or []
             if meta_files:
                 print(f"[{self.name}] DEBUG   Found {len(meta_files)} files in metadata.files")
                 files = meta_files
         
         # Check messages for files
         if not files:
-            for msg in body.get("messages", []):
+            for msg in body.get("messages") or []:
                 if msg.get("role") == "user" and "files" in msg:
-                    files.extend(msg.get("files", []))
+                    files.extend(msg.get("files") or [])
 
         if not files and not extracted_texts:
             return ("", [])
@@ -316,8 +317,8 @@ class Filter:
                 continue
 
             attachment_id = f"attachment_{len(metadata)+1}"
-            filename = file_info.get("name", file_info.get("filename", "unknown"))
-            file_type = file_info.get("type", file_info.get("mime_type", ""))
+            filename = file_info.get("name") or file_info.get("filename") or "unknown"
+            file_type = file_info.get("type") or file_info.get("mime_type") or ""
             
             content = self._get_file_content(file_info)
             if not content:
@@ -468,16 +469,16 @@ Please retry your question, or verify the RAG service is available.
         
         # Debug: Log body structure to understand where attachments are
         body_keys = list(body.keys())
-        files_top = body.get("files", [])
+        files_top = body.get("files") or []
         print(f"[{self.name}] [{correlation_id}] Body keys: {body_keys}")
-        print(f"[{self.name}] [{correlation_id}] Top-level files: {len(files_top) if files_top else 0}")
+        print(f"[{self.name}] [{correlation_id}] Top-level files: {len(files_top)}")
         
         # Check for files in messages
         for i, msg in enumerate(messages):
             if msg.get("role") == "user":
-                msg_files = msg.get("files", [])
-                msg_images = msg.get("images", [])
-                msg_attachments = msg.get("attachments", [])
+                msg_files = msg.get("files") or []
+                msg_images = msg.get("images") or []
+                msg_attachments = msg.get("attachments") or []
                 if msg_files or msg_images or msg_attachments:
                     print(f"[{self.name}] [{correlation_id}] Message {i} files: {len(msg_files)}, images: {len(msg_images)}, attachments: {len(msg_attachments)}")
                     if msg_files:
