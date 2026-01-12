@@ -47,7 +47,10 @@ class Filter:
             default=True, description="Enable/disable guideline retrieval"
         )
         TIMEOUT_SECONDS: int = Field(
-            default=30, description="Request timeout in seconds"
+            default=45, description="Request timeout in seconds (increased for cold starts)"
+        )
+        COLD_START_TIMEOUT: int = Field(
+            default=60, description="Extended timeout for first request after inactivity (cold start recovery)"
         )
         INJECT_SYSTEM_PROMPT: bool = Field(
             default=True,
@@ -82,7 +85,7 @@ class Filter:
         self._warmup_complete = False
 
     async def on_startup(self):
-        print(f"[{self.name}] Pipeline initialized (v2.4 - capture OpenWebUI pre-processed docs)")
+        print(f"[{self.name}] Pipeline initialized (v2.5 - cold-start resilience)")
         print(f"[{self.name}] API URL: {self.valves.RETRIEVE_API_URL}")
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(self.valves.TIMEOUT_SECONDS)
@@ -279,51 +282,59 @@ class Filter:
     async def _retrieve_with_retry(self, question: str, correlation_id: str, patient_context: str = "") -> Tuple[Optional[dict], str]:
         """
         Attempt retrieval with exponential backoff retry.
+        Uses extended timeout on first attempt to handle cold starts.
         Returns (data, error_message) tuple.
         """
         last_error = ""
+        timeout_seconds = self.valves.TIMEOUT_SECONDS
         
         for attempt in range(self.valves.MAX_RETRIES):
+            # Use extended timeout on first attempt for cold start recovery
+            timeout_seconds = self.valves.COLD_START_TIMEOUT if attempt == 0 else self.valves.TIMEOUT_SECONDS
+            
             try:
-                if not self._client:
-                    self._client = httpx.AsyncClient(
-                        timeout=httpx.Timeout(self.valves.TIMEOUT_SECONDS)
+                # Use async context manager to ensure client is always closed
+                async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_seconds)) as client:
+                    payload = {"question": question, "top_k": self.valves.TOP_K}
+                    if patient_context:
+                        payload["patient_context"] = patient_context
+
+                    if attempt == 0:
+                        print(f"[{self.name}] [{correlation_id}] First attempt with {timeout_seconds}s cold-start timeout")
+
+                    response = await client.post(
+                        self.valves.RETRIEVE_API_URL,
+                        json=payload,
+                        headers={
+                            "Authorization": f"Bearer {self.valves.API_KEY}",
+                            "Content-Type": "application/json",
+                            "Accept": "application/json",
+                            "X-Correlation-ID": correlation_id,
+                        },
                     )
 
-                payload = {"question": question, "top_k": self.valves.TOP_K}
-                if patient_context:
-                    payload["patient_context"] = patient_context
-
-                response = await self._client.post(
-                    self.valves.RETRIEVE_API_URL,
-                    json=payload,
-                    headers={
-                        "Authorization": f"Bearer {self.valves.API_KEY}",
-                        "Content-Type": "application/json",
-                        "Accept": "application/json",
-                        "X-Correlation-ID": correlation_id,
-                    },
-                )
-
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("success"):
-                        return (data, "")
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data.get("success"):
+                            return (data, "")
+                        else:
+                            last_error = f"API error: {data.get('error', 'unknown')}"
                     else:
-                        last_error = f"API error: {data.get('error', 'unknown')}"
-                else:
-                    last_error = f"HTTP {response.status_code}"
+                        last_error = f"HTTP {response.status_code}"
                     
             except httpx.TimeoutException:
-                last_error = f"Timeout after {self.valves.TIMEOUT_SECONDS}s"
+                last_error = f"Timeout after {timeout_seconds}s (attempt {attempt + 1})"
+                print(f"[{self.name}] [{correlation_id}] {last_error} - services may be waking up")
             except httpx.ConnectError as e:
                 last_error = f"Connection error: {e}"
             except Exception as e:
                 last_error = f"Unexpected error: {e}"
             
             if attempt < self.valves.MAX_RETRIES - 1:
-                delay = self.valves.RETRY_BASE_DELAY * (2 ** attempt) + random.uniform(0, 0.5)
-                print(f"[{self.name}] Attempt {attempt + 1} failed ({last_error}), retrying in {delay:.1f}s...")
+                # Longer delay after cold-start timeout to allow services to fully wake
+                base_delay = 3.0 if attempt == 0 else self.valves.RETRY_BASE_DELAY
+                delay = base_delay * (2 ** attempt) + random.uniform(0, 1.0)
+                print(f"[{self.name}] [{correlation_id}] Attempt {attempt + 1} failed, retrying in {delay:.1f}s...")
                 await asyncio.sleep(delay)
         
         return (None, last_error)
