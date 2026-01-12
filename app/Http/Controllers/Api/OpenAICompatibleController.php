@@ -440,17 +440,39 @@ class OpenAICompatibleController extends Controller
             'guideline_keys' => 'array',
             'guideline_keys.*' => 'string',
             'top_k' => 'integer|min:1|max:50',
+            'patient_context' => 'string|max:50000',
         ]);
 
         $question = $validated['question'];
         $requestedKeys = $validated['guideline_keys'] ?? null;
         $topK = $validated['top_k'] ?? 12;
+        $patientContext = $validated['patient_context'] ?? '';
         $correlationId = $request->header('X-Correlation-ID', substr(uniqid(), -8));
         $log = \Log::channel('retrieval');
 
         $phiScrubber = new \App\Services\PHIScrubberService();
+        
         $scrubResult = $phiScrubber->scrub($question);
         $scrubbedQuestion = $scrubResult['scrubbed_text'];
+        
+        $scrubbedPatientContext = '';
+        $patientContextRedactions = 0;
+        if (!empty($patientContext)) {
+            $contextScrubResult = $phiScrubber->scrub($patientContext);
+            $scrubbedPatientContext = $contextScrubResult['scrubbed_text'];
+            $patientContextRedactions = $contextScrubResult['total_redactions'];
+            
+            if ($contextScrubResult['was_modified']) {
+                $phiScrubber->logAudit($correlationId . '-ctx', $contextScrubResult);
+            }
+            
+            $log->info('[ATTACHMENT] Patient context received', [
+                'correlation_id' => $correlationId,
+                'original_chars' => strlen($patientContext),
+                'scrubbed_chars' => strlen($scrubbedPatientContext),
+                'redactions' => $patientContextRedactions,
+            ]);
+        }
         
         if ($scrubResult['was_modified']) {
             $phiScrubber->logAudit($correlationId, $scrubResult);
@@ -463,15 +485,23 @@ class OpenAICompatibleController extends Controller
             'question_length' => strlen($question),
             'phi_redacted' => $scrubResult['was_modified'],
             'redaction_count' => $scrubResult['total_redactions'],
+            'has_patient_context' => !empty($patientContext),
+            'patient_context_redactions' => $patientContextRedactions,
             'requested_keys' => $requestedKeys,
             'top_k' => $topK,
         ]);
 
         try {
-            // Step 1: Parallel LLM calls - routing + query expansion (using scrubbed question)
+            $routingQuery = $scrubbedQuestion;
+            if (!empty($scrubbedPatientContext)) {
+                $contextSummary = substr($scrubbedPatientContext, 0, 500);
+                $routingQuery = $scrubbedQuestion . "\n\nPatient context: " . $contextSummary;
+            }
+
+            // Step 1: Parallel LLM calls - routing + query expansion (using scrubbed question + context)
             if (empty($requestedKeys)) {
                 $router = new \App\Services\GuidelineRouterService();
-                $llmResult = $router->selectAndExpand($scrubbedQuestion, 3);
+                $llmResult = $router->selectAndExpand($routingQuery, 3);
                 
                 $selectedKeys = $llmResult['selected'];
                 $expandedQuery = $llmResult['expanded'];
@@ -528,11 +558,11 @@ class OpenAICompatibleController extends Controller
                 'duration_ms' => $duration,
             ]);
 
-            return response()->json([
+            $response = [
                 'success' => true,
                 'question' => $scrubbedQuestion,
-                'phi_scrubbed' => $scrubResult['was_modified'],
-                'phi_redaction_count' => $scrubResult['total_redactions'],
+                'phi_scrubbed' => $scrubResult['was_modified'] || !empty($patientContext),
+                'phi_redaction_count' => $scrubResult['total_redactions'] + $patientContextRedactions,
                 'selected_guidelines' => $selectedGuidelines,
                 'narrative_chunks' => $dualResult['narrative_chunks'],
                 'citation_chunks' => $dualResult['citation_chunks'],
@@ -540,7 +570,15 @@ class OpenAICompatibleController extends Controller
                 'citation_count' => count($dualResult['citation_chunks']),
                 'duration_ms' => $duration,
                 'system_prompt' => $this->getDualSystemPrompt(),
-            ]);
+            ];
+            
+            if (!empty($scrubbedPatientContext)) {
+                $response['scrubbed_patient_context'] = $scrubbedPatientContext;
+                $response['patient_context_chars'] = strlen($scrubbedPatientContext);
+                $response['patient_context_redactions'] = $patientContextRedactions;
+            }
+            
+            return response()->json($response);
 
         } catch (\Exception $e) {
             $log->error('Retrieve endpoint error', [

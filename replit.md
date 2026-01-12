@@ -45,6 +45,14 @@ The application is built on Laravel 12 and uses the Vizra ADK for AI agent orche
 - **httpx:** Asynchronous HTTP client used in the OpenWebUI filter pipeline.
 
 ## Recent Changes
+- 2026-01-12: Added document attachment processing for OpenWebUI:
+  - Filter pipeline (v2.2) extracts text from PDF, DOCX, TXT attachments
+  - Patient context is de-identified before retrieval
+  - Combined question + context routing for better guideline selection
+  - Scrubbed patient context returned to LLM for clinical synthesis
+- 2026-01-12: Added European date and identifier formats:
+  - European dates: DD/MM/YYYY, DD.MM.YYYY, DD-MM-YYYY
+  - European MRN patterns: Greek (ΗΝ, ΑΜ, ΑΜΚΑ), German (Pat-Nr), French (NIP, NSS), Spanish (NHC), UK (NHS), Italian (CF), and 15+ more
 - 2026-01-12: Implemented PHI de-identification for HIPAA compliance:
   - PHIScrubberService with Safe Harbor pattern matching (names, dates, SSN, MRN, phone, email, addresses, cities, ZIP, counties)
   - Automatic scrubbing before Azure OpenAI and RAGFlow calls
