@@ -18,6 +18,10 @@ args = "Laravel Server"
 task = "workflow.run"
 args = "RAGFlow Bridge"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "KeepAlive"
+
 [[workflows.workflow]]
 name = "Laravel Server"
 author = "agent"
@@ -41,6 +45,17 @@ outputType = "console"
 task = "shell.exec"
 args = "cd ragflow_service && python -m uvicorn app:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 120 --timeout-graceful-shutdown 30"
 waitForPort = 8000
+
+[[workflows.workflow]]
+name = "KeepAlive"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "export API_SECRET_KEY=\"$API_SECRET_KEY\" && bash scripts/keepalive.sh"
 
 [[ports]]
 localPort = 5000
