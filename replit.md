@@ -45,6 +45,12 @@ The application is built on Laravel 12 and uses the Vizra ADK for AI agent orche
 - **httpx:** Asynchronous HTTP client used in the OpenWebUI filter pipeline.
 
 ## Recent Changes
+- 2026-01-12: Implemented PHI de-identification for HIPAA compliance:
+  - PHIScrubberService with Safe Harbor pattern matching (names, dates, SSN, MRN, phone, email, addresses, cities, ZIP, counties)
+  - Automatic scrubbing before Azure OpenAI and RAGFlow calls
+  - Ages 90+ converted to "90+" per HIPAA rules
+  - PHI audit logging (redaction counts only, no PHI stored)
+  - HIPAA compliance documentation in docs/HIPAA_COMPLIANCE.md
 - 2026-01-11: Added pipeline resilience (v2.1):
   - Retry logic with exponential backoff (2 attempts) for retrieval API calls
   - User-visible warning when retrieval fails or returns empty (prevents silent hallucination)

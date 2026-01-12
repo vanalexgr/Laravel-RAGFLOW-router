@@ -445,25 +445,33 @@ class OpenAICompatibleController extends Controller
         $question = $validated['question'];
         $requestedKeys = $validated['guideline_keys'] ?? null;
         $topK = $validated['top_k'] ?? 12;
-
+        $correlationId = $request->header('X-Correlation-ID', substr(uniqid(), -8));
         $log = \Log::channel('retrieval');
-        $log->info('[RAW QUERY] Received from OpenWebUI', [
-            'question_preview' => substr($question, 0, 80) . (strlen($question) > 80 ? '...' : ''),
-            'question_length' => strlen($question),
-        ]);
+
+        $phiScrubber = new \App\Services\PHIScrubberService();
+        $scrubResult = $phiScrubber->scrub($question);
+        $scrubbedQuestion = $scrubResult['scrubbed_text'];
+        
+        if ($scrubResult['was_modified']) {
+            $phiScrubber->logAudit($correlationId, $scrubResult);
+        }
+
         $log->info('=== RETRIEVE REQUEST ===', [
+            'correlation_id' => $correlationId,
             'timestamp' => now()->toIso8601String(),
-            'question_preview' => substr($question, 0, 80) . (strlen($question) > 80 ? '...' : ''),
+            'question_preview' => substr($scrubbedQuestion, 0, 80) . (strlen($scrubbedQuestion) > 80 ? '...' : ''),
+            'question_length' => strlen($question),
+            'phi_redacted' => $scrubResult['was_modified'],
+            'redaction_count' => $scrubResult['total_redactions'],
             'requested_keys' => $requestedKeys,
             'top_k' => $topK,
-            'client_ip' => $request->ip(),
         ]);
 
         try {
-            // Step 1: Parallel LLM calls - routing + query expansion
+            // Step 1: Parallel LLM calls - routing + query expansion (using scrubbed question)
             if (empty($requestedKeys)) {
                 $router = new \App\Services\GuidelineRouterService();
-                $llmResult = $router->selectAndExpand($question, 3);
+                $llmResult = $router->selectAndExpand($scrubbedQuestion, 3);
                 
                 $selectedKeys = $llmResult['selected'];
                 $expandedQuery = $llmResult['expanded'];
@@ -480,7 +488,7 @@ class OpenAICompatibleController extends Controller
                 } else {
                     // Fallback to rule-based
                     $log->info('Falling back to rule-based routing');
-                    $selectedGuidelines = $this->selectGuidelinesRuleBased($question);
+                    $selectedGuidelines = $this->selectGuidelinesRuleBased($scrubbedQuestion);
                 }
                 
                 $log->info('Guidelines auto-selected', [
@@ -490,7 +498,7 @@ class OpenAICompatibleController extends Controller
             } else {
                 $selectedGuidelines = $this->validateGuidelineKeys($requestedKeys);
                 $router = new \App\Services\GuidelineRouterService();
-                $expandedQuery = $router->expandQuery($question);
+                $expandedQuery = $router->expandQuery($scrubbedQuestion);
                 $log->info('Guidelines from request', [
                     'keys' => array_keys($selectedGuidelines),
                 ]);
@@ -522,7 +530,9 @@ class OpenAICompatibleController extends Controller
 
             return response()->json([
                 'success' => true,
-                'question' => $question,
+                'question' => $scrubbedQuestion,
+                'phi_scrubbed' => $scrubResult['was_modified'],
+                'phi_redaction_count' => $scrubResult['total_redactions'],
                 'selected_guidelines' => $selectedGuidelines,
                 'narrative_chunks' => $dualResult['narrative_chunks'],
                 'citation_chunks' => $dualResult['citation_chunks'],
