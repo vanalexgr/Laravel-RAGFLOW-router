@@ -40,9 +40,9 @@ De-identified Query
 | Identifier | Detection Method | Replacement |
 |------------|-----------------|-------------|
 | Names | Dictionary matching (5000+ common names) | `[NAME]` |
-| Full Dates | Regex patterns (MM/DD/YYYY, ISO, etc.) | `[DATE]` |
+| Full Dates | Regex patterns (US + EU: MM/DD, DD/MM, DD.MM, ISO) | `[DATE]` |
 | Social Security Numbers | Regex (XXX-XX-XXXX) | `[SSN]` |
-| Medical Record Numbers | Regex (MRN, Patient ID, Chart #) | `[MRN]` |
+| Medical Record Numbers | Regex (MRN, Patient ID, Chart #, EU identifiers) | `[MRN]` |
 | Phone/Fax Numbers | Regex (various formats) | `[PHONE]` |
 | Email Addresses | Regex | `[EMAIL]` |
 | IP Addresses | Regex (IPv4) | `[IP]` |
