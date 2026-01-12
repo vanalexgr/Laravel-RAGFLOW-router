@@ -1,19 +1,34 @@
 """
 title: ESVS Vascular Guidelines RAG Filter
 author: Medical AI Team
-date: 2026-01-11
-version: 2.1
+date: 2026-01-12
+version: 2.2
 license: MIT
-description: Filter pipeline that retrieves ESVS vascular surgery guidelines from Laravel API with dual-source retrieval (narrative + citations) and injects as context before LLM synthesis. Includes retry logic, warm-up, and failure visibility.
-requirements: httpx
+description: Filter pipeline that retrieves ESVS vascular surgery guidelines from Laravel API with dual-source retrieval (narrative + citations), document attachment processing, and PHI de-identification. Includes retry logic, warm-up, and failure visibility.
+requirements: httpx, pdfminer.six, python-docx
 """
 
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List, Dict, Any
 import asyncio
 import random
 import uuid
+import io
+import base64
 import httpx
 from pydantic import BaseModel, Field
+
+try:
+    from pdfminer.high_level import extract_text as pdf_extract_text
+    from pdfminer.pdfparser import PDFSyntaxError
+    PDF_AVAILABLE = True
+except ImportError:
+    PDF_AVAILABLE = False
+
+try:
+    from docx import Document as DocxDocument
+    DOCX_AVAILABLE = True
+except ImportError:
+    DOCX_AVAILABLE = False
 
 
 class Filter:
@@ -50,6 +65,15 @@ class Filter:
         SHOW_FAILURE_WARNING: bool = Field(
             default=True, description="Show warning to user when retrieval fails"
         )
+        PROCESS_ATTACHMENTS: bool = Field(
+            default=True, description="Extract and process attached documents (PDF, DOCX, TXT)"
+        )
+        MAX_ATTACHMENT_SIZE_KB: int = Field(
+            default=500, description="Maximum attachment size in KB to process"
+        )
+        MAX_EXTRACTED_CHARS: int = Field(
+            default=15000, description="Maximum characters to extract from attachments"
+        )
 
     def __init__(self):
         self.valves = self.Valves()
@@ -58,7 +82,7 @@ class Filter:
         self._warmup_complete = False
 
     async def on_startup(self):
-        print(f"[{self.name}] Pipeline initialized (v2.1 - resilient retrieval)")
+        print(f"[{self.name}] Pipeline initialized (v2.2 - attachment processing + PHI scrubbing)")
         print(f"[{self.name}] API URL: {self.valves.RETRIEVE_API_URL}")
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(self.valves.TIMEOUT_SECONDS)
@@ -100,7 +124,120 @@ class Filter:
         if self._client:
             await self._client.aclose()
 
-    async def _retrieve_with_retry(self, question: str, correlation_id: str) -> Tuple[Optional[dict], str]:
+    def _extract_text_from_pdf(self, content: bytes) -> str:
+        """Extract text from PDF bytes."""
+        if not PDF_AVAILABLE:
+            return "[PDF extraction unavailable]"
+        try:
+            return pdf_extract_text(io.BytesIO(content))
+        except PDFSyntaxError:
+            return "[Invalid PDF format]"
+        except Exception as e:
+            return f"[PDF extraction error: {str(e)[:50]}]"
+
+    def _extract_text_from_docx(self, content: bytes) -> str:
+        """Extract text from DOCX bytes."""
+        if not DOCX_AVAILABLE:
+            return "[DOCX extraction unavailable]"
+        try:
+            doc = DocxDocument(io.BytesIO(content))
+            paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+            return "\n".join(paragraphs)
+        except Exception as e:
+            return f"[DOCX extraction error: {str(e)[:50]}]"
+
+    def _extract_text_from_txt(self, content: bytes) -> str:
+        """Extract text from plain text bytes."""
+        try:
+            for encoding in ['utf-8', 'latin-1', 'cp1252']:
+                try:
+                    return content.decode(encoding)
+                except UnicodeDecodeError:
+                    continue
+            return content.decode('utf-8', errors='replace')
+        except Exception as e:
+            return f"[Text extraction error: {str(e)[:50]}]"
+
+    def _get_file_content(self, file_info: dict) -> Optional[bytes]:
+        """Get file content from OpenWebUI file info structure."""
+        if "data" in file_info and file_info["data"]:
+            data = file_info["data"]
+            if "," in data:
+                data = data.split(",", 1)[1]
+            try:
+                return base64.b64decode(data)
+            except Exception:
+                return None
+        if "content" in file_info:
+            content = file_info["content"]
+            if isinstance(content, bytes):
+                return content
+            elif isinstance(content, str):
+                return content.encode('utf-8')
+        return None
+
+    def _extract_attachments(self, body: dict) -> Tuple[str, List[Dict[str, Any]]]:
+        """
+        Extract text from attached files in the OpenWebUI request body.
+        Returns (combined_text, attachment_metadata) tuple.
+        """
+        if not self.valves.PROCESS_ATTACHMENTS:
+            return ("", [])
+
+        files = body.get("files", [])
+        if not files:
+            for msg in body.get("messages", []):
+                if msg.get("role") == "user" and "files" in msg:
+                    files.extend(msg.get("files", []))
+
+        if not files:
+            return ("", [])
+
+        extracted_texts = []
+        metadata = []
+        max_size = self.valves.MAX_ATTACHMENT_SIZE_KB * 1024
+
+        for file_info in files:
+            if isinstance(file_info, str):
+                continue
+
+            filename = file_info.get("name", file_info.get("filename", "unknown"))
+            file_type = file_info.get("type", file_info.get("mime_type", ""))
+            
+            content = self._get_file_content(file_info)
+            if not content:
+                metadata.append({"name": filename, "status": "no_content"})
+                continue
+
+            if len(content) > max_size:
+                metadata.append({"name": filename, "status": "too_large", "size_kb": len(content) // 1024})
+                continue
+
+            ext = filename.lower().split(".")[-1] if "." in filename else ""
+            
+            if ext == "pdf" or "pdf" in file_type.lower():
+                text = self._extract_text_from_pdf(content)
+            elif ext in ["docx"] or "wordprocessingml" in file_type.lower():
+                text = self._extract_text_from_docx(content)
+            elif ext in ["txt", "text", "rtf", "md"] or "text/" in file_type.lower():
+                text = self._extract_text_from_txt(content)
+            else:
+                metadata.append({"name": filename, "status": "unsupported_type", "type": file_type})
+                continue
+
+            if text and not text.startswith("["):
+                extracted_texts.append(f"--- Document: {filename} ---\n{text}")
+                metadata.append({"name": filename, "status": "extracted", "chars": len(text)})
+            else:
+                metadata.append({"name": filename, "status": "extraction_failed", "error": text})
+
+        combined = "\n\n".join(extracted_texts)
+        if len(combined) > self.valves.MAX_EXTRACTED_CHARS:
+            combined = combined[:self.valves.MAX_EXTRACTED_CHARS] + "\n[...truncated due to length...]"
+
+        return (combined, metadata)
+
+    async def _retrieve_with_retry(self, question: str, correlation_id: str, patient_context: str = "") -> Tuple[Optional[dict], str]:
         """
         Attempt retrieval with exponential backoff retry.
         Returns (data, error_message) tuple.
@@ -114,9 +251,13 @@ class Filter:
                         timeout=httpx.Timeout(self.valves.TIMEOUT_SECONDS)
                     )
 
+                payload = {"question": question, "top_k": self.valves.TOP_K}
+                if patient_context:
+                    payload["patient_context"] = patient_context
+
                 response = await self._client.post(
                     self.valves.RETRIEVE_API_URL,
-                    json={"question": question, "top_k": self.valves.TOP_K},
+                    json=payload,
                     headers={
                         "Authorization": f"Bearer {self.valves.API_KEY}",
                         "Content-Type": "application/json",
@@ -176,8 +317,8 @@ Please retry your question, or verify the RAG service is available.
     async def inlet(self, body: dict, user: Optional[dict] = None) -> dict:
         """
         Called before request goes to LLM.
-        Retrieves guideline chunks (narrative + citations) and injects them as context.
-        Includes retry logic and failure visibility.
+        Extracts text from attachments, retrieves guideline chunks, and injects context.
+        Includes retry logic, attachment processing, and failure visibility.
         """
         if not self.valves.ENABLE_RAG:
             return body
@@ -196,9 +337,17 @@ Please retry your question, or verify the RAG service is available.
             return body
 
         correlation_id = str(uuid.uuid4())[:8]
+        
+        patient_context, attachment_metadata = self._extract_attachments(body)
+        
+        if patient_context:
+            print(f"[{self.name}] [{correlation_id}] Extracted {len(patient_context)} chars from {len(attachment_metadata)} attachment(s)")
+            for meta in attachment_metadata:
+                print(f"[{self.name}] [{correlation_id}]   - {meta.get('name')}: {meta.get('status')}")
+        
         print(f"[{self.name}] [{correlation_id}] Retrieving guidelines for: {user_message[:100]}...")
 
-        data, error = await self._retrieve_with_retry(user_message, correlation_id)
+        data, error = await self._retrieve_with_retry(user_message, correlation_id, patient_context)
         
         if data is None:
             print(f"[{self.name}] [{correlation_id}] FAILED after {self.valves.MAX_RETRIES} attempts: {error}")
@@ -229,22 +378,33 @@ Please retry your question, or verify the RAG service is available.
                 messages.insert(0, {"role": "system", "content": system_prompt})
             body["messages"] = messages
 
+        patient_context_section = ""
+        scrubbed_patient_context = data.get("scrubbed_patient_context", "")
+        if scrubbed_patient_context:
+            patient_context_section = f"""## Patient Clinical Context (De-identified)
+{scrubbed_patient_context}
+
+---
+
+"""
+
         rag_prompt = f"""## ESVS Vascular Surgery Guidelines Evidence
 
 {context}
 
 ---
 
-## User Question
+{patient_context_section}## User Question
 {user_message}
 
 ---
 
 **Instructions**: 
-1. Synthesize your clinical answer using the NARRATIVE CONTEXT above
-2. Cite ONLY from the CITATION EVIDENCE using exact recommendation text
-3. Format: Rec [ID] (Class [X], Level [Y]) with verbatim quote
-4. If evidence doesn't cover the question, state this clearly"""
+1. Review the patient context (if provided) to understand the clinical scenario
+2. Synthesize your clinical answer using the NARRATIVE CONTEXT from ESVS guidelines
+3. Cite ONLY from the CITATION EVIDENCE using exact recommendation text
+4. Format: Rec [ID] (Class [X], Level [Y]) with verbatim quote
+5. If guidelines don't fully cover the case, state this clearly"""
 
         for i, msg in enumerate(body["messages"]):
             if msg.get("role") == "user" and msg.get("content") == user_message:
