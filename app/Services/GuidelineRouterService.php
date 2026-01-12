@@ -163,24 +163,35 @@ PROMPT;
         return $keys;
     }
 
-    public function selectAndExpand(string $question, int $maxGuidelines = 3): array
+    /**
+     * Parallel LLM calls for guideline routing and query expansion.
+     * 
+     * @param string $routingQuery Query for guideline selection (question only, no patient context)
+     * @param int $maxGuidelines Maximum guidelines to select
+     * @param string|null $expansionQuery Optional separate query for expansion (can include patient context)
+     */
+    public function selectAndExpand(string $routingQuery, int $maxGuidelines = 3, ?string $expansionQuery = null): array
     {
         $startTime = microtime(true);
         $log = Log::channel('retrieval');
 
+        // Use routing query for expansion if no separate expansion query provided
+        $queryForExpansion = $expansionQuery ?? $routingQuery;
+
         if (!$this->isConfigured) {
             $log->warning('[PARALLEL LLM] Azure OpenAI not configured');
-            return ['selected' => [], 'expanded' => $question];
+            return ['selected' => [], 'expanded' => $queryForExpansion];
         }
 
         $guidelineList = $this->buildGuidelineList();
-        $routingPrompt = $this->buildPrompt($question, $guidelineList, $maxGuidelines);
-        $expansionPrompt = $this->buildExpansionPrompt($question);
+        $routingPrompt = $this->buildPrompt($routingQuery, $guidelineList, $maxGuidelines);
+        $expansionPrompt = $this->buildExpansionPrompt($queryForExpansion);
 
         $url = rtrim($this->endpoint, '/') . "/openai/deployments/{$this->deployment}/chat/completions?api-version={$this->apiVersion}";
 
         $log->info('[PARALLEL LLM] Starting routing + expansion', [
-            'question_preview' => substr($question, 0, 80),
+            'routing_query_preview' => substr($routingQuery, 0, 80),
+            'expansion_includes_context' => ($expansionQuery !== null && $expansionQuery !== $routingQuery),
         ]);
 
         try {
@@ -215,10 +226,12 @@ PROMPT;
                 $selected = $this->parseResponse($content);
             }
 
-            $expanded = $question;
+            $expanded = $queryForExpansion;
             if ($responses['expansion']->successful()) {
                 $exp = trim($responses['expansion']->json('choices.0.message.content', ''));
-                if (!empty($exp) && strlen($exp) >= strlen($question)) {
+                // Compare against routing query length (the core question) to ensure expansion is meaningful
+                // but accept expansions that are at least as long as the original question
+                if (!empty($exp) && strlen($exp) >= strlen($routingQuery)) {
                     $expanded = $exp;
                 }
             }
@@ -234,7 +247,7 @@ PROMPT;
 
         } catch (\Exception $e) {
             $log->error('[PARALLEL LLM] Exception', ['error' => $e->getMessage()]);
-            return ['selected' => [], 'expanded' => $question];
+            return ['selected' => [], 'expanded' => $queryForExpansion];
         }
     }
 
