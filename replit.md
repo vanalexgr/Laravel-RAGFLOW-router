@@ -45,6 +45,12 @@ The application is built on Laravel 12 and uses the Vizra ADK for AI agent orche
 - **httpx:** Asynchronous HTTP client used in the OpenWebUI filter pipeline.
 
 ## Recent Changes
+- 2026-01-12: Fixed guideline knowledge injection when routing fails:
+  - Added keyword-based fallback scoring using key_concepts from config/guidelines.php
+  - When LLM and rule-based routing both fail, top 4 matching guidelines are selected by keyword overlap
+  - Prevents 404 errors for vague queries, ensures ESVS content is always available
+  - Added detailed logging for dataset selection and retrieval
+  - Response time maintained at ~8s instead of timeout (>30s when querying all 14 datasets)
 - 2026-01-12: Fixed guideline routing when file attachments present:
   - Routing now uses question-only (patient context excluded from guideline selection)
   - Query expansion still uses patient context for better retrieval terms
