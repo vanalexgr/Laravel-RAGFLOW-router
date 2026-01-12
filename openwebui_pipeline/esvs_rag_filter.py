@@ -82,7 +82,7 @@ class Filter:
         self._warmup_complete = False
 
     async def on_startup(self):
-        print(f"[{self.name}] Pipeline initialized (v2.3 - attachment debug logging)")
+        print(f"[{self.name}] Pipeline initialized (v2.4 - capture OpenWebUI pre-processed docs)")
         print(f"[{self.name}] API URL: {self.valves.RETRIEVE_API_URL}")
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(self.valves.TIMEOUT_SECONDS)
@@ -179,22 +179,61 @@ class Filter:
     def _extract_attachments(self, body: dict) -> Tuple[str, List[Dict[str, Any]]]:
         """
         Extract text from attached files in the OpenWebUI request body.
+        Also captures OpenWebUI's pre-processed document context.
         Returns (combined_text, attachment_metadata) tuple.
         """
         if not self.valves.PROCESS_ATTACHMENTS:
             return ("", [])
 
+        extracted_texts = []
+        metadata = []
+
+        # Method 1: Check for OpenWebUI's pre-processed document context
+        # OpenWebUI may inject document content into messages as context
+        for msg in body.get("messages", []):
+            # Check for document context in system messages
+            if msg.get("role") == "system":
+                content = msg.get("content", "")
+                # Look for OpenWebUI's document injection patterns
+                if "### Document:" in content or "File:" in content or "Attached:" in content:
+                    extracted_texts.append(content)
+                    metadata.append({"name": "system_context", "status": "extracted", "chars": len(content)})
+            
+            # Check for context field in messages (OpenWebUI injects here sometimes)
+            if "context" in msg:
+                ctx = msg.get("context", "")
+                if isinstance(ctx, str) and len(ctx) > 50:
+                    extracted_texts.append(ctx)
+                    metadata.append({"name": "msg_context", "status": "extracted", "chars": len(ctx)})
+            
+            # Check for files array with pre-extracted content
+            if msg.get("role") == "user" and "files" in msg:
+                for f in msg.get("files", []):
+                    if isinstance(f, dict):
+                        # OpenWebUI may include extracted_content or text field
+                        for key in ["extracted_content", "text", "content", "summary"]:
+                            if key in f and isinstance(f[key], str) and len(f[key]) > 20:
+                                extracted_texts.append(f"--- {f.get('name', 'Document')} ---\n{f[key]}")
+                                metadata.append({"name": f.get('name', 'file'), "status": "pre_extracted", "chars": len(f[key])})
+                                break
+
+        # Method 2: Check top-level context field
+        if "context" in body:
+            ctx = body.get("context", "")
+            if isinstance(ctx, str) and len(ctx) > 50:
+                extracted_texts.append(ctx)
+                metadata.append({"name": "body_context", "status": "extracted", "chars": len(ctx)})
+
+        # Method 3: Try raw file extraction (original method)
         files = body.get("files", [])
         if not files:
             for msg in body.get("messages", []):
                 if msg.get("role") == "user" and "files" in msg:
                     files.extend(msg.get("files", []))
 
-        if not files:
+        if not files and not extracted_texts:
             return ("", [])
 
-        extracted_texts = []
-        metadata = []
         max_size = self.valves.MAX_ATTACHMENT_SIZE_KB * 1024
 
         for file_info in files:
