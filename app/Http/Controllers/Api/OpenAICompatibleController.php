@@ -541,12 +541,24 @@ class OpenAICompatibleController extends Controller
             }
 
             if (empty($selectedGuidelines)) {
-                $log->warning('No guidelines matched query');
-                return response()->json([
-                    'success' => false,
-                    'error' => 'No matching guidelines found for query',
-                    'duration_ms' => round((microtime(true) - $startTime) * 1000),
-                ], 404);
+                // Fallback: use keyword-based scoring to pick top 3-4 guidelines
+                // This avoids querying all 14 datasets which would timeout
+                $log->info('Routing returned no matches - using keyword fallback');
+                $selectedGuidelines = $this->selectGuidelinesByKeywordScore($scrubbedQuestion, 4);
+                
+                if (empty($selectedGuidelines)) {
+                    $log->warning('No guidelines matched via keyword fallback either');
+                    return response()->json([
+                        'success' => false,
+                        'error' => 'Unable to identify relevant guidelines for your query. Please try rephrasing with specific clinical terms (e.g., "carotid stenosis", "DVT treatment", "AAA surveillance").',
+                        'duration_ms' => round((microtime(true) - $startTime) * 1000),
+                    ], 422);
+                }
+                
+                $log->info('Keywords fallback selected guidelines', [
+                    'count' => count($selectedGuidelines),
+                    'keys' => array_keys($selectedGuidelines),
+                ]);
             }
             
             // Step 2: Dual retrieval - narrative chunks (KG) + citation chunks (no KG)
@@ -793,6 +805,73 @@ class OpenAICompatibleController extends Controller
         return $validated;
     }
 
+    /**
+     * Fallback guideline selection using keyword/token scoring.
+     * Scores each guideline by overlap with its key_concepts.
+     * Returns top N guidelines with non-zero scores.
+     */
+    protected function selectGuidelinesByKeywordScore(string $question, int $maxGuidelines = 4): array
+    {
+        $categories = config('guidelines.categories', []);
+        $questionLower = strtolower($question);
+        $questionWords = preg_split('/\W+/', $questionLower);
+        $questionWords = array_filter($questionWords, fn($w) => strlen($w) > 2);
+        
+        $scores = [];
+        $guidelineData = [];
+        
+        foreach ($categories as $category) {
+            foreach ($category['guidelines'] as $key => $guideline) {
+                $score = 0;
+                $keyConcepts = $guideline['key_concepts'] ?? [];
+                
+                foreach ($keyConcepts as $concept) {
+                    $conceptLower = strtolower($concept);
+                    
+                    // Check if concept appears in question (phrase match)
+                    if (str_contains($questionLower, $conceptLower)) {
+                        $score += 3; // Strong match for full phrase
+                        continue;
+                    }
+                    
+                    // Check word overlap
+                    $conceptWords = preg_split('/\W+/', $conceptLower);
+                    foreach ($conceptWords as $cWord) {
+                        if (strlen($cWord) > 2 && in_array($cWord, $questionWords)) {
+                            $score += 1;
+                        }
+                    }
+                }
+                
+                if ($score > 0) {
+                    $scores[$key] = $score;
+                    $guidelineData[$key] = [
+                        'id' => $guideline['id'],
+                        'name' => $guideline['name'],
+                    ];
+                }
+            }
+        }
+        
+        // Sort by score descending
+        arsort($scores);
+        
+        // Take top N
+        $selectedKeys = array_slice(array_keys($scores), 0, $maxGuidelines);
+        
+        $result = [];
+        foreach ($selectedKeys as $key) {
+            $result[$key] = $guidelineData[$key];
+        }
+        
+        \Log::channel('retrieval')->info('Keyword scoring fallback', [
+            'all_scores' => $scores,
+            'selected' => $selectedKeys,
+        ]);
+        
+        return $result;
+    }
+
     protected function buildGuidelineRegistry(): array
     {
         $categories = config('guidelines.categories', []);
@@ -914,10 +993,18 @@ class OpenAICompatibleController extends Controller
      */
     protected function retrieveDualChunks(string $question, array $guidelines, int $narrativeMax, int $citationMax): array
     {
+        $log = \Log::channel('retrieval');
+        
         $narrativeDatasets = [];
         foreach ($guidelines as $key => $info) {
             $narrativeDatasets[] = ['id' => $info['id'], 'name' => $info['name']];
         }
+
+        $log->info('Dual retrieval datasets', [
+            'narrative_dataset_count' => count($narrativeDatasets),
+            'narrative_dataset_ids' => array_column($narrativeDatasets, 'id'),
+            'narrative_dataset_names' => array_column($narrativeDatasets, 'name'),
+        ]);
 
         $citationDatasetId = config('guidelines.recommendations_dataset');
         
