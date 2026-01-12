@@ -151,6 +151,30 @@ class PHIScrubberService
             '/\bChart[:\s#]*\d{4,15}\b/i',
             '/\bAcct[:\s#]*\d{4,15}\b/i',
             '/\bCase[:\s#]*\d{4,15}\b/i',
+            '/\bΗΝ[:\-\s#]*\d{5,12}\b/ui',
+            '/\bΑΜ[:\-\s#]*\d{5,12}\b/ui',
+            '/\bΑΜΚΑ[:\-\s#]*\d{9,11}\b/ui',
+            '/\bΑΡ\.?\s*ΜΗΤ\.?[:\-\s#]*\d{5,12}\b/ui',
+            '/\bPat\.?[-\s]?Nr\.?[:\-\s#]*\d{5,15}\b/i',
+            '/\bFallnummer[:\-\s#]*\d{5,15}\b/i',
+            '/\bNIP[:\-\s#]*[0-9A-Z]{10,15}\b/i',
+            '/\bNSS[:\-\s#]*\d{13,15}\b/i',
+            '/\bINE[:\-\s#]*\d{9,12}\b/i',
+            '/\bNHC[:\-\s#]*\d{6,15}\b/i',
+            '/\bCIP[:\-\s#]*[A-Z]{4}\d{10,14}\b/i',
+            '/\bNHS[:\-\s#]*\d{3}[-\s]?\d{3}[-\s]?\d{4}\b/i',
+            '/\bHospital No\.?[:\-\s#]*\d{5,15}\b/i',
+            '/\bCF[:\-\s#]*[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]\b/i',
+            '/\bCodice Fiscale[:\-\s#]*[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]\b/i',
+            '/\bSDO[:\-\s#]*\d{6,12}\b/i',
+            '/\bBSN[:\-\s#]*\d{8,9}\b/i',
+            '/\bAHV[:\-\s#]*\d{3}\.\d{4}\.\d{4}\.\d{2}\b/i',
+            '/\bSVNR[:\-\s#]*\d{10}\b/i',
+            '/\bCPR[:\-\s#]*\d{6}[-]?\d{4}\b/i',
+            '/\bHetu[:\-\s#]*\d{6}[-+A]?\d{3}[A-Z]?\b/i',
+            '/\bPESEL[:\-\s#]*\d{11}\b/i',
+            '/\bRČ[:\-\s#]*\d{6}\/?\d{3,4}\b/iu',
+            '/\b[A-Za-zΑ-Ωα-ω]{1,4}[:\-\s]*\d{6,10}\b/ui',
         ];
 
         foreach ($patterns as $pattern) {
@@ -225,6 +249,12 @@ class PHIScrubberService
             '/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}\b/i' => 'month_year',
             '/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.?\s+\d{4}\b/i' => 'month_year_abbrev',
             '/\b(Q[1-4]|first quarter|second quarter|third quarter|fourth quarter)\s+\d{4}\b/i' => 'quarter_year',
+            '/\b(0?[1-9]|[12]\d|3[01])\/(0?[1-9]|1[0-2])\/(\d{4})\b/' => 'dmy_full',
+            '/\b(0?[1-9]|[12]\d|3[01])\/(0?[1-9]|1[0-2])\/(\d{2})\b/' => 'dmy_short',
+            '/\b(0?[1-9]|[12]\d|3[01])\.(0?[1-9]|1[0-2])\.(\d{4})\b/' => 'dmy_dot_full',
+            '/\b(0?[1-9]|[12]\d|3[01])\.(0?[1-9]|1[0-2])\.(\d{2})\b/' => 'dmy_dot_short',
+            '/\b(0?[1-9]|[12]\d|3[01])-(0?[1-9]|1[0-2])-(\d{4})\b/' => 'dmy_dash_full',
+            '/\b(0?[1-9]|[12]\d|3[01])-(0?[1-9]|1[0-2])-(\d{2})\b/' => 'dmy_dash_short',
         ];
 
         foreach ($patterns as $pattern => $type) {
