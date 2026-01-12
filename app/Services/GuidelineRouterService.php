@@ -169,8 +169,9 @@ PROMPT;
      * @param string $routingQuery Query for guideline selection (question only, no patient context)
      * @param int $maxGuidelines Maximum guidelines to select
      * @param string|null $expansionQuery Optional separate query for expansion (can include patient context)
+     * @param array|null $documentAnalysis Optional document analysis with extracted entities and guideline scores
      */
-    public function selectAndExpand(string $routingQuery, int $maxGuidelines = 3, ?string $expansionQuery = null): array
+    public function selectAndExpand(string $routingQuery, int $maxGuidelines = 3, ?string $expansionQuery = null, ?array $documentAnalysis = null): array
     {
         $startTime = microtime(true);
         $log = Log::channel('retrieval');
@@ -179,8 +180,9 @@ PROMPT;
         $queryForExpansion = $expansionQuery ?? $routingQuery;
 
         if (!$this->isConfigured) {
-            $log->warning('[PARALLEL LLM] Azure OpenAI not configured');
-            return ['selected' => [], 'expanded' => $queryForExpansion];
+            $log->warning('[PARALLEL LLM] Azure OpenAI not configured, using document analysis only');
+            $selected = $this->mergeDocumentAndQuestionRouting([], $documentAnalysis, $log, $maxGuidelines);
+            return ['selected' => $selected, 'expanded' => $queryForExpansion];
         }
 
         $guidelineList = $this->buildGuidelineList();
@@ -220,25 +222,27 @@ PROMPT;
                     ]),
             ]);
 
-            $selected = [];
+            $llmSelected = [];
             if ($responses['routing']->successful()) {
                 $content = $responses['routing']->json('choices.0.message.content', '');
-                $selected = $this->parseResponse($content);
+                $llmSelected = $this->parseResponse($content);
             }
 
             $expanded = $queryForExpansion;
             if ($responses['expansion']->successful()) {
                 $exp = trim($responses['expansion']->json('choices.0.message.content', ''));
-                // Compare against routing query length (the core question) to ensure expansion is meaningful
-                // but accept expansions that are at least as long as the original question
                 if (!empty($exp) && strlen($exp) >= strlen($routingQuery)) {
                     $expanded = $exp;
                 }
             }
 
+            $selected = $this->mergeDocumentAndQuestionRouting($llmSelected, $documentAnalysis, $log, $maxGuidelines);
+
             $duration = round((microtime(true) - $startTime) * 1000);
             $log->info('[PARALLEL LLM] Complete', [
-                'selected_keys' => $selected,
+                'llm_selected_keys' => $llmSelected,
+                'document_recommended' => $documentAnalysis['recommended_guidelines'] ?? [],
+                'final_selected_keys' => $selected,
                 'expanded_preview' => substr($expanded, 0, 100),
                 'duration_ms' => $duration,
             ]);
@@ -247,7 +251,8 @@ PROMPT;
 
         } catch (\Exception $e) {
             $log->error('[PARALLEL LLM] Exception', ['error' => $e->getMessage()]);
-            return ['selected' => [], 'expanded' => $queryForExpansion];
+            $selected = $this->mergeDocumentAndQuestionRouting([], $documentAnalysis, $log, $maxGuidelines);
+            return ['selected' => $selected, 'expanded' => $queryForExpansion];
         }
     }
 
@@ -334,5 +339,45 @@ PROMPT;
             $log->error('[QUERY EXPANSION] Exception', ['error' => $e->getMessage()]);
             return $question;
         }
+    }
+
+    protected function mergeDocumentAndQuestionRouting(array $llmSelected, ?array $documentAnalysis, $log, int $maxGuidelines = 4): array
+    {
+        $docRecommended = $documentAnalysis['recommended_guidelines'] ?? [];
+        $docScores = $documentAnalysis['guideline_scores'] ?? [];
+
+        if (empty($docRecommended) && empty($llmSelected)) {
+            $log->info('[MERGE ROUTING] No routing from LLM or document analysis');
+            return [];
+        }
+
+        if (empty($docRecommended)) {
+            return array_slice($llmSelected, 0, $maxGuidelines);
+        }
+
+        if (empty($llmSelected)) {
+            $log->info('[MERGE ROUTING] Using document-based routing only', [
+                'doc_recommended' => $docRecommended,
+            ]);
+            return array_slice($docRecommended, 0, $maxGuidelines);
+        }
+
+        $merged = array_unique(array_merge($llmSelected, $docRecommended));
+
+        usort($merged, function ($a, $b) use ($docScores, $llmSelected) {
+            $scoreA = ($docScores[$a] ?? 0) + (in_array($a, $llmSelected) ? 10 : 0);
+            $scoreB = ($docScores[$b] ?? 0) + (in_array($b, $llmSelected) ? 10 : 0);
+            return $scoreB - $scoreA;
+        });
+
+        $result = array_slice($merged, 0, $maxGuidelines);
+
+        $log->info('[MERGE ROUTING] Merged document + question routing', [
+            'llm_selected' => $llmSelected,
+            'doc_recommended' => $docRecommended,
+            'merged_result' => $result,
+        ]);
+
+        return $result;
     }
 }
