@@ -82,7 +82,7 @@ class Filter:
         self._warmup_complete = False
 
     async def on_startup(self):
-        print(f"[{self.name}] Pipeline initialized (v2.2 - attachment processing + PHI scrubbing)")
+        print(f"[{self.name}] Pipeline initialized (v2.3 - attachment debug logging)")
         print(f"[{self.name}] API URL: {self.valves.RETRIEVE_API_URL}")
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(self.valves.TIMEOUT_SECONDS)
@@ -337,6 +337,24 @@ Please retry your question, or verify the RAG service is available.
             return body
 
         correlation_id = str(uuid.uuid4())[:8]
+        
+        # Debug: Log body structure to understand where attachments are
+        body_keys = list(body.keys())
+        files_top = body.get("files", [])
+        print(f"[{self.name}] [{correlation_id}] Body keys: {body_keys}")
+        print(f"[{self.name}] [{correlation_id}] Top-level files: {len(files_top) if files_top else 0}")
+        
+        # Check for files in messages
+        for i, msg in enumerate(messages):
+            if msg.get("role") == "user":
+                msg_files = msg.get("files", [])
+                msg_images = msg.get("images", [])
+                msg_attachments = msg.get("attachments", [])
+                if msg_files or msg_images or msg_attachments:
+                    print(f"[{self.name}] [{correlation_id}] Message {i} files: {len(msg_files)}, images: {len(msg_images)}, attachments: {len(msg_attachments)}")
+                    if msg_files:
+                        for f in msg_files[:2]:
+                            print(f"[{self.name}] [{correlation_id}]   File structure: {list(f.keys()) if isinstance(f, dict) else type(f)}")
         
         patient_context, attachment_metadata = self._extract_attachments(body)
         
