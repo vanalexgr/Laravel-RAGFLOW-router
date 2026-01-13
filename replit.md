@@ -45,6 +45,11 @@ The application is built on Laravel 12 and uses the Vizra ADK for AI agent orche
 - **httpx:** Asynchronous HTTP client used in the OpenWebUI filter pipeline.
 
 ## Recent Changes
+- 2026-01-13: Configured Reserved VM deployment for 24/7 operation:
+  - Created robust production startup script (scripts/production_start.sh)
+  - Runs both Laravel Server (port 5000) and RAGFlow Bridge (port 8000) together
+  - Includes health checks, process monitoring, and graceful shutdown
+  - Click "Publish" → "Reserved VM" to deploy with no cold starts
 - 2026-01-12: Document-aware guideline routing:
   - Created DocumentContextAnalyzerService to extract clinical entities from patient documents
   - Routing now uses BOTH patient document content AND the question for guideline selection
