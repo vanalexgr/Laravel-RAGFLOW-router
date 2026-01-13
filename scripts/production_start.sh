@@ -2,11 +2,36 @@
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+if [ -n "$REPL_HOME" ]; then
+    PROJECT_ROOT="$REPL_HOME"
+elif [ -n "$HOME" ]; then
+    PROJECT_ROOT="$HOME/workspace"
+else
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+fi
 
 echo "[Production] Starting ESVS Medical Guidelines API..."
 echo "[Production] Project root: $PROJECT_ROOT"
+echo "[Production] Current directory: $(pwd)"
+
+if [ ! -f "$PROJECT_ROOT/artisan" ]; then
+    echo "[Production] ERROR: Laravel artisan not found at $PROJECT_ROOT/artisan"
+    echo "[Production] Trying alternative paths..."
+    
+    for try_path in "/home/runner/workspace" "/home/runner" "$(pwd)"; do
+        if [ -f "$try_path/artisan" ]; then
+            PROJECT_ROOT="$try_path"
+            echo "[Production] Found Laravel at: $PROJECT_ROOT"
+            break
+        fi
+    done
+fi
+
+if [ ! -f "$PROJECT_ROOT/artisan" ]; then
+    echo "[Production] ERROR: Could not find Laravel installation"
+    exit 1
+fi
 
 wait_for_port() {
     local port=$1
@@ -28,7 +53,7 @@ cd "$PROJECT_ROOT/ragflow_service"
 python -m uvicorn app:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 120 --timeout-graceful-shutdown 30 &
 RAGFLOW_PID=$!
 
-sleep 2
+sleep 3
 if ! kill -0 $RAGFLOW_PID 2>/dev/null; then
     echo "[Production] ERROR: RAGFlow Bridge failed to start"
     exit 1
@@ -43,10 +68,11 @@ echo "[Production] RAGFlow Bridge started successfully (PID: $RAGFLOW_PID)"
 
 echo "[Production] Starting Laravel Server on port 5000..."
 cd "$PROJECT_ROOT"
+php artisan config:clear
 php artisan serve --host=0.0.0.0 --port=5000 &
 LARAVEL_PID=$!
 
-sleep 2
+sleep 3
 if ! kill -0 $LARAVEL_PID 2>/dev/null; then
     echo "[Production] ERROR: Laravel Server failed to start"
     kill $RAGFLOW_PID 2>/dev/null
