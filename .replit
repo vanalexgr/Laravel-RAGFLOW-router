@@ -68,7 +68,7 @@ externalPort = 8000
 [userenv]
 
 [userenv.shared]
-APP_URL = "https://9287bb87-c6fb-4044-8c84-59a9d5d40a6c-00-bbjfytvmszqy.kirk.replit.dev"
+APP_URL = "https://laravel-ragflow-router--alexiouv.replit.app"
 RAGFLOW_API_KEY = "RAGFLOW_API_KEY_REDACTED"
 RAGFLOW_BASE_URL = "https://ragflow.clinicalguidelines.io"
 VIZRA_ADK_DRIVER = "azure"
@@ -81,6 +81,9 @@ VIZRA_ADK_ENABLED = "true"
 VIZRA_ADK_DEFAULT_PROVIDER = "azure"
 VIZRA_ADK_DEFAULT_MODEL = "gpt-5-chat"
 RAGFLOW_ENDPOINT = "https://ragflow.clinicalguidelines.io/api/v1"
+APP_ENV = "production"
+APP_DEBUG = "false"
+APP_KEY = "APP_KEY_REDACTED"
 
 [nix]
 channel = "stable-25_05"
