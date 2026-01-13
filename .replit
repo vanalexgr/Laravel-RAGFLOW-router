@@ -84,3 +84,7 @@ RAGFLOW_ENDPOINT = "https://ragflow.clinicalguidelines.io/api/v1"
 
 [nix]
 channel = "stable-25_05"
+
+[deployment]
+deploymentTarget = "vm"
+run = ["bash", "scripts/production_start.sh"]
