@@ -112,8 +112,15 @@ async def retrieve(request: Request, body: RetrieveRequest):
         duration_ms = (datetime.now() - start_time).total_seconds() * 1000
 
         result = response.json()
+        
+        # Log raw response for debugging rerank issues
+        if body.rerank_id:
+            logger.info(f"RAGFlow raw response keys: {list(result.keys()) if result else 'None'}")
+            if result and result.get("code") != 0:
+                logger.warning(f"RAGFlow returned error code: {result.get('code')}, message: {result.get('message')}")
 
-        chunks = result.get("data", {}).get("chunks", [])
+        data = result.get("data") if result else None
+        chunks = data.get("chunks", []) if data else []
         chunk_count = len(chunks)
         
         top_chunks_summary = []
