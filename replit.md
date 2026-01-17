@@ -45,6 +45,12 @@ The application is built on Laravel 12 and uses the Vizra ADK for AI agent orche
 - **httpx:** Asynchronous HTTP client used in the OpenWebUI filter pipeline.
 
 ## Recent Changes
+- 2026-01-17: Enabled Cohere reranking for improved retrieval quality:
+  - Configured Cohere-rerank-v4.0-pro model in config/ragflow.php
+  - Reranking applies to both narrative and citation chunk retrieval via retrieve_dual endpoint
+  - Adds ~2-3s latency but significantly improves result relevance
+  - RAGFlow returns reranked scores in the similarity field (no separate rerank_score)
+  - Model ID format: `Cohere-rerank-v4.0-pro___OpenAI-API@OpenAI-API-Compatible`
 - 2026-01-13: Configured Reserved VM deployment for 24/7 operation:
   - Created robust production startup script (scripts/production_start.sh)
   - Runs both Laravel Server (port 5000) and RAGFlow Bridge (port 8000) together

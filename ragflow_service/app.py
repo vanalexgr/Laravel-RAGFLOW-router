@@ -328,6 +328,8 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
 
     logger.info(f"Retrieve DUAL request: question='{body.question[:50]}...'")
     logger.info(f"  Narrative datasets: {len(body.narrative_datasets)}, Citation dataset: {body.citation_dataset_id}")
+    if body.rerank_id:
+        logger.info(f"  Reranking ENABLED for DUAL: rerank_id={body.rerank_id}")
 
     start_time = datetime.now()
 
