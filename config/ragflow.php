@@ -16,7 +16,7 @@ return [
         'similarity_threshold' => (float) env('RAGFLOW_SIMILARITY_THRESHOLD', 0.2),
         'keyword_mode' => filter_var(env('RAGFLOW_KEYWORD_MODE', true), FILTER_VALIDATE_BOOLEAN),
         'vector_similarity_weight' => (float) env('RAGFLOW_VECTOR_WEIGHT', 0.3),
-        'rerank_id' => env('RAGFLOW_RERANK_ID', 'Cohere-rerank-v3-5-rdrns___OpenAI-API@OpenAI-API-Compatible'),
+        'rerank_id' => env('RAGFLOW_RERANK_ID'),  // Use RAGFlow's default rerank model when not set
         'use_kg' => filter_var(env('RAGFLOW_USE_KG', true), FILTER_VALIDATE_BOOLEAN),
         'highlight' => filter_var(env('RAGFLOW_HIGHLIGHT', true), FILTER_VALIDATE_BOOLEAN),
     ],
