@@ -61,6 +61,10 @@ args = "export API_SECRET_KEY=\"$API_SECRET_KEY\" && bash scripts/keepalive.sh"
 localPort = 5000
 externalPort = 80
 
+[[ports]]
+localPort = 8000
+externalPort = 8000
+
 [userenv]
 
 [userenv.shared]
