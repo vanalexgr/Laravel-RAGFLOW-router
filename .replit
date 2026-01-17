@@ -84,7 +84,7 @@ RAGFLOW_ENDPOINT = "https://ragflow.clinicalguidelines.io/api/v1"
 APP_ENV = "production"
 APP_DEBUG = "false"
 APP_KEY = "APP_KEY_REDACTED"
-RAGFLOW_RERANK_ID = "Cohere-rerank-v4.0-pro"
+RAGFLOW_RERANK_ID = "Cohere-rerank-v4.0-pro___OpenAI-API@OpenAI-API-Compatible"
 
 [nix]
 channel = "stable-25_05"
