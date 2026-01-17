@@ -31,7 +31,7 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "export API_SECRET_KEY=\"$API_SECRET_KEY\" && php artisan serve --host=0.0.0.0 --port=5000"
+args = "export API_SECRET_KEY=\"$API_SECRET_KEY\" && export RAGFLOW_RERANK_ID=\"$RAGFLOW_RERANK_ID\" && php artisan serve --host=0.0.0.0 --port=5000"
 waitForPort = 5000
 
 [[workflows.workflow]]
@@ -60,10 +60,6 @@ args = "export API_SECRET_KEY=\"$API_SECRET_KEY\" && bash scripts/keepalive.sh"
 [[ports]]
 localPort = 5000
 externalPort = 80
-
-[[ports]]
-localPort = 8000
-externalPort = 8000
 
 [userenv]
 
