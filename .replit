@@ -86,7 +86,7 @@ APP_KEY = "APP_KEY_REDACTED"
 RAGFLOW_RERANK_ID = "Cohere-rerank-v4.0-pro___OpenAI-API@OpenAI-API-Compatible"
 
 [userenv.production]
-APP_DEBUG = "true"
+APP_DEBUG = "false"
 
 [userenv.development]
 APP_DEBUG = "true"
