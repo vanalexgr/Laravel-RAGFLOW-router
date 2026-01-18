@@ -48,7 +48,8 @@ The application is built on Laravel 12 and uses the Vizra ADK for AI agent orche
 - 2026-01-18: Updated datasets with better-formatted versions:
   - Acute Limb Ischaemia: new dataset ID 7dcce66ef3eb11f0b82c5ef3771a102d
   - Vascular Access: new dataset ID bbe0b3a0f39611f08b265ef3771a102d
-  - Both new datasets use different embedding model than original datasets
+  - Abdominal Aortic Aneurysm: new dataset ID 1e8b73dcf49911f09b845ef3771a102d
+  - New datasets use different embedding model than original datasets
   - Verified cross-model compatibility: combined queries (old + new embeddings) work correctly
   - Reranking continues to work with mixed embedding sources
 - 2026-01-17: Enabled Cohere reranking for improved retrieval quality:
