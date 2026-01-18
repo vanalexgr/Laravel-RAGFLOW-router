@@ -18,7 +18,7 @@ return [
                     'key_concepts' => ['Type B Dissection', 'TBAD', 'Intramural Hematoma', 'IMH', 'TEVAR', 'Spinal Cord Ischemia', 'thoracic aneurysm', 'penetrating ulcer'],
                 ],
                 'abdominal_aortic_aneurysm' => [
-                    'id' => '4bf3aa164c5811f08f169aac54abb63a',
+                    'id' => '1e8b73dcf49911f09b845ef3771a102d',
                     'name' => 'Abdominal Aortic Aneurysm',
                     'key_concepts' => ['EVAR', 'Open Repair', 'surveillance', '5.0cm', '5.5cm', 'endoleaks', 'AAA', 'rupture', 'abdominal aneurysm'],
                 ],
@@ -99,7 +99,7 @@ return [
     'all_guideline_datasets' => [
         'be20b02cdc4311f09021f2381272676b',
         'fd679d82dc3311f09021f2381272676b',
-        '4bf3aa164c5811f08f169aac54abb63a',
+        '1e8b73dcf49911f09b845ef3771a102d',
         'd94f2a06dc4111f09021f2381272676b',
         '29b2a1e84ed111f0b3bb3aabfab5e99c',
         'c7c42f76507211f0b6356a892e29a549',
