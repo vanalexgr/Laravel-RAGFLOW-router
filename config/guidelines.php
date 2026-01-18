@@ -48,7 +48,7 @@ return [
                     'key_concepts' => ['WIfI classification', 'angiosome', 'heel ulcer', 'tissue loss', 'rest pain', 'gangrene', 'limb salvage', 'critical limb ischemia', 'CLI', 'CLTI'],
                 ],
                 'acute_limb_ischaemia' => [
-                    'id' => 'c5a4eed4dc2611f09021f2381272676b',
+                    'id' => '7dcce66ef3eb11f0b82c5ef3771a102d',
                     'name' => 'Acute Limb Ischaemia',
                     'key_concepts' => ['6 Ps', 'Rutherford classification', 'thrombolysis', 'embolectomy', 'acute limb', 'ALI', 'pulseless', 'pallor', 'pain', 'paresthesia', 'paralysis', 'poikilothermia'],
                 ],
@@ -88,7 +88,7 @@ return [
                     'key_concepts' => ['MAGIC criteria', 'graft excision', 'antibiotic protocols', 'graft infection', 'prosthetic infection', 'aortic graft infection'],
                 ],
                 'vascular_access' => [
-                    'id' => 'd3547344dc4211f09021f2381272676b',
+                    'id' => 'bbe0b3a0f39611f08b265ef3771a102d',
                     'name' => 'Vascular Access',
                     'key_concepts' => ['AV fistula', 'AVF', 'dialysis access', 'hemodialysis', 'graft', 'steal syndrome', 'access thrombosis'],
                 ],
@@ -104,12 +104,12 @@ return [
         '29b2a1e84ed111f0b3bb3aabfab5e99c',
         'c7c42f76507211f0b6356a892e29a549',
         'acd1930edc3411f09021f2381272676b',
-        'c5a4eed4dc2611f09021f2381272676b',
+        '7dcce66ef3eb11f0b82c5ef3771a102d',
         'b404c5e0585611f0b053823a24ef0d59',
         '7104532adc4311f09021f2381272676b',
         'ecb621444d8f11f09f7a2e382eabde98',
         '8f58aeadec9411f0a38066bc68590b9b',
         '29981e72dc4311f09021f2381272676b',
-        'd3547344dc4211f09021f2381272676b',
+        'bbe0b3a0f39611f08b265ef3771a102d',
     ],
 ];
