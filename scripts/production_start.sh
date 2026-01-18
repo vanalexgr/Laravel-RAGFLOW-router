@@ -68,8 +68,15 @@ echo "[Production] RAGFlow Bridge started successfully (PID: $RAGFLOW_PID)"
 
 echo "[Production] Starting Laravel Server on port 5000..."
 cd "$PROJECT_ROOT"
-php artisan config:clear
-php artisan serve --host=0.0.0.0 --port=5000 &
+
+echo "[Production] Clearing config cache..."
+php artisan config:clear 2>&1 || true
+
+echo "[Production] Checking Laravel..."
+php artisan --version 2>&1
+
+echo "[Production] Starting serve..."
+php artisan serve --host=0.0.0.0 --port=5000 2>&1 &
 LARAVEL_PID=$!
 
 sleep 3
