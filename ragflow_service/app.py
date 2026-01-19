@@ -649,8 +649,19 @@ async def startup_event():
         logger.warning("Semantic router not available - LLM fallback will be used")
         return
     try:
+        logger.info("Initializing semantic router (this may download ~1.2GB multilingual model on first run)...")
         semantic_router_service.initialize()
         logger.info("Semantic router initialized on startup")
+        
+        # Warm-up: Run a test query to ensure model is fully loaded and cached
+        # This forces the embedding model to download if not already cached
+        logger.info("Running warm-up query to pre-load embeddings...")
+        warmup_result = semantic_router_service.route_multi("aortic aneurysm repair", max_routes=1)
+        if warmup_result:
+            logger.info(f"Warm-up complete - model ready. Test route: {warmup_result[0].get('guideline_key', 'unknown')}")
+        else:
+            logger.info("Warm-up complete - model ready (no route matched)")
+            
     except Exception as e:
         logger.warning(f"Failed to initialize semantic router: {e}")
 
