@@ -46,6 +46,11 @@ The application is built on Laravel 12 and uses the Vizra ADK for AI agent orche
 - **httpx:** Asynchronous HTTP client used in the OpenWebUI filter pipeline.
 
 ## Recent Changes
+- 2026-01-19: Added routing_method tracking for visibility into guideline selection:
+  - GuidelineRouterService now returns `routing_method` field: 'semantic', 'llm', 'document_only', 'fallback', 'explicit', or 'keyword_fallback'
+  - /api/v1/retrieve response includes `routing_method` for API consumers
+  - OpenWebUI filter logs: "Routing: {method} | Guidelines: [list]" for debugging
+  - Verified semantic router works locally (7-14ms routing time)
 - 2026-01-19: Implemented proportional chunk allocation for narrative retrieval:
   - Semantic router scores now determine chunk distribution per guideline
   - Higher-scoring guidelines get proportionally more chunks (e.g., 0.86 vs 0.85 → 8 vs 7 chunks)

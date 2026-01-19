@@ -515,6 +515,7 @@ class OpenAICompatibleController extends Controller
                 $selectedKeys = $llmResult['selected'];
                 $expandedQuery = $llmResult['expanded'];
                 $guidelineScores = $llmResult['scores'] ?? [];  // Capture semantic router scores
+                $routingMethod = $llmResult['routing_method'] ?? 'unknown';  // Track which routing method was used
                 
                 // Convert keys to full guideline info
                 if (!empty($selectedKeys)) {
@@ -535,13 +536,16 @@ class OpenAICompatibleController extends Controller
                     'keys' => array_keys($selectedGuidelines),
                     'names' => array_column($selectedGuidelines, 'name'),
                     'scores' => $guidelineScores,
+                    'routing_method' => $routingMethod,
                 ]);
             } else {
                 $selectedGuidelines = $this->validateGuidelineKeys($requestedKeys);
                 $router = new \App\Services\GuidelineRouterService();
                 $expandedQuery = $router->expandQuery($scrubbedQuestion);
+                $routingMethod = 'explicit';  // User provided specific guidelines
                 $log->info('Guidelines from request', [
                     'keys' => array_keys($selectedGuidelines),
+                    'routing_method' => $routingMethod,
                 ]);
             }
 
@@ -560,9 +564,11 @@ class OpenAICompatibleController extends Controller
                     ], 422);
                 }
                 
+                $routingMethod = 'keyword_fallback';
                 $log->info('Keywords fallback selected guidelines', [
                     'count' => count($selectedGuidelines),
                     'keys' => array_keys($selectedGuidelines),
+                    'routing_method' => $routingMethod,
                 ]);
             }
             
@@ -588,6 +594,7 @@ class OpenAICompatibleController extends Controller
                 'phi_scrubbed' => $scrubResult['was_modified'] || !empty($patientContext),
                 'phi_redaction_count' => $scrubResult['total_redactions'] + $patientContextRedactions,
                 'selected_guidelines' => $selectedGuidelines,
+                'routing_method' => $routingMethod ?? 'unknown',
                 'narrative_chunks' => $dualResult['narrative_chunks'],
                 'citation_chunks' => $dualResult['citation_chunks'],
                 'narrative_count' => count($dualResult['narrative_chunks']),
