@@ -32,12 +32,20 @@ SHARED_SECRET = os.getenv("RAGFLOW_BRIDGE_SECRET")
 @app.get("/health")
 async def health_check():
     """Health check endpoint for service monitoring."""
+    router_status = {}
+    if SEMANTIC_ROUTER_AVAILABLE and semantic_router_service:
+        try:
+            router_status = semantic_router_service.get_status()
+        except Exception:
+            router_status = {"initialized": False, "model_name": "error"}
+    
     return {
         "status": "ok",
         "service": "ragflow_bridge",
         "ragflow_configured": bool(RAGFLOW_API_KEY),
         "ragflow_endpoint": RAGFLOW_BASE_URL,
         "semantic_router_available": SEMANTIC_ROUTER_AVAILABLE,
+        "semantic_router": router_status,
     }
 
 class RetrieveRequest(BaseModel):

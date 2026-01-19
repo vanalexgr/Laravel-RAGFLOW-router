@@ -842,6 +842,20 @@ class SemanticRouterService:
     def is_initialized(self) -> bool:
         return self._initialized
 
+    @property
+    def model_name(self) -> str:
+        """Return the embedding model name being used."""
+        return "intfloat/multilingual-e5-large" if self._initialized else "not_initialized"
+
+    def get_status(self) -> dict:
+        """Return status info for health checks."""
+        return {
+            "initialized": self._initialized,
+            "model_name": self.model_name,
+            "routes_count": len(GUIDELINES_CONFIG) if self._initialized else 0,
+            "multilingual_support": self._initialized,  # multilingual model is always used when initialized
+        }
+
     def route(self, query: str, top_k: int = 1) -> list[dict]:
         if not self._initialized or not self._router:
             raise RuntimeError("SemanticRouterService not initialized")
