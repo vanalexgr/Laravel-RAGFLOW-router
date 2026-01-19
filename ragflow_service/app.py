@@ -7,7 +7,15 @@ from pydantic import BaseModel
 from typing import Optional, Literal
 import httpx
 
-from semantic_router_service import semantic_router_service, GUIDELINES_CONFIG
+# Make semantic router optional - may fail if fastembed/onnx dependencies unavailable
+try:
+    from semantic_router_service import semantic_router_service, GUIDELINES_CONFIG
+    SEMANTIC_ROUTER_AVAILABLE = True
+except ImportError as e:
+    SEMANTIC_ROUTER_AVAILABLE = False
+    semantic_router_service = None
+    GUIDELINES_CONFIG = {}
+    logging.warning(f"Semantic router not available (missing dependencies): {e}")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,6 +37,7 @@ async def health_check():
         "service": "ragflow_bridge",
         "ragflow_configured": bool(RAGFLOW_API_KEY),
         "ragflow_endpoint": RAGFLOW_BASE_URL,
+        "semantic_router_available": SEMANTIC_ROUTER_AVAILABLE,
     }
 
 class RetrieveRequest(BaseModel):
@@ -538,10 +547,6 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
         logger.error(f"Retrieve DUAL failed: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/health")
-async def health():
-    return {"status": "ok", "service": "ragflow-bridge"}
-
 @app.get("/datasets")
 async def list_datasets(request: Request):
     if SHARED_SECRET:
@@ -611,6 +616,9 @@ class RouteResponse(BaseModel):
 
 @app.on_event("startup")
 async def startup_event():
+    if not SEMANTIC_ROUTER_AVAILABLE:
+        logger.warning("Semantic router not available - LLM fallback will be used")
+        return
     try:
         semantic_router_service.initialize()
         logger.info("Semantic router initialized on startup")
@@ -622,7 +630,7 @@ async def startup_event():
 async def route_query(request: Request, body: RouteRequest):
     start_time = datetime.now()
 
-    if not semantic_router_service.is_initialized:
+    if not SEMANTIC_ROUTER_AVAILABLE or not semantic_router_service or not semantic_router_service.is_initialized:
         duration = (datetime.now() - start_time).total_seconds() * 1000
         return RouteResponse(
             method="none",
@@ -664,6 +672,11 @@ async def route_query(request: Request, body: RouteRequest):
 
 @app.get("/route/guidelines")
 async def list_guideline_routes():
+    if not SEMANTIC_ROUTER_AVAILABLE or not semantic_router_service:
+        return {
+            "guidelines": [],
+            "router_available": False,
+        }
     return {
         "guidelines": semantic_router_service.get_all_guidelines(),
         "router_available": semantic_router_service.is_initialized,
