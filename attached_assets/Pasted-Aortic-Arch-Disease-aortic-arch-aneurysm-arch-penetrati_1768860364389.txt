@@ -1,0 +1,447 @@
+Aortic Arch Disease
+
+aortic arch aneurysm
+
+arch penetrating atherosclerotic ulcer (PAU)
+
+intramural haematoma (IMH) arch
+
+arch dissection (Type A/arch involvement)
+
+supra-aortic trunk debranching
+
+zone 0 / zone 1 / zone 2 landing
+
+frozen elephant trunk (FET)
+
+hybrid arch repair
+
+arch branch stent-graft (branched arch)
+
+chimney to innominate / carotid
+
+carotid–subclavian bypass
+
+left subclavian artery (LSA) revascularisation
+
+cerebral protection / antegrade cerebral perfusion
+
+embolic stroke risk in arch repair
+
+bovine arch anatomy
+
+Descending Thoracic Aorta
+
+TEVAR (thoracic endovascular aortic repair)
+
+Stanford type B dissection (TBAD)
+
+complicated TBAD (malperfusion/rupture)
+
+thoracic aortic aneurysm (DTAA)
+
+traumatic thoracic aortic injury (BTAI)
+
+thoracic PAU
+
+thoracic IMH
+
+distal re-entry / false lumen thrombosis
+
+spinal cord ischaemia (SCI)
+
+cerebrospinal fluid drainage (CSFD)
+
+left subclavian coverage
+
+proximal/distal seal zone thoracic
+
+iliac conduit for TEVAR access
+
+endoleak type I/III after TEVAR
+
+stent-graft induced new entry (SINE)
+
+Abdominal Aortic Aneurysm
+
+infrarenal AAA
+
+juxtarenal AAA
+
+suprarenal fixation
+
+EVAR
+
+open AAA repair
+
+ruptured AAA (rAAA)
+
+hostile neck (short/angulated/conical)
+
+fenestrated EVAR (FEVAR)
+
+branched EVAR (BEVAR)
+
+aorto-uni-iliac (AUI) + fem–fem bypass
+
+endoleak (type I/II/III)
+
+aneurysm sac expansion
+
+iliac aneurysm / iliac seal zone
+
+internal iliac artery embolisation/coverage
+
+abdominal compartment syndrome (post-rAAA)
+
+Mesenteric & Renal
+
+chronic mesenteric ischaemia (CMI)
+
+acute mesenteric ischaemia (AMI)
+
+SMA stenosis/occlusion
+
+celiac artery stenosis
+
+median arcuate ligament syndrome (MALS)
+
+mesenteric stenting (SMA stent)
+
+mesenteric bypass (antegrade/retrograde)
+
+non-occlusive mesenteric ischaemia (NOMI)
+
+renal artery stenosis (RAS)
+
+fibromuscular dysplasia (FMD) renal
+
+renal artery aneurysm
+
+renal infarction / renal embolism
+
+atheroembolic renal disease
+
+renovascular hypertension
+
+visceral artery aneurysm (splenic/hepatic)
+
+Carotid & Vertebral
+
+carotid endarterectomy (CEA)
+
+carotid artery stenting (CAS)
+
+symptomatic carotid stenosis
+
+asymptomatic carotid stenosis
+
+NASCET grading
+
+near-occlusion
+
+contralateral carotid occlusion
+
+carotid restenosis
+
+plaque ulceration / intraplaque haemorrhage
+
+cerebral embolic protection device
+
+transcarotid artery revascularisation (TCAR)
+
+vertebral artery origin stenosis
+
+posterior circulation TIA/stroke
+
+subclavian steal syndrome
+
+cranial nerve injury (post-CEA)
+
+Asymptomatic PAD
+
+asymptomatic lower limb PAD
+
+ankle–brachial index (ABI) screening
+
+toe–brachial index (TBI)
+
+intermittent claudication vs asymptomatic
+
+cardiovascular risk stratification PAD
+
+best medical therapy (BMT)
+
+supervised exercise therapy (SET) (as prevention/conditioning)
+
+smoking cessation PAD
+
+statin intensity PAD
+
+diabetes + PAD screening
+
+carotid bruit / polyvascular disease linkage
+
+antiplatelet primary prevention in PAD
+
+high-risk plaque burden / calcification
+
+pulse examination (femoral/popliteal)
+
+opportunistic ABI in high-risk cohorts
+
+CLTI
+
+chronic limb-threatening ischaemia (CLTI)
+
+Rutherford 4–6
+
+WIfI classification
+
+GLASS staging
+
+angiosome-directed revascularisation
+
+infrapopliteal / tibial intervention
+
+pedal loop / plantar arch
+
+endovascular-first strategy
+
+bypass-first (autologous vein)
+
+great saphenous vein (GSV) conduit
+
+minor amputation / transmetatarsal amputation (TMA)
+
+wound care / offloading
+
+toe pressure / TcPO2
+
+no-option CLTI
+
+limb salvage endpoint
+
+Acute Limb Ischaemia
+
+acute limb ischaemia (ALI)
+
+Rutherford I / IIa / IIb / III
+
+embolus vs thrombosis (in-situ)
+
+urgent heparinisation
+
+Fogarty embolectomy
+
+catheter-directed thrombolysis (CDT)
+
+mechanical thrombectomy (peripheral)
+
+acute bypass graft occlusion
+
+acute stent thrombosis
+
+compartment syndrome / fasciotomy
+
+reperfusion injury / hyperkalaemia
+
+on-table angiography
+
+popliteal artery occlusion acute
+
+atrial fibrillation embolism source
+
+viability assessment (motor/sensory deficit)
+
+Antithrombotic Therapy
+
+single antiplatelet therapy (SAPT)
+
+dual antiplatelet therapy (DAPT)
+
+aspirin + clopidogrel
+
+DOAC (apixaban/rivaroxaban/edoxaban/dabigatran)
+
+vitamin K antagonist (VKA/warfarin)
+
+low-dose rivaroxaban + aspirin (dual pathway inhibition)
+
+perioperative antithrombotic management
+
+bridging anticoagulation (LMWH)
+
+heparin-induced thrombocytopenia (HIT)
+
+antiplatelet after peripheral stenting
+
+anticoagulation after AF + PAD
+
+bleeding risk (HAS-BLED style terms)
+
+antithrombotic after bypass graft
+
+antithrombotic after EVAR/TEVAR (contextual)
+
+duration of therapy / de-escalation
+
+Venous Thrombosis (DVT/PE)
+
+proximal DVT (iliofemoral)
+
+distal (calf) DVT
+
+pulmonary embolism (PE)
+
+provoked vs unprovoked VTE
+
+Wells score
+
+D-dimer strategy
+
+compression ultrasonography (CUS)
+
+thrombus extension surveillance
+
+catheter-directed thrombolysis (iliofemoral DVT)
+
+pharmacomechanical thrombectomy (PMT)
+
+post-thrombotic syndrome (PTS)
+
+inferior vena cava filter (IVC filter)
+
+cancer-associated thrombosis
+
+pregnancy-associated VTE
+
+anticoagulation duration (3 months / extended)
+
+Chronic Venous Disease
+
+chronic venous insufficiency (CVI)
+
+CEAP classification
+
+venous reflux (GSV/SSV)
+
+saphenofemoral junction (SFJ) incompetence
+
+endovenous thermal ablation (EVLA/RFA)
+
+ultrasound-guided foam sclerotherapy (UGFS)
+
+perforator incompetence
+
+iliac vein obstruction / May–Thurner
+
+venous stenting (iliocaval)
+
+venous leg ulcer (VLU)
+
+compression therapy (class II/III stockings)
+
+ambulatory venous hypertension
+
+lipodermatosclerosis
+
+corona phlebectatica
+
+recurrent varicose veins (REVAS)
+
+Vascular Trauma
+
+blunt vascular injury
+
+penetrating vascular injury
+
+hard signs / soft signs of vascular injury
+
+extremity arterial trauma
+
+temporary intravascular shunt (TIVS)
+
+damage control surgery
+
+tourniquet haemorrhage control
+
+REBOA (resuscitative endovascular balloon occlusion)
+
+pseudoaneurysm (post-trauma)
+
+arteriovenous fistula (traumatic AVF)
+
+intimal flap / dissection (trauma)
+
+compartment syndrome trauma
+
+fasciotomy indications
+
+combined ortho-vascular (mangled extremity)
+
+vascular imaging in trauma (CTA)
+
+Vascular Graft Infections
+
+vascular graft infection (VGI)
+
+aortic graft infection
+
+groin graft infection
+
+biofilm (staphylococcus aureus / epidermidis)
+
+Samson classification / Szilagyi (groin)
+
+explantation of infected graft
+
+in situ reconstruction (ISR)
+
+extra-anatomic bypass (EAB)
+
+rifampicin-bonded graft
+
+cryopreserved allograft
+
+autologous vein reconstruction (NAIS)
+
+omental flap coverage
+
+long-term suppressive antibiotics
+
+aorto-enteric fistula (AEF)
+
+PET-CT for graft infection
+
+Vascular Access
+
+arteriovenous fistula (AVF)
+
+arteriovenous graft (AVG)
+
+tunneled dialysis catheter (TDC)
+
+radiocephalic fistula (RCF)
+
+brachiocephalic fistula (BCF)
+
+brachiobasilic transposition (BBT)
+
+access maturation failure
+
+juxta-anastomotic stenosis
+
+access flow (Qa) surveillance
+
+steal syndrome (DASS)
+
+high-output cardiac failure (access-related)
+
+aneurysmal fistula degeneration
+
+central venous stenosis/occlusion (CVS)
+
+percutaneous transluminal angioplasty (PTA) of access
+
+thrombectomy of AV access
