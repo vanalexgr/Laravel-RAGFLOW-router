@@ -1,0 +1,16 @@
+[ESVS Vascular Guidelines RAG] [636c457a] Retrieving guidelines for: Are there any lifestyle changes or medications that can help manage or reduce the growth of the aneu...
+[ESVS Vascular Guidelines RAG] [636c457a] First attempt with 60s cold-start timeout
+2026-01-19 19:29:25.818 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 145.224.119.41:0 - "POST /api/chat/completions HTTP/1.1" 200
+2026-01-19 19:29:26.006 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 145.224.119.41:0 - "GET /api/v1/chats/?page=1 HTTP/1.1" 200
+2026-01-19 19:29:41.134 | INFO     | httpx._client:_send_single_request:1740 - HTTP Request: POST https://laravel-ragflow-router--alexiouv.replit.app/api/v1/retrieve "HTTP/1.1 200 OK"
+[ESVS Vascular Guidelines RAG] [636c457a] Retrieved 15 narrative + 5 citation chunks in 14699ms
+[ESVS Vascular Guidelines RAG] [636c457a] Guidelines: ['mesenteric_renal', 'abdominal_aortic_aneurysm']
+2026-01-19 19:29:41.212 | INFO     | open_webui.routers.openai:get_all_models:477 - get_all_models()
+2026-01-19 19:29:46.982 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 145.224.119.41:0 - "GET /_app/version.json HTTP/1.1" 200
+2026-01-19 19:29:57.840 | INFO     | open_webui.routers.openai:get_all_models:477 - get_all_models()
+2026-01-19 19:29:58.035 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 145.224.119.41:0 - "POST /api/chat/completed HTTP/1.1" 200
+2026-01-19 19:29:58.374 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 145.224.119.41:0 - "POST /api/v1/chats/903377e2-8cc2-4beb-8131-438a9be90d20 HTTP/1.1" 200
+2026-01-19 19:29:58.658 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 145.224.119.41:0 - "GET /api/v1/chats/?page=1 HTTP/1.1" 200
+2026-01-19 19:30:25.093 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 145.224.119.41:0 - "GET /api/v1/chats/92b5e000-2978-45ee-a1d8-6e55044779b3 HTTP/1.1" 200
+2026-01-19 19:30:46.987 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 145.224.119.41:0 - "GET /_app/version.json HTTP/1.1" 200
+
