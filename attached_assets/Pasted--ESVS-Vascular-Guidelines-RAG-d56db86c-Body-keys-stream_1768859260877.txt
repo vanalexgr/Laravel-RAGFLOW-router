@@ -1,0 +1,27 @@
+[ESVS Vascular Guidelines RAG] [d56db86c] Body keys: ['stream', 'model', 'messages', 'features', 'metadata']
+[ESVS Vascular Guidelines RAG] [d56db86c] Top-level files: 0
+[ESVS Vascular Guidelines RAG] Attachment scan: body_keys=['stream', 'model', 'features', 'metadata'], files_in_body=0, files_in_metadata=0, files_in_messages=0
+[ESVS Vascular Guidelines RAG] [d56db86c] Retrieving guidelines for: A 76-year-old man has chronic limb-threatening ischaemia (rest pain + tissue loss, WIfI high risk) w...
+[ESVS Vascular Guidelines RAG] [d56db86c] First attempt with 60s cold-start timeout
+2026-01-19 21:45:50.332 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 145.224.119.41:0 - "POST /api/chat/completions HTTP/1.1" 200
+2026-01-19 21:45:50.498 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 145.224.119.41:0 - "GET /api/v1/chats/?page=1 HTTP/1.1" 200
+2026-01-19 21:46:00.068 | INFO     | httpx._client:_send_single_request:1740 - HTTP Request: POST https://laravel-ragflow-router--alexiouv.replit.app/api/v1/retrieve "HTTP/1.1 200 OK"
+[ESVS Vascular Guidelines RAG] [d56db86c] Retrieved 15 narrative + 5 citation chunks in 9467ms
+[ESVS Vascular Guidelines RAG] [d56db86c] Routing: semantic | Guidelines: ['carotid_vertebral']
+2026-01-19 21:46:00.133 | INFO     | open_webui.routers.openai:get_all_models:477 - get_all_models()
+2026-01-19 21:46:19.648 | INFO     | open_webui.routers.openai:get_all_models:477 - get_all_models()
+2026-01-19 21:46:19.849 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 145.224.119.41:0 - "POST /api/chat/completed HTTP/1.1" 200
+2026-01-19 21:46:20.069 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 145.224.119.41:0 - "POST /api/v1/chats/dc309557-7be1-4d2e-a6c5-7549e78c66b1 HTTP/1.1" 200
+2026-01-19 21:46:20.259 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 145.224.119.41:0 - "GET /api/v1/chats/?page=1 HTTP/1.1" 200
+2026-01-19 21:46:21.182 | INFO     | open_webui.routers.openai:get_all_models:477 - get_all_models()
+2026-01-19 21:46:21.931 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 145.224.119.41:0 - "GET /api/v1/chats/?page=1 HTTP/1.1" 200
+2026-01-19 21:46:22.104 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 145.224.119.41:0 - "GET /api/v1/chats/?page=1 HTTP/1.1" 200
+2026-01-19 21:46:22.856 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 145.224.119.41:0 - "GET /api/v1/chats/dc309557-7be1-4d2e-a6c5-7549e78c66b1 HTTP/1.1" 200
+2026-01-19 21:46:22.863 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 145.224.119.41:0 - "GET /api/v1/chats/all/tags HTTP/1.1" 200
+2026-01-19 21:46:23.043 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 145.224.119.41:0 - "GET /api/v1/chats/all/tags HTTP/1.1" 200
+2026-01-19 21:46:32.646 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 145.224.119.41:0 - "GET /_app/version.json HTTP/1.1" 200
+2026-01-19 21:46:47.006 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 145.224.119.41:0 - "GET /_app/version.json HTTP/1.1" 200
+2026-01-19 21:47:03.898 | INFO     | open_webui.routers.openai:get_all_models:477 - get_all_models()
+2026-01-19 21:47:03.913 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 145.224.119.41:0 - "GET /api/models HTTP/1.1" 200
+2026-01-19 21:47:33.531 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 145.224.119.41:0 - "GET /_app/version.json HTTP/1.1" 200
+
