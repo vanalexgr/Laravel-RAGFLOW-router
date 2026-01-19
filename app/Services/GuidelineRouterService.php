@@ -293,7 +293,7 @@ PROMPT;
                     'duration_ms' => round((microtime(true) - $startTime) * 1000),
                 ]);
                 
-                return ['selected' => $selected, 'expanded' => $expanded, 'scores' => $semanticScores];
+                return ['selected' => $selected, 'expanded' => $expanded, 'scores' => $semanticScores, 'routing_method' => 'semantic'];
             }
             // Fallback to LLM routing if semantic returned empty and method allows fallback
             $log->info('[SEMANTIC ROUTER] Empty result, falling back to LLM routing');
@@ -302,7 +302,7 @@ PROMPT;
         if (!$this->isConfigured) {
             $log->warning('[PARALLEL LLM] Azure OpenAI not configured, using document analysis only');
             $selected = $this->mergeDocumentAndQuestionRouting([], $documentAnalysis, $log, $maxGuidelines);
-            return ['selected' => $selected, 'expanded' => $queryForExpansion, 'scores' => []];
+            return ['selected' => $selected, 'expanded' => $queryForExpansion, 'scores' => [], 'routing_method' => 'document_only'];
         }
 
         $guidelineList = $this->buildGuidelineList();
@@ -367,12 +367,12 @@ PROMPT;
                 'duration_ms' => $duration,
             ]);
 
-            return ['selected' => $selected, 'expanded' => $expanded, 'scores' => []];
+            return ['selected' => $selected, 'expanded' => $expanded, 'scores' => [], 'routing_method' => 'llm'];
 
         } catch (\Exception $e) {
             $log->error('[PARALLEL LLM] Exception', ['error' => $e->getMessage()]);
             $selected = $this->mergeDocumentAndQuestionRouting([], $documentAnalysis, $log, $maxGuidelines);
-            return ['selected' => $selected, 'expanded' => $queryForExpansion, 'scores' => []];
+            return ['selected' => $selected, 'expanded' => $queryForExpansion, 'scores' => [], 'routing_method' => 'fallback'];
         }
     }
 

@@ -124,10 +124,11 @@ Please retry your question, or verify the RAG service is available.
         duration_ms = data.get("duration_ms", 0)
         system_prompt = data.get("system_prompt", "")
 
+        routing_method = data.get("routing_method", "unknown")
         print(
             f"[{self.name}] [{correlation_id}] Retrieved {len(narrative_chunks)} narrative + {len(citation_chunks)} citation chunks in {duration_ms}ms"
         )
-        print(f"[{self.name}] [{correlation_id}] Guidelines: {list(selected_guidelines.keys())}")
+        print(f"[{self.name}] [{correlation_id}] Routing: {routing_method} | Guidelines: {list(selected_guidelines.keys())}")
 
         if not narrative_chunks and not citation_chunks:
             print(f"[{self.name}] [{correlation_id}] WARNING: No chunks retrieved - empty context")
