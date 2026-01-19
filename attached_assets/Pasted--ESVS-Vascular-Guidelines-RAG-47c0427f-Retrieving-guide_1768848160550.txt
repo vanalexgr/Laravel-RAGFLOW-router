@@ -1,0 +1,23 @@
+[ESVS Vascular Guidelines RAG] [47c0427f] Retrieving guidelines for: A 72-year-old man is found on screening ultrasound to have an **infrarenal abdominal aortic aneurysm...
+[ESVS Vascular Guidelines RAG] [47c0427f] First attempt with 60s cold-start timeout
+2026-01-19 18:41:35.127 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 145.224.119.41:0 - "POST /api/chat/completions HTTP/1.1" 200
+2026-01-19 18:41:35.301 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 145.224.119.41:0 - "GET /api/v1/chats/?page=1 HTTP/1.1" 200
+2026-01-19 18:41:38.235 | INFO     | httpx._client:_send_single_request:1740 - HTTP Request: POST https://laravel-ragflow-router--alexiouv.replit.app/api/v1/retrieve "HTTP/1.1 500 Internal Server Error"
+[ESVS Vascular Guidelines RAG] [47c0427f] Attempt 1 failed, retrying in 3.3s...
+2026-01-19 18:41:44.754 | INFO     | httpx._client:_send_single_request:1740 - HTTP Request: POST https://laravel-ragflow-router--alexiouv.replit.app/api/v1/retrieve "HTTP/1.1 500 Internal Server Error"
+[ESVS Vascular Guidelines RAG] [47c0427f] FAILED after 2 attempts: HTTP 500
+2026-01-19 18:41:44.783 | INFO     | open_webui.routers.openai:get_all_models:477 - get_all_models()
+2026-01-19 18:42:07.686 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 145.224.119.41:0 - "GET /_app/version.json HTTP/1.1" 200
+2026-01-19 18:42:12.551 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 172.184.113.193:32342 - "GET /mcp HTTP/1.1" 200
+2026-01-19 18:42:12.623 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 172.184.113.193:32342 - "GET /api/mcp HTTP/1.1" 200
+2026-01-19 18:42:12.695 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 172.184.113.193:32342 - "GET /v1/mcp HTTP/1.1" 200
+2026-01-19 18:42:12.763 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 172.184.113.193:32342 - "GET /jsonrpc HTTP/1.1" 200
+2026-01-19 18:42:12.832 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 172.184.113.193:32342 - "GET /mcp HTTP/1.1" 200
+2026-01-19 18:42:12.900 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 172.184.113.193:32342 - "GET /api/mcp HTTP/1.1" 200
+2026-01-19 18:42:12.968 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 172.184.113.193:32342 - "GET /v1/mcp HTTP/1.1" 200
+2026-01-19 18:42:13.036 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 172.184.113.193:32342 - "GET /jsonrpc HTTP/1.1" 200
+2026-01-19 18:42:13.105 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 172.184.113.193:32342 - "GET /mcp HTTP/1.1" 200
+2026-01-19 18:42:13.176 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 172.184.113.193:32342 - "GET /api/mcp HTTP/1.1" 200
+2026-01-19 18:42:13.247 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 172.184.113.193:32342 - "GET /v1/mcp HTTP/1.1" 200
+2026-01-19 18:42:13.316 | INFO     | uvicorn.protocols.http.httptools_impl:send:483 - 172.184.113.193:32342 - "GET /jsonrpc HTTP/1.1" 200
+Invalid HTTP request received.
