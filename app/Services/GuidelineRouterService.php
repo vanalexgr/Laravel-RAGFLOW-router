@@ -29,6 +29,8 @@ class GuidelineRouterService
 
     /**
      * Route query using semantic router (ultra-fast, ~10ms)
+     * 
+     * @return array Array of guideline keys with optional 'scores' key containing confidence values
      */
     public function selectGuidelinesViaSemantic(string $question, int $maxGuidelines = 3): array
     {
@@ -54,15 +56,22 @@ class GuidelineRouterService
             $duration = round((microtime(true) - $startTime) * 1000);
 
             $selected = array_map(fn($g) => $g['guideline_key'], $data['guidelines'] ?? []);
+            
+            // Build scores map for proportional chunk allocation
+            $scores = [];
+            foreach ($data['guidelines'] ?? [] as $g) {
+                $scores[$g['guideline_key']] = $g['confidence'] ?? 0.5;
+            }
 
             $log->info('[SEMANTIC ROUTER] Success', [
                 'question_preview' => substr($question, 0, 80),
                 'selected_keys' => $selected,
+                'scores' => $scores,
                 'duration_ms' => $duration,
                 'router_duration_ms' => $data['duration_ms'] ?? null,
             ]);
 
-            return $selected;
+            return ['keys' => $selected, 'scores' => $scores];
 
         } catch (\Exception $e) {
             $log->error('[SEMANTIC ROUTER] Exception', ['error' => $e->getMessage()]);
@@ -72,6 +81,8 @@ class GuidelineRouterService
 
     /**
      * Smart routing: uses configured method (semantic or llm) with fallback
+     * 
+     * @return array With 'keys' array of guideline keys and 'scores' map of key => confidence
      */
     public function routeQuery(string $question, int $maxGuidelines = 3): array
     {
@@ -85,21 +96,24 @@ class GuidelineRouterService
 
         if ($method === 'semantic' || $method === 'semantic_with_llm_fallback') {
             $result = $this->selectGuidelinesViaSemantic($question, $maxGuidelines);
+            $keys = $result['keys'] ?? [];
             
-            if (!empty($result)) {
+            if (!empty($keys)) {
                 return $result;
             }
 
             if ($method === 'semantic_with_llm_fallback') {
                 $log->info('[ROUTER] Semantic routing empty, falling back to LLM');
-                return $this->selectGuidelines($question, $maxGuidelines);
+                $llmKeys = $this->selectGuidelines($question, $maxGuidelines);
+                return ['keys' => $llmKeys, 'scores' => []];
             }
 
             return $result;
         }
 
-        // Default: LLM routing
-        return $this->selectGuidelines($question, $maxGuidelines);
+        // Default: LLM routing (no scores available)
+        $llmKeys = $this->selectGuidelines($question, $maxGuidelines);
+        return ['keys' => $llmKeys, 'scores' => []];
     }
 
     public function selectGuidelines(string $question, int $maxGuidelines = 3): array
@@ -260,23 +274,26 @@ PROMPT;
 
         // Check if semantic routing is enabled
         if (in_array($this->routingMethod, ['semantic', 'semantic_with_llm_fallback'])) {
-            $semanticSelected = $this->selectGuidelinesViaSemantic($routingQuery, $maxGuidelines);
+            $semanticResult = $this->selectGuidelinesViaSemantic($routingQuery, $maxGuidelines);
+            $semanticKeys = $semanticResult['keys'] ?? [];
+            $semanticScores = $semanticResult['scores'] ?? [];
             
-            if (!empty($semanticSelected) || $this->routingMethod === 'semantic') {
+            if (!empty($semanticKeys) || $this->routingMethod === 'semantic') {
                 // Use semantic results, still do LLM expansion if configured
                 $expanded = $queryForExpansion;
                 if ($this->isConfigured) {
                     $expanded = $this->expandQuery($queryForExpansion);
                 }
-                $selected = $this->mergeDocumentAndQuestionRouting($semanticSelected, $documentAnalysis, $log, $maxGuidelines);
+                $selected = $this->mergeDocumentAndQuestionRouting($semanticKeys, $documentAnalysis, $log, $maxGuidelines);
                 
                 $log->info('[SEMANTIC+EXPAND] Complete', [
-                    'semantic_selected' => $semanticSelected,
+                    'semantic_selected' => $semanticKeys,
+                    'semantic_scores' => $semanticScores,
                     'final_selected' => $selected,
                     'duration_ms' => round((microtime(true) - $startTime) * 1000),
                 ]);
                 
-                return ['selected' => $selected, 'expanded' => $expanded];
+                return ['selected' => $selected, 'expanded' => $expanded, 'scores' => $semanticScores];
             }
             // Fallback to LLM routing if semantic returned empty and method allows fallback
             $log->info('[SEMANTIC ROUTER] Empty result, falling back to LLM routing');
@@ -285,7 +302,7 @@ PROMPT;
         if (!$this->isConfigured) {
             $log->warning('[PARALLEL LLM] Azure OpenAI not configured, using document analysis only');
             $selected = $this->mergeDocumentAndQuestionRouting([], $documentAnalysis, $log, $maxGuidelines);
-            return ['selected' => $selected, 'expanded' => $queryForExpansion];
+            return ['selected' => $selected, 'expanded' => $queryForExpansion, 'scores' => []];
         }
 
         $guidelineList = $this->buildGuidelineList();
@@ -350,12 +367,12 @@ PROMPT;
                 'duration_ms' => $duration,
             ]);
 
-            return ['selected' => $selected, 'expanded' => $expanded];
+            return ['selected' => $selected, 'expanded' => $expanded, 'scores' => []];
 
         } catch (\Exception $e) {
             $log->error('[PARALLEL LLM] Exception', ['error' => $e->getMessage()]);
             $selected = $this->mergeDocumentAndQuestionRouting([], $documentAnalysis, $log, $maxGuidelines);
-            return ['selected' => $selected, 'expanded' => $queryForExpansion];
+            return ['selected' => $selected, 'expanded' => $queryForExpansion, 'scores' => []];
         }
     }
 

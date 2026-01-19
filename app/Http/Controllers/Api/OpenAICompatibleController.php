@@ -506,12 +506,15 @@ class OpenAICompatibleController extends Controller
                 $expansionQuery = $scrubbedQuestion . "\n\nClinical context: " . $contextSummary;
             }
 
+            $guidelineScores = [];  // Semantic router confidence scores for proportional allocation
+            
             if (empty($requestedKeys)) {
                 $router = new \App\Services\GuidelineRouterService();
                 $llmResult = $router->selectAndExpand($routingQuery, 3, $expansionQuery, $documentAnalysis);
                 
                 $selectedKeys = $llmResult['selected'];
                 $expandedQuery = $llmResult['expanded'];
+                $guidelineScores = $llmResult['scores'] ?? [];  // Capture semantic router scores
                 
                 // Convert keys to full guideline info
                 if (!empty($selectedKeys)) {
@@ -531,6 +534,7 @@ class OpenAICompatibleController extends Controller
                 $log->info('Guidelines auto-selected', [
                     'keys' => array_keys($selectedGuidelines),
                     'names' => array_column($selectedGuidelines, 'name'),
+                    'scores' => $guidelineScores,
                 ]);
             } else {
                 $selectedGuidelines = $this->validateGuidelineKeys($requestedKeys);
@@ -563,10 +567,11 @@ class OpenAICompatibleController extends Controller
             }
             
             // Step 2: Dual retrieval - narrative chunks (KG) + citation chunks (no KG)
-            $narrativeMax = 12;
+            // Increased narrative budget for better context coverage
+            $narrativeMax = 15;
             $citationMax = 5;
             
-            $dualResult = $this->retrieveDualChunks($expandedQuery, $selectedGuidelines, $narrativeMax, $citationMax);
+            $dualResult = $this->retrieveDualChunks($expandedQuery, $selectedGuidelines, $narrativeMax, $citationMax, $guidelineScores);
 
             $duration = round((microtime(true) - $startTime) * 1000);
 
@@ -991,20 +996,32 @@ class OpenAICompatibleController extends Controller
 
     /**
      * Dual retrieval: narrative chunks (KG enabled) + citation chunks (no KG, metatags).
+     * 
+     * @param string $question The query text
+     * @param array $guidelines Selected guidelines with id and name
+     * @param int $narrativeMax Maximum total narrative chunks
+     * @param int $citationMax Maximum citation chunks
+     * @param array $scores Optional semantic router scores for proportional allocation
      */
-    protected function retrieveDualChunks(string $question, array $guidelines, int $narrativeMax, int $citationMax): array
+    protected function retrieveDualChunks(string $question, array $guidelines, int $narrativeMax, int $citationMax, array $scores = []): array
     {
         $log = \Log::channel('retrieval');
         
+        // Build narrative datasets with scores for proportional allocation
         $narrativeDatasets = [];
         foreach ($guidelines as $key => $info) {
-            $narrativeDatasets[] = ['id' => $info['id'], 'name' => $info['name']];
+            $narrativeDatasets[] = [
+                'id' => $info['id'],
+                'name' => $info['name'],
+                'score' => $scores[$key] ?? null,  // Pass score for proportional allocation
+            ];
         }
 
         $log->info('Dual retrieval datasets', [
             'narrative_dataset_count' => count($narrativeDatasets),
             'narrative_dataset_ids' => array_column($narrativeDatasets, 'id'),
             'narrative_dataset_names' => array_column($narrativeDatasets, 'name'),
+            'proportional_scores' => $scores,
         ]);
 
         $citationDatasetId = config('guidelines.recommendations_dataset');
