@@ -325,37 +325,58 @@ class RetrieveDualRequest(BaseModel):
     
     def get_proportional_allocation(self) -> dict[str, int]:
         """
-        Calculate proportional chunk allocation based on semantic router scores.
-        Higher scoring guidelines get more chunks proportionally.
+        Calculate weighted chunk allocation: primary guideline gets 60%, secondaries share 40%.
+        
+        Strategy:
+        - Primary guideline (highest score / first in list): ~60% of narrative_max
+        - Secondary guidelines: share remaining ~40% proportionally based on their scores
+        - Minimum 2 chunks per secondary guideline to ensure useful context
         
         Returns dict mapping dataset name to allocated chunk count.
         """
         if not self.narrative_datasets:
             return {}
-            
-        # Check if scores are provided
-        scores = [(ds.name, ds.score or 0.5) for ds in self.narrative_datasets]
-        total_score = sum(s for _, s in scores)
         
-        if total_score == 0:
-            # Fall back to even distribution
-            per_dataset = max(1, self.narrative_max // len(self.narrative_datasets))
-            return {name: per_dataset for name, _ in scores}
+        n = len(self.narrative_datasets)
         
-        # Proportional allocation based on normalized scores
-        allocation = {}
-        remaining = self.narrative_max
+        # Single guideline gets everything
+        if n == 1:
+            return {self.narrative_datasets[0].name: self.narrative_max}
         
-        for i, (name, score) in enumerate(scores):
-            if i == len(scores) - 1:
-                # Give remaining to last dataset to avoid rounding issues
-                allocation[name] = max(1, remaining)
-            else:
-                # Proportional share: score / total_score * narrative_max
-                share = int((score / total_score) * self.narrative_max)
-                share = max(1, share)  # At least 1 chunk per dataset
-                allocation[name] = share
-                remaining -= share
+        # Primary gets 60%, secondaries share 40%
+        primary_share = int(self.narrative_max * 0.60)
+        secondary_pool = self.narrative_max - primary_share
+        
+        # First dataset is primary (highest scoring from semantic router)
+        primary_ds = self.narrative_datasets[0]
+        allocation = {primary_ds.name: primary_share}
+        
+        # Distribute secondary pool among remaining datasets
+        secondary_datasets = self.narrative_datasets[1:]
+        if not secondary_datasets:
+            return allocation
+        
+        # Get scores for secondaries (default 0.5 if not provided)
+        secondary_scores = [(ds.name, ds.score or 0.5) for ds in secondary_datasets]
+        total_secondary_score = sum(s for _, s in secondary_scores)
+        
+        if total_secondary_score == 0:
+            # Even split among secondaries
+            per_secondary = max(2, secondary_pool // len(secondary_datasets))
+            for name, _ in secondary_scores:
+                allocation[name] = per_secondary
+        else:
+            # Proportional split based on scores
+            remaining = secondary_pool
+            for i, (name, score) in enumerate(secondary_scores):
+                if i == len(secondary_scores) - 1:
+                    # Last one gets remaining
+                    allocation[name] = max(2, remaining)
+                else:
+                    share = int((score / total_secondary_score) * secondary_pool)
+                    share = max(2, share)  # At least 2 chunks per secondary
+                    allocation[name] = share
+                    remaining -= share
         
         return allocation
 
@@ -602,9 +623,9 @@ async def get_dataset(dataset_id: str, request: Request):
 
 class RouteRequest(BaseModel):
     query: str
-    max_routes: int = 3
+    max_routes: int = 4
     min_confidence: float = 0.35
-    relative_margin: float = 0.02
+    min_score_threshold: float = 0.68  # Absolute score floor - include all guidelines above this
 
 
 class RouteResponse(BaseModel):
@@ -643,14 +664,15 @@ async def route_query(request: Request, body: RouteRequest):
         results = semantic_router_service.route_multi(
             body.query, 
             max_routes=body.max_routes, 
+            min_score_threshold=body.min_score_threshold,
             min_confidence=body.min_confidence,
-            relative_margin=body.relative_margin
         )
         duration = (datetime.now() - start_time).total_seconds() * 1000
 
         keys = [r['guideline_key'] for r in results]
         scores = [r.get('confidence', 'N/A') for r in results]
-        logger.info(f"Semantic route: query='{body.query[:50]}...' -> {keys} (scores: {scores}, {duration:.0f}ms)")
+        primaries = [r.get('is_primary', False) for r in results]
+        logger.info(f"Semantic route: query='{body.query[:50]}...' -> {keys} (scores: {scores}, primary: {primaries}, threshold: {body.min_score_threshold}, {duration:.0f}ms)")
 
         return RouteResponse(
             method="semantic",
