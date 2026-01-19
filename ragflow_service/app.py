@@ -555,7 +555,9 @@ async def get_dataset(dataset_id: str, request: Request):
 
 class RouteRequest(BaseModel):
     query: str
-    top_k: int = 4
+    max_routes: int = 3
+    min_confidence: float = 0.35
+    relative_margin: float = 0.02
 
 
 class RouteResponse(BaseModel):
@@ -588,10 +590,17 @@ async def route_query(request: Request, body: RouteRequest):
         )
 
     try:
-        results = semantic_router_service.route(body.query, top_k=body.top_k)
+        results = semantic_router_service.route_multi(
+            body.query, 
+            max_routes=body.max_routes, 
+            min_confidence=body.min_confidence,
+            relative_margin=body.relative_margin
+        )
         duration = (datetime.now() - start_time).total_seconds() * 1000
 
-        logger.info(f"Semantic route: query='{body.query[:50]}...' -> {[r['guideline_key'] for r in results]} ({duration:.0f}ms)")
+        keys = [r['guideline_key'] for r in results]
+        scores = [r.get('confidence', 'N/A') for r in results]
+        logger.info(f"Semantic route: query='{body.query[:50]}...' -> {keys} (scores: {scores}, {duration:.0f}ms)")
 
         return RouteResponse(
             method="semantic",
