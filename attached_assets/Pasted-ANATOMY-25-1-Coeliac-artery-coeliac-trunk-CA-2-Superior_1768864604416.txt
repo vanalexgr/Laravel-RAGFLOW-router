@@ -1,0 +1,53 @@
+ANATOMY (25)
+1. Coeliac artery / coeliac trunk (CA)
+2. Superior mesenteric artery (SMA)
+3. Inferior mesenteric artery (IMA)
+4. Splenic artery
+5. Hepatic artery (common/proper hepatic)
+6. Left gastric artery
+7. Gastroduodenal artery (GDA)
+8. Pancreaticoduodenal arteries (superior + inferior)
+9. Pancreaticoduodenal arcades (Rio Branco arcade)
+10. Arc of Bühler
+11. Marginal artery of Drummond
+12. Arc of Riolan
+13. Villemin arcade
+14. Griffith’s point (watershed, splenic flexure)
+15. Sudeck’s point (rectosigmoid watershed)
+16. Portal vein (PV)
+17. Splenic vein (SV)
+18. Superior mesenteric vein (SMV)
+19. Inferior mesenteric vein (IMV)
+20. Portomesenteric venous confluence
+21. Renal artery (main renal artery)
+22. Accessory renal artery
+23. Renal artery ostium
+24. Left renal vein (LRV)
+25. Median arcuate ligament (MAL) / aorto-SMA angle region
+
+PATHOLOGY / CLINICAL ENTITIES / KEY WORKUP-THERAPY (25)
+26. Mesenteric artery occlusive disease (MAOD)
+27. Chronic mesenteric ischaemia (CMI)
+28. Acute mesenteric ischaemia (AMI)
+29. Acute-on-chronic mesenteric ischaemia
+30. Embolic SMA occlusion
+31. Thrombotic SMA occlusion (atherosclerotic ostial disease)
+32. Non-occlusive mesenteric ischaemia (NOMI)
+33. Mesenteric venous thrombosis (MVT) / splanchnic vein thrombosis
+34. Median arcuate ligament syndrome (MALS) (coeliac compression)
+35. Visceral artery aneurysm (VAA)
+36. Splenic artery aneurysm (SAA) (incl. pregnancy risk context)
+37. Hepatic artery aneurysm (HAA)
+38. Coeliac artery aneurysm
+39. Pancreaticoduodenal artery aneurysm
+40. Superior mesenteric artery aneurysm
+41. Renal artery aneurysm (RAA)
+42. Mycotic visceral artery aneurysm
+43. Isolated dissection of SMA or coeliac artery
+44. Renal artery dissection
+45. Renal artery stenosis (RAS) – atherosclerotic
+46. Renal artery stenosis due to fibromuscular dysplasia (FMD)
+47. Resistant hypertension (renovascular)
+48. Flash pulmonary oedema (RAS-related)
+49. Nutcracker syndrome (NCS) / nutcracker phenomenon
+50. CTA arterial + venous phases (NOMI signs: lack of bowel enhancement, pneumatosis, portal venous gas)
