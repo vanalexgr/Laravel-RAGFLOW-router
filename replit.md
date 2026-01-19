@@ -46,6 +46,13 @@ The application is built on Laravel 12 and uses the Vizra ADK for AI agent orche
 - **httpx:** Asynchronous HTTP client used in the OpenWebUI filter pipeline.
 
 ## Recent Changes
+- 2026-01-19: Enhanced Semantic Router with smart multi-guideline selection:
+  - Implemented relative margin threshold (2% of top score) for adaptive selection
+  - Single-topic queries now return exactly 1 guideline (AAA, DVT, carotid all verified)
+  - Multi-topic queries return 2+ guidelines only when scores are within margin
+  - Prevents "AI soup" over-selection while supporting genuine multi-topic queries
+  - Added `relative_margin` parameter to RouteRequest for runtime tuning
+  - Test results: AAA→1, DVT→1, Carotid→1, DVT+varicose→2, Carotid+antiplatelet→2
 - 2026-01-19: Implemented Semantic Router for ultra-fast guideline routing:
   - Created `ragflow_service/semantic_router_service.py` using FastEmbed local embeddings (no API calls)
   - Added `/route` endpoint to RAGFlow Bridge FastAPI service
