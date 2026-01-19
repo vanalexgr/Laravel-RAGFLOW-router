@@ -22,8 +22,9 @@ The application is built on Laravel 12 and uses the Vizra ADK for AI agent orche
 - **RAGFlow Integration:** A custom Laravel 12 compatible client (`App\Services\RAGFlow\`) facilitates interaction with the RAGFlow API for document retrieval and knowledge graph functionality. It supports direct dataset retrieval and chat sessions.
 - **Python Bridge:** An optional FastAPI bridge service (`ragflow_service/`) enhances RAGFlow capabilities by enabling advanced features like reranking and knowledge graph support.
 - **Two-Stage Retrieval Architecture:** The core of the AI agent's workflow.
-    - **Stage 1 (Answer Synthesis):** Involves `select_guidelines` to identify relevant medical guidelines using an LLM-based router with fallback to rule-based matching, followed by `consult_guideline` to query selected datasets with knowledge graph enabled for contextual retrieval.
+    - **Stage 1 (Answer Synthesis):** Involves `select_guidelines` to identify relevant medical guidelines using semantic routing (default, ~10ms) or LLM-based routing (~2-3s) with fallback to rule-based matching, followed by `consult_guideline` to query selected datasets with knowledge graph enabled for contextual retrieval.
     - **Stage 2 (Evidence Citation):** Employs `cite_recommendations` to query a recommendations-only dataset for verbatim citations, ensuring compliance and accuracy.
+- **Semantic Router:** Ultra-fast guideline routing using local FastEmbed embeddings (6-41ms vs ~2-3s for LLM). Configured via `RAGFLOW_ROUTING_METHOD` env var. The router uses 14 routes with medical terminology utterances derived from guideline key_concepts.
 - **Guideline Registry:** A centralized `config/guidelines.php` registers 14 guideline datasets, including their IDs, key concepts for routing, and categorical groupings.
 - **Dual Architecture:**
     - **Fast Retrieval API (POST /api/v1/retrieve):** Provides quick, structured chunk retrieval (narrative and citation chunks) without LLM processing, ideal for UIs like OpenWebUI for client-side synthesis.
@@ -45,6 +46,16 @@ The application is built on Laravel 12 and uses the Vizra ADK for AI agent orche
 - **httpx:** Asynchronous HTTP client used in the OpenWebUI filter pipeline.
 
 ## Recent Changes
+- 2026-01-19: Implemented Semantic Router for ultra-fast guideline routing:
+  - Created `ragflow_service/semantic_router_service.py` using FastEmbed local embeddings (no API calls)
+  - Added `/route` endpoint to RAGFlow Bridge FastAPI service
+  - Routing speed: **6-41ms** vs ~2-3s for LLM routing (~100x faster)
+  - 14 routes with 9-12 utterances each based on key_concepts from config/guidelines.php
+  - Configuration via `RAGFLOW_ROUTING_METHOD` env var: 'semantic' (default), 'llm', or 'semantic_with_llm_fallback'
+  - Config added to `config/ragflow.php`
+  - Updated `GuidelineRouterService::selectAndExpand()` to use semantic routing when configured
+  - LLM query expansion still available alongside semantic routing for improved retrieval
+  - Falls back to LLM routing if semantic returns empty (when using 'semantic_with_llm_fallback' mode)
 - 2026-01-18: Updated datasets with better-formatted versions:
   - Acute Limb Ischaemia: new dataset ID 7dcce66ef3eb11f0b82c5ef3771a102d
   - Vascular Access: new dataset ID bbe0b3a0f39611f08b265ef3771a102d

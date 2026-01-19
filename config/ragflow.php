@@ -9,6 +9,11 @@ return [
     'bridge_url' => env('RAGFLOW_BRIDGE_URL', 'http://localhost:8000'),
     'bridge_secret' => env('RAGFLOW_BRIDGE_SECRET'),
 
+    // Routing method: 'semantic' (ultra-fast, ~10ms) or 'llm' (slower, ~2-3s but more nuanced)
+    // Semantic routing uses local FastEmbed embeddings, LLM routing uses Azure OpenAI
+    // Both can be combined via 'semantic_with_llm_fallback' which uses semantic first, falls back to LLM on failure
+    'routing_method' => env('RAGFLOW_ROUTING_METHOD', 'semantic'),
+
     'retrieval' => [
         'top_k' => (int) env('RAGFLOW_TOP_K', 256),  // Lowered from 1024 - reranker handles filtering
         'size' => (int) env('RAGFLOW_SIZE', 10),

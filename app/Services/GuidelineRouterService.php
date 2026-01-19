@@ -12,6 +12,8 @@ class GuidelineRouterService
     protected ?string $deployment;
     protected ?string $apiVersion;
     protected bool $isConfigured = false;
+    protected string $routingMethod;
+    protected string $bridgeUrl;
 
     public function __construct()
     {
@@ -21,6 +23,83 @@ class GuidelineRouterService
         $this->apiVersion = config('prism.providers.azure.api_version') ?: env('AZURE_OPENAI_VERSION', '2024-12-01-preview');
         
         $this->isConfigured = !empty($this->endpoint) && !empty($this->apiKey) && !empty($this->deployment);
+        $this->routingMethod = config('ragflow.routing_method', 'semantic');
+        $this->bridgeUrl = config('ragflow.bridge_url', 'http://localhost:8000');
+    }
+
+    /**
+     * Route query using semantic router (ultra-fast, ~10ms)
+     */
+    public function selectGuidelinesViaSemantic(string $question, int $maxGuidelines = 3): array
+    {
+        $startTime = microtime(true);
+        $log = Log::channel('retrieval');
+
+        try {
+            $response = Http::timeout(5)
+                ->withHeaders(['Content-Type' => 'application/json'])
+                ->post("{$this->bridgeUrl}/route", [
+                    'query' => $question,
+                    'max_routes' => $maxGuidelines,
+                ]);
+
+            if (!$response->successful()) {
+                $log->warning('[SEMANTIC ROUTER] Request failed', [
+                    'status' => $response->status(),
+                ]);
+                return [];
+            }
+
+            $data = $response->json();
+            $duration = round((microtime(true) - $startTime) * 1000);
+
+            $selected = array_map(fn($g) => $g['guideline_key'], $data['guidelines'] ?? []);
+
+            $log->info('[SEMANTIC ROUTER] Success', [
+                'question_preview' => substr($question, 0, 80),
+                'selected_keys' => $selected,
+                'duration_ms' => $duration,
+                'router_duration_ms' => $data['duration_ms'] ?? null,
+            ]);
+
+            return $selected;
+
+        } catch (\Exception $e) {
+            $log->error('[SEMANTIC ROUTER] Exception', ['error' => $e->getMessage()]);
+            return [];
+        }
+    }
+
+    /**
+     * Smart routing: uses configured method (semantic or llm) with fallback
+     */
+    public function routeQuery(string $question, int $maxGuidelines = 3): array
+    {
+        $log = Log::channel('retrieval');
+        $method = $this->routingMethod;
+
+        $log->info('[ROUTER] Routing query', [
+            'method' => $method,
+            'question_preview' => substr($question, 0, 60),
+        ]);
+
+        if ($method === 'semantic' || $method === 'semantic_with_llm_fallback') {
+            $result = $this->selectGuidelinesViaSemantic($question, $maxGuidelines);
+            
+            if (!empty($result)) {
+                return $result;
+            }
+
+            if ($method === 'semantic_with_llm_fallback') {
+                $log->info('[ROUTER] Semantic routing empty, falling back to LLM');
+                return $this->selectGuidelines($question, $maxGuidelines);
+            }
+
+            return $result;
+        }
+
+        // Default: LLM routing
+        return $this->selectGuidelines($question, $maxGuidelines);
     }
 
     public function selectGuidelines(string $question, int $maxGuidelines = 3): array
@@ -178,6 +257,30 @@ PROMPT;
 
         // Use routing query for expansion if no separate expansion query provided
         $queryForExpansion = $expansionQuery ?? $routingQuery;
+
+        // Check if semantic routing is enabled
+        if (in_array($this->routingMethod, ['semantic', 'semantic_with_llm_fallback'])) {
+            $semanticSelected = $this->selectGuidelinesViaSemantic($routingQuery, $maxGuidelines);
+            
+            if (!empty($semanticSelected) || $this->routingMethod === 'semantic') {
+                // Use semantic results, still do LLM expansion if configured
+                $expanded = $queryForExpansion;
+                if ($this->isConfigured) {
+                    $expanded = $this->expandQuery($queryForExpansion);
+                }
+                $selected = $this->mergeDocumentAndQuestionRouting($semanticSelected, $documentAnalysis, $log, $maxGuidelines);
+                
+                $log->info('[SEMANTIC+EXPAND] Complete', [
+                    'semantic_selected' => $semanticSelected,
+                    'final_selected' => $selected,
+                    'duration_ms' => round((microtime(true) - $startTime) * 1000),
+                ]);
+                
+                return ['selected' => $selected, 'expanded' => $expanded];
+            }
+            // Fallback to LLM routing if semantic returned empty and method allows fallback
+            $log->info('[SEMANTIC ROUTER] Empty result, falling back to LLM routing');
+        }
 
         if (!$this->isConfigured) {
             $log->warning('[PARALLEL LLM] Azure OpenAI not configured, using document analysis only');
