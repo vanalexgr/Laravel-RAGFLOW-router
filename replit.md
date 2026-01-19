@@ -46,6 +46,13 @@ The application is built on Laravel 12 and uses the Vizra ADK for AI agent orche
 - **httpx:** Asynchronous HTTP client used in the OpenWebUI filter pipeline.
 
 ## Recent Changes
+- 2026-01-19: Absolute score floor for multi-guideline selection (v2):
+  - Changed from relative margin (2%) to absolute score threshold (0.68) for more robust multi-domain query handling
+  - Primary guideline (highest score) marked with `is_primary=true` for weighted allocation
+  - Secondary guidelines: all scoring above 0.68 threshold are included (up to max 4)
+  - Weighted chunk allocation: Primary gets 60% of narrative chunks, secondaries share 40%
+  - Added CLTI-specific utterances: "chronic limb-threatening ischaemia", "infrainguinal revascularisation", "femoropopliteal disease bypass", "tibial runoff assessment"
+  - Test results: Complex CLTI+Carotid+Antithrombotic query now returns all 4 relevant guidelines (Carotid 0.79, CLTI 0.76, PAD 0.74, Antithrombotic 0.72)
 - 2026-01-19: Added routing_method tracking for visibility into guideline selection:
   - GuidelineRouterService now returns `routing_method` field: 'semantic', 'llm', 'document_only', 'fallback', 'explicit', or 'keyword_fallback'
   - /api/v1/retrieve response includes `routing_method` for API consumers
