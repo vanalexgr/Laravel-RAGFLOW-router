@@ -46,6 +46,12 @@ The application is built on Laravel 12 and uses the Vizra ADK for AI agent orche
 - **httpx:** Asynchronous HTTP client used in the OpenWebUI filter pipeline.
 
 ## Recent Changes
+- 2026-01-19: Added multilingual query support to semantic router:
+  - Switched to `intfloat/multilingual-e5-large` embedding model
+  - Supports queries in German, French, Spanish, Italian, Portuguese, Dutch, Polish, and more
+  - Latin-script languages work best (0.73-0.78 confidence)
+  - Greek/Cyrillic scripts have reduced accuracy but still route correctly
+  - English queries maintain highest accuracy (0.85-0.92)
 - 2026-01-19: Expanded to 50 clinical terms per guideline (700 total):
   - Comprehensive domain vocabulary including procedures, classifications, pathologies, medications, and anatomical terms
   - Routing accuracy: VGI 0.83, TEVAR/TBAD 0.85, DVT 0.83, Vascular Access 0.81

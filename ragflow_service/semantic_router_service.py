@@ -812,7 +812,9 @@ class SemanticRouterService:
         logger.info("Initializing SemanticRouterService with FastEmbed (local embeddings)...")
 
         try:
-            encoder = FastEmbedEncoder()
+            # Use multilingual embedding model for cross-language query support
+            # Supports queries in Greek, German, French, Spanish, Italian, Portuguese, etc.
+            encoder = FastEmbedEncoder(model_name="intfloat/multilingual-e5-large")
 
             routes = []
             for key, config in GUIDELINES_CONFIG.items():
