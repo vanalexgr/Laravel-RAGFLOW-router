@@ -640,15 +640,28 @@ class OpenAICompatibleController extends Controller
             'ragflow_bridge' => ['status' => 'unknown', 'latency_ms' => null],
             'ragflow_api' => ['status' => 'unknown', 'latency_ms' => null],
             'retrieval_test' => ['status' => 'unknown', 'chunks' => 0, 'latency_ms' => null],
+            'semantic_router' => ['status' => 'unknown', 'model_name' => null, 'multilingual_support' => false],
         ];
         
         try {
-            // Check 1: RAGFlow Bridge connectivity
+            // Check 1: RAGFlow Bridge connectivity + semantic router status
             $bridgeStart = microtime(true);
             $bridgeUrl = rtrim(config('services.ragflow.bridge_url', 'http://localhost:8000'), '/');
             $bridgeResponse = \Illuminate\Support\Facades\Http::timeout(5)->get("{$bridgeUrl}/health");
             $checks['ragflow_bridge']['latency_ms'] = round((microtime(true) - $bridgeStart) * 1000);
             $checks['ragflow_bridge']['status'] = $bridgeResponse->successful() ? 'ok' : 'error';
+            
+            // Extract semantic router status from bridge response
+            if ($bridgeResponse->successful()) {
+                $bridgeData = $bridgeResponse->json();
+                if (isset($bridgeData['semantic_router'])) {
+                    $routerStatus = $bridgeData['semantic_router'];
+                    $checks['semantic_router']['status'] = ($routerStatus['initialized'] ?? false) ? 'ok' : 'not_initialized';
+                    $checks['semantic_router']['model_name'] = $routerStatus['model_name'] ?? 'unknown';
+                    $checks['semantic_router']['multilingual_support'] = $routerStatus['multilingual_support'] ?? false;
+                    $checks['semantic_router']['routes_count'] = $routerStatus['routes_count'] ?? 0;
+                }
+            }
         } catch (\Exception $e) {
             $checks['ragflow_bridge']['status'] = 'error';
             $checks['ragflow_bridge']['error'] = $e->getMessage();
