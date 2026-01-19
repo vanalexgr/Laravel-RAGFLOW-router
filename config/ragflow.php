@@ -14,6 +14,10 @@ return [
     // Both can be combined via 'semantic_with_llm_fallback' which uses semantic first, falls back to LLM on failure
     'routing_method' => env('RAGFLOW_ROUTING_METHOD', 'semantic'),
 
+    // Query expansion: when true, uses LLM to expand medical abbreviations before RAGFlow retrieval
+    // With comprehensive semantic router terms, this can be disabled for faster response (~2-3s saved)
+    'query_expansion' => filter_var(env('RAGFLOW_QUERY_EXPANSION', false), FILTER_VALIDATE_BOOLEAN),
+
     'retrieval' => [
         'top_k' => (int) env('RAGFLOW_TOP_K', 256),  // Lowered from 1024 - reranker handles filtering
         'size' => (int) env('RAGFLOW_SIZE', 10),
