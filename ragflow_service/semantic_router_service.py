@@ -301,27 +301,76 @@ class SemanticRouterService:
 
         return []
 
-    def route_multi(self, query: str, top_k: int = 4) -> list[dict]:
+    def route_multi(self, query: str, max_routes: int = 3, min_confidence: float = 0.35, relative_margin: float = 0.02) -> list[dict]:
+        """
+        Route a query to multiple guidelines using similarity scoring with smart selection.
+        
+        Selection logic:
+        1. Always include the top matching guideline
+        2. Only include additional guidelines if their score is within relative_margin (%) of the top score
+        3. Uses relative threshold (e.g., 2% of top score) instead of absolute to handle varied score distributions
+        4. This prevents "AI soup" from over-selection while supporting true multi-topic queries
+        
+        Args:
+            query: The clinical question
+            max_routes: Maximum number of guidelines to return (default 3)
+            min_confidence: Minimum absolute similarity threshold (default 0.35)
+            relative_margin: Percentage margin relative to top score (default 0.02 = 2%)
+        """
         if not self._initialized or not self._router:
             raise RuntimeError("SemanticRouterService not initialized")
 
-        result = self._router(query)
-        results = []
-
-        items = result if isinstance(result, list) else [result]
-
-        for item in items[:top_k]:
-            matched_key = getattr(item, "name", None)
-            if matched_key and matched_key in GUIDELINES_CONFIG:
-                config = GUIDELINES_CONFIG[matched_key]
-                results.append({
-                    "guideline_key": matched_key,
-                    "guideline_id": config["id"],
-                    "guideline_name": config["name"],
-                    "confidence": getattr(item, "similarity", None) or getattr(item, "score", None),
-                })
-
-        return results
+        try:
+            import numpy as np
+            
+            query_embedding = np.array(self._router.encoder([query])[0])
+            
+            route_scores = []
+            index = self._router.index
+            
+            if hasattr(index, 'index') and index.index is not None:
+                all_embeddings = np.array(index.index)
+                route_names = index.routes if hasattr(index, 'routes') else []
+                
+                for i, emb in enumerate(all_embeddings):
+                    similarity = float(np.dot(query_embedding, emb) / (np.linalg.norm(query_embedding) * np.linalg.norm(emb)))
+                    if i < len(route_names):
+                        route_scores.append((route_names[i], similarity))
+                
+                aggregated = {}
+                for route_name, score in route_scores:
+                    if route_name not in aggregated:
+                        aggregated[route_name] = score
+                    else:
+                        aggregated[route_name] = max(aggregated[route_name], score)
+                
+                sorted_routes = sorted(aggregated.items(), key=lambda x: x[1], reverse=True)
+                
+                if not sorted_routes:
+                    return self.route(query, top_k=1)
+                
+                top_score = sorted_routes[0][1]
+                score_threshold = top_score * (1 - relative_margin)
+                
+                results = []
+                for route_name, score in sorted_routes[:max_routes]:
+                    if score >= min_confidence and score >= score_threshold and route_name in GUIDELINES_CONFIG:
+                        config = GUIDELINES_CONFIG[route_name]
+                        results.append({
+                            "guideline_key": route_name,
+                            "guideline_id": config["id"],
+                            "guideline_name": config["name"],
+                            "confidence": round(score, 4),
+                        })
+                
+                if results:
+                    return results
+            
+            return self.route(query, top_k=1)
+            
+        except Exception as e:
+            logger.warning(f"route_multi failed, falling back to single route: {e}")
+            return self.route(query, top_k=1)
 
     def get_guideline_by_key(self, key: str) -> Optional[dict]:
         if key in GUIDELINES_CONFIG:
