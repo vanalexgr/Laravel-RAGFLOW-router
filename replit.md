@@ -46,11 +46,16 @@ The application is built on Laravel 12 and uses the Vizra ADK for AI agent orche
 - **httpx:** Asynchronous HTTP client used in the OpenWebUI filter pipeline.
 
 ## Recent Changes
-- 2026-01-19: Domain-specific utterances for all 14 guidelines:
-  - Replaced generic utterances with 15 clinical terms per guideline (210 total)
-  - Terms include: procedures (FEVAR, TEVAR, CEA), classifications (WIfI, GLASS, CEAP, Rutherford), pathologies (CLTI, TBAD, AEF), medications (DOAC, DAPT), and anatomical terms
-  - Routing accuracy significantly improved (e.g., Graft Infection query scores 0.89 for VGI guideline)
-  - Multi-domain queries now reliably capture all relevant guidelines
+- 2026-01-19: Expanded to 50 clinical terms per guideline (700 total):
+  - Comprehensive domain vocabulary including procedures, classifications, pathologies, medications, and anatomical terms
+  - Routing accuracy: VGI 0.83, TEVAR/TBAD 0.85, DVT 0.83, Vascular Access 0.81
+  - Routing time: 27-55ms per query after warm-up
+  - Multi-domain queries reliably capture all relevant guidelines with high confidence
+- 2026-01-19: Made LLM query expansion configurable:
+  - New env var `RAGFLOW_QUERY_EXPANSION` (default: false)
+  - With 700 semantic terms, expansion is rarely needed
+  - Saves ~2-3s per query when disabled
+  - Enable via `RAGFLOW_QUERY_EXPANSION=true` for edge cases with non-standard terminology
 - 2026-01-19: Absolute score floor for multi-guideline selection (v2):
   - Changed from relative margin (2%) to absolute score threshold (0.68) for more robust multi-domain query handling
   - Primary guideline (highest score) marked with `is_primary=true` for weighted allocation

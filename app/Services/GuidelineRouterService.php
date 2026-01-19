@@ -279,10 +279,14 @@ PROMPT;
             $semanticScores = $semanticResult['scores'] ?? [];
             
             if (!empty($semanticKeys) || $this->routingMethod === 'semantic') {
-                // Use semantic results, still do LLM expansion if configured
+                // Use semantic results, optionally do LLM expansion if enabled
                 $expanded = $queryForExpansion;
-                if ($this->isConfigured) {
+                $queryExpansionEnabled = config('ragflow.query_expansion', false);
+                if ($this->isConfigured && $queryExpansionEnabled) {
                     $expanded = $this->expandQuery($queryForExpansion);
+                    $log->info('[QUERY EXPANSION] Enabled, expanded query');
+                } else {
+                    $log->info('[QUERY EXPANSION] Disabled, using original query');
                 }
                 $selected = $this->mergeDocumentAndQuestionRouting($semanticKeys, $documentAnalysis, $log, $maxGuidelines);
                 
