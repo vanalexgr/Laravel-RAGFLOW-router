@@ -50,6 +50,12 @@ wait_for_port() {
 
 echo "[Production] Starting RAGFlow Bridge on port 8000..."
 cd "$PROJECT_ROOT/ragflow_service"
+
+echo "[Production] Installing Python dependencies..."
+pip install -q -r requirements.txt 2>&1 || {
+    echo "[Production] WARNING: pip install failed, trying without semantic router..."
+}
+
 python -m uvicorn app:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 120 --timeout-graceful-shutdown 30 &
 RAGFLOW_PID=$!
 
