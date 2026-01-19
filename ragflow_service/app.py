@@ -47,6 +47,7 @@ class RetrieveRequest(BaseModel):
 class DatasetInfo(BaseModel):
     id: str
     name: str
+    score: Optional[float] = None  # Semantic router confidence score for proportional allocation
 
 class RetrieveMultiRequest(BaseModel):
     question: str
@@ -304,7 +305,7 @@ class RetrieveDualRequest(BaseModel):
     question: str
     narrative_datasets: list[DatasetInfo]
     citation_dataset_id: str
-    narrative_max: int = 8
+    narrative_max: int = 15  # Increased from 8 for better context coverage
     citation_max: int = 4
     top_k: int = 256
     similarity_threshold: float = 0.2
@@ -312,6 +313,42 @@ class RetrieveDualRequest(BaseModel):
     keyword: bool = True
     rerank_id: Optional[str] = None
     highlight: bool = True
+    
+    def get_proportional_allocation(self) -> dict[str, int]:
+        """
+        Calculate proportional chunk allocation based on semantic router scores.
+        Higher scoring guidelines get more chunks proportionally.
+        
+        Returns dict mapping dataset name to allocated chunk count.
+        """
+        if not self.narrative_datasets:
+            return {}
+            
+        # Check if scores are provided
+        scores = [(ds.name, ds.score or 0.5) for ds in self.narrative_datasets]
+        total_score = sum(s for _, s in scores)
+        
+        if total_score == 0:
+            # Fall back to even distribution
+            per_dataset = max(1, self.narrative_max // len(self.narrative_datasets))
+            return {name: per_dataset for name, _ in scores}
+        
+        # Proportional allocation based on normalized scores
+        allocation = {}
+        remaining = self.narrative_max
+        
+        for i, (name, score) in enumerate(scores):
+            if i == len(scores) - 1:
+                # Give remaining to last dataset to avoid rounding issues
+                allocation[name] = max(1, remaining)
+            else:
+                # Proportional share: score / total_score * narrative_max
+                share = int((score / total_score) * self.narrative_max)
+                share = max(1, share)  # At least 1 chunk per dataset
+                allocation[name] = share
+                remaining -= share
+        
+        return allocation
 
 @app.post("/retrieve_dual")
 async def retrieve_dual(request: Request, body: RetrieveDualRequest):
@@ -339,6 +376,10 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
         """Fetch narrative chunks with KG enabled from full guideline datasets."""
         if not body.narrative_datasets:
             return {"chunks": [], "duration_ms": 0, "per_dataset": []}
+
+        # Calculate proportional allocation based on semantic router scores
+        allocation = body.get_proportional_allocation()
+        logger.info(f"  Proportional allocation: {allocation}")
 
         # Parallel fetch per narrative dataset
         async def fetch_single(ds: DatasetInfo) -> dict:
@@ -377,9 +418,10 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
                     chunk["_source_dataset_id"] = ds.id
                     chunk["_chunk_type"] = "narrative"
                 
-                max_per = min(6, body.narrative_max // max(1, len(body.narrative_datasets)))
+                # Use proportional allocation based on semantic score
+                max_per = allocation.get(ds.name, max(1, body.narrative_max // max(1, len(body.narrative_datasets))))
                 capped = chunks[:max_per]
-                logger.info(f"  Narrative {ds.name}: retrieved={len(chunks)} capped={len(capped)} ({ds_duration:.0f}ms)")
+                logger.info(f"  Narrative {ds.name}: retrieved={len(chunks)} allocated={max_per} capped={len(capped)} score={ds.score} ({ds_duration:.0f}ms)")
                 return {
                     "dataset_name": ds.name,
                     "chunks": capped,

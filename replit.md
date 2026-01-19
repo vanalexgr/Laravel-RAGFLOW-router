@@ -46,6 +46,13 @@ The application is built on Laravel 12 and uses the Vizra ADK for AI agent orche
 - **httpx:** Asynchronous HTTP client used in the OpenWebUI filter pipeline.
 
 ## Recent Changes
+- 2026-01-19: Implemented proportional chunk allocation for narrative retrieval:
+  - Semantic router scores now determine chunk distribution per guideline
+  - Higher-scoring guidelines get proportionally more chunks (e.g., 0.86 vs 0.85 → 8 vs 7 chunks)
+  - Increased narrative budget from 12 to 15 chunks for better context coverage
+  - Citation chunks unchanged (5 from unified recommendations dataset)
+  - DatasetInfo model includes optional `score` field for allocation
+  - `RetrieveDualRequest.get_proportional_allocation()` calculates weighted distribution
 - 2026-01-19: Enhanced Semantic Router with smart multi-guideline selection:
   - Implemented relative margin threshold (2% of top score) for adaptive selection
   - Single-topic queries now return exactly 1 guideline (AAA, DVT, carotid all verified)
