@@ -657,9 +657,14 @@ class OpenAICompatibleController extends Controller
             if (!empty($firstGuideline)) {
                 $datasetId = array_values($firstGuideline)[0]['id'];
                 $bridgeUrl = rtrim(config('services.ragflow.bridge_url', 'http://localhost:8000'), '/');
+                $bridgeSecret = config('ragflow.bridge_secret');
                 
-                $testResponse = \Illuminate\Support\Facades\Http::timeout(10)
-                    ->post("{$bridgeUrl}/retrieve", [
+                $httpRequest = \Illuminate\Support\Facades\Http::timeout(10);
+                if ($bridgeSecret) {
+                    $httpRequest = $httpRequest->withHeaders(['X-Bridge-Secret' => $bridgeSecret]);
+                }
+                
+                $testResponse = $httpRequest->post("{$bridgeUrl}/retrieve", [
                         'question' => 'health check test',
                         'dataset_ids' => [$datasetId],
                         'top_k' => 1,
