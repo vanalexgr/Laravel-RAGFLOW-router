@@ -49,6 +49,11 @@ The application is built on Laravel 12 and uses the Vizra ADK for AI agent orche
 - **langdetect:** Language detection library for multilingual query support.
 
 ## Recent Changes
+- 2026-01-20: Added real-time status updates to OpenWebUI pipeline (v2.8)
+  - Replaces pulsating dot with descriptive progress messages
+  - Shows: "Analyzing query...", "Routing to guidelines...", "Searching ESVS guidelines...", "Retrieved X chunks from [guidelines]...", "Context ready..."
+  - Also shows: "Processing attached documents...", "De-identifying PHI...", retry attempts
+  - Uses OpenWebUI `__event_emitter__` API with proper thread-safe implementation
 - 2026-01-20: Added automatic query translation for multilingual routing
   - Non-English queries detected using langdetect and translated to English before semantic routing
   - Translation uses Azure OpenAI for accurate medical terminology preservation
