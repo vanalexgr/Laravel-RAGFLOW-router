@@ -94,13 +94,12 @@ class Filter:
         """Emit a status update to OpenWebUI UI (replaces pulsating dot)."""
         if event_emitter:
             try:
-                await event_emitter({
-                    "type": "status",
-                    "data": {
-                        "description": description,
-                        "done": done
+                await event_emitter(
+                    {
+                        "type": "status",
+                        "data": {"description": description, "done": done},
                     }
-                })
+                )
             except Exception as e:
                 print(f"[{self.name}] Status emit error: {e}")
 
@@ -357,9 +356,7 @@ class Filter:
 
         return (combined_text, metadata)
 
-    def _process_file_attachment(
-        self, file_info: dict, file_id: str
-    ) -> Dict[str, Any]:
+    def _process_file_attachment(self, file_info: dict, file_id: str) -> Dict[str, Any]:
         """Process a single file attachment and extract text."""
         filename = file_info.get("name", file_info.get("filename", "unknown"))
         filetype = file_info.get("type", file_info.get("mime_type", ""))
@@ -410,50 +407,66 @@ class Filter:
             return {"id": file_id, "status": "failed", "reason": text}
 
     async def _retrieve_with_retry(
-        self, question: str, correlation_id: str, patient_context: str = "", event_emitter=None
+        self,
+        question: str,
+        correlation_id: str,
+        patient_context: str = "",
+        event_emitter=None,
     ) -> Tuple[Optional[dict], str]:
-        """Retrieve guidelines with retry logic and exponential backoff."""
+        """Retrieve guidelines with retry logic and exponential backoff (reuses self._client)."""
         last_error = ""
 
         payload = {"question": question, "top_k": self.valves.TOP_K}
         if patient_context:
             payload["patient_context"] = patient_context
 
+        # Ensure shared client exists (covers cases where inlet fires before on_startup)
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(self.valves.TIMEOUT_SECONDS)
+            )
+
         for attempt in range(self.valves.MAX_RETRIES):
+            timeout_seconds = (
+                self.valves.COLD_START_TIMEOUT
+                if attempt == 0 and not self._warmup_complete
+                else self.valves.TIMEOUT_SECONDS
+            )
+
             try:
-                timeout_seconds = (
-                    self.valves.COLD_START_TIMEOUT
-                    if attempt == 0 and not self._warmup_complete
-                    else self.valves.TIMEOUT_SECONDS
-                )
-
-                async with httpx.AsyncClient(
-                    timeout=httpx.Timeout(timeout_seconds)
-                ) as client:
-                    if attempt == 0 and not self._warmup_complete:
-                        print(
-                            f"[{self.name}] [{correlation_id}] First attempt with {timeout_seconds}s cold-start timeout"
-                        )
-
-                    response = await client.post(
-                        self.valves.RETRIEVE_API_URL,
-                        json=payload,
-                        headers={
-                            "Authorization": f"Bearer {self.valves.API_KEY}",
-                            "Content-Type": "application/json",
-                            "Accept": "application/json",
-                            "X-Correlation-ID": correlation_id,
-                        },
+                if attempt == 0 and not self._warmup_complete:
+                    print(
+                        f"[{self.name}] [{correlation_id}] First attempt with {timeout_seconds}s cold-start timeout"
                     )
 
-                    if response.status_code == 200:
-                        data = response.json()
-                        if data.get("success"):
-                            return (data, "")
-                        else:
-                            last_error = f"API error: {data.get('error', 'unknown')}"
+                response = await self._client.post(
+                    self.valves.RETRIEVE_API_URL,
+                    json=payload,
+                    headers={
+                        "Authorization": f"Bearer {self.valves.API_KEY}",
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                        "X-Correlation-ID": correlation_id,
+                    },
+                    timeout=httpx.Timeout(timeout_seconds),
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("success"):
+                        return (data, "")
                     else:
-                        last_error = f"HTTP {response.status_code}"
+                        last_error = f"API error: {data.get('error', 'unknown')}"
+                else:
+                    snippet = ""
+                    try:
+                        snippet = (response.text or "").strip().replace("\n", " ")[:160]
+                    except Exception:
+                        snippet = ""
+                    last_error = (
+                        f"HTTP {response.status_code}"
+                        + (f" | {snippet}" if snippet else "")
+                    )
 
             except httpx.TimeoutException:
                 last_error = f"Timeout after {timeout_seconds}s (attempt {attempt + 1})"
@@ -462,6 +475,8 @@ class Filter:
                 )
             except httpx.ConnectError as e:
                 last_error = f"Connection error: {e}"
+            except httpx.HTTPError as e:
+                last_error = f"HTTP client error: {e}"
             except Exception as e:
                 last_error = f"Unexpected error: {e}"
 
@@ -471,7 +486,10 @@ class Filter:
                 print(
                     f"[{self.name}] [{correlation_id}] Attempt {attempt + 1} failed, retrying in {delay:.1f}s..."
                 )
-                await self._emit_status(event_emitter, f"Retrying... (attempt {attempt + 2}/{self.valves.MAX_RETRIES})")
+                await self._emit_status(
+                    event_emitter,
+                    f"Retrying... (attempt {attempt + 2}/{self.valves.MAX_RETRIES})",
+                )
                 await asyncio.sleep(delay)
 
         return (None, last_error)
@@ -503,7 +521,9 @@ Please retry your question, or verify the RAG service is available.
 
         return body
 
-    async def inlet(self, body: dict, __event_emitter__=None, user: Optional[dict] = None) -> dict:
+    async def inlet(
+        self, body: dict, __event_emitter__=None, user: Optional[dict] = None
+    ) -> dict:
         """
         Called before request goes to LLM.
         Extracts text from attachments, retrieves guideline chunks, and injects context.
@@ -565,7 +585,10 @@ Please retry your question, or verify the RAG service is available.
             print(
                 f"[{self.name}] [{correlation_id}] Extracted {len(patient_context)} chars from {extracted_count}/{len(attachment_metadata)} attachment(s)"
             )
-            await self._emit_status(emitter, f"Extracted {extracted_count} document(s), de-identifying PHI...")
+            await self._emit_status(
+                emitter,
+                f"Extracted {extracted_count} document(s), de-identifying PHI...",
+            )
 
         await self._emit_status(emitter, "Routing query to relevant guidelines...")
 
@@ -584,7 +607,9 @@ Please retry your question, or verify the RAG service is available.
                 f"[{self.name}] [{correlation_id}] FAILED after {self.valves.MAX_RETRIES} attempts: {error}"
             )
             await self._emit_status(emitter, f"Retrieval failed: {error}", done=True)
-            return self._inject_failure_warning(body, user_message, error, correlation_id)
+            return self._inject_failure_warning(
+                body, user_message, error, correlation_id
+            )
 
         narrative_chunks = data.get("narrative_chunks", [])
         citation_chunks = data.get("citation_chunks", [])
@@ -606,7 +631,10 @@ Please retry your question, or verify the RAG service is available.
             guideline_display = ", ".join(guideline_names[:3])
             if len(guideline_names) > 3:
                 guideline_display += f" +{len(guideline_names) - 3} more"
-            await self._emit_status(emitter, f"Retrieved {total_chunks} evidence chunks from {guideline_display}")
+            await self._emit_status(
+                emitter,
+                f"Retrieved {total_chunks} evidence chunks from {guideline_display}",
+            )
         else:
             await self._emit_status(emitter, f"Retrieved {total_chunks} evidence chunks")
 
@@ -709,7 +737,7 @@ Please retry your question, or verify the RAG service is available.
 
                 meta = " ".join(meta_parts) if meta_parts else f"Citation {i}"
                 sections.append(f"{meta}")
-                sections.append(f"> \"{text}\"\n")
+                sections.append(f'> "{text}"\n')
 
         return "\n".join(sections)
 
