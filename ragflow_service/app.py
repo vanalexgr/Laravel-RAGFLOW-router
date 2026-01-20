@@ -7,6 +7,22 @@ from pydantic import BaseModel
 from typing import Optional, Literal
 import httpx
 
+# Language detection for query translation
+try:
+    from langdetect import detect, LangDetectException
+    LANGDETECT_AVAILABLE = True
+except ImportError:
+    LANGDETECT_AVAILABLE = False
+    logging.warning("langdetect not available - all queries will be treated as English")
+
+# OpenAI for translation
+try:
+    from openai import AzureOpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+    logging.warning("openai not available - translation disabled")
+
 # Make semantic router optional - may fail if fastembed/onnx dependencies unavailable
 try:
     from semantic_router_service import semantic_router_service, GUIDELINES_CONFIG
@@ -28,6 +44,77 @@ app = FastAPI(title="RAGFlow Bridge Service")
 RAGFLOW_API_KEY = os.getenv("RAGFLOW_API_KEY")
 RAGFLOW_BASE_URL = os.getenv("RAGFLOW_ENDPOINT", "https://ragflow.clinicalguidelines.io/api/v1")
 SHARED_SECRET = os.getenv("RAGFLOW_BRIDGE_SECRET")
+
+# Azure OpenAI configuration for translation
+AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
+AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
+AZURE_OPENAI_DEPLOYMENT = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-5-chat")
+AZURE_OPENAI_VERSION = os.getenv("AZURE_OPENAI_VERSION", "2024-12-01-preview")
+
+# Initialize Azure OpenAI client for translation
+azure_client = None
+if OPENAI_AVAILABLE and AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT:
+    try:
+        azure_client = AzureOpenAI(
+            api_key=AZURE_OPENAI_API_KEY,
+            api_version=AZURE_OPENAI_VERSION,
+            azure_endpoint=AZURE_OPENAI_ENDPOINT,
+        )
+        logger.info("Azure OpenAI client initialized for query translation")
+    except Exception as e:
+        logger.warning(f"Failed to initialize Azure OpenAI client: {e}")
+
+
+def detect_language(text: str) -> str:
+    """Detect the language of the input text. Returns ISO 639-1 code (e.g., 'en', 'de', 'fr')."""
+    if not LANGDETECT_AVAILABLE:
+        return "en"
+    try:
+        lang = detect(text)
+        return lang
+    except LangDetectException:
+        return "en"
+
+
+def translate_to_english(text: str, source_lang: str) -> tuple[str, float]:
+    """
+    Translate text to English using Azure OpenAI.
+    Returns (translated_text, duration_ms).
+    """
+    if not azure_client:
+        logger.warning("Azure OpenAI client not available for translation")
+        return text, 0.0
+    
+    start_time = datetime.now()
+    
+    try:
+        response = azure_client.chat.completions.create(
+            model=AZURE_OPENAI_DEPLOYMENT,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a medical translator. Translate the following medical query to English. Preserve all medical terminology and clinical context. Output only the translation, nothing else."
+                },
+                {
+                    "role": "user", 
+                    "content": text
+                }
+            ],
+            temperature=0.1,
+            max_tokens=500,
+        )
+        
+        translated = response.choices[0].message.content.strip()
+        duration_ms = (datetime.now() - start_time).total_seconds() * 1000
+        
+        logger.info(f"Translated query ({source_lang}->en): '{text[:50]}...' -> '{translated[:50]}...' ({duration_ms:.0f}ms)")
+        
+        return translated, duration_ms
+        
+    except Exception as e:
+        logger.error(f"Translation failed: {e}")
+        duration_ms = (datetime.now() - start_time).total_seconds() * 1000
+        return text, duration_ms
 
 @app.get("/health")
 async def health_check():
@@ -634,6 +721,7 @@ class RouteRequest(BaseModel):
     max_routes: int = 4
     min_confidence: float = 0.35
     min_score_threshold: float = 0.68  # Absolute score floor - include all guidelines above this
+    auto_translate: bool = True  # Automatically translate non-English queries before routing
 
 
 class RouteResponse(BaseModel):
@@ -641,6 +729,10 @@ class RouteResponse(BaseModel):
     guidelines: list[dict]
     duration_ms: float
     router_available: bool
+    original_query: Optional[str] = None  # Original query if translation was used
+    detected_language: Optional[str] = None  # Detected source language
+    translated_query: Optional[str] = None  # English translation if used
+    translation_ms: Optional[float] = None  # Translation duration
 
 
 @app.on_event("startup")
@@ -669,6 +761,13 @@ async def startup_event():
 @app.post("/route")
 async def route_query(request: Request, body: RouteRequest):
     start_time = datetime.now()
+    
+    # Translation tracking
+    original_query = None
+    detected_lang = None
+    translated_query = None
+    translation_duration = None
+    query_for_routing = body.query
 
     if not SEMANTIC_ROUTER_AVAILABLE or not semantic_router_service or not semantic_router_service.is_initialized:
         duration = (datetime.now() - start_time).total_seconds() * 1000
@@ -680,8 +779,18 @@ async def route_query(request: Request, body: RouteRequest):
         )
 
     try:
+        # Detect language and translate if needed
+        if body.auto_translate and azure_client:
+            detected_lang = detect_language(body.query)
+            
+            if detected_lang != "en":
+                original_query = body.query
+                translated_query, translation_duration = translate_to_english(body.query, detected_lang)
+                query_for_routing = translated_query
+                logger.info(f"Query translated for routing: {detected_lang} -> en ({translation_duration:.0f}ms)")
+        
         results = semantic_router_service.route_multi(
-            body.query, 
+            query_for_routing, 
             max_routes=body.max_routes, 
             min_score_threshold=body.min_score_threshold,
             min_confidence=body.min_confidence,
@@ -691,13 +800,20 @@ async def route_query(request: Request, body: RouteRequest):
         keys = [r['guideline_key'] for r in results]
         scores = [r.get('confidence', 'N/A') for r in results]
         primaries = [r.get('is_primary', False) for r in results]
-        logger.info(f"Semantic route: query='{body.query[:50]}...' -> {keys} (scores: {scores}, primary: {primaries}, threshold: {body.min_score_threshold}, {duration:.0f}ms)")
+        
+        log_query = translated_query if translated_query else body.query
+        lang_info = f" (translated from {detected_lang})" if detected_lang and detected_lang != "en" else ""
+        logger.info(f"Semantic route: query='{log_query[:50]}...'{lang_info} -> {keys} (scores: {scores}, primary: {primaries}, threshold: {body.min_score_threshold}, {duration:.0f}ms)")
 
         return RouteResponse(
             method="semantic",
             guidelines=results,
             duration_ms=duration,
             router_available=True,
+            original_query=original_query,
+            detected_language=detected_lang,
+            translated_query=translated_query,
+            translation_ms=translation_duration,
         )
 
     except Exception as e:
