@@ -24,7 +24,7 @@ The application is built on Laravel 12 and uses the Vizra ADK for AI agent orche
 - **Two-Stage Retrieval Architecture:**
     - **Stage 1 (Answer Synthesis):** Identifies relevant medical guidelines using semantic or LLM-based routing, followed by querying selected datasets with knowledge graph enabled.
     - **Stage 2 (Evidence Citation):** Queries a recommendations-only dataset for verbatim citations.
-- **Semantic Router:** Employs local FastEmbed embeddings for ultra-fast guideline routing, configurable via `RAGFLOW_ROUTING_METHOD`. Supports multilingual queries.
+- **Semantic Router:** Employs local FastEmbed embeddings for ultra-fast guideline routing (~28ms for English). Supports multilingual queries via automatic translation: non-English queries are detected and translated to English using Azure OpenAI before routing (~1.2-1.5s overhead).
 - **Guideline Registry:** A `config/guidelines.php` file registers 14 guideline datasets with key concepts for routing.
 - **Dual Architecture:**
     - **Fast Retrieval API (POST /api/v1/retrieve):** Provides quick, structured chunk retrieval without LLM processing.
@@ -46,3 +46,13 @@ The application is built on Laravel 12 and uses the Vizra ADK for AI agent orche
 - **Uvicorn:** ASGI web server for the Python bridge.
 - **FastAPI:** Python web framework for the optional RAGFlow bridge.
 - **httpx:** Asynchronous HTTP client in the OpenWebUI filter pipeline.
+- **langdetect:** Language detection library for multilingual query support.
+
+## Recent Changes
+- 2026-01-20: Added automatic query translation for multilingual routing
+  - Non-English queries detected using langdetect and translated to English before semantic routing
+  - Translation uses Azure OpenAI for accurate medical terminology preservation
+  - English queries remain ultra-fast (~28ms), non-English add ~1.2-1.5s for translation
+  - Response includes `detected_language`, `translated_query`, and `translation_ms`
+- 2026-01-19: Exposed semantic router status via public health endpoint `/api/v1/health/retrieval`
+- 2026-01-19: Added multilingual embedding model (`intfloat/multilingual-e5-large`) with model pre-loading on startup
