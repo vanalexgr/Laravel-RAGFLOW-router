@@ -1,10 +1,10 @@
 """
 title: ESVS Vascular Guidelines RAG Filter
 author: Medical AI Team
-date: 2026-01-19
-version: 2.7
+date: 2026-01-20
+version: 2.8
 license: MIT
-description: Filter pipeline that retrieves ESVS vascular surgery guidelines from Laravel API with dual-source retrieval (narrative + citations), document attachment processing, and PHI de-identification. Includes retry logic, warm-up, cold-start resilience, routing method visibility, and OpenWebUI v0.3+ attachment support.
+description: Filter pipeline that retrieves ESVS vascular surgery guidelines from Laravel API with dual-source retrieval (narrative + citations), document attachment processing, and PHI de-identification. Includes retry logic, warm-up, cold-start resilience, routing method visibility, real-time status updates, and OpenWebUI v0.3+ attachment support.
 requirements: httpx, pdfminer.six, python-docx
 """
 
@@ -90,8 +90,22 @@ class Filter:
         self._client = None
         self._warmup_complete = False
 
+    async def _emit_status(self, event_emitter, description: str, done: bool = False):
+        """Emit a status update to OpenWebUI UI (replaces pulsating dot)."""
+        if event_emitter:
+            try:
+                await event_emitter({
+                    "type": "status",
+                    "data": {
+                        "description": description,
+                        "done": done
+                    }
+                })
+            except Exception as e:
+                print(f"[{self.name}] Status emit error: {e}")
+
     async def on_startup(self):
-        print(f"[{self.name}] Pipeline initialized (v2.7 - routing method visibility)")
+        print(f"[{self.name}] Pipeline initialized (v2.8 - real-time status updates)")
         print(f"[{self.name}] API URL: {self.valves.RETRIEVE_API_URL}")
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(self.valves.TIMEOUT_SECONDS)
@@ -396,7 +410,7 @@ class Filter:
             return {"id": file_id, "status": "failed", "reason": text}
 
     async def _retrieve_with_retry(
-        self, question: str, correlation_id: str, patient_context: str = ""
+        self, question: str, correlation_id: str, patient_context: str = "", event_emitter=None
     ) -> Tuple[Optional[dict], str]:
         """Retrieve guidelines with retry logic and exponential backoff."""
         last_error = ""
@@ -457,6 +471,7 @@ class Filter:
                 print(
                     f"[{self.name}] [{correlation_id}] Attempt {attempt + 1} failed, retrying in {delay:.1f}s..."
                 )
+                await self._emit_status(event_emitter, f"Retrying... (attempt {attempt + 2}/{self.valves.MAX_RETRIES})")
                 await asyncio.sleep(delay)
 
         return (None, last_error)
@@ -488,12 +503,14 @@ Please retry your question, or verify the RAG service is available.
 
         return body
 
-    async def inlet(self, body: dict, user: Optional[dict] = None) -> dict:
+    async def inlet(self, body: dict, __event_emitter__=None, user: Optional[dict] = None) -> dict:
         """
         Called before request goes to LLM.
         Extracts text from attachments, retrieves guideline chunks, and injects context.
-        Includes retry logic, attachment processing, and failure visibility.
+        Includes retry logic, attachment processing, failure visibility, and real-time status updates.
         """
+        emitter = __event_emitter__
+
         if not self.valves.ENABLE_RAG:
             return body
 
@@ -512,17 +529,21 @@ Please retry your question, or verify the RAG service is available.
 
         correlation_id = str(uuid.uuid4())[:8]
 
+        await self._emit_status(emitter, "Analyzing query...")
+
         body_keys = list(body.keys())
         files_top = body.get("files") or []
         print(f"[{self.name}] [{correlation_id}] Body keys: {body_keys}")
         print(f"[{self.name}] [{correlation_id}] Top-level files: {len(files_top)}")
 
+        has_attachments = False
         for i, msg in enumerate(messages):
             if msg.get("role") == "user":
                 msg_files = msg.get("files") or []
                 msg_images = msg.get("images") or []
                 msg_attachments = msg.get("attachments") or []
                 if msg_files or msg_images or msg_attachments:
+                    has_attachments = True
                     print(
                         f"[{self.name}] [{correlation_id}] Message {i} files: {len(msg_files)}, images: {len(msg_images)}, attachments: {len(msg_attachments)}"
                     )
@@ -531,6 +552,9 @@ Please retry your question, or verify the RAG service is available.
                             print(
                                 f"[{self.name}] [{correlation_id}]   File structure: {list(f.keys()) if isinstance(f, dict) else type(f)}"
                             )
+
+        if has_attachments or files_top:
+            await self._emit_status(emitter, "Processing attached documents...")
 
         patient_context, attachment_metadata = self._extract_attachments(body)
 
@@ -541,19 +565,25 @@ Please retry your question, or verify the RAG service is available.
             print(
                 f"[{self.name}] [{correlation_id}] Extracted {len(patient_context)} chars from {extracted_count}/{len(attachment_metadata)} attachment(s)"
             )
+            await self._emit_status(emitter, f"Extracted {extracted_count} document(s), de-identifying PHI...")
+
+        await self._emit_status(emitter, "Routing query to relevant guidelines...")
 
         print(
             f"[{self.name}] [{correlation_id}] Retrieving guidelines for: {user_message[:100]}..."
         )
 
+        await self._emit_status(emitter, "Searching ESVS guidelines for evidence...")
+
         data, error = await self._retrieve_with_retry(
-            user_message, correlation_id, patient_context
+            user_message, correlation_id, patient_context, emitter
         )
 
         if data is None:
             print(
                 f"[{self.name}] [{correlation_id}] FAILED after {self.valves.MAX_RETRIES} attempts: {error}"
             )
+            await self._emit_status(emitter, f"Retrieval failed: {error}", done=True)
             return self._inject_failure_warning(body, user_message, error, correlation_id)
 
         narrative_chunks = data.get("narrative_chunks", [])
@@ -563,6 +593,7 @@ Please retry your question, or verify the RAG service is available.
         system_prompt = data.get("system_prompt", "")
 
         routing_method = data.get("routing_method", "unknown")
+        guideline_names = [g.get("name", k) for k, g in selected_guidelines.items()]
         print(
             f"[{self.name}] [{correlation_id}] Retrieved {len(narrative_chunks)} narrative + {len(citation_chunks)} citation chunks in {duration_ms}ms"
         )
@@ -570,13 +601,25 @@ Please retry your question, or verify the RAG service is available.
             f"[{self.name}] [{correlation_id}] Routing: {routing_method} | Guidelines: {list(selected_guidelines.keys())}"
         )
 
+        total_chunks = len(narrative_chunks) + len(citation_chunks)
+        if guideline_names:
+            guideline_display = ", ".join(guideline_names[:3])
+            if len(guideline_names) > 3:
+                guideline_display += f" +{len(guideline_names) - 3} more"
+            await self._emit_status(emitter, f"Retrieved {total_chunks} evidence chunks from {guideline_display}")
+        else:
+            await self._emit_status(emitter, f"Retrieved {total_chunks} evidence chunks")
+
         if not narrative_chunks and not citation_chunks:
             print(
                 f"[{self.name}] [{correlation_id}] WARNING: No chunks retrieved - empty context"
             )
+            await self._emit_status(emitter, "No relevant guidelines found", done=True)
             return self._inject_failure_warning(
                 body, user_message, "No relevant guidelines found", correlation_id
             )
+
+        await self._emit_status(emitter, "Formatting clinical context...")
 
         context = self._format_dual_context(
             narrative_chunks, citation_chunks, selected_guidelines
@@ -620,6 +663,8 @@ Please retry your question, or verify the RAG service is available.
             if msg.get("role") == "user" and msg.get("content") == user_message:
                 body["messages"][i]["content"] = rag_prompt
                 break
+
+        await self._emit_status(emitter, "Context ready, generating response...", done=True)
 
         return body
 
