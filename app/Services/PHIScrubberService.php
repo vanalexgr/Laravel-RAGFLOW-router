@@ -206,23 +206,6 @@ class PHIScrubberService
 
     protected function scrubAgesOver90(string $text): string
     {
-        $patterns = [
-            '/\b(9[0-9]|1[0-9]{2})[-\s]*(year[-\s]*old|yo|y\.o\.|years[-\s]*old|yr[-\s]*old)\b/i',
-            '/\b(age|aged)[:\s]*(9[0-9]|1[0-9]{2})\b/i',
-        ];
-
-        foreach ($patterns as $pattern) {
-            $text = preg_replace_callback($pattern, function ($matches) {
-                $age = null;
-                foreach ($matches as $match) {
-                    if (is_numeric($match) && (int)$match >= 90) {
-                        $age = (int)$match;
-                        break;
-                    }
-                }
-                
-                if ($age !== null && $age >= 90) {
-                    $this->redactionCounts['ages_over_90']++;
         $pattern = config('phi.patterns.age_over_90');
         $text = preg_replace_callback($pattern, function ($matches) {
             $this->redactionCounts['ages']++;
