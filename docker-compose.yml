@@ -9,7 +9,7 @@ services:
         extra_hosts:
             - 'host.docker.internal:host-gateway'
         ports:
-            - '${APP_PORT:-80}:80'
+            - '${APP_PORT:-8080}:80'
             - '${VITE_PORT:-5173}:5173'
         environment:
             WWWUSER: '${WWWUSER}'
@@ -42,6 +42,21 @@ services:
             - './ragflow_service:/app'
         networks:
             - sail
+
+    caddy:
+        image: caddy:alpine
+        restart: unless-stopped
+        ports:
+            - "80:80"
+            - "443:443"
+        command: caddy reverse-proxy --from lavarel.eastus2.cloudapp.azure.com --to laravel.test:80
+        volumes:
+            - caddy_data:/data
+            - caddy_config:/config
+        networks:
+            - sail
+        depends_on:
+            - laravel.test
 
     mysql:
         image: 'mysql/mysql-server:8.0'
@@ -93,3 +108,5 @@ volumes:
         driver: local
     sail-redis:
         driver: local
+    caddy_data:
+    caddy_config:
