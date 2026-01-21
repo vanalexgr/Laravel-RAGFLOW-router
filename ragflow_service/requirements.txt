@@ -4,3 +4,5 @@ httpx>=0.26.0
 pydantic>=2.0.0
 fastembed>=0.7.0
 semantic-router>=0.1.10
+langdetect>=1.0.9
+openai>=1.0.0
