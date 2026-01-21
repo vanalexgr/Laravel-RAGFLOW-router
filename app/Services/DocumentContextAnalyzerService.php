@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 
 class DocumentContextAnalyzerService
 {
@@ -11,32 +12,47 @@ class DocumentContextAnalyzerService
 
     public function __construct()
     {
-        $this->buildVocabulary();
+        $this->loadVocabulary();
     }
 
-    protected function buildVocabulary(): void
+    protected function loadVocabulary(): void
     {
-        $this->clinicalVocabulary = [];
-        $this->guidelineMapping = [];
+        $data = Cache::remember('document_analyzer_vocabulary', 3600, function () {
+            return $this->buildVocabularyData();
+        });
+
+        $this->clinicalVocabulary = $data['vocabulary'];
+        $this->guidelineMapping = $data['mapping'];
+    }
+
+    protected function buildVocabularyData(): array
+    {
+        $vocabulary = [];
+        $mapping = [];
 
         $categories = config('guidelines.categories', []);
 
         foreach ($categories as $category) {
             foreach ($category['guidelines'] as $key => $guideline) {
-                $this->guidelineMapping[$key] = [
+                $mapping[$key] = [
                     'name' => $guideline['name'],
                     'id' => $guideline['id'],
                 ];
 
                 foreach ($guideline['key_concepts'] as $concept) {
                     $normalized = strtolower(trim($concept));
-                    if (!isset($this->clinicalVocabulary[$normalized])) {
-                        $this->clinicalVocabulary[$normalized] = [];
+                    if (!isset($vocabulary[$normalized])) {
+                        $vocabulary[$normalized] = [];
                     }
-                    $this->clinicalVocabulary[$normalized][] = $key;
+                    $vocabulary[$normalized][] = $key;
                 }
             }
         }
+
+        return [
+            'vocabulary' => $vocabulary,
+            'mapping' => $mapping,
+        ];
     }
 
     public function analyze(string $patientContext): array
