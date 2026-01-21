@@ -206,17 +206,20 @@ class PHIScrubberService
 
     protected function scrubAgesOver90(string $text): string
     {
-        $pattern = config('phi.patterns.age_over_90');
-        $text = preg_replace_callback($pattern, function ($matches) {
-            $this->redactionCounts['ages']++;
-            return '[AGE>90]';
-        }, $text);
+        $patterns = config('phi.patterns.ages_over_90', []);
+        
+        foreach ($patterns as $pattern) {
+            $text = preg_replace_callback($pattern, function ($matches) {
+                $this->redactionCounts['ages']++;
+                return '[AGE>90]';
+            }, $text);
+        }
         return $text;
     }
 
     protected function scrubDeviceIdentifiers(string $text): string
     {
-        $patterns = config('phi.patterns.device_id', []);
+        $patterns = config('phi.patterns.device_identifiers', []);
 
         foreach ($patterns as $pattern) {
             $text = preg_replace_callback($pattern, function ($matches) {
@@ -229,7 +232,7 @@ class PHIScrubberService
 
     protected function scrubVehicleIdentifiers(string $text): string
     {
-        $patterns = config('phi.patterns.vehicle_id', []);
+        $patterns = config('phi.patterns.vehicle_identifiers', []);
 
         foreach ($patterns as $pattern) {
             $text = preg_replace_callback($pattern, function ($matches) {
@@ -242,7 +245,7 @@ class PHIScrubberService
 
     protected function scrubBiometricDescriptors(string $text): string
     {
-        $patterns = config('phi.patterns.biometric', []);
+        $patterns = config('phi.patterns.biometric_descriptors', []);
 
         foreach ($patterns as $pattern) {
             $text = preg_replace_callback($pattern, function ($matches) {
@@ -255,7 +258,7 @@ class PHIScrubberService
 
     protected function scrubLicenseNumbers(string $text): string
     {
-        $patterns = config('phi.patterns.license_number', []);
+        $patterns = config('phi.patterns.license_numbers', []);
 
         foreach ($patterns as $pattern) {
             $text = preg_replace_callback($pattern, function ($matches) {
@@ -268,7 +271,7 @@ class PHIScrubberService
 
     protected function scrubAccountNumbers(string $text): string
     {
-        $patterns = config('phi.patterns.account_number', []);
+        $patterns = config('phi.patterns.account_numbers', []);
 
         foreach ($patterns as $pattern) {
             $text = preg_replace_callback($pattern, function ($matches) {
@@ -281,7 +284,7 @@ class PHIScrubberService
 
     protected function scrubAddresses(string $text): string
     {
-        $patterns = config('phi.patterns.address', []);
+        $patterns = config('phi.patterns.addresses', []);
 
         foreach ($patterns as $pattern) {
             $text = preg_replace_callback($pattern, function ($matches) {
@@ -330,7 +333,7 @@ class PHIScrubberService
             return $matches[0];
         }, $text);
 
-        $countyPatterns = config('phi.patterns.geographic', []);
+        $countyPatterns = config('phi.patterns.county', []);
         foreach ($countyPatterns as $pattern) {
             $text = preg_replace_callback($pattern, function ($matches) {
                 $this->redactionCounts['geographic']++;
