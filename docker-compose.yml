@@ -53,6 +53,9 @@ services:
         volumes:
             - caddy_data:/data
             - caddy_config:/config
+        dns:
+            - 8.8.8.8
+            - 1.1.1.1
         networks:
             - sail
         depends_on:
