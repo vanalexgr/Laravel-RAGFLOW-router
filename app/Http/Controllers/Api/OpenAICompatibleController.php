@@ -53,6 +53,51 @@ class OpenAICompatibleController extends Controller
         return $truncated;
     }
 
+    /**
+     * Store the active scope for a conversation.
+     */
+    public function setScope(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'chat_id' => 'required|string',
+            'scope' => 'required|array',
+        ]);
+
+        $chatId = $validated['chat_id'];
+        $scope = $validated['scope'];
+        
+        // Store in cache for 24 hours (or until reset)
+        \Cache::put("scope:{$chatId}", $scope, 60 * 60 * 24);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Scope updated',
+            'scope' => $scope
+        ]);
+    }
+
+    /**
+     * Retrieve the active scope for a conversation.
+     */
+    public function getScope(Request $request): JsonResponse
+    {
+        $chatId = $request->input('chat_id');
+        
+        if (!$chatId) {
+             return response()->json(['scope' => []]);
+        }
+
+        $scope = \Cache::get("scope:{$chatId}", []);
+
+        return response()->json([
+            'success' => true,
+            'scope' => $scope
+        ]);
+    }
+
+        return $truncated;
+    }
+
     public function listModels(): JsonResponse
     {
         return response()->json([
