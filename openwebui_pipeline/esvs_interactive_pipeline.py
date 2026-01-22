@@ -249,23 +249,13 @@ class Filter:
         emitter = __event_emitter__
 
         # --- INJECT SYSTEM PROMPT ---
-        # Ensure the LLM knows its role and the available scopes, even if UI isn't configured
         SYSTEM_PROMPT = """You are 'Vascular Expert', an advanced clinical AI assistant for vascular surgery.
 You answer questions using European Society for Vascular Surgery (ESVS) guidelines.
 
 # CAPABILITIES
-- You can route queries automatically to the relevant guidelines.
-- Users can manually lock scope using /scope commands.
+- You route queries automatically to the relevant vascular guidelines.
+- You perform semantic search across narrative text and citations.
 
-# AVAILABLE GUIDELINE SCOPES
-1. Carotid & Vertebral (/scope carotid_vertebral)
-2. Abdominal Aortic Aneurysm (/scope abdominal_aortic_aneurysm)
-3. Chronic Limb-Threatening Ischemia (/scope clti)
-4. Venous Thrombosis (/scope venous_thrombosis)
-5. Vascular Trauma (/scope vascular_trauma)
-6. Aortic Arch (/scope aortic_arch)
-
-If a user asks about your capabilities or how to switch modes, explain these options.
 Never hallucinate recommendations. Always use the provided RAG context."""
 
         messages = body.get("messages", [])
@@ -276,9 +266,9 @@ Never hallucinate recommendations. Always use the provided RAG context."""
             messages.insert(0, {"role": "system", "content": SYSTEM_PROMPT})
             body["messages"] = messages
             
-        # 1. Identify User and Conversation
+        # 1. Identify User
         user_id = user.get("id", "unknown_user") if user else "unknown_user"
-        conversation_id = body.get("chat_id", user_id) # Fallback if chat_id missing
+        conversation_id = body.get("chat_id", user_id) 
 
         # 2. Extract User Message
         messages = body.get("messages", [])
@@ -292,117 +282,30 @@ Never hallucinate recommendations. Always use the provided RAG context."""
         
         if not user_message: return body
 
-        # --- INTERACTIVE COMMAND HANDLING ---
-        # Check if message is a command
-        if user_message.lower().startswith("/scope") or user_message.lower().startswith("/auto") or user_message.lower().startswith("/menu"):
-            # This is a configuration command, we should intercept and NOT send to LLM
-            
-            response_text = ""
-            
-            if user_message.lower().startswith("/auto") or user_message.strip() == "/scope":
-                # Reset to auto
-                if conversation_id in self.conversation_scopes:
-                    del self.conversation_scopes[conversation_id]
-                response_text = "✅ **Scope Reset**: Automatic guideline routing is now enabled."
-            elif user_message.lower().startswith("/menu"):
-                # Return clickable menu
-                response_text = """### 📚 Available VS Guidelines
-Click an option to lock the assistant's scope:
-
-*   [🧠 **Carotid & Vertebral**](message:/scope carotid_vertebral)
-*   [❤️ **Abdominal Aortic Aneurysm**](message:/scope abdominal_aortic_aneurysm)
-*   [🦵 **Chronic Limb-Threatening Ischemia**](message:/scope clti)
-*   [🩸 **Venous Thrombosis**](message:/scope venous_thrombosis)
-*   [🚑 **Vascular Trauma**](message:/scope vascular_trauma)
-*   [⚕️ **Aortic Arch**](message:/scope aortic_arch)
-*   [🦶 **Peripheral Arterial Disease**](message:/scope pad)
-*   [🩺 **Descending Thoracic Aorta**](message:/scope descending_thoracic_aorta)
-
-[🔄 **Reset to Automatic Routing**](message:/auto)"""
-            else:
-                # Set specific keys
-                # Format: /scope key1 key2
-                parts = user_message.split()
-                if len(parts) > 1:
-                    keys = [k.strip() for k in parts[1:]]
-                    self.conversation_scopes[conversation_id] = keys
-                    key_list_str = ", ".join(keys)
-                    response_text = f"✅ **Scope Set**: Retrieval locked to dataset(s): `{key_list_str}`"
-                else:
-                    response_text = "⚠️ **Usage**: `/scope [key1] [key2]` or `/auto`"
-
-            # Manipulate body to return immediate system response
-            # We effectively Short-Circuit the LLM by replacing the last user message 
-            # with a System instruction to output the confirmation.
-            # Ideally we would just return the response directly, but pipelines modify the REQUEST to the LLM.
-            # So we trick the LLM to just say the confirmation.
-            
-            print(f"[{self.name}] Intercepted command: {user_message} -> {response_text}")
-            
-            # Replace user message with instructions for the LLM to just confirm
-            body["messages"][-1]["content"] = f"Print exactly this text and nothing else:\n\n{response_text}"
-            body["messages"][-1]["role"] = "user" # Ensure it looks like user input to trigger response
-             
-            # Disable RAG for this turn
-            return body
-
         if not self.valves.ENABLE_RAG:
             return body
 
         correlation_id = str(uuid.uuid4())[:8]
-        await self._emit_status(emitter, "Checking scope...")
+        await self._emit_status(emitter, "Analyzing query...")
 
-        # --- FETCH SCOPE FROM API ---
-        # Instead of local memory, we ask Laravel what the scope is for this chat_id
-        active_scope = []
-        try:
-            # We reuse the retrieve URL but point to the context endpoint
-            # Assumption: Retrieve URL is something like /api/v1/retrieve
-            # We want /api/v1/context/scope
-            base_url = self.valves.RETRIEVE_API_URL.replace("/retrieve", "")
-            scope_url = f"{base_url}/context/scope"
-            
-            if self._client is None:
-                 self._client = httpx.AsyncClient(timeout=httpx.Timeout(5.0))
-
-            response = await self._client.get(
-                scope_url,
-                params={"chat_id": conversation_id},
-                headers={"Authorization": f"Bearer {self.valves.API_KEY}"}
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                active_scope = data.get("scope", [])
-        except Exception as e:
-            print(f"[{self.name}] Failed to fetch scope: {e}")
-            # Fallback to auto (empty list) on error
-
-        if active_scope:
-            print(f"[{self.name}] Using persistent scope: {active_scope}")
-            await self._emit_status(emitter, f"Scope locked: {len(active_scope)} dataset(s)")
-        else:
-            await self._emit_status(emitter, "Routing query automatically...")
-
-        # Process attachments (simplified call)
+        # Process attachments
         patient_context, _ = self._extract_attachments(body)
 
-        await self._emit_status(emitter, "Searching ESVS guidelines...")
+        await self._emit_status(emitter, "Routing via Semantic Router...")
 
-        # RETRIEVE
+        # RETRIEVE (Always use None for guideline_keys to force auto-routing)
         data, error = await self._retrieve_with_retry(
             user_message, correlation_id, patient_context, 
-            guideline_keys=active_scope, # Pass the scope!
+            guideline_keys=None, 
             event_emitter=emitter
         )
 
         if data is None:
             await self._emit_status(emitter, f"Retrieval failed: {error}", done=True)
-            return body # Or inject warning
+            return body
 
         # Format Context
         narrative_chunks = data.get("narrative_chunks", [])
-        citation_chunks = data.get("citation_chunks", [])
         selected_guidelines = data.get("selected_guidelines", {})
         
         guideline_names = [g.get("name", k) for k, g in selected_guidelines.items()]
@@ -411,12 +314,8 @@ Click an option to lock the assistant's scope:
 
         await self._emit_status(emitter, f"Found evidence in: {guideline_display}")
 
-        # Construct System Prompt
+        # Construct Context Block
         context_text = ""
-        # (Formatting logic same as before, omitted for brevity to keep file size managed, 
-        #  but in production you'd include the _format_dual_context helper)
-        
-        # Simple formatting for this v3 version
         for chunk in narrative_chunks:
             context_text += f"- {chunk.get('content')}\n"
         
