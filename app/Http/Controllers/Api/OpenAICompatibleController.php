@@ -97,8 +97,7 @@ class OpenAICompatibleController extends Controller
         ]);
     }
 
-        return $truncated;
-    }
+
 
     public function listModels(): JsonResponse
     {
