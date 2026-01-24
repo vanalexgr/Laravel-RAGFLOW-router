@@ -184,8 +184,8 @@ return [
             ],
 
             'collision_rules' => [
-                ['detect' => ['infection_markers', 'TEVAR'], 'add' => 'descending_thoracic_aorta'],
-                ['detect' => ['infection_markers', 'EVAR'], 'add' => 'abdominal_aortic_aneurysm']
+                ['detect' => ['TEVAR', 'fever'], 'add' => 'descending_thoracic_aorta'],
+                ['detect' => ['EVAR', 'fever'], 'add' => 'abdominal_aortic_aneurysm']
             ],
 
             'match_config' => [
@@ -352,7 +352,7 @@ return [
             ],
 
             'collision_rules' => [
-                ['detect' => ['EVAR', 'infection_markers'], 'add' => 'graft_infections']
+                ['detect' => ['EVAR', 'fever'], 'add' => 'graft_infections']
             ],
 
             'match_config' => [
