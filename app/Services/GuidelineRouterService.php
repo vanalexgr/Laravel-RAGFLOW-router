@@ -21,7 +21,7 @@ class GuidelineRouterService
         $this->apiKey = config('prism.providers.azure.api_key') ?: env('AZURE_OPENAI_API_KEY');
         $this->deployment = config('prism.providers.azure.deployment') ?: env('AZURE_OPENAI_DEPLOYMENT', 'gpt-5-chat');
         $this->apiVersion = config('prism.providers.azure.api_version') ?: env('AZURE_OPENAI_VERSION', '2024-12-01-preview');
-        
+
         $this->isConfigured = !empty($this->endpoint) && !empty($this->apiKey) && !empty($this->deployment);
         $this->routingMethod = config('ragflow.routing_method', 'semantic');
         $this->bridgeUrl = config('ragflow.bridge_url', 'http://localhost:8000');
@@ -56,7 +56,7 @@ class GuidelineRouterService
             $duration = round((microtime(true) - $startTime) * 1000);
 
             $selected = array_map(fn($g) => $g['guideline_key'], $data['guidelines'] ?? []);
-            
+
             // Build scores map for proportional chunk allocation
             $scores = [];
             foreach ($data['guidelines'] ?? [] as $g) {
@@ -94,26 +94,75 @@ class GuidelineRouterService
             'question_preview' => substr($question, 0, 60),
         ]);
 
+        // NEW: Abbreviation expansion
+        $expansionEnabled = config('router_abbreviations.enabled', true);
+        $expandedQuery = $question;
+        $expansionDebug = null;
+
+        if ($expansionEnabled) {
+            try {
+                $expander = app(\App\Services\Routing\QueryExpander::class);
+                $result = $expander->expand($question);
+                $expandedQuery = $result->expandedQuery;
+                $expansionDebug = $result;
+
+                $log->info('[ABBREVIATION] Query expanded', [
+                    'detected' => $result->detectedAcronyms,
+                    'expansions' => $result->appliedExpansions,
+                    'conflicts' => $result->conflicts,
+                    'time_ms' => $result->expansionTimeMs,
+                ]);
+            } catch (\Exception $e) {
+                $log->warning('[ABBREVIATION] Expansion failed, using original query', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
         if ($method === 'semantic' || $method === 'semantic_with_llm_fallback') {
-            $result = $this->selectGuidelinesViaSemantic($question, $maxGuidelines);
+            $result = $this->selectGuidelinesViaSemantic($expandedQuery, $maxGuidelines);
             $keys = $result['keys'] ?? [];
-            
+
             if (!empty($keys)) {
-                return $result;
+                // NEW: Apply guardrails
+                $guardrailsEnabled = config('router_abbreviations.guardrails_enabled', true);
+
+                if ($guardrailsEnabled) {
+                    try {
+                        $guardrails = app(\App\Services\Routing\GuardrailDecider::class);
+                        $guardrailResult = $guardrails->apply($question, $result);
+
+                        return [
+                            'keys' => $guardrailResult->selectedRoutes,
+                            'scores' => $result['scores'] ?? [],
+                            'expansion_debug' => $expansionDebug,
+                            'guardrail_debug' => $guardrailResult,
+                        ];
+                    } catch (\Exception $e) {
+                        $log->warning('[GUARDRAILS] Failed to apply, using original routing', [
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+
+                // Return result without guardrails if disabled or failed
+                return array_merge($result, [
+                    'expansion_debug' => $expansionDebug,
+                ]);
             }
 
             if ($method === 'semantic_with_llm_fallback') {
                 $log->info('[ROUTER] Semantic routing empty, falling back to LLM');
                 $llmKeys = $this->selectGuidelines($question, $maxGuidelines);
-                return ['keys' => $llmKeys, 'scores' => []];
+                return ['keys' => $llmKeys, 'scores' => [], 'expansion_debug' => $expansionDebug];
             }
 
-            return $result;
+            return array_merge($result, ['expansion_debug' => $expansionDebug]);
         }
 
         // Default: LLM routing (no scores available)
         $llmKeys = $this->selectGuidelines($question, $maxGuidelines);
-        return ['keys' => $llmKeys, 'scores' => []];
+        return ['keys' => $llmKeys, 'scores' => [], 'expansion_debug' => $expansionDebug];
     }
 
     public function selectGuidelines(string $question, int $maxGuidelines = 3): array
@@ -136,7 +185,7 @@ class GuidelineRouterService
 
         try {
             $url = rtrim($this->endpoint, '/') . "/openai/deployments/{$this->deployment}/chat/completions?api-version={$this->apiVersion}";
-            
+
             $log->debug('[LLM ROUTER] Calling Azure OpenAI', [
                 'url' => $url,
                 'deployment' => $this->deployment,
@@ -277,7 +326,7 @@ PROMPT;
             $semanticResult = $this->selectGuidelinesViaSemantic($routingQuery, $maxGuidelines);
             $semanticKeys = $semanticResult['keys'] ?? [];
             $semanticScores = $semanticResult['scores'] ?? [];
-            
+
             if (!empty($semanticKeys) || $this->routingMethod === 'semantic') {
                 // Use semantic results, optionally do LLM expansion if enabled
                 $expanded = $queryForExpansion;
@@ -289,14 +338,14 @@ PROMPT;
                     $log->info('[QUERY EXPANSION] Disabled, using original query');
                 }
                 $selected = $this->mergeDocumentAndQuestionRouting($semanticKeys, $documentAnalysis, $log, $maxGuidelines);
-                
+
                 $log->info('[SEMANTIC+EXPAND] Complete', [
                     'semantic_selected' => $semanticKeys,
                     'semantic_scores' => $semanticScores,
                     'final_selected' => $selected,
                     'duration_ms' => round((microtime(true) - $startTime) * 1000),
                 ]);
-                
+
                 return ['selected' => $selected, 'expanded' => $expanded, 'scores' => $semanticScores, 'routing_method' => 'semantic'];
             }
             // Fallback to LLM routing if semantic returned empty and method allows fallback
@@ -321,7 +370,7 @@ PROMPT;
         ]);
 
         try {
-            $responses = Http::pool(fn ($pool) => [
+            $responses = Http::pool(fn($pool) => [
                 $pool->as('routing')
                     ->timeout(10)
                     ->withHeaders(['api-key' => $this->apiKey, 'Content-Type' => 'application/json'])
@@ -444,7 +493,7 @@ PROMPT;
             }
 
             $expanded = trim($response->json('choices.0.message.content', ''));
-            
+
             if (empty($expanded) || strlen($expanded) < strlen($question)) {
                 $log->warning('[QUERY EXPANSION] Invalid expansion, using original');
                 return $question;
