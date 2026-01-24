@@ -200,11 +200,11 @@ class GuardrailDecider
                     ];
                 } else {
                     // Not triggered - EXCLUDE it
-                    $keys = array_diff($keys, [$target]);
+                    $keys = array_values(array_diff($keys, [$target]));  // FIX: array_values to reindex
                     $decisions[] = [
                         'rule' => $ruleName,
                         'action' => 'exclude',
-                        'reason' => "No trauma mechanism, EXCLUDING {$target}",
+                        'reason' => "No trauma mechanism, EXCLUDED {$target}",
                     ];
                 }
             }
@@ -268,23 +268,44 @@ class GuardrailDecider
                 if (!$addGuideline)
                     continue;
 
-                // Check if all detect terms are present in query
+                // FIX: Check detection terms against query AND matched keywords
+                $queryLower = strtolower($query);
+                $matchedKeywords = array_map('strtolower', $eval['keywords_matched'] ?? []);
+
                 $allPresent = true;
                 foreach ($detectTerms as $term) {
-                    if (!str_contains(strtolower($query), strtolower($term))) {
+                    $termLower = strtolower($term);
+
+                    // Check in query OR in matched keywords
+                    $foundInQuery = str_contains($queryLower, $termLower);
+                    $foundInKeywords = in_array($termLower, $matchedKeywords);
+
+                    // Special handling for category names (e.g., 'infection_markers')
+                    $categoryMatch = false;
+                    if (!$foundInQuery && !$foundInKeywords) {
+                        // Check if term is a category that was matched
+                        foreach ($matchedKeywords as $keyword) {
+                            if (str_contains($keyword, $termLower) || str_contains($termLower, $keyword)) {
+                                $categoryMatch = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!$foundInQuery && !$foundInKeywords && !$categoryMatch) {
                         $allPresent = false;
                         break;
                     }
                 }
 
                 if ($allPresent && !in_array($addGuideline, $keys)) {
-                    // Add companion guideline
-                    $keys[] = $addGuideline;
+                    // Add companion guideline at position 1 (after PIN)
+                    array_splice($keys, 1, 0, [$addGuideline]);
 
                     $decisions[] = [
                         'rule' => $ruleName,
                         'action' => 'collision_add',
-                        'reason' => "Collision detected, added {$addGuideline}",
+                        'reason' => "Collision detected, added {$addGuideline} at position 2",
                         'detect_terms' => $detectTerms,
                     ];
                 }
@@ -313,6 +334,14 @@ class GuardrailDecider
                     'rule' => $ruleName,
                     'action' => 'companion',
                     'reason' => "Added {$target} as companion",
+                    'keywords_matched' => $comp['keywords_matched'],
+                ];
+            } else {
+                // FIX: Log even if already present (for clarity)
+                $decisions[] = [
+                    'rule' => $ruleName,
+                    'action' => 'companion_already_present',
+                    'reason' => "{$target} already in results (companion rule matched)",
                     'keywords_matched' => $comp['keywords_matched'],
                 ];
             }
