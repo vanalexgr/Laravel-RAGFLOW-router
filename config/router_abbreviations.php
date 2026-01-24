@@ -68,12 +68,20 @@ return [
 
     // Global priority order for all 14 guidelines
     'priority_order' => [
-        'vascular_trauma',          // 1 - Highest (but opt-in only)
-        'graft_infections',         // 2
-        'acute_limb_ischaemia',     // 3
-        'antithrombotic_therapy',   // 4 (companion)
-        'abdominal_aortic_aneurysm', // 5
-        // Remaining 9 to be added later
+        'vascular_trauma',           // 1 - Emergencies (opt-in only)
+        'graft_infections',          // 2 - Complications
+        'acute_limb_ischaemia',      // 3 - Acute limb
+        'venous_thrombosis',         // 4 - Acute VTE (DVT/PE)
+        'clti',                      // 5 - Chronic critical limb
+        'carotid_vertebral',         // 6 - Cerebrovascular
+        'mesenteric_renal',          // 7 - Visceral
+        'abdominal_aortic_aneurysm', // 8 - Aortic (AAA)
+        'descending_thoracic',       // 9 - Aortic (thoracic)
+        'aortic_arch',               // 10 - Aortic (arch)
+        'asymptomatic_pad',          // 11 - Chronic PAD
+        'chronic_venous_disease',    // 12 - Chronic venous
+        'vascular_access',           // 13 - Dialysis access
+        'antithrombotic_therapy',    // 14 - Companion (medications)
     ],
 
     // Keep top-2 if score gap is smaller than this
@@ -353,6 +361,398 @@ return [
 
             'collision_rules' => [
                 ['detect' => ['EVAR', 'fever'], 'add' => 'graft_infections']
+            ],
+
+            'match_config' => [
+                'min_keyword_matches' => 1,
+                'case_insensitive' => true,
+                'word_boundary' => true
+            ]
+        ],
+
+        // 6. CAROTID & VERTEBRAL DISEASE
+        'carotid_vertebral' => [
+            'enabled' => true,
+            'target_guideline' => 'carotid_vertebral',
+            'action' => 'pin',
+
+            'pin_keywords' => [
+                'symptoms' => [
+                    'TIA',
+                    'transient ischem',
+                    'amaurosis fugax',
+                    'stroke',
+                    'CVA',
+                    'cerebrovascular accident'
+                ],
+                'anatomy' => [
+                    'carotid stenosis',
+                    'ICA stenosis',
+                    'vertebral artery',
+                    'posterior circulation'
+                ],
+                'procedure' => [
+                    'CEA',
+                    'carotid endarterectomy',
+                    'CAS',
+                    'carotid stenting'
+                ],
+                'grading' => [
+                    'NASCET',
+                    'symptomatic stenosis',
+                    'asymptomatic stenosis'
+                ]
+            ],
+
+            'collision_rules' => [
+                ['detect' => ['stroke', 'aspirin'], 'add' => 'antithrombotic_therapy']
+            ],
+
+            'match_config' => [
+                'min_keyword_matches' => 1,
+                'case_insensitive' => true,
+                'word_boundary' => true
+            ]
+        ],
+
+        // 7. CLTI
+        'clti' => [
+            'enabled' => true,
+            'target_guideline' => 'clti',
+            'action' => 'pin',
+
+            'pin_keywords' => [
+                'presentation' => [
+                    'CLTI',
+                    'chronic limb-threatening',
+                    'rest pain',
+                    'ischemic rest pain',
+                    'tissue loss',
+                    'ulcer',
+                    'gangrene'
+                ],
+                'classification' => [
+                    'WIfI',
+                    'Rutherford 4',
+                    'Rutherford 5',
+                    'Rutherford 6'
+                ],
+                'assessment' => [
+                    'toe pressure',
+                    'TcPO2',
+                    'limb salvage'
+                ],
+                'intervention' => [
+                    'amputation',
+                    'infrainguinal bypass'
+                ]
+            ],
+
+            'exclude_keywords' => [
+                'intermittent claudication',
+                'asymptomatic PAD'
+            ],
+
+            'match_config' => [
+                'min_keyword_matches' => 1,
+                'case_insensitive' => true,
+                'word_boundary' => true
+            ]
+        ],
+
+        // 8. VENOUS THROMBOSIS (DVT/PE)
+        'venous_thrombosis' => [
+            'enabled' => true,
+            'target_guideline' => 'venous_thrombosis',
+            'action' => 'pin',
+
+            'pin_keywords' => [
+                'diagnosis' => [
+                    'DVT',
+                    'deep vein thrombosis',
+                    'PE',
+                    'pulmonary embolism',
+                    'VTE',
+                    'venous thromboembolism'
+                ],
+                'assessment' => [
+                    'D-dimer',
+                    'Wells score',
+                    'compression ultrasound',
+                    'CTPA'
+                ],
+                'classification' => [
+                    'provoked',
+                    'unprovoked',
+                    'proximal DVT',
+                    'distal DVT'
+                ],
+                'management' => [
+                    'anticoagulation duration',
+                    'catheter-directed thrombolysis'
+                ]
+            ],
+
+            'collision_rules' => [
+                ['detect' => ['DVT', 'anticoagulation'], 'add' => 'antithrombotic_therapy']
+            ],
+
+            'match_config' => [
+                'min_keyword_matches' => 1,
+                'case_insensitive' => true,
+                'word_boundary' => true
+            ]
+        ],
+
+        // 9. CHRONIC VENOUS DISEASE
+        'chronic_venous_disease' => [
+            'enabled' => true,
+            'target_guideline' => 'chronic_venous_disease',
+            'action' => 'pin',
+
+            'pin_keywords' => [
+                'presentation' => [
+                    'varicose veins',
+                    'venous ulcer',
+                    'chronic venous insufficiency',
+                    'CVI'
+                ],
+                'classification' => [
+                    'CEAP',
+                    'post-thrombotic syndrome',
+                    'PTS'
+                ],
+                'assessment' => [
+                    'venous reflux',
+                    'GSV reflux',
+                    'SSV'
+                ],
+                'intervention' => [
+                    'compression therapy',
+                    'endovenous ablation',
+                    'sclerotherapy'
+                ]
+            ],
+
+            'match_config' => [
+                'min_keyword_matches' => 1,
+                'case_insensitive' => true,
+                'word_boundary' => true
+            ]
+        ],
+
+        // 10. DESCENDING THORACIC AORTA
+        'descending_thoracic' => [
+            'enabled' => true,
+            'target_guideline' => 'descending_thoracic_aorta',
+            'action' => 'pin',
+
+            'pin_keywords' => [
+                'pathology' => [
+                    'type B dissection',
+                    'TBAD',
+                    'descending thoracic aneurysm',
+                    'penetrating aortic ulcer',
+                    'PAU',
+                    'intramural hematoma',
+                    'IMH'
+                ],
+                'procedure' => [
+                    'TEVAR',
+                    'thoracic endovascular',
+                    'thoracic stent graft'
+                ],
+                'complications' => [
+                    'spinal cord ischemia',
+                    'paraplegia',
+                    'CSF drain',
+                    'left subclavian coverage'
+                ],
+                'zones' => [
+                    'zone 3',
+                    'zone 4',
+                    'zone 5'
+                ]
+            ],
+
+            'exclude_keywords' => [
+                'ascending aorta',
+                'aortic root',
+                'zone 0',
+                'zone 1',
+                'zone 2'
+            ],
+
+            'collision_rules' => [
+                ['detect' => ['TEVAR', 'fever'], 'add' => 'graft_infections']
+            ],
+
+            'match_config' => [
+                'min_keyword_matches' => 1,
+                'case_insensitive' => true,
+                'word_boundary' => true
+            ]
+        ],
+
+        // 11. AORTIC ARCH
+        'aortic_arch' => [
+            'enabled' => true,
+            'target_guideline' => 'aortic_arch',
+            'action' => 'pin',
+
+            'pin_keywords' => [
+                'anatomy' => [
+                    'aortic arch',
+                    'arch aneurysm',
+                    'arch dissection',
+                    'supra-aortic',
+                    'brachiocephalic'
+                ],
+                'zones' => [
+                    'zone 0',
+                    'zone 1',
+                    'zone 2'
+                ],
+                'procedure' => [
+                    'arch debranching',
+                    'hybrid arch repair',
+                    'total arch replacement',
+                    'elephant trunk',
+                    'frozen elephant trunk',
+                    'FET'
+                ],
+                'protection' => [
+                    'cerebral protection',
+                    'hypothermic circulatory arrest'
+                ]
+            ],
+
+            'collision_rules' => [
+                ['detect' => ['arch', 'fever'], 'add' => 'graft_infections']
+            ],
+
+            'match_config' => [
+                'min_keyword_matches' => 1,
+                'case_insensitive' => true,
+                'word_boundary' => true
+            ]
+        ],
+
+        // 12. MESENTERIC & RENAL VESSELS
+        'mesenteric_renal' => [
+            'enabled' => true,
+            'target_guideline' => 'mesenteric_renal',
+            'action' => 'pin',
+
+            'pin_keywords' => [
+                'mesenteric' => [
+                    'acute mesenteric ischemia',
+                    'AMI',
+                    'chronic mesenteric ischemia',
+                    'CMI',
+                    'intestinal angina',
+                    'SMA stenosis',
+                    'celiac stenosis'
+                ],
+                'renal' => [
+                    'renal artery stenosis',
+                    'RAS',
+                    'renovascular hypertension',
+                    'fibromuscular dysplasia',
+                    'FMD'
+                ],
+                'visceral' => [
+                    'visceral aneurysm',
+                    'splenic aneurysm',
+                    'hepatic aneurysm'
+                ]
+            ],
+
+            'match_config' => [
+                'min_keyword_matches' => 1,
+                'case_insensitive' => true,
+                'word_boundary' => true
+            ]
+        ],
+
+        // 13. ASYMPTOMATIC PAD & CLAUDICATION
+        'asymptomatic_pad' => [
+            'enabled' => true,
+            'target_guideline' => 'asymptomatic_pad',
+            'action' => 'pin',
+
+            'pin_keywords' => [
+                'screening' => [
+                    'ABI screening',
+                    'asymptomatic PAD'
+                ],
+                'claudication' => [
+                    'intermittent claudication',
+                    'claudication',
+                    'walking limitation',
+                    'Rutherford 1',
+                    'Rutherford 2',
+                    'Rutherford 3'
+                ],
+                'management' => [
+                    'supervised exercise therapy',
+                    'cilostazol',
+                    'best medical therapy'
+                ],
+                'revascularization' => [
+                    'revascularization for claudication'
+                ]
+            ],
+
+            'exclude_keywords' => [
+                'rest pain',
+                'tissue loss',
+                'gangrene',
+                'CLTI'
+            ],
+
+            'collision_rules' => [
+                ['detect' => ['ABI', 'aspirin'], 'add' => 'antithrombotic_therapy']
+            ],
+
+            'match_config' => [
+                'min_keyword_matches' => 1,
+                'case_insensitive' => true,
+                'word_boundary' => true
+            ]
+        ],
+
+        // 14. VASCULAR ACCESS
+        'vascular_access' => [
+            'enabled' => true,
+            'target_guideline' => 'vascular_access',
+            'action' => 'pin',
+
+            'pin_keywords' => [
+                'access_types' => [
+                    'AVF',
+                    'arteriovenous fistula',
+                    'AVG',
+                    'arteriovenous graft',
+                    'hemodialysis access',
+                    'dialysis access'
+                ],
+                'complications' => [
+                    'fistula maturation',
+                    'steal syndrome',
+                    'access thrombosis',
+                    'access stenosis'
+                ],
+                'catheter' => [
+                    'tunneled catheter',
+                    'dialysis catheter',
+                    'permcath'
+                ],
+                'procedures' => [
+                    'fistulogram',
+                    'fistula angioplasty',
+                    'DRIL'
+                ]
             ],
 
             'match_config' => [
