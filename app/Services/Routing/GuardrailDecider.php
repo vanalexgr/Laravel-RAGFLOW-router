@@ -114,7 +114,10 @@ class GuardrailDecider
             $rule = $this->config[$ruleName];
             $matchResult = $this->matchKeywords($query, $rule);
 
-            if ($matchResult['triggered']) {
+            // FIX: Always evaluate exclude_by_default rules, even if not triggered
+            $isExcludeRule = ($rule['action'] ?? '') === 'exclude_by_default';
+
+            if ($matchResult['triggered'] || $isExcludeRule) {
                 $evaluations[$ruleName] = [
                     'rule_name' => $ruleName,
                     'priority' => $priority,
