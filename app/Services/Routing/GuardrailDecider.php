@@ -222,7 +222,17 @@ class GuardrailDecider
     protected function applyPins(array $keys, array $evaluations): array
     {
         $decisions = [];
-        $pins = array_filter($evaluations, fn($e) => in_array($e['action'], ['pin', 'exclude_by_default']));
+
+        // FIX: Only treat exclude_by_default as PIN if it was triggered
+        $pins = array_filter($evaluations, function ($e) {
+            if ($e['action'] === 'pin') {
+                return true;
+            }
+            if ($e['action'] === 'exclude_by_default' && $e['match_count'] > 0) {
+                return true; // Trauma triggered, treat as PIN
+            }
+            return false; // Trauma not triggered, don't PIN it
+        });
 
         if (empty($pins)) {
             return [$keys, $decisions];
