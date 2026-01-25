@@ -53,7 +53,14 @@
             "limb salvage vs primary amputation",
             "paediatric vascular trauma",
             "\u201cpink pulseless hand\u201d",
-            "supracondylar fracture vascular injury"
+            "supracondylar fracture vascular injury",
+            "motorcycle crash",
+            "road traffic accident",
+            "car crash",
+            "gunshot wound",
+            "stab wound",
+            "penetrating injury",
+            "blunt injury"
         ]
     },
     "exclude_keywords": [

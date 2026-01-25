@@ -51,5 +51,10 @@
             "in situ fenestration"
         ]
     },
-    "exclude_keywords": []
+    "exclude_keywords": [
+        "type B aortic dissection",
+        "TBAD",
+        "descending thoracic",
+        "type B"
+    ]
 }
