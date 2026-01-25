@@ -364,6 +364,23 @@ PROMPT;
                 }
                 $selected = $this->mergeDocumentAndQuestionRouting($semanticKeys, $documentAnalysis, $log, $maxGuidelines);
 
+                // NEW: Apply guardrails to final selection if enabled
+                if (config('router_abbreviations.guardrails_enabled', true)) {
+                    try {
+                        $guardrails = app(\App\Services\Routing\GuardrailDecider::class);
+                        $guardrailResult = $guardrails->apply($routingQuery, [
+                            'keys' => $selected,
+                            'scores' => $semanticScores
+                        ]);
+                        $selected = $guardrailResult->selectedRoutes;
+                        $log->info('[GUARDRAILS] Applied to Web request', [
+                            'final_keys' => $selected
+                        ]);
+                    } catch (\Exception $e) {
+                        $log->warning('[GUARDRAILS] Failed to apply to Web request', ['error' => $e->getMessage()]);
+                    }
+                }
+
                 $log->info('[SEMANTIC+EXPAND] Complete', [
                     'semantic_selected' => $semanticKeys,
                     'semantic_scores' => $semanticScores,
