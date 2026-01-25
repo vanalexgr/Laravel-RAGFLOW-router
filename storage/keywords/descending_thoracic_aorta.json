@@ -1,0 +1,52 @@
+{
+    "guideline_key": "descending_thoracic_aorta",
+    "guideline_name": "Descending Thoracic Aorta",
+    "version": "2026-01-25",
+    "source": "Generated Keyword Set",
+    "keywords": {
+        "tier1_core": [
+            "descending thoracic aneurysm",
+            "DTAA",
+            "thoracic aortic aneurysm",
+            "type B dissection",
+            "TBAD",
+            "type B aortic dissection",
+            "uncomplicated type B",
+            "complicated type B",
+            "penetrating aortic ulcer",
+            "PAU thoracic",
+            "intramural hematoma",
+            "IMH thoracic"
+        ],
+        "tier2_specific": [
+            "TEVAR",
+            "thoracic endovascular aortic repair",
+            "stent graft",
+            "aortic remodeling",
+            "false lumen thrombosis",
+            "spinal cord ischemia",
+            "cerebrospinal fluid drain",
+            "CSF drain",
+            "lumbar drain"
+        ],
+        "tier3_complications": [
+            "retrograde type A dissection",
+            "RTAD",
+            "stent graft induced new entry",
+            "SINE",
+            "aortoesophageal fistula",
+            "aortobronchial fistula",
+            "paraplegia"
+        ],
+        "tier4_procedures": [
+            "left subclavian revascularization",
+            "carotid-subclavian bypass",
+            "TEVAR landing zone"
+        ]
+    },
+    "exclude_keywords": [
+        "ascending aorta",
+        "type A dissection",
+        "abdominal aortic aneurysm"
+    ]
+}

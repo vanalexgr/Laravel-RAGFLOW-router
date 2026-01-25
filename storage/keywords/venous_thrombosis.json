@@ -1,0 +1,53 @@
+{
+    "guideline_key": "venous_thrombosis",
+    "guideline_name": "Venous Thrombosis (DVT\/PE)",
+    "version": "2026-01-25",
+    "source": "Generated Keyword Set",
+    "keywords": {
+        "tier1_core": [
+            "DVT",
+            "deep vein thrombosis",
+            "deep venous thrombosis",
+            "PE",
+            "pulmonary embolism",
+            "VTE",
+            "venous thromboembolism",
+            "superficial vein thrombosis",
+            "SVT",
+            "thrombophlebitis"
+        ],
+        "tier2_specific": [
+            "provoked DVT",
+            "unprovoked DVT",
+            "cancer-associated thrombosis",
+            "Wells score",
+            "D-dimer",
+            "CTPA",
+            "V\/Q scan",
+            "compression ultrasound",
+            "anticoagulation",
+            "DOAC",
+            "warfarin",
+            "heparin",
+            "LMWH"
+        ],
+        "tier3_complications": [
+            "post-thrombotic syndrome",
+            "PTS",
+            "CTEPH",
+            "chronic thromboembolic pulmonary hypertension",
+            "HIT",
+            "heparin induced thrombocytopenia"
+        ],
+        "tier4_procedures": [
+            "catheter-directed thrombolysis",
+            "CDT",
+            "pharmaco-mechanical thrombectomy",
+            "IVC filter",
+            "inferior vena cava filter",
+            "venous stent",
+            "May-Thurner syndrome"
+        ]
+    },
+    "exclude_keywords": []
+}

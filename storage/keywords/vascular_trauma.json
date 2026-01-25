@@ -1,0 +1,51 @@
+{
+    "guideline_key": "vascular_trauma",
+    "guideline_name": "Vascular Trauma",
+    "version": "2026-01-25",
+    "source": "Generated Keyword Set",
+    "keywords": {
+        "tier1_core": [
+            "vascular trauma",
+            "arterial injury",
+            "venous injury",
+            "gunshot wound",
+            "GSW",
+            "stab wound",
+            "penetrating trauma",
+            "blunt trauma",
+            "crush injury",
+            "road traffic accident",
+            "motorcycle crash",
+            "car crash"
+        ],
+        "tier2_specific": [
+            "hard signs of vascular injury",
+            "soft signs",
+            "pulsatile bleeding",
+            "expanding hematoma",
+            "thrill",
+            "bruit",
+            "absent pulse",
+            "shock",
+            "hypotension",
+            "hemorrhage control",
+            "damage control surgery"
+        ],
+        "tier3_complications": [
+            "compartment syndrome",
+            "rhabdomyolysis",
+            "amputation",
+            "pseudoaneurysm",
+            "arteriovenous fistula traumatic"
+        ],
+        "tier4_procedures": [
+            "temporary intravascular shunt",
+            "shunt",
+            "vessel ligation",
+            "vein graft",
+            "fasciotomy",
+            "REBOA"
+        ]
+    },
+    "exclude_keywords": []
+}
