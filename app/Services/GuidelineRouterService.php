@@ -32,7 +32,7 @@ class GuidelineRouterService
      * 
      * @return array Array of guideline keys with optional 'scores' key containing confidence values
      */
-    public function selectGuidelinesViaSemantic(string $question, int $maxGuidelines = 3): array
+    public function selectGuidelinesViaSemantic(string $question, int $maxGuidelines = 2): array
     {
         $startTime = microtime(true);
         $log = Log::channel('retrieval');
@@ -98,7 +98,7 @@ class GuidelineRouterService
      * 
      * @return array With 'keys' array of guideline keys and 'scores' map of key => confidence
      */
-    public function routeQuery(string $question, int $maxGuidelines = 3): array
+    public function routeQuery(string $question, int $maxGuidelines = 2): array
     {
         $log = Log::channel('retrieval');
         $method = $this->routingMethod;
