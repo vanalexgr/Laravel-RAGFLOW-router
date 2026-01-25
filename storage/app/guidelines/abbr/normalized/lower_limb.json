@@ -1,0 +1,21 @@
+{
+    ":---:": ":---",
+    "IC": "Intermittent Claudication",
+    "PAD": "Peripheral Arterial Disease",
+    "LEAD": "Lower Extremity Artery Disease",
+    "CLTI": "Chronic Limb-Threatening Ischemia",
+    "CLI": "Critical Limb Ischemia",
+    "ABI": "Ankle-Brachial Index",
+    "ABPI": "Ankle-Brachial Pressure Index",
+    "TBI": "Toe-Brachial Index",
+    "CFA": "Common Femoral Artery",
+    "SFA": "Superficial Femoral Artery",
+    "PFA": "Profunda Femoris Artery",
+    "POP": "Popliteal Artery",
+    "ATA": "Anterior Tibial Artery",
+    "PTA": "Posterior Tibial Artery",
+    "PER": "Peroneal Artery",
+    "DPA": "Dorsalis Pedis Artery",
+    "GSV": "Great Saphenous Vein",
+    "SSV": "Small Saphenous Vein"
+}
