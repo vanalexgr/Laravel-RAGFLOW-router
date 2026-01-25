@@ -466,8 +466,25 @@ PROMPT;
         $startTime = microtime(true);
         $log = Log::channel('retrieval');
 
+        if (config('router_abbreviations.enabled', true)) {
+            try {
+                $expander = app(\App\Services\Routing\QueryExpander::class);
+                $result = $expander->expand($question);
+
+                if (!empty($result->appliedExpansions)) {
+                    $question = $result->expandedQuery;
+                    $log->info('[QUERY EXPANSION] Regex applied, skipping LLM for focus', [
+                        'expansions' => $result->appliedExpansions
+                    ]);
+                    return $question; // Return early to avoid signal dilution with too many LLM synonyms
+                }
+            } catch (\Exception $e) {
+                $log->warning('[QUERY EXPANSION] Regex failed', ['error' => $e->getMessage()]);
+            }
+        }
+
         if (!$this->isConfigured) {
-            $log->warning('[QUERY EXPANSION] Azure OpenAI not configured, returning original query');
+            $log->warning('[QUERY EXPANSION] Azure OpenAI not configured, returning query');
             return $question;
         }
 
