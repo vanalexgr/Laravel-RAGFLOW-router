@@ -1,0 +1,58 @@
+{
+    "guideline_key": "clti",
+    "guideline_name": "Chronic Limb-Threatening Ischemia",
+    "version": "2026-01-25",
+    "source": "Generated Keyword Set",
+    "keywords": {
+        "tier1_core": [
+            "CLTI",
+            "chronic limb-threatening ischemia",
+            "critical limb ischemia",
+            "CLI",
+            "rest pain",
+            "ischemic rest pain",
+            "tissue loss",
+            "gangrene",
+            "non-healing ulcer",
+            "foot ulcer",
+            "diabetic foot ulcer"
+        ],
+        "tier2_specific": [
+            "WIfI classification",
+            "Rutherford classification",
+            "Rutherford 4",
+            "Rutherford 5",
+            "Rutherford 6",
+            "ankle pressure",
+            "toe pressure",
+            "TcPO2",
+            "transcutaneous oxygen",
+            "limb salvage",
+            "amputation free survival"
+        ],
+        "tier3_complications": [
+            "wound infection",
+            "osteomyelitis",
+            "graft failure",
+            "bypass occlusion"
+        ],
+        "tier4_procedures": [
+            "infrainguinal bypass",
+            "fem-pop bypass",
+            "fem-distal bypass",
+            "angioplasty",
+            "tibial angioplasty",
+            "pedal arch angioplasty",
+            "minor amputation",
+            "major amputation",
+            "Below Knee Amputation",
+            "Above Knee Amputation",
+            "BKA",
+            "AKA"
+        ]
+    },
+    "exclude_keywords": [
+        "intermittent claudication",
+        "asymptomatic PAD"
+    ]
+}

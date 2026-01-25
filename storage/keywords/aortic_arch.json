@@ -1,0 +1,43 @@
+{
+    "guideline_key": "aortic_arch",
+    "guideline_name": "Aortic Arch",
+    "version": "2026-01-25",
+    "source": "Generated Keyword Set",
+    "keywords": {
+        "tier1_core": [
+            "aortic arch aneurysm",
+            "arch aneurysm",
+            "aortic arch dissection",
+            "isolated arch dissection",
+            "penetrating aortic ulcer arch",
+            "PAU arch"
+        ],
+        "tier2_specific": [
+            "zone 0",
+            "zone 1",
+            "zone 2",
+            "frozen elephant trunk",
+            "FET",
+            "total arch replacement",
+            "hemiarch replacement",
+            "Ishimaru zones"
+        ],
+        "tier3_complications": [
+            "stroke",
+            "cerebral embolization",
+            "recurrent laryngeal nerve injury",
+            "vocal cord paralysis"
+        ],
+        "tier4_procedures": [
+            "hybrid arch repair",
+            "arch debranching",
+            "supra-aortic debranching",
+            "fenestrated arch",
+            "branched arch",
+            "chimney graft",
+            "periscope graft",
+            "in-situ fenestration"
+        ]
+    },
+    "exclude_keywords": []
+}

@@ -1,0 +1,53 @@
+{
+    "guideline_key": "carotid_vertebral",
+    "guideline_name": "Carotid & Vertebral Artery Disease",
+    "version": "2026-01-25",
+    "source": "Generated Keyword Set",
+    "keywords": {
+        "tier1_core": [
+            "carotid stenosis",
+            "carotid artery stenosis",
+            "Internal Carotid Artery stenosis",
+            "ICA stenosis",
+            "symptomatic carotid stenosis",
+            "asymptomatic carotid stenosis",
+            "TIA",
+            "transient ischemic attack",
+            "stroke",
+            "cerebrovascular accident",
+            "CVA",
+            "amaurosis fugax",
+            "vertebral artery disease",
+            "subclavian steal"
+        ],
+        "tier2_specific": [
+            "carotid endarterectomy",
+            "CEA",
+            "carotid artery stenting",
+            "CAS",
+            "carotid stent",
+            "vertebral artery stenting",
+            "carotid duplex",
+            "Peak Systolic Velocity",
+            "PSV",
+            "NASCET",
+            "ECST",
+            "carotid plaque",
+            "unstable plaque"
+        ],
+        "tier3_complications": [
+            "cranial nerve injury",
+            "hypoglossal nerve injury",
+            "hyperperfusion syndrome",
+            "in-stent restenosis",
+            "carotid blowout"
+        ],
+        "tier4_procedures": [
+            "transcarotid artery revascularization",
+            "TCAR",
+            "carotid bypass",
+            "vertebral transposition"
+        ]
+    },
+    "exclude_keywords": []
+}

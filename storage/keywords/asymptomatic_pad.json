@@ -1,0 +1,50 @@
+{
+    "guideline_key": "asymptomatic_pad",
+    "guideline_name": "Asymptomatic PAD & Claudication",
+    "version": "2026-01-25",
+    "source": "Generated Keyword Set",
+    "keywords": {
+        "tier1_core": [
+            "peripheral arterial disease",
+            "PAD",
+            "intermittent claudication",
+            "claudication",
+            "walking pain",
+            "leg cramps",
+            "asymptomatic PAD",
+            "ABI screening"
+        ],
+        "tier2_specific": [
+            "ankle-brachial index",
+            "ABI",
+            "treadmill test",
+            "walking distance",
+            "claudication distance",
+            "supervised exercise therapy",
+            "SET",
+            "best medical therapy",
+            "risk factor modification",
+            "cilostazol",
+            "naftidrofuryl"
+        ],
+        "tier3_complications": [
+            "progression to CLTI",
+            "cardiovascular events",
+            "MI",
+            "stroke"
+        ],
+        "tier4_procedures": [
+            "revascularization for claudication",
+            "angioplasty",
+            "stenting",
+            "bypass surgery"
+        ]
+    },
+    "exclude_keywords": [
+        "rest pain",
+        "tissue loss",
+        "gangrene",
+        "CLTI",
+        "critical limb ischemia"
+    ]
+}

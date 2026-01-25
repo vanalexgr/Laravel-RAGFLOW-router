@@ -1,0 +1,41 @@
+{
+    "guideline_key": "antithrombotic_therapy",
+    "guideline_name": "Antithrombotic Therapy",
+    "version": "2026-01-25",
+    "source": "Generated Keyword Set",
+    "keywords": {
+        "tier1_core": [
+            "antithrombotic therapy",
+            "antiplatelet therapy",
+            "anticoagulation",
+            "vascular prevention",
+            "cardiovascular risk reduction"
+        ],
+        "tier2_specific": [
+            "aspirin",
+            "clopidogrel",
+            "DAPT",
+            "dual antiplatelet therapy",
+            "SAPT",
+            "single antiplatelet therapy",
+            "statin",
+            "atorvastatin",
+            "rosuvastatin",
+            "rivaroxaban",
+            "compass trial",
+            "voyager pad"
+        ],
+        "tier3_complications": [
+            "bleeding risk",
+            "major bleeding",
+            "intracranial hemorrhage",
+            "gastrointestinal bleeding"
+        ],
+        "tier4_procedures": [
+            "perioperative management",
+            "bridging anticoagulation",
+            "protamine reversal"
+        ]
+    },
+    "exclude_keywords": []
+}

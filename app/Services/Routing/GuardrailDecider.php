@@ -112,6 +112,25 @@ class GuardrailDecider
             }
 
             $rule = $this->config[$ruleName];
+
+            // Phase 4: Load additional keywords from external file
+            $fileData = $this->loadKeywordsFromFile($ruleName);
+            if (!empty($fileData)) {
+                // Merge file keywords into config keywords (preserving categories/tiers)
+                $rule['pin_keywords'] = array_merge(
+                    $rule['pin_keywords'] ?? [],
+                    $fileData['keywords'] ?? []
+                );
+
+                // Merge exclude keywords
+                if (!empty($fileData['exclude'])) {
+                    $rule['exclude_keywords'] = array_merge(
+                        $rule['exclude_keywords'] ?? [],
+                        $fileData['exclude']
+                    );
+                }
+            }
+
             $matchResult = $this->matchKeywords($query, $rule);
 
             // FIX: Always evaluate exclude_by_default rules, even if not triggered
@@ -132,6 +151,31 @@ class GuardrailDecider
         }
 
         return $evaluations;
+    }
+
+    /**
+     * Load keywords from JSON file in storage/keywords/
+     */
+    protected function loadKeywordsFromFile(string $ruleName): array
+    {
+        $path = storage_path("keywords/{$ruleName}.json");
+
+        if (!file_exists($path)) {
+            return [];
+        }
+
+        $content = file_get_contents($path);
+        $data = json_decode($content, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            Log::warning("[GUARDRAILS] Invalid JSON for {$ruleName}: " . json_last_error_msg());
+            return [];
+        }
+
+        return [
+            'keywords' => $data['keywords'] ?? [], // Returns array of categories (tiers)
+            'exclude' => $data['exclude_keywords'] ?? []
+        ];
     }
 
     /**

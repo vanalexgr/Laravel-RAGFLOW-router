@@ -1,0 +1,53 @@
+{
+    "guideline_key": "chronic_venous_disease",
+    "guideline_name": "Chronic Venous Disease",
+    "version": "2026-01-25",
+    "source": "Generated Keyword Set",
+    "keywords": {
+        "tier1_core": [
+            "varicose veins",
+            "chronic venous insufficiency",
+            "CVI",
+            "chronic venous disease",
+            "CVD",
+            "venous ulcer",
+            "leg ulcer",
+            "venous stasis",
+            "spider veins",
+            "telangiectasia",
+            "reticular veins"
+        ],
+        "tier2_specific": [
+            "CEAP classification",
+            "venous reflux",
+            "superficial reflux",
+            "deep reflux",
+            "perforator reflux",
+            "great saphenous vein",
+            "GSV",
+            "small saphenous vein",
+            "SSV",
+            "compression stockings",
+            "compression therapy"
+        ],
+        "tier3_complications": [
+            "lipodermatosclerosis",
+            "atrophie blanche",
+            "venous eczema",
+            "stasis dermatitis",
+            "bleeding varix"
+        ],
+        "tier4_procedures": [
+            "endovenous ablation",
+            "EVLA",
+            "RFA",
+            "sclerotherapy",
+            "foam sclerotherapy",
+            "venous stripping",
+            "phlebectomy",
+            "venous stent",
+            "iliac vein stenting"
+        ]
+    },
+    "exclude_keywords": []
+}

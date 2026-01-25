@@ -1,0 +1,42 @@
+{
+    "guideline_key": "acute_limb_ischaemia",
+    "guideline_name": "Acute Limb Ischaemia",
+    "version": "2026-01-25",
+    "source": "Generated Keyword Set",
+    "keywords": {
+        "tier1_core": [
+            "acute limb ischemia",
+            "ALI",
+            "sudden leg pain",
+            "cold leg",
+            "pulseless leg",
+            "Rutherford classification ALI",
+            "category I",
+            "category IIa",
+            "category IIb",
+            "category III"
+        ],
+        "tier2_specific": [
+            "embolectomy",
+            "thrombectomy",
+            "thrombolysis",
+            "catheter-directed thrombolysis",
+            "fasciotomy",
+            "compartment syndrome",
+            "reperfusion injury"
+        ],
+        "tier3_complications": [
+            "rhabdomyolysis",
+            "hyperkalemia",
+            "myoglobinuria",
+            "acute kidney injury",
+            "amputation"
+        ],
+        "tier4_procedures": [
+            "Fogarty catheter",
+            "bypass",
+            "primary amputation"
+        ]
+    },
+    "exclude_keywords": []
+}

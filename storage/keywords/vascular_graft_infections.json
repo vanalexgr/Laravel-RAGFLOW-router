@@ -1,0 +1,45 @@
+{
+    "guideline_key": "vascular_graft_infections",
+    "guideline_name": "Vascular Graft Infections",
+    "version": "2026-01-25",
+    "source": "Generated Keyword Set",
+    "keywords": {
+        "tier1_core": [
+            "vascular graft infection",
+            "VGI",
+            "aortic graft infection",
+            "prosthetic graft infection",
+            "endograft infection",
+            "infected EVAR",
+            "infected TEVAR",
+            "mycotic aneurysm"
+        ],
+        "tier2_specific": [
+            "groin infection",
+            "szilagyi classification",
+            "samson classification",
+            "magic criteria",
+            "PET-CT",
+            "leukocyte scan",
+            "perigraft fluid",
+            "air in graft"
+        ],
+        "tier3_complications": [
+            "aorto-enteric fistula",
+            "AEF",
+            "graft blowout",
+            "sepsis",
+            "septic emboli"
+        ],
+        "tier4_procedures": [
+            "graft explantation",
+            "in-situ reconstruction",
+            "extra-anatomic bypass",
+            "cryopreserved homograft",
+            "rifampicin soaked graft",
+            "femoral vein harvest",
+            "muscle flap coverage"
+        ]
+    },
+    "exclude_keywords": []
+}

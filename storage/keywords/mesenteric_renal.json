@@ -1,0 +1,48 @@
+{
+    "guideline_key": "mesenteric_renal",
+    "guideline_name": "Mesenteric & Renal Arteries",
+    "version": "2026-01-25",
+    "source": "Generated Keyword Set",
+    "keywords": {
+        "tier1_core": [
+            "mesenteric ischemia",
+            "chronic mesenteric ischemia",
+            "CMI",
+            "acute mesenteric ischemia",
+            "AMI",
+            "intestinal angina",
+            "renal artery stenosis",
+            "RAS",
+            "renovascular hypertension"
+        ],
+        "tier2_specific": [
+            "superior mesenteric artery",
+            "SMA stenosis",
+            "celiac artery stenosis",
+            "celiac axis compression",
+            "median arcuate ligament syndrome",
+            "MALS",
+            "fibromuscular dysplasia",
+            "FMD",
+            "visceral aneurysm",
+            "splenic artery aneurysm",
+            "renal artery aneurysm"
+        ],
+        "tier3_complications": [
+            "bowel infarction",
+            "short bowel syndrome",
+            "renal failure",
+            "kidney atrophy",
+            "flash pulmonary edema"
+        ],
+        "tier4_procedures": [
+            "mesenteric bypass",
+            "mesenteric stenting",
+            "renal artery stenting",
+            "renal bypass",
+            "nephrectomy",
+            "visceral artery embolization"
+        ]
+    },
+    "exclude_keywords": []
+}
