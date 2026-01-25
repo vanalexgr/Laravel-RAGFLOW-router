@@ -1,41 +1,66 @@
 {
     "guideline_key": "acute_limb_ischaemia",
-    "guideline_name": "Acute Limb Ischaemia",
+    "guideline_name": "ESVS 2020 Acute Limb Ischaemia (ALI)",
     "version": "2026-01-25",
-    "source": "Generated Keyword Set",
+    "source": "semantic_routing_keywords_all_guidelines.md",
     "keywords": {
         "tier1_core": [
-            "acute limb ischemia",
+            "acute limb ischaemia",
             "ALI",
-            "sudden leg pain",
-            "cold leg",
-            "pulseless leg",
-            "Rutherford classification ALI",
-            "category I",
-            "category IIa",
-            "category IIb",
-            "category III"
+            "acute lower limb ischaemia",
+            "acute upper limb ischaemia",
+            "symptom duration < 2 weeks",
+            "Rutherford ALI classification I\u2013III",
+            "IIa marginally threatened",
+            "IIb immediately threatened",
+            "III irreversible"
         ],
         "tier2_specific": [
-            "embolectomy",
-            "thrombectomy",
-            "thrombolysis",
-            "catheter-directed thrombolysis",
-            "fasciotomy",
-            "compartment syndrome",
-            "reperfusion injury"
+            "clinical examination",
+            "duplex ultrasound (DUS)",
+            "CTA (first-line)",
+            "DSA",
+            "CE-MRA",
+            "CK",
+            "myoglobin (markers of ischaemia)"
         ],
         "tier3_complications": [
-            "rhabdomyolysis",
-            "hyperkalemia",
-            "myoglobinuria",
-            "acute kidney injury",
-            "amputation"
+            "immediate systemic heparin (awaiting revascularisation)",
+            "embolism vs thrombosis",
+            "acute on chronic limb ischaemia",
+            "ALI decision algorithm"
         ],
         "tier4_procedures": [
-            "Fogarty catheter",
-            "bypass",
-            "primary amputation"
+            "Fogarty embolectomy",
+            "surgical thrombectomy",
+            "bypass in ALI",
+            "completion imaging",
+            "hybrid treatment",
+            "endarterectomy"
+        ],
+        "tier5_extra": [
+            "catheter-directed thrombolysis (CDT)",
+            "pharmacomechanical thrombolysis (PMT)",
+            "rtPA",
+            "urokinase",
+            "fibrinogen monitoring (routine not recommended)",
+            "continuous therapeutic heparin during CDT (not recommended)",
+            "thrombus aspiration",
+            "mechanical thrombectomy",
+            "ultrasound-accelerated thrombolysis"
+        ],
+        "tier6_extra": [
+            "popliteal artery aneurysm with ALI",
+            "covered stenting",
+            "thrombolysis in PAA",
+            "acute aortic occlusion (AAO)",
+            "compartment syndrome",
+            "fasciotomy",
+            "ischaemia\u2013reperfusion injury (IRI)",
+            "primary amputation (Rutherford III)",
+            "post-op antithrombotics\/statins",
+            "malignancy\/thrombophilia considerations",
+            "registries\/quality"
         ]
     },
     "exclude_keywords": []

@@ -1,40 +1,82 @@
 {
     "guideline_key": "antithrombotic_therapy",
-    "guideline_name": "Antithrombotic Therapy",
+    "guideline_name": "ESVS 2023 Antithrombotic Therapy for Vascular Diseases",
     "version": "2026-01-25",
-    "source": "Generated Keyword Set",
+    "source": "semantic_routing_keywords_all_guidelines.md",
     "keywords": {
         "tier1_core": [
-            "antithrombotic therapy",
-            "antiplatelet therapy",
-            "anticoagulation",
-            "vascular prevention",
-            "cardiovascular risk reduction"
+            "antithrombotic therapy (vascular disease)",
+            "antiplatelet vs anticoagulant",
+            "peri-procedural antithrombotics (vascular surgery\/endovascular)",
+            "bleeding risk reduction",
+            "monitoring\/measurement of antithrombotic effect"
         ],
         "tier2_specific": [
             "aspirin",
             "clopidogrel",
-            "DAPT",
-            "dual antiplatelet therapy",
-            "SAPT",
-            "single antiplatelet therapy",
-            "statin",
-            "atorvastatin",
-            "rosuvastatin",
+            "ticagrelor",
+            "prasugrel",
+            "dipyridamole",
+            "cilostazol",
+            "unfractionated heparin (UFH)",
+            "low molecular weight heparin (LMWH)",
+            "fondaparinux",
+            "danaparoid",
+            "vitamin K antagonists (VKA)\/warfarin",
+            "DOAC\/NOAC",
             "rivaroxaban",
-            "compass trial",
-            "voyager pad"
+            "apixaban",
+            "edoxaban",
+            "dabigatran"
         ],
         "tier3_complications": [
-            "bleeding risk",
-            "major bleeding",
-            "intracranial hemorrhage",
-            "gastrointestinal bleeding"
+            "carotid\/vertebral antithrombotics",
+            "CEA\/CAS peri-op antiplatelets",
+            "upper limb",
+            "renal",
+            "mesenteric",
+            "lower limb PAD antithrombotics",
+            "antithrombotics after lower limb intervention",
+            "after open arterial surgery"
         ],
         "tier4_procedures": [
-            "perioperative management",
-            "bridging anticoagulation",
-            "protamine reversal"
+            "Beh\u00e7et",
+            "Buerger",
+            "vasculitis",
+            "virus-related vascular disease",
+            "arterial embolism",
+            "initial heparin",
+            "thrombophilia testing",
+            "antiphospholipid syndrome (APS)",
+            "INR targets"
+        ],
+        "tier5_extra": [
+            "antithrombotics in aneurysmal disease (AAA, popliteal aneurysm)",
+            "arterial dissection",
+            "extracranial carotid\/vertebral dissection",
+            "SMA dissection (single antiplatelet)"
+        ],
+        "tier6_extra": [
+            "AVF\/AVG patency antiplatelets",
+            "avoid systemic UFH during access formation (bleeding context)",
+            "CKD bleeding risk",
+            "cancer-associated ATE\/VTE",
+            "VTE prophylaxis",
+            "DVT treatment",
+            "extended anticoagulation",
+            "superficial vein thrombosis (SVT)",
+            "COMPASS",
+            "VOYAGER PAD",
+            "CASPAR",
+            "MIRROR",
+            "WAVE",
+            "CHANCE",
+            "POINT",
+            "THALES",
+            "CAPRIE",
+            "CHARISMA",
+            "CREST",
+            "POISE-2"
         ]
     },
     "exclude_keywords": []
