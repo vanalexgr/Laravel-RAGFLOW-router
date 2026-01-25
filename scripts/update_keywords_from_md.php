@@ -88,6 +88,17 @@ foreach ($sections as $section) {
         }
     }
 
+    // --- INJECT MISSING KEYWORDS (Fixing gaps in Markdown) ---
+    if ($jsonFilename === 'vascular_trauma') {
+        // Markdown matched "vascular trauma" generic, but missed specific mechanisms
+        $mechanisms = ['motorcycle crash', 'road traffic accident', 'car crash', 'gunshot wound', 'stab wound', 'penetrating injury', 'blunt injury'];
+        foreach ($mechanisms as $m) {
+            if (!in_array($m, $keywords['tier1_core'])) {
+                $keywords['tier1_core'][] = $m;
+            }
+        }
+    }
+
     // --- CLEANUP SPECIFIC FALSE POSITIVES ---
 
     // LIST OF GENERIC DIAGNOSTICS/TERMS TO REMOVE (unless qualified)
@@ -133,6 +144,11 @@ foreach ($sections as $section) {
             $keywords['tier1_core'][] = 'acute type B aortic dissection';
     }
 
+    // FIX Test 2: Arch matching Type B (explicit exclusion)
+    if ($jsonFilename === 'aortic_arch') {
+        $excludeKeywords = ['type B aortic dissection', 'TBAD', 'descending thoracic', 'type B'];
+    }
+
     // FIX Test 3: Trauma exclusions (keep existing logic)
     if ($jsonFilename === 'vascular_trauma') {
         $excludeKeywords = [
@@ -144,7 +160,9 @@ foreach ($sections as $section) {
             'atherosclerotic'
         ];
     } else {
-        $excludeKeywords = []; // Reset unless specific
+        if ($jsonFilename !== 'aortic_arch' && $jsonFilename !== 'clti' && $jsonFilename !== 'asymptomatic_pad' && $jsonFilename !== 'descending_thoracic_aorta') {
+            $excludeKeywords = []; // Reset unless specific guideline has them
+        }
     }
 
 
