@@ -129,6 +129,17 @@ return [
                     'access pseudoaneurysm',
                     'pseudoaneurysm' // New (generic)
                 ]
+                ]
+            ],
+
+            'exclude_keywords' => [
+                'claudication',
+                'PAD',
+                'chronic',
+                'atherosclerosis',
+                'atherosclerotic',
+                'diabetes',
+                'diabetic'
             ],
 
             'collision_rules' => [
