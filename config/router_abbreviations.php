@@ -412,6 +412,17 @@ return [
                 ]
             ],
 
+            'exclude_keywords' => [
+                'claudication',
+                'intermittent claudication',
+                'PAD',
+                'peripheral artery disease',
+                'limb ischemia',
+                'leg pain',
+                'foot',
+                'CLTI'
+            ],
+
             'collision_rules' => [
                 ['detect' => ['stroke', 'aspirin'], 'add' => 'antithrombotic_therapy']
             ],
