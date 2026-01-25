@@ -131,21 +131,52 @@ class GuardrailDecider
                 }
             }
 
+            // Perform matching
             $matchResult = $this->matchKeywords($query, $rule);
 
-            // FIX: Always evaluate exclude_by_default rules, even if not triggered
+            // Check exclusions
+            $excluded = false;
+            $excludeReason = '';
+
+            if (!empty($rule['exclude_keywords'])) {
+                $exclusionCheck = $this->matchKeywords($query, [
+                    'match_config' => $rule['match_config'] ?? [],
+                    'pin_keywords' => ['exclusions' => $rule['exclude_keywords']]
+                ]);
+
+                if ($exclusionCheck['keywords']) {
+                    $excluded = true;
+                    $excludeReason = "Excluded by keyword: " . implode(', ', $exclusionCheck['keywords']);
+                }
+            }
+
+            // FIX: Always evaluate exclude_by_default rules (Trauma)
             $isExcludeRule = ($rule['action'] ?? '') === 'exclude_by_default';
 
-            if ($matchResult['triggered'] || $isExcludeRule) {
+            // LOGIC:
+            // 1. If excluded -> Trigger fails. 
+            // 2. If exclude_by_default -> Always added to evaluations, but 'action' depends on match.
+            // 3. If regular rule and excluded -> Should likely perform 'exclude' action on target.
+
+            if ($matchResult['triggered'] || $isExcludeRule || $excluded) {
+
+                // Determine action overrides
+                $finalAction = $rule['action'] ?? 'pin';
+
+                if ($excluded) {
+                    $finalAction = 'exclude'; // Force exclusion if exclusion keywords match
+                }
+
                 $evaluations[$ruleName] = [
                     'rule_name' => $ruleName,
                     'priority' => $priority,
-                    'action' => $rule['action'] ?? 'pin',
+                    'action' => $finalAction,
                     'target_guideline' => $rule['target_guideline'] ?? $ruleName,
                     'keywords_matched' => $matchResult['keywords'],
                     'match_count' => count($matchResult['keywords']),
                     'collision_rules' => $rule['collision_rules'] ?? [],
                     'exclude_keywords' => $rule['exclude_keywords'] ?? [],
+                    'exclude_reason' => $excludeReason // Pass reason
                 ];
             }
         }

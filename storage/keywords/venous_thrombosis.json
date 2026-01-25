@@ -53,7 +53,9 @@
             "PICC thrombosis",
             "UEDVT",
             "Paget\u2013Schroetter",
-            "thoracic outlet thrombosis"
+            "thoracic outlet thrombosis",
+            "superficial vein thrombosis",
+            "SVT"
         ]
     },
     "exclude_keywords": []
