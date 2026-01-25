@@ -8,6 +8,9 @@ $app = require_once __DIR__ . '/../bootstrap/app.php';
 $kernel = $app->make(Kernel::class);
 $kernel->bootstrap();
 
+// FIX: Force localhost for CLI testing (since we are outside docker network)
+config(['ragflow.bridge_url' => 'http://localhost:8000']);
+
 $router = app(GuidelineRouterService::class);
 $dataset = require __DIR__ . '/golden_dataset.php';
 
