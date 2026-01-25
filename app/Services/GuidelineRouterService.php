@@ -60,7 +60,7 @@ class GuidelineRouterService
             // Build scores map and filter by threshold
             $scores = [];
             $selected = [];
-            $threshold = config('ragflow.routing_threshold', 0.45);
+            $threshold = config('ragflow.routing_threshold', 0.70);
 
             foreach ($data['guidelines'] ?? [] as $g) {
                 $score = $g['confidence'] ?? 0.0;
