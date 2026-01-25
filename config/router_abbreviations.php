@@ -643,6 +643,12 @@ return [
                 ]
             ],
 
+            'exclude_keywords' => [
+                'graft infection',  // New
+                'fistula',         // New
+                'mycotic'          // New
+            ],
+
             'collision_rules' => [
                 ['detect' => ['arch', 'fever'], 'add' => 'graft_infections']
             ],
