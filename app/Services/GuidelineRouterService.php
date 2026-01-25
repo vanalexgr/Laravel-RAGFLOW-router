@@ -337,6 +337,11 @@ PROMPT;
         // Use routing query for expansion if no separate expansion query provided
         $queryForExpansion = $expansionQuery ?? $routingQuery;
 
+        // NEW: Always expand abbreviations first (matches routeQuery behavior)
+        if (config('router_abbreviations.enabled', true)) {
+            $routingQuery = $this->expandQuery($routingQuery);
+        }
+
         // Check if semantic routing is enabled
         if (in_array($this->routingMethod, ['semantic', 'semantic_with_llm_fallback'])) {
             $semanticResult = $this->selectGuidelinesViaSemantic($routingQuery, $maxGuidelines);
@@ -346,12 +351,16 @@ PROMPT;
             if (!empty($semanticKeys) || $this->routingMethod === 'semantic') {
                 // Use semantic results, optionally do LLM expansion if enabled
                 $expanded = $queryForExpansion;
-                $queryExpansionEnabled = config('ragflow.query_expansion', false);
-                if ($this->isConfigured && $queryExpansionEnabled) {
+                if (config('router_abbreviations.enabled', true)) {
                     $expanded = $this->expandQuery($queryForExpansion);
-                    $log->info('[QUERY EXPANSION] Enabled, expanded query');
+                }
+
+                $queryExpansionEnabled = config('ragflow.query_expansion', false);
+                if ($this->isConfigured && $queryExpansionEnabled && !str_contains($expanded, 'Abbreviations:')) {
+                    $expanded = $this->expandQuery($expanded);
+                    $log->info('[QUERY EXPANSION] LLM Enabled, expanded query');
                 } else {
-                    $log->info('[QUERY EXPANSION] Disabled, using original query');
+                    $log->info('[QUERY EXPANSION] Using regex-expanded or original query');
                 }
                 $selected = $this->mergeDocumentAndQuestionRouting($semanticKeys, $documentAnalysis, $log, $maxGuidelines);
 
