@@ -130,7 +130,8 @@ class GuidelineRouterService
                 if ($guardrailsEnabled) {
                     try {
                         $guardrails = app(\App\Services\Routing\GuardrailDecider::class);
-                        $guardrailResult = $guardrails->apply($question, $result);
+                        // CHANGE: Pass expanded query to guardrails so keywords match expanded terms (e.g. sTBAD -> Type B)
+                        $guardrailResult = $guardrails->apply($expandedQuery, $result);
 
                         return [
                             'keys' => $guardrailResult->selectedRoutes,
@@ -153,7 +154,8 @@ class GuidelineRouterService
 
             if ($method === 'semantic_with_llm_fallback') {
                 $log->info('[ROUTER] Semantic routing empty, falling back to LLM');
-                $llmKeys = $this->selectGuidelines($question, $maxGuidelines);
+                // CHANGE: Use expanded query for LLM fallback too
+                $llmKeys = $this->selectGuidelines($expandedQuery, $maxGuidelines);
                 return ['keys' => $llmKeys, 'scores' => [], 'expansion_debug' => $expansionDebug];
             }
 
@@ -161,7 +163,7 @@ class GuidelineRouterService
         }
 
         // Default: LLM routing (no scores available)
-        $llmKeys = $this->selectGuidelines($question, $maxGuidelines);
+        $llmKeys = $this->selectGuidelines($expandedQuery, $maxGuidelines);
         return ['keys' => $llmKeys, 'scores' => [], 'expansion_debug' => $expansionDebug];
     }
 
