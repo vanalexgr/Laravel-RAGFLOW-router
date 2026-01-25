@@ -57,10 +57,24 @@ class GuidelineRouterService
 
             $selected = array_map(fn($g) => $g['guideline_key'], $data['guidelines'] ?? []);
 
-            // Build scores map for proportional chunk allocation
+            // Build scores map and filter by threshold
             $scores = [];
+            $selected = [];
+            $threshold = config('ragflow.routing_threshold', 0.45);
+
             foreach ($data['guidelines'] ?? [] as $g) {
-                $scores[$g['guideline_key']] = $g['confidence'] ?? 0.5;
+                $score = $g['confidence'] ?? 0.0;
+                if ($score >= $threshold) {
+                    $key = $g['guideline_key'];
+                    $selected[] = $key;
+                    $scores[$key] = $score;
+                } else {
+                    $log->info('[SEMANTIC ROUTER] Dropped candidate below threshold', [
+                        'key' => $g['guideline_key'],
+                        'score' => $score,
+                        'threshold' => $threshold
+                    ]);
+                }
             }
 
             $log->info('[SEMANTIC ROUTER] Success', [
