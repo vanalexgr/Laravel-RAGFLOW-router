@@ -10,10 +10,22 @@ class RunGoldenSuite extends Command
     protected $signature = 'test:golden';
     protected $description = 'Run the Golden Validation Suite for Semantic Routing';
 
-    public function handle(GuidelineRouterService $router)
+    public function handle()
     {
         // Force localhost for bridge routing to support CLI testing
         config(['ragflow.bridge_url' => 'http://localhost:8000']);
+
+        // Manually resolve to ensure we get a fresh instance (or update existing one)
+        $router = app(GuidelineRouterService::class);
+
+        // Use reflection to FORCE update the bridgeUrl property 
+        // (in case it was already instantiated with the old config)
+        $ref = new \ReflectionClass($router);
+        if ($ref->hasProperty('bridgeUrl')) {
+            $prop = $ref->getProperty('bridgeUrl');
+            $prop->setAccessible(true);
+            $prop->setValue($router, 'http://localhost:8000');
+        }
 
         $datasetPath = base_path('tests/golden_dataset.php');
         if (!file_exists($datasetPath)) {
