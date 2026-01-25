@@ -356,7 +356,10 @@ return [
                 'type B dissection',
                 'aortic arch',
                 'TEVAR',
-                'descending thoracic'
+                'descending thoracic',
+                'graft infection',  // New: Don't eat VGEI
+                'fistula',         // New: Don't eat VGEI
+                'mycotic'          // New: Don't eat VGEI
             ],
 
             'collision_rules' => [
@@ -450,7 +453,10 @@ return [
 
             'exclude_keywords' => [
                 'intermittent claudication',
-                'asymptomatic PAD'
+                'asymptomatic PAD',
+                'varicose',  // New: Don't eat CVD
+                'vein',      // New: Don't eat CVD
+                'reflux'     // New: Don't eat CVD
             ],
 
             'match_config' => [
@@ -708,7 +714,9 @@ return [
                 'rest pain',
                 'tissue loss',
                 'gangrene',
-                'CLTI'
+                'CLTI',
+                'acute',     // New: Don't eat ALI
+                'ALI'        // New: Don't eat ALI
             ],
 
             'collision_rules' => [
