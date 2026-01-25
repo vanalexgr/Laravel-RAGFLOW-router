@@ -129,7 +129,7 @@ return [
                     'access pseudoaneurysm',
                     'pseudoaneurysm' // New (generic)
                 ]
-                ]
+
             ],
 
             'exclude_keywords' => [
