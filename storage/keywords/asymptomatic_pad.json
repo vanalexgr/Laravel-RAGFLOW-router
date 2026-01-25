@@ -21,9 +21,6 @@
             "treadmill test",
             "6-minute walk test (6MWT)",
             "duplex ultrasound",
-            "CTA",
-            "MRA",
-            "DSA",
             "Fontaine classification",
             "Rutherford classification",
             "TASC II"
@@ -36,7 +33,6 @@
             "antithrombotic therapy",
             "antiplatelets",
             "DAPT",
-            "statins",
             "PCSK9",
             "antihypertensives",
             "GLP-1 receptor agonists",

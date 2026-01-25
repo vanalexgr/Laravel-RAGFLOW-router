@@ -88,46 +88,65 @@ foreach ($sections as $section) {
         }
     }
 
-    // --- APPLY SPECIFIC FIXES ---
+    // --- CLEANUP SPECIFIC FALSE POSITIVES ---
 
-    // FIX Test 2: Ensure "type B" is strong in Descending Thoracic
+    // LIST OF GENERIC DIAGNOSTICS/TERMS TO REMOVE (unless qualified)
+    $generics = ['cta', 'mra', 'dsa', 'dus', 'duplex', 'ultrasound', 'fast', 'reboa', 'txa', 'statins', 'antiplatelet', 'best medical therapy', 'lipid lowering', 'contrast nephropathy', 'kidney function'];
+
+    // Helper to clean array
+    $cleanArray = function ($arr) use ($generics) {
+        return array_values(array_filter($arr, function ($k) use ($generics) {
+            $lower = strtolower($k);
+            if (in_array($lower, $generics))
+                return false;
+            return true;
+        }));
+    };
+
+    // Clean all tiers
+    foreach ($keywords as $tier => $kws) {
+        $keywords[$tier] = $cleanArray($kws);
+    }
+
+    // FIX Test 1: Trauma matching TEVAR
+    if ($jsonFilename === 'vascular_trauma') {
+        $keywords['tier1_core'] = array_values(array_filter($keywords['tier1_core'], function ($k) {
+            $bad = ['tevar', 'reboa', 'txa', 'bp/hr control', 'lsa coverage/revascularisation', 'hematoma', 'ruptured', 'rupture'];
+            return !in_array(strtolower($k), $bad);
+        }));
+    }
+
+    // FIX Test 2: Carotid matching CTA/generic terms
+    if ($jsonFilename === 'carotid_vertebral') {
+        // Also remove 'asymptomatic carotid stenosis' if query is specific? No, that's fine.
+        // But ensure TIA/Stroke are core.
+        // Generics removal above handles CTA, DSA, etc.
+    }
+
+    // FIX Test 2: DTA should match Type B stronger
     if ($jsonFilename === 'descending_thoracic_aorta') {
         if (!in_array('type B aortic dissection', $keywords['tier1_core']))
             $keywords['tier1_core'][] = 'type B aortic dissection';
         if (!in_array('TBAD', $keywords['tier1_core']))
             $keywords['tier1_core'][] = 'TBAD';
-        if (!in_array('uncomplicated type B', $keywords['tier1_core']))
-            $keywords['tier1_core'][] = 'uncomplicated type B';
+        if (!in_array('acute type B aortic dissection', $keywords['tier1_core']))
+            $keywords['tier1_core'][] = 'acute type B aortic dissection';
     }
 
-    // FIX Test 2: Avoid Arch confusion (ensure no Type B keywords in Arch Core)
-    if ($jsonFilename === 'aortic_arch') {
-        // If Type B somehow got into Arch, remove it. (Though check shows it's listed in DTA section).
-        // Adding exclusion to be safe.
-        $excludeKeywords[] = 'type B aortic dissection';
-        $excludeKeywords[] = 'TBAD';
-        $excludeKeywords[] = 'descending thoracic';
-    }
-
-    // FIX Test 3: Fix Trauma Regression (AAA -> Trauma)
+    // FIX Test 3: Trauma exclusions (keep existing logic)
     if ($jsonFilename === 'vascular_trauma') {
-        // Remove generic "hematoma" or "ruptured" if present in core
-        $keywords['tier1_core'] = array_filter($keywords['tier1_core'], function ($k) {
-            return !in_array(strtolower($k), ['hematoma', 'ruptured', 'rupture']);
-        });
-
-        // Add Exclusions
         $excludeKeywords = [
             'ruptured AAA',
             'AAA rupture',
             'spontaneous',
             'degenerative',
-            'type B dissection', // Trauma shouldn't grab dissection unless traumatic
+            'type B dissection',
             'atherosclerotic'
         ];
     } else {
-        $excludeKeywords = [];
+        $excludeKeywords = []; // Reset unless specific
     }
+
 
     // Add specific exclusions for other guidelines if needed (borrowing from phase 3b/c logic)
     if ($jsonFilename === 'clti') {
