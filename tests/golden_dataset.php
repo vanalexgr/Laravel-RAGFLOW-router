@@ -4,12 +4,12 @@ return [
     // --- BATCH 1: THE ORIGINAL STRESS TEST 10 (Proven Hard Cases) ---
     [
         'query' => 'management of graft infection after TEVAR',
-        'expected' => 'graft_infections',
+        'expected' => 'vascular_graft_infections',
         'desc' => 'Post-TEVAR Infection (Target: VGEI, Avoid: DTA)'
     ],
     [
         'query' => 'type B aortic dissection with visceral malperfusion',
-        'expected' => 'descending_thoracic',
+        'expected' => 'descending_thoracic_aorta',
         'desc' => 'Type B + Complication (Target: DTA, Avoid: Arch)'
     ],
     [
@@ -56,7 +56,7 @@ return [
     // --- BATCH 2: ACRONYM HEAVY (Phase 5 Verification) ---
     [
         'query' => 'management of sTBAD',
-        'expected' => 'descending_thoracic',
+        'expected' => 'descending_thoracic_aorta',
         'desc' => 'sTBAD -> Symptomatic Type B (Target: DTA)'
     ],
     [
@@ -91,7 +91,7 @@ return [
     ],
     [
         'query' => 'medical management of uTBAD',
-        'expected' => 'descending_thoracic',
+        'expected' => 'descending_thoracic_aorta',
         'desc' => 'uTBAD -> Uncomplicated Type B (Target: DTA)'
     ],
     [
@@ -101,7 +101,7 @@ return [
     ],
     [
         'query' => 'TAAA open repair complications',
-        'expected' => 'descending_thoracic',
+        'expected' => 'descending_thoracic_aorta',
         'desc' => 'TAAA -> Thoracoabdominal (Target: DTA)'
     ],
 
@@ -133,19 +133,19 @@ return [
     ],
     [
         'query' => 'iatrogenic femoral artery pseudoaneurysm',
-        'expected' => 'vascular_trauma', // or possibly 'complications' if generic? Usually trauma acts cover iatrogenic.
+        'expected' => 'vascular_trauma',
         'desc' => 'Iatrogenic Trauma (Target: Trauma)'
     ],
 
     // --- BATCH 4: INFECTION & COMPLEX CONCEPTS ---
     [
         'query' => 'aorto-enteric fistula diagnosis',
-        'expected' => 'graft_infections',
+        'expected' => 'vascular_graft_infections',
         'desc' => 'AE Fistula (Target: VGEI)'
     ],
     [
         'query' => 'mycotic aortic aneurysm',
-        'expected' => 'graft_infections',
+        'expected' => 'vascular_graft_infections',
         'desc' => 'Mycotic/Infected Aneurysm (Target: VGEI)'
     ],
     [
@@ -155,7 +155,7 @@ return [
     ],
     [
         'query' => 'prosthetic graft infection in the groin',
-        'expected' => 'graft_infections',
+        'expected' => 'vascular_graft_infections',
         'desc' => 'Groin Graft Infection (Target: VGEI)'
     ],
 

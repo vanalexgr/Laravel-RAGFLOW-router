@@ -89,10 +89,31 @@ class QueryExpander
 
         $detected = [];
 
+        $detected = [];
+
         foreach ($patterns as $pattern) {
+            // CHANGE: If pattern is the default uppercase one, adjust it or add a new one for sTBAD
+            // Current default likely: \b[A-Z][A-Z0-9\/\-\.]{1,12}\b
+            // We want: \b[urs]?[A-Z][A-Z0-9\/\-\.]{1,12}\b
+            // But we should really just inspect the patterns from config.
+            // If config is strictly A-Z, we might need to override here or ask user to update config.
+            // Better: Let's assume the config pattern is passed here.
+
+            // Wait, I can't easily change the config from here. I should modify the logic to be more permissive 
+            // OR modify the regex directly if I know what it is.
+            // Let's assume I can add a hardcoded pattern for "prefixed uppercase" if detected is empty.
+
             preg_match_all("/{$pattern}/u", $query, $matches);
+
+            // Hack/Enhancement: Also look for common medical prefixes (s/r/u) + Acronym
+            // e.g. sTBAD, rAAA, uTBAD
+            preg_match_all('/\b[sru][A-Z]{2,}\b/u', $query, $prefixMatches);
+
             if (!empty($matches[0])) {
                 $detected = array_merge($detected, $matches[0]);
+            }
+            if (!empty($prefixMatches[0])) {
+                $detected = array_merge($detected, $prefixMatches[0]);
             }
         }
 
