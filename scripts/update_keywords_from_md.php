@@ -18,12 +18,12 @@ $headerMap = [
     'Asymptomatic PAD & Intermittent Claudication' => 'asymptomatic_pad',
     'Antithrombotic Therapy for Vascular Diseases' => 'antithrombotic_therapy',
     'Acute Limb Ischaemia (ALI)' => 'acute_limb_ischaemia',
-    'Descending Thoracic Aorta Diseases' => 'descending_thoracic_aorta',
+    'Descending Thoracic Aorta Diseases' => 'descending_thoracic',
     'Chronic Limb-Threatening Ischaemia (CLTI)' => 'clti',
     'Mesenteric & Renal Arteries and Veins' => 'mesenteric_renal',
     'Vascular Trauma' => 'vascular_trauma',
     'Vascular Access' => 'vascular_access',
-    'VGEI (Graft & Endograft Infections)' => 'vascular_graft_infections',
+    'VGEI (Graft & Endograft Infections)' => 'graft_infections',
     'Venous Thrombosis' => 'venous_thrombosis',
     'Aortic Arch Pathologies' => 'aortic_arch'
 ];
