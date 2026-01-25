@@ -1,0 +1,17 @@
+{
+    "TEVAR": "Thoracic endovascular aortic repair",
+    "TBAD": "Type B aortic dissection",
+    "sTBAD": "Symptomatic Type B aortic dissection",
+    "uTBAD": "Uncomplicated Type B aortic dissection",
+    "cTBAD": "Complicated Type B aortic dissection",
+    "IMH": "Intramural hematoma",
+    "PAU": "Penetrating aortic ulcer",
+    "DTA": "Descending thoracic aorta",
+    "LSA": "Left subclavian artery",
+    "SCI": "Spinal cord ischemia",
+    "CSF": "Cerebrospinal fluid",
+    "MEP": "Motor evoked potentials",
+    "SSEP": "Somatosensory evoked potentials",
+    "DTAA": "Descending thoracic aortic aneurysm",
+    "TAAA": "Thoracoabdominal aortic aneurysm"
+}
