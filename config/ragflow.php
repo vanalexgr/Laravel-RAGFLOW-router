@@ -13,6 +13,7 @@ return [
     // Semantic routing uses local FastEmbed embeddings, LLM routing uses Azure OpenAI
     // Both can be combined via 'semantic_with_llm_fallback' which uses semantic first, falls back to LLM on failure
     'routing_method' => env('RAGFLOW_ROUTING_METHOD', 'semantic'),
+    'routing_threshold' => (float) env('RAGFLOW_ROUTING_THRESHOLD', 0.70),
 
     // Query expansion: when true, uses LLM to expand medical abbreviations before RAGFlow retrieval
     // With comprehensive semantic router terms, this can be disabled for faster response (~2-3s saved)
