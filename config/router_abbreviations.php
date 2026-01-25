@@ -200,7 +200,7 @@ return [
             ],
 
             'match_config' => [
-                'min_keyword_matches' => 2,
+                'min_keyword_matches' => 1,
                 'case_insensitive' => true,
                 'word_boundary' => true
             ]
@@ -457,7 +457,6 @@ return [
             ],
 
             'exclude_keywords' => [
-                'intermittent claudication',
                 'asymptomatic PAD',
                 'varicose',  // New: Don't eat CVD
                 'vein',      // New: Don't eat CVD
@@ -564,6 +563,8 @@ return [
                 'pathology' => [
                     'type B dissection',
                     'TBAD',
+                    'sTBAD',
+                    'uTBAD',
                     'descending thoracic aneurysm',
                     'penetrating aortic ulcer',
                     'PAU',
