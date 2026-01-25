@@ -42,7 +42,7 @@ class GuidelineRouterService
                 ->withHeaders(['Content-Type' => 'application/json'])
                 ->post("{$this->bridgeUrl}/route", [
                     'query' => $question,
-                    'max_routes' => $maxGuidelines,
+                    'max_routes' => max(5, $maxGuidelines), // Request more to allow for guardrail exclusions
                 ]);
 
             if (!$response->successful()) {
