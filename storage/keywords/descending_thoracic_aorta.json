@@ -16,7 +16,7 @@
             "TEVAR",
             "open repair (descending thoracic)",
             "TBAD",
-            "uncomplicated type B"
+            "acute type B aortic dissection"
         ],
         "tier2_specific": [
             "complicated vs uncomplicated TBAD",
@@ -47,12 +47,10 @@
         "tier4_procedures": [
             "CTA thoracic aorta",
             "ECG-gated CT",
-            "MRA",
             "TTE",
             "TEE\/TOE",
             "PET\/FDG-PET",
             "IVUS",
-            "DSA",
             "follow-up imaging after TEVAR"
         ],
         "tier5_extra": [
