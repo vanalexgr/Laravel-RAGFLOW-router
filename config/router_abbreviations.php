@@ -261,6 +261,8 @@ return [
 
             'exclude_keywords' => [
                 'CLTI',
+                'claudication',
+                'intermittent claudication',
                 'rest pain for months',
                 'chronic ulcer',
                 'longstanding claudication'
