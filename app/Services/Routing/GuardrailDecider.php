@@ -60,6 +60,10 @@ class GuardrailDecider
         [$keys, $excludeDecisions] = $this->applyExclusions($keys, $evaluations, $query);
         $decisions = array_merge($decisions, $excludeDecisions);
 
+        // 2b. Apply Explicit Exclusions (triggered by negative keywords)
+        [$keys, $explicitDecisions] = $this->applyExplicitExclusions($keys, $evaluations);
+        $decisions = array_merge($decisions, $explicitDecisions);
+
         // 3. Apply PIN rules (must be #1)
         [$keys, $pinDecisions] = $this->applyPins($keys, $evaluations);
         $decisions = array_merge($decisions, $pinDecisions);
@@ -283,6 +287,31 @@ class GuardrailDecider
                         'rule' => $ruleName,
                         'action' => 'exclude',
                         'reason' => "No trauma mechanism, EXCLUDED {$target}",
+                    ];
+                }
+            }
+        }
+
+        return [$keys, $decisions];
+    }
+
+    /**
+     * Apply explicit exclusions (neutralized rules).
+     */
+    protected function applyExplicitExclusions(array $keys, array $evaluations): array
+    {
+        $decisions = [];
+
+        foreach ($evaluations as $ruleName => $eval) {
+            if ($eval['action'] === 'exclude') {
+                $target = $eval['target_guideline'];
+
+                if (in_array($target, $keys)) {
+                    $keys = array_values(array_diff($keys, [$target]));
+                    $decisions[] = [
+                        'rule' => $ruleName,
+                        'action' => 'explicit_exclude',
+                        'reason' => $eval['exclude_reason'] ?? "Explicitly excluded by guardrail",
                     ];
                 }
             }

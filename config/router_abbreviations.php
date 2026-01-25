@@ -103,6 +103,7 @@ return [
             'pin_keywords' => [
                 'trauma_mechanism' => [
                     'trauma',
+                    'traumatic',  // New
                     'injury',
                     'blunt',
                     'penetrating',
@@ -125,7 +126,8 @@ return [
                 'iatrogenic' => [
                     'catheter perforation',
                     'wire injury',
-                    'access pseudoaneurysm'
+                    'access pseudoaneurysm',
+                    'pseudoaneurysm' // New (generic)
                 ]
             ],
 
@@ -159,7 +161,8 @@ return [
                     'WBC',
                     'leukocytosis',
                     'sepsis',
-                    'bacteremia'
+                    'bacteremia',
+                    'mycotic' // New
                 ],
                 'imaging' => [
                     'peri-graft fluid',
@@ -359,7 +362,9 @@ return [
                 'descending thoracic',
                 'graft infection',  // New: Don't eat VGEI
                 'fistula',         // New: Don't eat VGEI
-                'mycotic'          // New: Don't eat VGEI
+                'mycotic',          // New: Don't eat VGEI
+                'TAAA',             // New: Don't eat TAAA
+                'Thoraco-Abdominal' // New: Don't eat TAAA
             ],
 
             'collision_rules' => [
@@ -521,7 +526,9 @@ return [
                     'varicose veins',
                     'venous ulcer',
                     'chronic venous insufficiency',
-                    'CVI'
+                    'CVI',
+                    'May-Thurner',        // New
+                    'pelvic congestion'   // New
                 ],
                 'classification' => [
                     'CEAP',
@@ -586,7 +593,10 @@ return [
                 'aortic root',
                 'zone 0',
                 'zone 1',
-                'zone 2'
+                'zone 2',
+                'graft infection', // New
+                'fistula',        // New
+                'mycotic'         // New
             ],
 
             'collision_rules' => [
@@ -703,7 +713,8 @@ return [
                 'management' => [
                     'supervised exercise therapy',
                     'cilostazol',
-                    'best medical therapy'
+                    'best medical therapy',
+                    'entrapment' // New
                 ],
                 'revascularization' => [
                     'revascularization for claudication'
