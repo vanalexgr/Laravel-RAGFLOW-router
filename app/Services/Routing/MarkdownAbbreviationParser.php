@@ -52,40 +52,43 @@ class MarkdownAbbreviationParser
 
             // Split by pipes and clean up
             $parts = array_map('trim', explode('|', $line));
-            // Remove first and last empty elements
-            $parts = array_filter($parts, fn($p) => $p !== '');
-            $parts = array_values($parts);
+            // Remove first and last empty elements (usually result of | start and end |)
+            $parts = array_values(array_filter($parts, fn($p) => $p !== ''));
 
-            // Skip if less than 2 columns
-            if (count($parts) < 2) {
-                continue;
-            }
+            $count = count($parts);
 
-            // Process pairs (2-column or 4-column)
-            for ($i = 0; $i < count($parts) - 1; $i += 2) {
-                $abbr = $parts[$i];
-                $expansion = $parts[$i + 1] ?? '';
+            // Detection logic:
+            // 2 Columns: | Abbr | Expansion |
+            // 3 Columns: | Orphan | Abbr | Expansion | (Carotid.md special case)
+            // 4 Columns: | Abbr | Expansion | Abbr | Expansion |
 
-                // Skip empty or header-like rows
-                if (empty($abbr) || empty($expansion)) {
-                    continue;
-                }
-
-                if ($this->isHeaderRow($abbr, $expansion)) {
-                    continue;
-                }
-
-                // Normalize
-                $abbr = $this->normalizeAbbreviation($abbr);
-                $expansion = $this->normalizeExpansion($expansion);
-
-                if ($abbr && $expansion) {
-                    $abbreviations[$abbr] = $expansion;
-                }
+            if ($count === 2) {
+                $this->addPair($abbreviations, $parts[0], $parts[1]);
+            } elseif ($count === 3) {
+                // Try pairing Col 2 + Col 3 (ignore Col 1 which appears to be orphaned index)
+                $this->addPair($abbreviations, $parts[1], $parts[2]);
+            } elseif ($count === 4) {
+                $this->addPair($abbreviations, $parts[0], $parts[1]);
+                $this->addPair($abbreviations, $parts[2], $parts[3]);
             }
         }
 
         return $abbreviations;
+    }
+
+    protected function addPair(array &$abbreviations, string $abbr, string $expansion): void
+    {
+        if (empty($abbr) || empty($expansion))
+            return;
+        if ($this->isHeaderRow($abbr, $expansion))
+            return;
+
+        $normAbbr = $this->normalizeAbbreviation($abbr);
+        $normExp = $this->normalizeExpansion($expansion);
+
+        if ($normAbbr && $normExp) {
+            $abbreviations[$normAbbr] = $normExp;
+        }
     }
 
     /**
