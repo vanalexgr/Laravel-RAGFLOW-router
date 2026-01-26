@@ -21,7 +21,6 @@
         ],
         "tier2_specific": [
             "hemodynamic criteria",
-            "ABI",
             "ankle pressure",
             "toe pressure",
             "TBI",
@@ -32,8 +31,8 @@
         "tier3_complications": [
             "WIfI",
             "SVS threatened limb classification",
-            "wound\/ischemia\/foot infection grades",
-            "WIfI stage 1\u20134",
+            "wound/ischemia/foot infection grades",
+            "WIfI stage 1–4",
             "GLASS",
             "Global Limb Anatomic Staging System",
             "TAP (target artery path)",
@@ -42,16 +41,13 @@
             "PLAN (patient risk, limb severity, anatomic complexity)"
         ],
         "tier4_procedures": [
-            "endovascular intervention",
-            "open bypass",
             "vein bypass",
             "autogenous vein",
-            "GSV",
             "drug-coated balloon (DCB)",
             "drug-eluting stent (DES)",
             "PTA",
             "chronic total occlusion (CTO)",
-            "tibial\/pedal\/inframalleolar interventions",
+            "tibial/pedal/inframalleolar interventions",
             "angiosome-based revascularization",
             "direct vs indirect revascularization"
         ],
