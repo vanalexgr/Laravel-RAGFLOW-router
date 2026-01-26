@@ -1,4 +1,3 @@
-```json
 {
     "guideline_key": "abdominal_aortic_aneurysm",
     "guideline_name": "ESVS 2024 Abdominal Aorto-Iliac Artery Aneurysms (AAA)",
@@ -41,17 +40,17 @@
             "aortic balloon occlusion",
             "REBOA (rAAA context)",
             "graft configuration: aorto-uni-iliac (AUI)",
-            "aorto-bi-iliac\/bifurcated",
+            "aorto-bi-iliac/bifurcated",
             "fem-fem crossover",
             "intra-abdominal hypertension (IAH)",
             "abdominal compartment syndrome (ACS)",
             "decompressive laparotomy",
-            "colonic ischaemia after AAA\/rAAA repair",
+            "colonic ischaemia after AAA/rAAA repair",
             "acute lower limb ischaemia after rAAA repair",
             "temporary vascular shunt (limb)",
             "endoleak",
             "type I endoleak",
-            "type II endoleak (IMA\/lumbars)",
+            "type II endoleak (IMA/lumbars)",
             "type III endoleak",
             "type IV endoleak",
             "endotension",
@@ -71,7 +70,7 @@
             "incisional hernia after open AAA repair",
             "follow-up after OSR",
             "follow-up after EVAR",
-            "imaging modalities (CTA\/DUS\/CEUS\/MRA)",
+            "imaging modalities (CTA/DUS/CEUS/MRA)",
             "follow-up regimens"
         ],
         "tier3_complications": [
@@ -81,7 +80,7 @@
             "suprarenal AAA",
             "fenestrated EVAR (fEVAR)",
             "branched EVAR (bEVAR)",
-            "fenestrated\/branched repair",
+            "fenestrated/branched repair",
             "parallel grafts",
             "chimney",
             "snorkel",
@@ -104,11 +103,20 @@
             "abdominal pseudoaneurysm",
             "isolated abdominal aortic dissection (IAAD)",
             "accessory renal arteries (EVAR planning)",
-            "pre-emptive embolisation (IMA\/lumbars\/sac) to reduce type II endoleak",
+            "pre-emptive embolisation (IMA/lumbars/sac) to reduce type II endoleak",
             "pelvic circulation preservation",
             "internal iliac preservation",
             "iliac branched device (IBD)"
         ]
     },
-    "exclude_keywords": []
+    "exclude_keywords": [
+        "aortic arch",
+        "arch aneurysm",
+        "TEVAR",
+        "descending thoracic",
+        "type A dissection",
+        "type B dissection",
+        "TAAA",
+        "thoracoabdominal"
+    ]
 }
