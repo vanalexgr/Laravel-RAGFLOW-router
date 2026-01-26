@@ -68,16 +68,16 @@ return [
 
     // Global priority order for all 14 guidelines
     'priority_order' => [
-        'vascular_trauma',           // 1 - Emergencies (opt-in only)
+        'vascular_trauma',           // 1 - Emergencies
         'graft_infections',          // 2 - Complications
         'acute_limb_ischaemia',      // 3 - Acute limb
-        'venous_thrombosis',         // 4 - Acute VTE (DVT/PE)
-        'clti',                      // 5 - Chronic critical limb
-        'carotid_vertebral',         // 6 - Cerebrovascular
-        'mesenteric_renal',          // 7 - Visceral
-        'abdominal_aortic_aneurysm', // 8 - Aortic (AAA)
-        'descending_thoracic',       // 9 - Aortic (thoracic)
-        'aortic_arch',               // 10 - Aortic (arch)
+        'aortic_arch',               // 4 - High-risk anatomy (Boosted)
+        'venous_thrombosis',         // 5 - Acute VTE
+        'clti',                      // 6 - Chronic critical limb
+        'carotid_vertebral',         // 7 - Cerebrovascular
+        'mesenteric_renal',          // 8 - Visceral
+        'abdominal_aortic_aneurysm', // 9 - Aortic (AAA)
+        'descending_thoracic',       // 10 - Aortic (thoracic)
         'asymptomatic_pad',          // 11 - Chronic PAD
         'chronic_venous_disease',    // 12 - Chronic venous
         'vascular_access',           // 13 - Dialysis access
@@ -174,7 +174,9 @@ return [
                     'leukocytosis',
                     'sepsis',
                     'bacteremia',
-                    'mycotic' // New
+                    'mycotic', // New
+                    'EAR', // New
+                    'ISR'  // New
                 ],
                 'imaging' => [
                     'peri-graft fluid',
@@ -266,7 +268,8 @@ return [
                 'intermittent claudication',
                 'rest pain for months',
                 'chronic ulcer',
-                'longstanding claudication'
+                'longstanding claudication',
+                'chronic venous insufficiency'
             ],
 
             'match_config' => [
@@ -372,13 +375,14 @@ return [
                 'type A dissection',
                 'type B dissection',
                 'aortic arch',
-                'TEVAR',
                 'descending thoracic',
                 'graft infection',  // New: Don't eat VGEI
                 'fistula',         // New: Don't eat VGEI
                 'mycotic',          // New: Don't eat VGEI
                 'TAAA',             // New: Don't eat TAAA
-                'Thoraco-Abdominal' // New: Don't eat TAAA
+                'Thoraco-Abdominal', // New: Don't eat TAAA
+                'arch',             // New
+                'TAA'               // New
             ],
 
             'collision_rules' => [

@@ -30,14 +30,11 @@
             "diabetes screening",
             "metabolic syndrome",
             "physical activity",
-            "antithrombotic therapy",
-            "antiplatelets",
-            "DAPT",
             "PCSK9",
             "antihypertensives",
             "GLP-1 receptor agonists",
             "SGLT2 inhibitors",
-            "vaccination (influenza\/SARS-CoV-2)"
+            "vaccination"
         ],
         "tier4_procedures": [
             "supervised exercise therapy (SET)",

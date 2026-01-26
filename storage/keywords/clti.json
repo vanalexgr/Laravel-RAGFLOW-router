@@ -41,11 +41,11 @@
             "PLAN (patient risk, limb severity, anatomic complexity)"
         ],
         "tier4_procedures": [
-            "vein bypass",
-            "autogenous vein",
+            "lower limb open bypass",
+            "autogenous vein bypass",
             "drug-coated balloon (DCB)",
             "drug-eluting stent (DES)",
-            "PTA",
+            "infrainguinal PTA",
             "chronic total occlusion (CTO)",
             "tibial/pedal/inframalleolar interventions",
             "angiosome-based revascularization",
@@ -100,6 +100,9 @@
         ]
     },
     "exclude_keywords": [
-        "asymptomatic PAD"
+        "asymptomatic PAD",
+        "mesenteric",
+        "chronic mesenteric ischaemia",
+        "ischaemic colitis"
     ]
 }
