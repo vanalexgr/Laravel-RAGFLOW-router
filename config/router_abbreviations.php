@@ -139,7 +139,8 @@ return [
                 'atherosclerosis',
                 'atherosclerotic',
                 'diabetes',
-                'diabetic'
+                'diabetic',
+                'degenerative'
             ],
 
             'collision_rules' => [
@@ -211,7 +212,7 @@ return [
             ],
 
             'match_config' => [
-                'min_keyword_matches' => 1,
+                'min_keyword_matches' => 2,
                 'case_insensitive' => true,
                 'word_boundary' => true
             ]
@@ -482,9 +483,11 @@ return [
 
             'exclude_keywords' => [
                 'asymptomatic PAD',
-                'varicose',  // New: Don't eat CVD
-                'vein',      // New: Don't eat CVD
-                'reflux'     // New: Don't eat CVD
+                'claudication', // New
+                'intermittent claudication', // New
+                'varicose',
+                'vein',
+                'reflux'
             ],
 
             'match_config' => [
@@ -757,8 +760,10 @@ return [
                 'tissue loss',
                 'gangrene',
                 'CLTI',
-                'acute',     // New: Don't eat ALI
-                'ALI'        // New: Don't eat ALI
+                'acute',
+                'ALI',
+                'stroke', // New
+                'TIA'    // New
             ],
 
             'collision_rules' => [
