@@ -12,20 +12,19 @@ class RunGoldenSuite extends Command
 
     public function handle()
     {
-        // Force localhost for bridge routing to support CLI testing
-        config(['ragflow.bridge_url' => 'http://localhost:8000']);
+        // Dynamically resolve bridge URL based on environment
+        $bridgeUrl = config('ragflow.bridge_url', 'http://localhost:8000');
 
-        // Manually resolve to ensure we get a fresh instance (or update existing one)
-        $router = app(GuidelineRouterService::class);
-
-        // Use reflection to FORCE update the bridgeUrl property 
-        // (in case it was already instantiated with the old config)
-        $ref = new \ReflectionClass($router);
-        if ($ref->hasProperty('bridgeUrl')) {
-            $prop = $ref->getProperty('bridgeUrl');
-            $prop->setAccessible(true);
-            $prop->setValue($router, 'http://localhost:8000');
+        // If running in Docker and pointing to localhost, switch to bridge container name
+        if (file_exists('/.dockerenv') && str_contains($bridgeUrl, 'localhost')) {
+            $bridgeUrl = str_replace(['localhost', '127.0.0.1'], 'ragflow-bridge', $bridgeUrl);
+            config(['ragflow.bridge_url' => $bridgeUrl]);
         }
+
+        $this->info("📍 Using Bridge: " . config('ragflow.bridge_url'));
+
+        // Manually resolve to ensure we get a fresh instance
+        $router = app(GuidelineRouterService::class);
 
         $datasetPath = base_path('tests/golden_dataset.php');
         if (!file_exists($datasetPath)) {
