@@ -411,6 +411,7 @@ class Filter:
         question: str,
         correlation_id: str,
         patient_context: str = "",
+        history: List[str] = [],
         event_emitter=None,
     ) -> Tuple[Optional[dict], str]:
         """Retrieve guidelines with retry logic and exponential backoff (reuses self._client)."""
@@ -419,6 +420,8 @@ class Filter:
         payload = {"question": question, "top_k": self.valves.TOP_K}
         if patient_context:
             payload["patient_context"] = patient_context
+        if history:
+            payload["history"] = history
 
         # Ensure shared client exists (covers cases where inlet fires before on_startup)
         if self._client is None:
@@ -598,8 +601,13 @@ Please retry your question, or verify the RAG service is available.
 
         await self._emit_status(emitter, "Searching ESVS guidelines for evidence...")
 
+        # Extract history for context-aware routing
+        history = [m.get("content", "") for m in messages if m.get("role") == "user"]
+        if history and history[-1] == user_message:
+            history.pop() # Remove current message
+
         data, error = await self._retrieve_with_retry(
-            user_message, correlation_id, patient_context, emitter
+            user_message, correlation_id, patient_context, history, emitter
         )
 
         if data is None:

@@ -614,4 +614,101 @@ PROMPT;
 
         return $result;
     }
+    /**
+     * Context-aware routing wrapper.
+     * Rewrites ambiguous follow-up questions using history before routing.
+     */
+    public function routeWithContext(string $question, array $history, int $maxGuidelines = 2, ?array $documentAnalysis = null): array
+    {
+        $log = Log::channel('retrieval');
+        $fused = $question;
+
+        // Only fuse if we have history and it looks like a follow-up
+        if (!empty($history) && $this->isLikelyFollowUp($question)) {
+            $log->info('[CONTEXT] Detected potential follow-up, attempting fusion', ['query' => $question]);
+            $fused = $this->fuseContext($question, $history);
+            if ($fused !== $question) {
+                $log->info('[CONTEXT] Fused query result', ['original' => $question, 'fused' => $fused]);
+            }
+        }
+
+        // Pass fused query as both routing and base expansion query
+        return $this->selectAndExpand($fused, $maxGuidelines, null, $documentAnalysis);
+    }
+
+    protected function isLikelyFollowUp(string $question): bool
+    {
+        $question = trim($question);
+
+        // Very short queries are likely follow-ups (e.g. "why?", "and for women?")
+        if (strlen($question) < 15)
+            return true;
+
+        // Check for pronouns/connectors at start
+        if (preg_match('/^(and|but|so|or|what about|how about|does it|is it|can (i|we)|if)/i', $question))
+            return true;
+
+        // Check for specific pronouns indicating dependency
+        if (preg_match('/\b(it|they|this|that|these|those|he|she)\b/i', $question))
+            return true;
+
+        return false;
+    }
+
+    protected function fuseContext(string $question, array $history): string
+    {
+        if (empty($history) || !$this->isConfigured)
+            return $question;
+
+        $log = Log::channel('retrieval');
+
+        // Filter out empty strings and ensure strings
+        $history = array_filter($history, fn($h) => is_string($h) && !empty($h));
+
+        $recentHistory = array_slice($history, -2); // Only last 2 turns to avoid confusion
+        if (empty($recentHistory))
+            return $question;
+
+        $contextStr = implode("\n", $recentHistory);
+
+        $prompt = <<<PROMPT
+Previous User Questions:
+{$contextStr}
+
+Current User Question: "{$question}"
+
+Rewrite the Current User Question to make it self-contained by resolving pronouns (it, they, this) and adding missing context from the Previous Questions.
+If the Current Question is already specific and self-contained, return it unchanged.
+Return ONLY the rewritten text.
+PROMPT;
+
+        try {
+            $url = rtrim($this->endpoint, '/') . "/openai/deployments/{$this->deployment}/chat/completions?api-version={$this->apiVersion}";
+
+            $response = Http::timeout(4) // Fast timeout for context fusion
+                ->withHeaders([
+                    'api-key' => $this->apiKey,
+                    'Content-Type' => 'application/json',
+                ])
+                ->post($url, [
+                    'messages' => [
+                        ['role' => 'system', 'content' => 'You are a helpful assistant that clarifies ambiguous questions. Return ONLY the rewritten question.'],
+                        ['role' => 'user', 'content' => $prompt],
+                    ],
+                    'max_tokens' => 100,
+                    'temperature' => 0,
+                ]);
+
+            if ($response->successful()) {
+                $rewritten = trim($response->json('choices.0.message.content', ''));
+                if (!empty($rewritten)) {
+                    return $rewritten;
+                }
+            }
+        } catch (\Exception $e) {
+            $log->warning('[CONTEXT] Fusion failed', ['error' => $e->getMessage()]);
+        }
+
+        return $question;
+    }
 }
