@@ -176,7 +176,8 @@ return [
                     'bacteremia',
                     'mycotic', // New
                     'EAR', // New
-                    'ISR'  // New
+                    'ISR',  // New
+                    'aneurysm' // New: enables 'mycotic aneurysm' (count 2)
                 ],
                 'imaging' => [
                     'peri-graft fluid',
@@ -345,6 +346,8 @@ return [
                     'AAA',
                     'abdominal aortic aneurysm',
                     'infrarenal aneurysm',
+                    'juxtarenal', // New
+                    'juxtarenal aneurysm', // New
                     'iliac aneurysm',
                     'aortoiliac aneurysm'
                 ],
@@ -487,8 +490,8 @@ return [
 
             'exclude_keywords' => [
                 'asymptomatic PAD',
-                'claudication', // New
-                'intermittent claudication', // New
+                // 'claudication', // Removed to allow progression cases
+                // 'intermittent claudication', // Removed
                 'varicose',
                 'vein',
                 'reflux'
@@ -536,6 +539,23 @@ return [
 
             'collision_rules' => [
                 ['detect' => ['DVT', 'anticoagulation'], 'add' => 'antithrombotic_therapy']
+            ],
+
+            'exclude_keywords' => [
+                'dialysis',
+                'catheter',
+                'fistula',
+                'AVF',
+                'AVG',
+                // 'CEAP', // Removed to allow overlap
+                // 'chronic venous', // Removed to allow overlap
+                'varicose',
+                'rest pain',
+                'ulcer',
+                'stroke',
+                'TIA',
+                'carotid',
+                'neurological'
             ],
 
             'match_config' => [

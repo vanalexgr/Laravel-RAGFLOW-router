@@ -4,6 +4,7 @@ namespace App\Services;
 
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 
 class GuidelineRouterService
 {
@@ -34,63 +35,64 @@ class GuidelineRouterService
      */
     public function selectGuidelinesViaSemantic(string $question, int $maxGuidelines = 2): array
     {
-        $startTime = microtime(true);
-        $log = Log::channel('retrieval');
+        $cacheKey = 'semantic_route_' . md5($question . '|' . $maxGuidelines);
+        $ttl = config('ragflow.cache_ttl', 3600); // Default 1 hour
 
-        try {
-            $response = Http::timeout(5)
-                ->withHeaders(['Content-Type' => 'application/json'])
-                ->post("{$this->bridgeUrl}/route", [
-                    'query' => $question,
-                    'max_routes' => max(5, $maxGuidelines), // Request more to allow for guardrail exclusions
+        return Cache::remember($cacheKey, $ttl, function () use ($question, $maxGuidelines) {
+            $log = Log::channel('retrieval');
+            $startTime = microtime(true);
+
+            try {
+                $response = Http::timeout(5)
+                    ->withHeaders(['Content-Type' => 'application/json'])
+                    ->post("{$this->bridgeUrl}/route", [
+                        'query' => $question,
+                        'max_routes' => max(5, $maxGuidelines), // Request more to allow for guardrail exclusions
+                    ]);
+
+                if (!$response->successful()) {
+                    $log->warning('[SEMANTIC ROUTER] Request failed', [
+                        'status' => $response->status(),
+                    ]);
+                    return [];
+                }
+
+                $data = $response->json();
+                $duration = round((microtime(true) - $startTime) * 1000);
+
+                $selected = array_map(fn($g) => $g['guideline_key'], $data['guidelines'] ?? []);
+
+                // Build scores map and filter by threshold
+                $scores = [];
+                $selected = [];
+                // Use config with 0.70 default from original code
+                $threshold = config('ragflow.routing_threshold', 0.70);
+
+                foreach ($data['guidelines'] ?? [] as $g) {
+                    $score = $g['confidence'] ?? 0.0;
+                    if ($score >= $threshold) {
+                        $key = $g['guideline_key'];
+                        $selected[] = $key;
+                        $scores[$key] = $score;
+                    } else {
+                        // Log skipped items only inside the cache generation
+                        //$log->info('[SEMANTIC ROUTER] Dropped candidate below threshold', ...); 
+                    }
+                }
+
+                $log->info('[SEMANTIC ROUTER] API Success (Cached)', [
+                    'selected_keys' => $selected,
+                    'scores' => $scores,
+                    'duration_ms' => $duration,
                 ]);
 
-            if (!$response->successful()) {
-                $log->warning('[SEMANTIC ROUTER] Request failed', [
-                    'status' => $response->status(),
-                ]);
+                return ['keys' => $selected, 'scores' => $scores];
+
+            } catch (\Exception $e) {
+                $log->error('[SEMANTIC ROUTER] Exception', ['error' => $e->getMessage()]);
                 return [];
             }
-
-            $data = $response->json();
-            $duration = round((microtime(true) - $startTime) * 1000);
-
-            $selected = array_map(fn($g) => $g['guideline_key'], $data['guidelines'] ?? []);
-
-            // Build scores map and filter by threshold
-            $scores = [];
-            $selected = [];
-            $threshold = config('ragflow.routing_threshold', 0.70);
-
-            foreach ($data['guidelines'] ?? [] as $g) {
-                $score = $g['confidence'] ?? 0.0;
-                if ($score >= $threshold) {
-                    $key = $g['guideline_key'];
-                    $selected[] = $key;
-                    $scores[$key] = $score;
-                } else {
-                    $log->info('[SEMANTIC ROUTER] Dropped candidate below threshold', [
-                        'key' => $g['guideline_key'],
-                        'score' => $score,
-                        'threshold' => $threshold
-                    ]);
-                }
-            }
-
-            $log->info('[SEMANTIC ROUTER] Success', [
-                'question_preview' => substr($question, 0, 80),
-                'selected_keys' => $selected,
-                'scores' => $scores,
-                'duration_ms' => $duration,
-                'router_duration_ms' => $data['duration_ms'] ?? null,
-            ]);
-
-            return ['keys' => $selected, 'scores' => $scores];
-
-        } catch (\Exception $e) {
-            $log->error('[SEMANTIC ROUTER] Exception', ['error' => $e->getMessage()]);
-            return [];
-        }
+        });
     }
 
     /**

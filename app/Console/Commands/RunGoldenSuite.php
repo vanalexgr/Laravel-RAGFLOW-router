@@ -53,7 +53,11 @@ class RunGoldenSuite extends Command
             $selected = $result['keys'] ?? [];
             $primary = $selected[0] ?? 'NONE';
 
-            $isMatch = ($primary === $expected);
+            if (is_array($expected)) {
+                $isMatch = in_array($primary, $expected);
+            } else {
+                $isMatch = ($primary === $expected);
+            }
             $status = $isMatch ? "✅ PASS" : "❌ FAIL";
 
             if ($isMatch) {
@@ -66,7 +70,8 @@ class RunGoldenSuite extends Command
             $this->line("      Q: \"$query\"");
 
             if (!$isMatch) {
-                $this->error("      ❌ " . "Expected: $expected");
+                $expectedStr = is_array($expected) ? implode(' OR ', $expected) : $expected;
+                $this->error("      ❌ " . "Expected: $expectedStr");
                 $this->warn("      ⚠️ " . "Actual:   " . implode(', ', $selected));
 
                 if (isset($result['expansion_debug'])) {
