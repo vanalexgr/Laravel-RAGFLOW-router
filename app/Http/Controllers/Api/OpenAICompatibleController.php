@@ -35,11 +35,11 @@ class OpenAICompatibleController extends Controller
 
         foreach ($reversed as $msg) {
             $msgTokens = $this->estimateTokens($msg['content'] ?? '');
-            
+
             if ($totalTokens + $msgTokens > $maxTokens) {
                 break;
             }
-            
+
             $totalTokens += $msgTokens;
             array_unshift($truncated, $msg);
         }
@@ -67,7 +67,7 @@ class OpenAICompatibleController extends Controller
 
         $chatId = $validated['chat_id'];
         $scope = $validated['scope'];
-        
+
         // Store in cache for 24 hours (or until reset)
         \Cache::put("scope:{$chatId}", $scope, 60 * 60 * 24);
 
@@ -84,9 +84,9 @@ class OpenAICompatibleController extends Controller
     public function getScope(Request $request): JsonResponse
     {
         $chatId = $request->input('chat_id');
-        
+
         if (!$chatId) {
-             return response()->json(['scope' => []]);
+            return response()->json(['scope' => []]);
         }
 
         $scope = \Cache::get("scope:{$chatId}", []);
@@ -165,7 +165,7 @@ class OpenAICompatibleController extends Controller
 
         $userMessage = '';
         $conversationContext = [];
-        
+
         foreach ($messages as $msg) {
             if ($msg['role'] === 'user') {
                 $userMessage = $msg['content'];
@@ -186,7 +186,7 @@ class OpenAICompatibleController extends Controller
 
         $userMessageTokens = $this->estimateTokens($userMessage);
         $maxUserTokens = self::MAX_CONTEXT_TOKENS - self::RESERVED_TOKENS;
-        
+
         if ($userMessageTokens > $maxUserTokens) {
             \Log::warning('User message exceeds token limit', [
                 'user_tokens' => $userMessageTokens,
@@ -200,14 +200,14 @@ class OpenAICompatibleController extends Controller
                 ],
             ], 400);
         }
-        
+
         $availableHistoryTokens = max(0, $maxUserTokens - $userMessageTokens);
-        
+
         $contextString = '';
         if (count($conversationContext) > 1) {
             $history = array_slice($conversationContext, 0, -1);
             $history = $this->truncateHistory($history, $availableHistoryTokens);
-            
+
             if (!empty($history)) {
                 $contextString = "CONVERSATION HISTORY:\n";
                 foreach ($history as $msg) {
@@ -217,7 +217,7 @@ class OpenAICompatibleController extends Controller
                 $contextString .= "---\nCURRENT QUESTION:\n";
             }
         }
-        
+
         $fullPrompt = $contextString . $userMessage;
         $sessionId = $request->header('X-Session-ID', 'openwebui-session');
 
@@ -267,10 +267,10 @@ class OpenAICompatibleController extends Controller
             if (ob_get_level()) {
                 ob_end_clean();
             }
-            
+
             $chunkSize = 50;
             $chunks = mb_str_split($content, $chunkSize);
-            
+
             foreach ($chunks as $index => $textChunk) {
                 $chunk = [
                     'id' => $completionId,
@@ -336,7 +336,7 @@ class OpenAICompatibleController extends Controller
 
         $userMessage = '';
         $conversationContext = [];
-        
+
         foreach ($messages as $msg) {
             if ($msg['role'] === 'user') {
                 $userMessage = $msg['content'];
@@ -348,7 +348,7 @@ class OpenAICompatibleController extends Controller
 
         $userMessageTokens = $this->estimateTokens($userMessage);
         $maxUserTokens = self::MAX_CONTEXT_TOKENS - self::RESERVED_TOKENS;
-        
+
         if ($userMessageTokens > $maxUserTokens) {
             return response()->json([
                 'error' => [
@@ -358,14 +358,14 @@ class OpenAICompatibleController extends Controller
                 ],
             ], 400);
         }
-        
+
         $availableHistoryTokens = max(0, $maxUserTokens - $userMessageTokens);
-        
+
         $contextString = '';
         if (count($conversationContext) > 1) {
             $history = array_slice($conversationContext, 0, -1);
             $history = $this->truncateHistory($history, $availableHistoryTokens);
-            
+
             if (!empty($history)) {
                 $contextString = "CONVERSATION HISTORY:\n";
                 foreach ($history as $msg) {
@@ -375,7 +375,7 @@ class OpenAICompatibleController extends Controller
                 $contextString .= "---\nCURRENT QUESTION:\n";
             }
         }
-        
+
         $fullPrompt = $contextString . $userMessage;
         $sessionId = $request->header('X-Session-ID', 'openwebui-session');
         $completionId = 'chatcmpl-' . Str::random(29);
@@ -403,7 +403,7 @@ class OpenAICompatibleController extends Controller
 
             try {
                 $response = \Vizra\VizraADK\Facades\Agent::run('vascular_expert', $fullPrompt, $sessionId);
-                
+
                 // Step 5: Drafting answer
                 $this->emitProgressEvent($completionId, $model, '✍️ Drafting answer...');
                 usleep(200000);
@@ -411,7 +411,7 @@ class OpenAICompatibleController extends Controller
                 // Clear progress and stream actual response
                 $chunkSize = 50;
                 $chunks = mb_str_split($response, $chunkSize);
-                
+
                 foreach ($chunks as $textChunk) {
                     $chunk = [
                         'id' => $completionId,
@@ -480,38 +480,41 @@ class OpenAICompatibleController extends Controller
     public function retrieve(Request $request): JsonResponse
     {
         $startTime = microtime(true);
-        
+
         $validated = $request->validate([
             'question' => 'required|string|max:2000',
             'guideline_keys' => 'array',
             'guideline_keys.*' => 'string',
             'top_k' => 'integer|min:1|max:50',
             'patient_context' => 'string|max:50000',
+            'history' => 'array', // NEW: Chat history for context fusion
+            'history.*' => 'string',
         ]);
 
         $question = $validated['question'];
         $requestedKeys = $validated['guideline_keys'] ?? null;
         $topK = $validated['top_k'] ?? 12;
         $patientContext = $validated['patient_context'] ?? '';
+        $history = $validated['history'] ?? [];
         $correlationId = $request->header('X-Correlation-ID', substr(uniqid(), -8));
         $log = \Log::channel('retrieval');
 
         $phiScrubber = new \App\Services\PHIScrubberService();
-        
+
         $scrubResult = $phiScrubber->scrub($question);
         $scrubbedQuestion = $scrubResult['scrubbed_text'];
-        
+
         $scrubbedPatientContext = '';
         $patientContextRedactions = 0;
         if (!empty($patientContext)) {
             $contextScrubResult = $phiScrubber->scrub($patientContext);
             $scrubbedPatientContext = $contextScrubResult['scrubbed_text'];
             $patientContextRedactions = $contextScrubResult['total_redactions'];
-            
+
             if ($contextScrubResult['was_modified']) {
                 $phiScrubber->logAudit($correlationId . '-ctx', $contextScrubResult);
             }
-            
+
             $log->info('[ATTACHMENT] Patient context received', [
                 'correlation_id' => $correlationId,
                 'original_chars' => strlen($patientContext),
@@ -519,7 +522,7 @@ class OpenAICompatibleController extends Controller
                 'redactions' => $patientContextRedactions,
             ]);
         }
-        
+
         if ($scrubResult['was_modified']) {
             $phiScrubber->logAudit($correlationId, $scrubResult);
         }
@@ -532,7 +535,7 @@ class OpenAICompatibleController extends Controller
             'phi_redacted' => $scrubResult['was_modified'],
             'redaction_count' => $scrubResult['total_redactions'],
             'has_patient_context' => !empty($patientContext),
-            'patient_context_redactions' => $patientContextRedactions,
+            'has_history' => !empty($history),
             'requested_keys' => $requestedKeys,
             'top_k' => $topK,
         ]);
@@ -543,9 +546,9 @@ class OpenAICompatibleController extends Controller
                 $documentAnalyzer = new \App\Services\DocumentContextAnalyzerService();
                 $documentAnalysis = $documentAnalyzer->analyze($scrubbedPatientContext);
             }
-            
+
             $routingQuery = $scrubbedQuestion;
-            
+
             $expansionQuery = $scrubbedQuestion;
             if (!empty($scrubbedPatientContext)) {
                 $contextSummary = substr($scrubbedPatientContext, 0, 300);
@@ -553,16 +556,19 @@ class OpenAICompatibleController extends Controller
             }
 
             $guidelineScores = [];  // Semantic router confidence scores for proportional allocation
-            
+
             if (empty($requestedKeys)) {
                 $router = new \App\Services\GuidelineRouterService();
-                $llmResult = $router->selectAndExpand($routingQuery, 3, $expansionQuery, $documentAnalysis);
-                
+
+                // Use context-aware routing
+                $llmResult = $router->routeWithContext($routingQuery, $history, 3, $documentAnalysis); // Changed to routeWithContext
+
+
                 $selectedKeys = $llmResult['selected'];
                 $expandedQuery = $llmResult['expanded'];
                 $guidelineScores = $llmResult['scores'] ?? [];  // Capture semantic router scores
                 $routingMethod = $llmResult['routing_method'] ?? 'unknown';  // Track which routing method was used
-                
+
                 // Convert keys to full guideline info
                 if (!empty($selectedKeys)) {
                     $registry = $this->buildGuidelineRegistry();
@@ -577,7 +583,7 @@ class OpenAICompatibleController extends Controller
                     $log->info('Falling back to rule-based routing');
                     $selectedGuidelines = $this->selectGuidelinesRuleBased($scrubbedQuestion);
                 }
-                
+
                 $log->info('Guidelines auto-selected', [
                     'keys' => array_keys($selectedGuidelines),
                     'names' => array_column($selectedGuidelines, 'name'),
@@ -600,7 +606,7 @@ class OpenAICompatibleController extends Controller
                 // This avoids querying all 14 datasets which would timeout
                 $log->info('Routing returned no matches - using keyword fallback');
                 $selectedGuidelines = $this->selectGuidelinesByKeywordScore($scrubbedQuestion, 4);
-                
+
                 if (empty($selectedGuidelines)) {
                     $log->warning('No guidelines matched via keyword fallback either');
                     return response()->json([
@@ -609,7 +615,7 @@ class OpenAICompatibleController extends Controller
                         'duration_ms' => round((microtime(true) - $startTime) * 1000),
                     ], 422);
                 }
-                
+
                 $routingMethod = 'keyword_fallback';
                 $log->info('Keywords fallback selected guidelines', [
                     'count' => count($selectedGuidelines),
@@ -617,12 +623,12 @@ class OpenAICompatibleController extends Controller
                     'routing_method' => $routingMethod,
                 ]);
             }
-            
+
             // Step 2: Dual retrieval - narrative chunks (KG) + citation chunks (no KG)
             // Increased narrative budget for better context coverage
             $narrativeMax = 15;
             $citationMax = 5;
-            
+
             $dualResult = $this->retrieveDualChunks($expandedQuery, $selectedGuidelines, $narrativeMax, $citationMax, $guidelineScores);
 
             $duration = round((microtime(true) - $startTime) * 1000);
@@ -648,13 +654,13 @@ class OpenAICompatibleController extends Controller
                 'duration_ms' => $duration,
                 'system_prompt' => $this->getDualSystemPrompt(),
             ];
-            
+
             if (!empty($scrubbedPatientContext)) {
                 $response['scrubbed_patient_context'] = $scrubbedPatientContext;
                 $response['patient_context_chars'] = strlen($scrubbedPatientContext);
                 $response['patient_context_redactions'] = $patientContextRedactions;
             }
-            
+
             return response()->json($response);
 
         } catch (\Exception $e) {
@@ -679,16 +685,16 @@ class OpenAICompatibleController extends Controller
         $startTime = microtime(true);
         $log = \Log::channel('retrieval');
         $correlationId = $request->header('X-Correlation-ID', substr(uniqid(), -8));
-        
+
         $log->info("[HEALTH] Retrieval health check", ['correlation_id' => $correlationId]);
-        
+
         $checks = [
             'ragflow_bridge' => ['status' => 'unknown', 'latency_ms' => null],
             'ragflow_api' => ['status' => 'unknown', 'latency_ms' => null],
             'retrieval_test' => ['status' => 'unknown', 'chunks' => 0, 'latency_ms' => null],
             'semantic_router' => ['status' => 'unknown', 'model_name' => null, 'multilingual_support' => false],
         ];
-        
+
         try {
             // Check 1: RAGFlow Bridge connectivity + semantic router status
             $bridgeStart = microtime(true);
@@ -696,7 +702,7 @@ class OpenAICompatibleController extends Controller
             $bridgeResponse = \Illuminate\Support\Facades\Http::timeout(5)->get("{$bridgeUrl}/health");
             $checks['ragflow_bridge']['latency_ms'] = round((microtime(true) - $bridgeStart) * 1000);
             $checks['ragflow_bridge']['status'] = $bridgeResponse->successful() ? 'ok' : 'error';
-            
+
             // Extract semantic router status from bridge response
             if ($bridgeResponse->successful()) {
                 $bridgeData = $bridgeResponse->json();
@@ -712,33 +718,33 @@ class OpenAICompatibleController extends Controller
             $checks['ragflow_bridge']['status'] = 'error';
             $checks['ragflow_bridge']['error'] = $e->getMessage();
         }
-        
+
         try {
             // Check 2: Quick retrieval test with minimal query
             $testStart = microtime(true);
             $router = new \App\Services\GuidelineRouterService();
             $registry = $this->buildGuidelineRegistry();
             $firstGuideline = array_slice($registry, 0, 1, true);
-            
+
             if (!empty($firstGuideline)) {
                 $datasetId = array_values($firstGuideline)[0]['id'];
                 $bridgeUrl = rtrim(config('services.ragflow.bridge_url', 'http://localhost:8000'), '/');
                 $bridgeSecret = config('ragflow.bridge_secret');
-                
+
                 $httpRequest = \Illuminate\Support\Facades\Http::timeout(10);
                 if ($bridgeSecret) {
                     $httpRequest = $httpRequest->withHeaders(['X-Bridge-Secret' => $bridgeSecret]);
                 }
-                
+
                 $testResponse = $httpRequest->post("{$bridgeUrl}/retrieve", [
-                        'question' => 'health check test',
-                        'dataset_ids' => [$datasetId],
-                        'top_k' => 1,
-                        'enable_kg' => false,
-                    ]);
-                
+                    'question' => 'health check test',
+                    'dataset_ids' => [$datasetId],
+                    'top_k' => 1,
+                    'enable_kg' => false,
+                ]);
+
                 $checks['retrieval_test']['latency_ms'] = round((microtime(true) - $testStart) * 1000);
-                
+
                 if ($testResponse->successful()) {
                     $testData = $testResponse->json();
                     $chunks = $testData['chunks'] ?? [];
@@ -755,7 +761,7 @@ class OpenAICompatibleController extends Controller
             $checks['retrieval_test']['status'] = 'error';
             $checks['retrieval_test']['error'] = $e->getMessage();
         }
-        
+
         $overallStatus = 'ok';
         foreach ($checks as $check) {
             if ($check['status'] === 'error') {
@@ -763,15 +769,15 @@ class OpenAICompatibleController extends Controller
                 break;
             }
         }
-        
+
         $duration = round((microtime(true) - $startTime) * 1000);
-        
+
         $log->info("[HEALTH] Check complete", [
             'correlation_id' => $correlationId,
             'status' => $overallStatus,
             'duration_ms' => $duration,
         ]);
-        
+
         return response()->json([
             'status' => $overallStatus,
             'checks' => $checks,
@@ -809,7 +815,7 @@ class OpenAICompatibleController extends Controller
     {
         $questionLower = strtolower($question);
         $categories = config('guidelines.categories', []);
-        
+
         $forceRules = [
             'carotid' => ['triggers' => ['carotid', 'corotid', 'carotis', 'cea', 'cas ', 'tcar', 'endarterectomy'], 'keys' => ['carotid_vertebral']],
             'aaa' => ['triggers' => ['abdominal aortic aneurysm', 'aaa', 'evar', 'endoleak', 'infrarenal'], 'keys' => ['abdominal_aortic_aneurysm']],
@@ -856,10 +862,10 @@ class OpenAICompatibleController extends Controller
                     }
                 }
             }
-            
+
             uasort($candidates, fn($a, $b) => $b['score'] <=> $a['score']);
             $topCandidates = array_slice($candidates, 0, 3, true);
-            
+
             foreach ($topCandidates as $key => $data) {
                 $selected[$key] = $data['info'];
             }
@@ -872,13 +878,13 @@ class OpenAICompatibleController extends Controller
     {
         $registry = $this->buildGuidelineRegistry();
         $validated = [];
-        
+
         foreach ($keys as $key) {
             if (isset($registry[$key])) {
                 $validated[$key] = $registry[$key];
             }
         }
-        
+
         return $validated;
     }
 
@@ -893,24 +899,24 @@ class OpenAICompatibleController extends Controller
         $questionLower = strtolower($question);
         $questionWords = preg_split('/\W+/', $questionLower);
         $questionWords = array_filter($questionWords, fn($w) => strlen($w) > 2);
-        
+
         $scores = [];
         $guidelineData = [];
-        
+
         foreach ($categories as $category) {
             foreach ($category['guidelines'] as $key => $guideline) {
                 $score = 0;
                 $keyConcepts = $guideline['key_concepts'] ?? [];
-                
+
                 foreach ($keyConcepts as $concept) {
                     $conceptLower = strtolower($concept);
-                    
+
                     // Check if concept appears in question (phrase match)
                     if (str_contains($questionLower, $conceptLower)) {
                         $score += 3; // Strong match for full phrase
                         continue;
                     }
-                    
+
                     // Check word overlap
                     $conceptWords = preg_split('/\W+/', $conceptLower);
                     foreach ($conceptWords as $cWord) {
@@ -919,7 +925,7 @@ class OpenAICompatibleController extends Controller
                         }
                     }
                 }
-                
+
                 if ($score > 0) {
                     $scores[$key] = $score;
                     $guidelineData[$key] = [
@@ -929,23 +935,23 @@ class OpenAICompatibleController extends Controller
                 }
             }
         }
-        
+
         // Sort by score descending
         arsort($scores);
-        
+
         // Take top N
         $selectedKeys = array_slice(array_keys($scores), 0, $maxGuidelines);
-        
+
         $result = [];
         foreach ($selectedKeys as $key) {
             $result[$key] = $guidelineData[$key];
         }
-        
+
         \Log::channel('retrieval')->info('Keyword scoring fallback', [
             'all_scores' => $scores,
             'selected' => $selectedKeys,
         ]);
-        
+
         return $result;
     }
 
@@ -953,7 +959,7 @@ class OpenAICompatibleController extends Controller
     {
         $categories = config('guidelines.categories', []);
         $registry = [];
-        
+
         foreach ($categories as $category) {
             foreach ($category['guidelines'] as $key => $guideline) {
                 $registry[$key] = [
@@ -962,7 +968,7 @@ class OpenAICompatibleController extends Controller
                 ];
             }
         }
-        
+
         return $registry;
     }
 
@@ -970,9 +976,9 @@ class OpenAICompatibleController extends Controller
     {
         $datasetIds = array_map(fn($g) => $g['id'], array_values($guidelines));
         $guidelineNames = array_map(fn($g) => $g['name'], array_values($guidelines));
-        
+
         $retrievalConfig = config('ragflow.retrieval', []);
-        
+
         $params = [
             'question' => $question,
             'top_k' => $retrievalConfig['top_k'] ?? 256,
@@ -997,10 +1003,10 @@ class OpenAICompatibleController extends Controller
             foreach ($guidelines as $key => $info) {
                 $datasets[] = ['id' => $info['id'], 'name' => $info['name']];
             }
-            
+
             $params['max_per_dataset'] = min(6, $topK);
             $params['max_total'] = $topK;
-            
+
             $response = \App\Facades\RAGFlow::datasets()->retrieveMulti($datasets, $params);
             $rawChunks = $response['data']['chunks'] ?? [];
         } else {
@@ -1018,10 +1024,11 @@ class OpenAICompatibleController extends Controller
     protected function formatChunksForPipeline(array $rawChunks, array $guidelineNames): array
     {
         $formatted = [];
-        
+
         foreach ($rawChunks as $chunk) {
             $content = $chunk['content'] ?? $chunk['content_with_weight'] ?? '';
-            if (empty($content)) continue;
+            if (empty($content))
+                continue;
 
             // Extract metadata
             $recId = 'Unknown';
@@ -1077,7 +1084,7 @@ class OpenAICompatibleController extends Controller
     protected function retrieveDualChunks(string $question, array $guidelines, int $narrativeMax, int $citationMax, array $scores = []): array
     {
         $log = \Log::channel('retrieval');
-        
+
         // Build narrative datasets with scores for proportional allocation
         $narrativeDatasets = [];
         foreach ($guidelines as $key => $info) {
@@ -1096,12 +1103,12 @@ class OpenAICompatibleController extends Controller
         ]);
 
         $citationDatasetId = config('guidelines.recommendations_dataset');
-        
+
         if (empty($citationDatasetId)) {
             \Log::channel('retrieval')->error('Citation dataset ID not configured in guidelines.recommendations_dataset');
             throw new \RuntimeException('Citation dataset not configured. Please set guidelines.recommendations_dataset in config.');
         }
-        
+
         $retrievalConfig = config('ragflow.retrieval', []);
 
         $params = [
@@ -1169,7 +1176,8 @@ class OpenAICompatibleController extends Controller
 
         foreach ($rawChunks as $chunk) {
             $content = $chunk['content'] ?? $chunk['content_with_weight'] ?? '';
-            if (empty($content)) continue;
+            if (empty($content))
+                continue;
 
             // Truncate long content
             if (strlen($content) > 1000) {
@@ -1196,7 +1204,8 @@ class OpenAICompatibleController extends Controller
 
         foreach ($rawChunks as $chunk) {
             $content = $chunk['content'] ?? $chunk['content_with_weight'] ?? '';
-            if (empty($content)) continue;
+            if (empty($content))
+                continue;
 
             // Extract metatags
             $recId = '';
