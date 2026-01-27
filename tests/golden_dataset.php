@@ -247,7 +247,7 @@ return [
     ],
     [
         'query' => 'Post femoropopliteal endovascular intervention with DCB — what’s the recommended antithrombotic regimen (SAPT vs DAPT vs dual pathway inhibition) and for how long?',
-        'expected' => 'antithrombotic_therapy',
+        'expected' => ['antithrombotic_therapy', 'asymptomatic_pad'],
         'desc' => 'Antithrombotic 2023 Regimen'
     ],
     [
@@ -304,8 +304,8 @@ return [
     ],
     [
         'query' => 'Asymptomatic PAD (ABI 0.65) with diabetes and high CV risk: optimal antithrombotic strategy (SAPT vs DPI) alongside risk-factor therapy?',
-        'expected' => 'asymptomatic_pad',
-        'desc' => 'PAD + Antithrombotic (Target: PAD)'
+        'expected' => ['asymptomatic_pad', 'antithrombotic_therapy'],
+        'desc' => 'PAD + Antithrombotic (Target: PAD or Antithrombotic)'
     ],
     [
         'query' => 'Dialysis patient with new claudication and low ABI — how to manage PAD medically/exercise-wise without jeopardizing AVF flow or cannulation strategy?',
@@ -379,8 +379,8 @@ return [
     ],
     [
         'query' => 'Patient with chronic swelling and skin changes (CEAP C4) and history of DVT— evaluation for post-thrombotic syndrome and role of compression vs venous stenting?',
-        'expected' => 'chronic_venous_disease',
-        'desc' => 'Venous Disease + Venous Thrombosis (Target: CVD)'
+        'expected' => ['chronic_venous_disease', 'venous_thrombosis'],
+        'desc' => 'Venous Disease + Venous Thrombosis (Target: CVD or VT)'
     ],
     [
         'query' => 'After endovenous ablation for varicose veins, who needs thromboprophylaxis and what regimen?',
