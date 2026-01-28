@@ -500,8 +500,12 @@ class GuardrailDecider
         $isTop2Triggered = in_array($top2, $triggeredKeys);
 
         if ($isPinActive && !$isTop2Triggered) {
-            // 0.02 is a very tight margin (2%)
-            $threshold = 0.02;
+            $decisions[] = [
+                'rule' => 'score_gap',
+                'action' => 'exclude_noise',
+                'reason' => "Direct keyword match (PIN) for {$top1}, dropping non-matched sibling {$top2} for absolute isolation",
+            ];
+            return [array_slice($keys, 0, 1), $decisions];
         }
 
         if ($gap < $threshold) {
