@@ -37,7 +37,7 @@ except ImportError:
 class Filter:
     class Valves(BaseModel):
         RETRIEVE_API_URL: str = Field(
-            default="https://your-replit-app.replit.app/api/v1/retrieve",
+            default="http://host.docker.internal:8001/api/v1/retrieve",
             description="Laravel retrieval API endpoint URL",
         )
         API_KEY: str = Field(
@@ -62,8 +62,8 @@ class Filter:
             description="Inject recommended system prompt from API response",
         )
         MAX_RETRIES: int = Field(
-            default=2,
-            description="Maximum number of retry attempts for failed requests",
+            default=0,
+            description="Maximum number of retry attempts (0 for fail-fast)",
         )
         RETRY_BASE_DELAY: float = Field(
             default=1.0, description="Base delay in seconds for exponential backoff"
@@ -552,7 +552,9 @@ Please retry your question, or verify the RAG service is available.
             return body
 
         correlation_id = str(uuid.uuid4())[:8]
-
+        
+        print(f"[{self.name}] [{correlation_id}] Using API URL: {self.valves.RETRIEVE_API_URL} (Timeout: {self.valves.TIMEOUT_SECONDS}s, Retries: {self.valves.MAX_RETRIES})")
+        
         await self._emit_status(emitter, "Analyzing query...")
 
         # Process attachments once
