@@ -342,6 +342,9 @@ PROMPT;
         // NEW: Always expand abbreviations first (matches routeQuery behavior)
         if (config('router_abbreviations.enabled', true)) {
             $routingQuery = $this->expandQuery($routingQuery);
+            if ($routingQuery !== ($expansionQuery ?? $routingQuery)) {
+                $log->info('[ROUTING] Query expanded via regex', ['query' => $routingQuery]);
+            }
         }
 
         // Check if semantic routing is enabled
@@ -625,10 +628,17 @@ PROMPT;
 
         // Only fuse if we have history and it looks like a follow-up
         if (!empty($history) && $this->isLikelyFollowUp($question)) {
-            $log->info('[CONTEXT] Detected potential follow-up, attempting fusion', ['query' => $question]);
+            $historyCount = count($history);
+            $log->info("[CONTEXT] Detected potential follow-up, attempting fusion (history turns: $historyCount)", ['query' => $question]);
             $fused = $this->fuseContext($question, $history);
             if ($fused !== $question) {
-                $log->info('[CONTEXT] Fused query result', ['original' => $question, 'fused' => $fused]);
+                $log->info('[CONTEXT] Fused query result', [
+                    'original' => $question,
+                    'fused' => $fused,
+                    'delta' => $fused === $question ? 'None' : 'Modified'
+                ]);
+            } else {
+                $log->info('[CONTEXT] Fusion returned original query (no changes)');
             }
         }
 

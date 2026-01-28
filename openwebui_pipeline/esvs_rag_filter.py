@@ -606,6 +606,11 @@ Please retry your question, or verify the RAG service is available.
         if history and history[-1] == user_message:
             history.pop() # Remove current message
 
+        if history:
+            print(f"[{self.name}] [{correlation_id}] Context history: {len(history)} messages, last message snippet: '{history[-1][:50]}...'")
+        else:
+            print(f"[{self.name}] [{correlation_id}] No conversation history to pass")
+
         data, error = await self._retrieve_with_retry(
             user_message, correlation_id, patient_context, history, emitter
         )

@@ -591,6 +591,7 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
             # If multiple guidelines, we search for EITHER name + question
             filter_str = f" +({' OR '.join([f'\"{name}\"' for name in guideline_names])})"
             isolated_question = body.question + filter_str
+            logger.info(f"  Citation Isolation: {filter_str}")
         else:
             isolated_question = body.question
 
@@ -608,6 +609,8 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
         }
         if body.rerank_id:
             payload["rerank_id"] = body.rerank_id
+
+        logger.info(f"  Citation Payload Question: '{isolated_question}'")
 
         try:
             response = await client.post(
@@ -816,7 +819,11 @@ async def route_query(request: Request, body: RouteRequest):
         
         log_query = translated_query if translated_query else body.query
         lang_info = f" (translated from {detected_lang})" if detected_lang and detected_lang != "en" else ""
-        logger.info(f"Semantic route: query='{log_query[:50]}...'{lang_info} -> {keys} (scores: {scores}, primary: {primaries}, threshold: {body.min_score_threshold}, {duration:.0f}ms)")
+        
+        # Log all scores for debugging discrepancies
+        logger.info(f"Semantic route: query='{log_query[:50]}...'{lang_info} -> selected: {keys} (scores: {scores})")
+        for r in results:
+             logger.info(f"  - {r['guideline_key']}: {r['confidence']} (primary: {r.get('is_primary', False)})")
 
         return RouteResponse(
             method="semantic",
