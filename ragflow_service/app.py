@@ -588,8 +588,9 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
         guideline_names = [ds.name for ds in body.narrative_datasets]
         if guideline_names:
             # Use +() for mandatory inclusion in RAGFlow/ES syntax
-            # If multiple guidelines, we search for EITHER name + question
-            filter_str = f" +({' OR '.join([f'\"{name}\"' for name in guideline_names])})"
+            # Correct way to construct mandatory keywords for Python < 3.12
+            quoted_names = [f'"{name}"' for name in guideline_names]
+            filter_str = f" +({' OR '.join(quoted_names)})"
             isolated_question = body.question + filter_str
             logger.info(f"  Citation Isolation: {filter_str}")
         else:
