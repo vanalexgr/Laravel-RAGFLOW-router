@@ -19,13 +19,13 @@ class GuardrailDecider
 {
     protected array $config;
     protected array $priorityOrder;
-    protected float $scoreGapThreshold;
+    protected float $score_gap_threshold;
 
     public function __construct()
     {
         $this->config = config('router_abbreviations.guardrails', []);
         $this->priorityOrder = config('router_abbreviations.priority_order', []);
-        $this->scoreGapThreshold = config('router_abbreviations.score_gap_threshold', 0.08);
+        $this->score_gap_threshold = config('router_abbreviations.score_gap_threshold', 0.05);
     }
 
     /**
@@ -77,7 +77,16 @@ class GuardrailDecider
         $decisions = array_merge($decisions, $companionDecisions);
 
         // 6. Apply score gap analysis (keep close candidates)
-        [$keys, $gapDecisions] = $this->applyScoreGap($keys, $scores);
+        // Track triggered keys to avoid keeping semantic noise
+        $triggeredKeys = [];
+        foreach ($evaluations as $eval) {
+            if ($eval['match_count'] > 0) {
+                $triggeredKeys[] = $eval['target_guideline'];
+            }
+        }
+
+        $isPinActive = count($pinDecisions) > 0;
+        [$keys, $gapDecisions] = $this->applyScoreGap($keys, $scores, $triggeredKeys, $isPinActive);
         $decisions = array_merge($decisions, $gapDecisions);
 
         // 7. Limit to reasonable number
@@ -321,49 +330,42 @@ class GuardrailDecider
     }
 
     /**
-     * Apply PIN rules (must be #1 if triggered).
+     * Apply PIN rules (must be at the top if triggered).
+     * Supports multiple pins for hybrid queries.
      */
     protected function applyPins(array $keys, array $evaluations): array
     {
         $decisions = [];
 
-        // FIX: Only treat exclude_by_default as PIN if it was triggered
+        // Identify all guidelines that should be pinned
         $pins = array_filter($evaluations, function ($e) {
-            if ($e['action'] === 'pin') {
-                return true;
-            }
-            if ($e['action'] === 'exclude_by_default' && $e['match_count'] > 0) {
-                return true; // Trauma triggered, treat as PIN
-            }
-            return false; // Trauma not triggered, don't PIN it
+            return $e['action'] === 'pin' || ($e['action'] === 'exclude_by_default' && $e['match_count'] > 0);
         });
 
         if (empty($pins)) {
             return [$keys, $decisions];
         }
 
-        // Get highest priority PIN
+        // Sort pins by priority
         uasort($pins, fn($a, $b) => $a['priority'] <=> $b['priority']);
-        $topPin = reset($pins);
 
-        $target = $topPin['target_guideline'];
+        $pinnedTargets = [];
+        foreach ($pins as $ruleName => $eval) {
+            $pinnedTargets[] = $eval['target_guideline'];
+        }
 
-        // Check if already in candidates
-        $wasInCandidates = in_array($target, $keys);
+        // Remove pinned targets from original keys and prepend them in priority order
+        $otherKeys = array_diff($keys, $pinnedTargets);
+        $keys = array_merge($pinnedTargets, $otherKeys);
 
-        // Move to #1 or add at #1
-        $keys = array_diff($keys, [$target]);
-        array_unshift($keys, $target);
-
-        $decisions[] = [
-            'rule' => $topPin['rule_name'],
-            'action' => 'pin',
-            'reason' => $wasInCandidates
-                ? "Moved {$target} to #1"
-                : "Added {$target} at #1",
-            'keywords_matched' => $topPin['keywords_matched'],
-            'match_count' => $topPin['match_count'],
-        ];
+        foreach ($pins as $ruleName => $eval) {
+            $decisions[] = [
+                'rule' => $ruleName,
+                'action' => 'pin',
+                'reason' => "Priority pin for {$eval['target_guideline']}",
+                'keywords_matched' => $eval['keywords_matched'],
+            ];
+        }
 
         return [$keys, $decisions];
     }
@@ -469,8 +471,10 @@ class GuardrailDecider
 
     /**
      * Keep top-2 if score gap is small.
+     * 
+     * ENHANCED: If a PIN is active, be much stricter with non-triggered candidates.
      */
-    protected function applyScoreGap(array $keys, array $scores): array
+    protected function applyScoreGap(array $keys, array $scores, array $triggeredKeys = [], bool $isPinActive = false): array
     {
         $decisions = [];
 
@@ -489,12 +493,44 @@ class GuardrailDecider
         $score2 = $scores[$top2] ?? 0;
         $gap = abs($score1 - $score2);
 
-        if ($gap < $this->scoreGapThreshold) {
+        $threshold = $this->score_gap_threshold;
+
+        // If the 2nd key was NOT triggered by any keyword rule, but the 1st was a PIN,
+        // we should tighten the threshold significantly (semantic noise protection)
+        $isTop2Triggered = in_array($top2, $triggeredKeys);
+
+        if ($isPinActive && !$isTop2Triggered) {
+            // 0.02 is a very tight margin (2%)
+            $threshold = 0.02;
+        }
+
+        if ($gap < $threshold) {
             $decisions[] = [
                 'rule' => 'score_gap',
                 'action' => 'keep_close_candidate',
-                'reason' => "Score gap {$gap} < {$this->scoreGapThreshold}, keeping top-2",
+                'reason' => "Score gap {$gap} < {$threshold}, keeping top-2",
                 'scores' => [$top1 => $score1, $top2 => $score2],
+            ];
+            // We keep both, but we should still consider dropping index 2+ if they are too far
+            $keys = array_slice($keys, 0, 2);
+        } else {
+            // EXCEPTION: Never drop top2 if it was explicitly triggered by a keyword rule
+            if ($isTop2Triggered) {
+                $decisions[] = [
+                    'rule' => 'score_gap',
+                    'action' => 'keep_matched_candidate',
+                    'reason' => "Score gap {$gap} >= {$threshold} but keeping {$top2} because it had a keyword match",
+                ];
+                // Keep only these two
+                return [array_slice($keys, 0, 2), $decisions];
+            }
+
+            // Drop top2 and everything else
+            $keys = array_slice($keys, 0, 1);
+            $decisions[] = [
+                'rule' => 'score_gap',
+                'action' => 'exclude_noise',
+                'reason' => "Score gap {$gap} >= {$threshold}, dropping non-matched candidates",
             ];
         }
 
