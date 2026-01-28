@@ -15,6 +15,7 @@ import uuid
 import io
 import base64
 import httpx
+import time
 from pydantic import BaseModel, Field
 
 try:
@@ -43,18 +44,18 @@ class Filter:
             default="", description="API secret key for authentication (API_SECRET_KEY)"
         )
         TOP_K: int = Field(
-            default=12, description="Total chunks to retrieve (narrative + citations)"
+            default=8, description="Total chunks to retrieve (narrative + citations)"
         )
         ENABLE_RAG: bool = Field(
             default=True, description="Enable/disable guideline retrieval"
         )
         TIMEOUT_SECONDS: int = Field(
-            default=45,
-            description="Request timeout in seconds (increased for cold starts)",
+            default=20,
+            description="Request timeout in seconds (tightened to stay under gateway limit)",
         )
         COLD_START_TIMEOUT: int = Field(
-            default=60,
-            description="Extended timeout for first request after inactivity (cold start recovery)",
+            default=25,
+            description="Extended timeout for first request (tightened to stay under gateway limit)",
         )
         INJECT_SYSTEM_PROMPT: bool = Field(
             default=True,
@@ -530,8 +531,8 @@ Please retry your question, or verify the RAG service is available.
         """
         Called before request goes to LLM.
         Extracts text from attachments, retrieves guideline chunks, and injects context.
-        Includes retry logic, attachment processing, failure visibility, and real-time status updates.
         """
+        start_overall = time.time()
         emitter = __event_emitter__
 
         if not self.valves.ENABLE_RAG:
@@ -554,32 +555,11 @@ Please retry your question, or verify the RAG service is available.
 
         await self._emit_status(emitter, "Analyzing query...")
 
-        body_keys = list(body.keys())
-        files_top = body.get("files") or []
-        print(f"[{self.name}] [{correlation_id}] Body keys: {body_keys}")
-        print(f"[{self.name}] [{correlation_id}] Top-level files: {len(files_top)}")
-
-        has_attachments = False
-        for i, msg in enumerate(messages):
-            if msg.get("role") == "user":
-                msg_files = msg.get("files") or []
-                msg_images = msg.get("images") or []
-                msg_attachments = msg.get("attachments") or []
-                if msg_files or msg_images or msg_attachments:
-                    has_attachments = True
-                    print(
-                        f"[{self.name}] [{correlation_id}] Message {i} files: {len(msg_files)}, images: {len(msg_images)}, attachments: {len(msg_attachments)}"
-                    )
-                    if msg_files:
-                        for f in msg_files[:2]:
-                            print(
-                                f"[{self.name}] [{correlation_id}]   File structure: {list(f.keys()) if isinstance(f, dict) else type(f)}"
-                            )
-
-        if has_attachments or files_top:
-            await self._emit_status(emitter, "Processing attached documents...")
-
+        # Process attachments once
+        t_attach_start = time.time()
         patient_context, attachment_metadata = self._extract_attachments(body)
+        t_attach_end = time.time()
+        print(f"[{self.name}] [{correlation_id}] Attachment extraction took {t_attach_end - t_attach_start:.3f}s")
 
         if patient_context:
             extracted_count = sum(
@@ -593,12 +573,6 @@ Please retry your question, or verify the RAG service is available.
                 f"Extracted {extracted_count} document(s), de-identifying PHI...",
             )
 
-        await self._emit_status(emitter, "Routing query to relevant guidelines...")
-
-        print(
-            f"[{self.name}] [{correlation_id}] Retrieving guidelines for: {user_message[:100]}..."
-        )
-
         await self._emit_status(emitter, "Searching ESVS guidelines for evidence...")
 
         # Extract history for context-aware routing
@@ -607,13 +581,14 @@ Please retry your question, or verify the RAG service is available.
             history.pop() # Remove current message
 
         if history:
-            print(f"[{self.name}] [{correlation_id}] Context history: {len(history)} messages, last message snippet: '{history[-1][:50]}...'")
-        else:
-            print(f"[{self.name}] [{correlation_id}] No conversation history to pass")
+            print(f"[{self.name}] [{correlation_id}] Context history: {len(history)} messages")
 
+        t_retrieval_start = time.time()
         data, error = await self._retrieve_with_retry(
             user_message, correlation_id, patient_context, history, emitter
         )
+        t_retrieval_end = time.time()
+        print(f"[{self.name}] [{correlation_id}] Retrieval call took {t_retrieval_end - t_retrieval_start:.3f}s")
 
         if data is None:
             print(
@@ -706,6 +681,9 @@ Please retry your question, or verify the RAG service is available.
                 break
 
         await self._emit_status(emitter, "Context ready, generating response...", done=True)
+        
+        total_time = time.time() - start_overall
+        print(f"[{self.name}] [{correlation_id}] TOTAL filter duration: {total_time:.3f}s")
 
         return body
 
