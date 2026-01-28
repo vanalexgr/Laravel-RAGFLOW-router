@@ -696,9 +696,11 @@ return [
             ],
 
             'exclude_keywords' => [
-                'graft infection',  // New
-                'fistula',         // New
-                'mycotic'          // New
+                'graft infection',
+                'fistula',
+                'mycotic',
+                'AAA',               // New: Strict isolation
+                'abdominal'         // New: Strict isolation
             ],
 
             'collision_rules' => [

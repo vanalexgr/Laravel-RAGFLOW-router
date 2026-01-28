@@ -520,7 +520,7 @@ PROMPT;
 Expand this vascular surgery clinical query with medical synonyms and terminology to improve document retrieval.
 
 Add relevant:
-- Medical abbreviations (BCVI, AAA, PAD, CLI, CLTI, LEAD, DVT, PE, VTE, CAS, CEA, EVAR, TEVAR, FEVAR, TAA, TAAA)
+- Medical abbreviations (BCVI, AAA, PAD, CLI, CLTI, LEAD, DVT, PE, VTE, CAS, CEA, EVAR)
 - Alternate terms (e.g., "blunt carotid trauma" → "blunt cerebrovascular injury", "leg pain" → "intermittent claudication")
 - Related anatomical terms and procedures
 
