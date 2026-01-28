@@ -430,7 +430,9 @@ class Filter:
                 timeout=httpx.Timeout(self.valves.TIMEOUT_SECONDS)
             )
 
-        for attempt in range(self.valves.MAX_RETRIES):
+        # Ensure at least 1 attempt even if MAX_RETRIES is 0
+        total_attempts = max(1, self.valves.MAX_RETRIES)
+        for attempt in range(total_attempts):
             timeout_seconds = (
                 self.valves.COLD_START_TIMEOUT
                 if attempt == 0 and not self._warmup_complete
@@ -505,14 +507,16 @@ class Filter:
         if not self.valves.SHOW_FAILURE_WARNING:
             return body
 
-        warning = f"""**Guideline Retrieval Failed**
+        warning = f"""**Guideline Retrieval Failed (Debug)**
 
-The medical guidelines database could not be reached. This response is generated WITHOUT evidence from ESVS vascular surgery guidelines.
+The medical guidelines database could not be reached. 
 
-**Error:** {error}
-**Correlation ID:** {correlation_id}
+**Diagnostic Info:**
+- **Error:** {error}
+- **Target URL:** {self.valves.RETRIEVE_API_URL}
+- **Correlation ID:** {correlation_id}
 
-Please retry your question, or verify the RAG service is available.
+*This response is generated WITHOUT evidence from ESVS vascular surgery guidelines. Check your Valves settings.*
 
 ---
 
