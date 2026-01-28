@@ -37,7 +37,7 @@ except ImportError:
 class Filter:
     class Valves(BaseModel):
         RETRIEVE_API_URL: str = Field(
-            default="http://host.docker.internal:8001/api/v1/retrieve",
+            default="https://lavarel.eastus2.cloudapp.azure.com/api/v1/retrieve",
             description="Laravel retrieval API endpoint URL",
         )
         API_KEY: str = Field(
