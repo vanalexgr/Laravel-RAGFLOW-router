@@ -214,6 +214,11 @@ return [
                 ['detect' => ['EVAR', 'fever'], 'add' => 'abdominal_aortic_aneurysm']
             ],
 
+            'exclude_keywords' => [
+                'subclavian',  // Prevent expansion overlap
+                'carotid'      // Prevent overlap
+            ],
+
             'match_config' => [
                 'min_keyword_matches' => 2,
                 'case_insensitive' => true,
