@@ -171,6 +171,7 @@ class RetrieveMultiRequest(BaseModel):
 @app.post("/retrieve")
 @app.post("/retrieval")
 async def retrieve(request: Request, body: RetrieveRequest):
+    logger.info(f"RETRIEVE: q='{body.question}' ds={body.dataset_ids} kg={body.use_kg}")
     if SHARED_SECRET:
         provided_secret = request.headers.get("X-Bridge-Secret")
         if provided_secret != SHARED_SECRET:
@@ -581,8 +582,20 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
     async def fetch_citation_chunks(client: httpx.AsyncClient) -> dict:
         """Fetch citation chunks WITHOUT KG from recommendations-only dataset."""
         cit_start = datetime.now()
+        
+        # Isolation: Ensure citations belong to the guidelines selected by the router.
+        # We inject guideline names as mandatory keywords to prevent the global search from leaking noise.
+        guideline_names = [ds.name for ds in body.narrative_datasets]
+        if guideline_names:
+            # Use +() for mandatory inclusion in RAGFlow/ES syntax
+            # If multiple guidelines, we search for EITHER name + question
+            filter_str = f" +({' OR '.join([f'\"{name}\"' for name in guideline_names])})"
+            isolated_question = body.question + filter_str
+        else:
+            isolated_question = body.question
+
         payload = {
-            "question": body.question,
+            "question": isolated_question,
             "dataset_ids": [body.citation_dataset_id],
             "top_k": body.top_k,
             "page": 1,
