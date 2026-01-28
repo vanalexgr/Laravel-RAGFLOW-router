@@ -96,12 +96,17 @@ class GuardrailDecider
         $rulesTriggered = array_map(fn($e) => $e['rule_name'], $evaluations);
 
         // Log guardrail decisions
-        if (!empty($rulesTriggered)) {
-            Log::channel('retrieval')->info('[GUARDRAILS] Rules applied', [
-                'triggered' => $rulesTriggered,
-                'decisions_count' => count($decisions),
-                'final_keys' => $keys,
+        if (!empty($decisions)) {
+            $log = Log::channel('retrieval');
+            $log->info('[GUARDRAILS] Decision Trace:', [
+                'query' => substr($query, 0, 80),
+                'initial_candidates' => $candidates['keys'],
+                'final_selected' => $keys,
+                'is_pin_active' => $isPinActive ? 'YES' : 'NO'
             ]);
+            foreach ($decisions as $d) {
+                $log->info("  - Decision: [{$d['rule']}] -> {$d['action']} ({$d['reason']})");
+            }
         }
 
         return new GuardrailResult(
