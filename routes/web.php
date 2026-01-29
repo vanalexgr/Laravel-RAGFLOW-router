@@ -25,14 +25,23 @@ Route::get('/debug-test', function () {
 use App\Http\Controllers\McpController;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
+use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 // \Laravel\Mcp\Facades\Mcp::web('vascular', \App\Mcp\VascularServer::class);
 
 Route::match(['GET', 'HEAD'], '/vascular', [McpController::class, 'stream'])
-    ->withoutMiddleware([StartSession::class, VerifyCsrfToken::class]);
+    ->withoutMiddleware([
+        StartSession::class,
+        VerifyCsrfToken::class,
+        ShareErrorsFromSession::class
+    ]);
 
 Route::post('/vascular', [McpController::class, 'message'])
-    ->withoutMiddleware([StartSession::class, VerifyCsrfToken::class]);
+    ->withoutMiddleware([
+        StartSession::class,
+        VerifyCsrfToken::class,
+        ShareErrorsFromSession::class
+    ]);
 // Route::post('/vascular', function () {
 //     return response()->json(['status' => 'MANUAL DEBUG HIT']);
 // });
