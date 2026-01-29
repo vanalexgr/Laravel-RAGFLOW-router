@@ -20,8 +20,6 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        if (class_exists(\Laravel\Mcp\Facades\Mcp::class)) {
-            \Laravel\Mcp\Facades\Mcp::local('vascular', \App\Mcp\VascularServer::class);
-        }
+        \Laravel\Mcp\Facades\Mcp::local('vascular', \App\Mcp\VascularServer::class);
     }
 }
