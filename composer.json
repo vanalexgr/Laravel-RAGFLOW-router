@@ -84,7 +84,7 @@
             "php-http/discovery": true
         },
         "platform": {
-            "php": "8.3.6"
+            "php": "8.2.30"
         }
     },
     "minimum-stability": "stable",
