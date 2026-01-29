@@ -21,7 +21,18 @@ Route::get('/debug-test', function () {
 
 
 // 🤖 MCP SERVER (SSE)
-\Laravel\Mcp\Facades\Mcp::web('vascular', \App\Mcp\VascularServer::class);
+// 🤖 MCP SERVER (SSE) - Manual Controller
+use App\Http\Controllers\McpController;
+use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
+
+// \Laravel\Mcp\Facades\Mcp::web('vascular', \App\Mcp\VascularServer::class);
+
+Route::match(['GET', 'HEAD'], '/vascular', [McpController::class, 'stream'])
+    ->withoutMiddleware([StartSession::class, VerifyCsrfToken::class]);
+
+Route::post('/vascular', [McpController::class, 'message'])
+    ->withoutMiddleware([StartSession::class, VerifyCsrfToken::class]);
 // Route::post('/vascular', function () {
 //     return response()->json(['status' => 'MANUAL DEBUG HIT']);
 // });

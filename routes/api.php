@@ -16,7 +16,7 @@ Route::prefix('v1')->middleware(ValidateApiKey::class)->group(function () {
     Route::post('/chat/completions', [OpenAICompatibleController::class, 'chatCompletions']);
     Route::post('/chat/completions/stream', [OpenAICompatibleController::class, 'chatCompletionsWithProgress']);
     Route::post('/retrieve', [OpenAICompatibleController::class, 'retrieve']);
-    
+
     // Context Management
     Route::post('/context/scope', [OpenAICompatibleController::class, 'setScope']);
     Route::get('/context/scope', [OpenAICompatibleController::class, 'getScope']);
