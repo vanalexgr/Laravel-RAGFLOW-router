@@ -220,7 +220,7 @@ return [
             ],
 
             'match_config' => [
-                'min_keyword_matches' => 2,
+                'min_keyword_matches' => 1,
                 'case_insensitive' => true,
                 'word_boundary' => true
             ]
