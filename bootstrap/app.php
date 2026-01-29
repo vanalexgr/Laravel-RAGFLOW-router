@@ -15,7 +15,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->append(\App\Http\Middleware\HttpLogging::class);
         $middleware->trustProxies(at: '*');
         $middleware->validateCsrfTokens(except: [
-            '/mcp/*',
+            '/vascular',
+            '/vascular/*',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
