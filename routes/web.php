@@ -21,7 +21,7 @@ Route::get('/debug-test', function () {
 
 
 // 🤖 MCP SERVER (SSE)
-// \Laravel\Mcp\Facades\Mcp::web('vascular', \App\Mcp\VascularServer::class);
-Route::post('/vascular', function () {
-    return response()->json(['status' => 'MANUAL DEBUG HIT']);
-});
+\Laravel\Mcp\Facades\Mcp::web('vascular', \App\Mcp\VascularServer::class);
+// Route::post('/vascular', function () {
+//     return response()->json(['status' => 'MANUAL DEBUG HIT']);
+// });
