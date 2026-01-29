@@ -6,11 +6,6 @@ Route::get('/', function () {
     return view('welcome');
 });
 
-// DEBUG: Verify file is loaded
-// die("DEBUG: WEB_PHP_IS_LOADED");
-
-
-
 // 🛠️ DEBUG ROUTE
 Route::get('/debug-config', function () {
     // ... (debug output)
