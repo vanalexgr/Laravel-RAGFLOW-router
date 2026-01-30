@@ -3,12 +3,13 @@ title: Vascular Expert Tools
 author: open-webui
 author_url: https://github.com/open-webui
 funding_url: https://github.com/open-webui
-version: 2.0.0
+version: 2.1.0
 """
 
-import requests
+import httpx
+import asyncio
 from pydantic import BaseModel, Field
-from typing import Literal, Optional
+from typing import Literal, Optional, Callable, Awaitable
 
 
 # Enum of all valid guideline keys
@@ -29,6 +30,24 @@ GuidelineKey = Literal[
     "vascular_access"
 ]
 
+# Human-readable guideline names
+GUIDELINE_NAMES = {
+    "aortic_arch": "Aortic Arch",
+    "descending_thoracic_aorta": "Thoracic Aorta",
+    "abdominal_aortic_aneurysm": "AAA",
+    "mesenteric_renal": "Mesenteric/Renal",
+    "asymptomatic_pad": "Asymptomatic PAD",
+    "clti": "CLTI",
+    "acute_limb_ischaemia": "ALI",
+    "carotid_vertebral": "Carotid/Vertebral",
+    "venous_thrombosis": "Venous Thrombosis",
+    "chronic_venous_disease": "CVD",
+    "antithrombotic_therapy": "Antithrombotics",
+    "vascular_trauma": "Vascular Trauma",
+    "vascular_graft_infections": "Graft Infections",
+    "vascular_access": "Vascular Access"
+}
+
 
 class Tools:
     def __init__(self):
@@ -44,14 +63,28 @@ class Tools:
             description="API Key for authentication",
         )
 
-    def consult_vascular_guidelines(
+    async def _emit_status(self, emitter, description: str, done: bool = False):
+        """Emit a status update to OpenWebUI UI (replaces pulsating dot)."""
+        if emitter:
+            try:
+                await emitter(
+                    {
+                        "type": "status",
+                        "data": {"description": description, "done": done},
+                    }
+                )
+            except Exception as e:
+                print(f"[VascularExpert] Status emit error: {e}")
+
+    async def consult_vascular_guidelines(
         self, 
         question: str,
         guideline_1: GuidelineKey,
         guideline_2: Optional[GuidelineKey] = None,
         guideline_3: Optional[GuidelineKey] = None,
         __user__: dict = {}, 
-        __messages__: list = []
+        __messages__: list = [],
+        __event_emitter__: Callable[[dict], Awaitable[None]] = None
     ) -> str:
         """
         Consult ESVS Vascular Guidelines. Select 1-3 guidelines based on the clinical question.
@@ -83,6 +116,7 @@ class Tools:
         :param guideline_3: Tertiary guideline (optional)
         :return: Evidence-based recommendations and citations
         """
+        emitter = __event_emitter__
         
         # Collect selected guidelines
         guidelines = [guideline_1]
@@ -90,6 +124,10 @@ class Tools:
             guidelines.append(guideline_2)
         if guideline_3:
             guidelines.append(guideline_3)
+        
+        # Build human-readable guideline display
+        guideline_display = ", ".join(GUIDELINE_NAMES.get(g, g) for g in guidelines)
+        await self._emit_status(emitter, f"Selecting guidelines: {guideline_display}")
         
         # Extract conversation history for context fusion
         history = []
@@ -99,6 +137,8 @@ class Tools:
                 content = msg.get("content", "")
                 if content and isinstance(content, str):
                     history.append(f"{role}: {content}")
+        
+        await self._emit_status(emitter, f"Consulting {len(guidelines)} ESVS guideline(s)...")
         
         url = f"{self.valves.VASCULAR_API_BASE_URL}/api/v1/vascular-consult"
         headers = {
@@ -112,11 +152,40 @@ class Tools:
         }
 
         try:
-            response = requests.post(url, json=payload, headers=headers, timeout=30)
-            response.raise_for_status()
+            await self._emit_status(emitter, "Searching ESVS guidelines for evidence...")
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(url, json=payload, headers=headers)
+                response.raise_for_status()
             
             data = response.json()
+            
+            # Extract chunk count if available in response
+            narrative_count = len(data.get("narrative_chunks", []))
+            citation_count = len(data.get("citation_chunks", []))
+            total_chunks = narrative_count + citation_count
+            
+            if total_chunks > 0:
+                await self._emit_status(
+                    emitter, 
+                    f"Retrieved {total_chunks} evidence chunks from {guideline_display}",
+                    done=True
+                )
+            else:
+                await self._emit_status(
+                    emitter, 
+                    f"Consultation complete ({guideline_display})",
+                    done=True
+                )
+            
             return data.get("result", "No results returned")
             
-        except requests.exceptions.RequestException as e:
+        except httpx.TimeoutException:
+            await self._emit_status(emitter, "Request timed out", done=True)
+            return "Error: Request timed out after 30 seconds"
+        except httpx.HTTPStatusError as e:
+            await self._emit_status(emitter, f"API error: {e.response.status_code}", done=True)
+            return f"Error calling Vascular Expert API: HTTP {e.response.status_code}"
+        except Exception as e:
+            await self._emit_status(emitter, f"Error: {str(e)[:50]}", done=True)
             return f"Error calling Vascular Expert API: {str(e)}"
