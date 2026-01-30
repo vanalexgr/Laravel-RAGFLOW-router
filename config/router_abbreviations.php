@@ -84,8 +84,8 @@ return [
         'antithrombotic_therapy',    // 14 - Companion (medications)
     ],
 
-    // Keep top-2 if score gap is smaller than this
-    'score_gap_threshold' => 0.08,  // 8%
+    // Keep top-2 only if score gap is smaller than this (tighter = fewer companions)
+    'score_gap_threshold' => 0.05,  // 5% (was 8%)
 
     /*
     |--------------------------------------------------------------------------
@@ -177,7 +177,8 @@ return [
                     'mycotic', // New
                     'EAR', // New
                     'ISR',  // New
-                    'aneurysm' // New: enables 'mycotic aneurysm' (count 2)
+                    'mycotic aneurysm', // Fixed: require full phrase, not just 'aneurysm'
+                    'infected aneurysm' // Also infected aneurysms
                 ],
                 'imaging' => [
                     'peri-graft fluid',
@@ -753,6 +754,13 @@ return [
                 'min_keyword_matches' => 1,
                 'case_insensitive' => true,
                 'word_boundary' => true
+            ],
+
+            'exclude_keywords' => [
+                'AAA',
+                'abdominal aortic aneurysm',
+                'EVAR',
+                'endoleak'
             ]
         ],
 
