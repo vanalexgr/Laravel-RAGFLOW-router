@@ -52,6 +52,8 @@ class ToolController extends Controller
         // Return simple JSON for OpenWebUI Action
         return response()->json([
             'result' => $textContent
-        ]);
+        ])->header('Access-Control-Allow-Origin', '*')
+            ->header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+            ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     }
 }

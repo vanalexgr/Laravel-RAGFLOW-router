@@ -25,4 +25,12 @@ Route::prefix('v1')->middleware(ValidateApiKey::class)->group(function () {
 // Let's close the previous group first.
 
     Route::post('/vascular-consult', [App\Http\Controllers\ToolController::class, 'consult']);
+
+    // CORS preflight
+    Route::options('/vascular-consult', function () {
+        return response('', 200)
+            ->header('Access-Control-Allow-Origin', '*')
+            ->header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+            ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    });
 });
