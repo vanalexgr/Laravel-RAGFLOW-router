@@ -113,24 +113,50 @@ class ToolController extends Controller
             ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     }
 
-    /**
-     * Validate guideline name and return the key if valid
-     */
     protected function validateGuideline(string $guideline): ?string
     {
         // Build a map of display names -> keys
         $categories = config('guidelines.categories', []);
         $nameMap = [];
+        $allKeys = [];
 
         foreach ($categories as $category) {
             foreach ($category['guidelines'] as $key => $info) {
-                // Accept both the key and the display name
+                $allKeys[] = $key;
+                // Accept the key exactly
                 $nameMap[strtolower($key)] = $key;
+                // Accept the display name exactly
                 $nameMap[strtolower($info['name'])] = $key;
+
+                // Also accept partial matches (e.g., "Vascular Graft Infections" -> "vascular_graft_infections")
+                // Strip common words and see if it's a substring match
+                $cleanName = strtolower(preg_replace('/\b(of|and|the|in|for|with)\b/i', '', $info['name']));
+                $cleanName = preg_replace('/\s+/', ' ', trim($cleanName));
+                $nameMap[$cleanName] = $key;
             }
         }
 
         $guidelineLower = strtolower(trim($guideline));
-        return $nameMap[$guidelineLower] ?? null;
+
+        // 1. Try exact match
+        if (isset($nameMap[$guidelineLower])) {
+            return $nameMap[$guidelineLower];
+        }
+
+        // 2. Try fuzzy match (contains key words)
+        foreach ($nameMap as $name => $key) {
+            if (str_contains($guidelineLower, $name) || str_contains($name, $guidelineLower)) {
+                Log::info("[GUIDELINE MATCH] Fuzzy matched '{$guideline}' -> '{$key}'");
+                return $key;
+            }
+        }
+
+        // 3. Failed - log what we received
+        Log::warning("[GUIDELINE VALIDATION FAILED]", [
+            'received' => $guideline,
+            'available_keys' => $allKeys
+        ]);
+
+        return null;
     }
 }
