@@ -18,6 +18,11 @@ Route::prefix('v1')->middleware(ValidateApiKey::class)->group(function () {
     Route::post('/retrieve', [OpenAICompatibleController::class, 'retrieve']);
 
     // Context Management
-    Route::post('/context/scope', [OpenAICompatibleController::class, 'setScope']);
-    Route::get('/context/scope', [OpenAICompatibleController::class, 'getScope']);
+// 🤖 OpenAPI Tool Endpoint (Outside the auth group or inside? User wants it for OpenWebUI)
+// If OpenWebUI tool definition can send API Key, good. If not, maybe keep it outside or make auth optional?
+// For now, let's keep it inside the v1 prefix but maybe we need to be careful about Auth. 
+// "OpenAPI compatible mcp" usually implies using the standard remote tool auth or none.
+// Let's close the previous group first.
+
+    Route::post('/vascular-consult', [App\Http\Controllers\ToolController::class, 'consult']);
 });
