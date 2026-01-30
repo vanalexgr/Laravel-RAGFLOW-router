@@ -20,33 +20,45 @@ class ToolController extends Controller
         $request->validate([
             'question' => 'required|string',
             'history' => 'nullable|array',
-            'guideline' => 'nullable|string', // New: LLM-driven guideline selection
+            'guidelines' => 'required|array|min:1|max:3', // LLM must select 1-3 guidelines
+            'guidelines.*' => 'string', // Each item must be a string
         ]);
 
         $question = $request->input('question');
         $history = $request->input('history', []);
-        $guideline = $request->input('guideline', null);
+        $guidelinesInput = $request->input('guidelines', []);
 
-        // Validate and convert guideline name to key format
-        $requestedKeys = null;
-        if ($guideline && $guideline !== 'auto') {
+        // Validate and convert guideline names to keys
+        $requestedKeys = [];
+        $invalidGuidelines = [];
+
+        foreach ($guidelinesInput as $guideline) {
             $guidelineKey = $this->validateGuideline($guideline);
             if ($guidelineKey) {
-                $requestedKeys = [$guidelineKey];
+                $requestedKeys[] = $guidelineKey;
             } else {
-                return response()->json([
-                    'error' => "Invalid guideline: {$guideline}. Use 'auto' or one of the valid guideline names."
-                ], 400);
+                $invalidGuidelines[] = $guideline;
             }
+        }
+
+        if (!empty($invalidGuidelines)) {
+            return response()->json([
+                'error' => "Invalid guideline(s): " . implode(', ', $invalidGuidelines) . ". Check tool documentation for valid options."
+            ], 400);
+        }
+
+        if (empty($requestedKeys)) {
+            return response()->json([
+                'error' => "No valid guidelines provided. LLM must select 1-3 guidelines."
+            ], 400);
         }
 
         // Debug logging
         Log::info('Tool API Request', [
             'question' => $question,
             'history_count' => count($history),
-            'history' => $history,
-            'guideline' => $guideline ?? 'auto',
-            'requestedKeys' => $requestedKeys
+            'guidelines_selected' => $requestedKeys,
+            'guidelines_count' => count($requestedKeys)
         ]);
 
         // Call retrieval service with optional guideline override
