@@ -89,6 +89,10 @@ class Tools:
         """
         Consult ESVS Vascular Guidelines. Select 1-3 guidelines based on the clinical question.
         
+        **IMPORTANT**: Call this tool for EVERY vascular surgery question, including follow-up 
+        questions in the same conversation. Each question requires fresh evidence retrieval.
+        Do NOT rely on previous tool responses for new questions.
+        
         SELECTION RULES:
         1. Match anatomical territory first (aorta, limb, cerebral, venous)
         2. Consider acuity (acute vs chronic)
