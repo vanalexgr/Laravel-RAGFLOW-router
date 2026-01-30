@@ -49,6 +49,14 @@ class ToolController extends Controller
             }
         }
 
+        // Debug: Log what we're returning
+        Log::info('Tool API Response', [
+            'question' => $question,
+            'text_length' => strlen($textContent),
+            'text_preview' => substr($textContent, 0, 200),
+            'has_content' => !empty($textContent)
+        ]);
+
         // Return simple JSON for OpenWebUI Action
         return response()->json([
             'result' => $textContent
