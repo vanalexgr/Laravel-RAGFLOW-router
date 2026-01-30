@@ -25,11 +25,32 @@ class Tools:
         )
 
     def consult_vascular_guidelines(
-        self, question: str, __user__: dict = {}, __messages__: list = []
+        self, 
+        question: str,
+        guideline: str = "auto",
+        __user__: dict = {}, 
+        __messages__: list = []
     ) -> str:
         """
         Consult ESVS Vascular Guidelines. Use this for any clinical vascular surgery question.
+        
         :param question: The clinical question to answer
+        :param guideline: Which guideline to query. Options:
+            - "auto" (default): Let the system automatically select the best guideline(s)
+            - "aortic_arch": Aortic Arch (Zone 0-4, FET, arch dissection/aneurysm)
+            - "descending_thoracic_aorta": Descending Thoracic Aorta (Type B Dissection, TEVAR, IMH)
+            - "abdominal_aortic_aneurysm": Abdominal Aortic Aneurysm (AAA, EVAR, rupture)
+            - "mesenteric_renal": Mesenteric & Renal (CMI, AMI, RAS, visceral aneurysms)
+            - "carotid_vertebral": Carotid & Vertebral (Stroke, TIA, CEA, CAS)
+            - "asymptomatic_pad": Asymptomatic PAD / Claudication (IC, SET, exercise therapy)
+            - "clti": Chronic Limb-Threatening Ischemia (rest pain, tissue loss, gangrene)
+            - "acute_limb_ischaemia": Acute Limb Ischaemia (ALI, 6 Ps, Rutherford)
+            - "antithrombotic_therapy": Antithrombotic Therapy (DOACs, aspirin, clopidogrel)
+            - "venous_thrombosis": Venous Thrombosis (DVT, PE, PTS)
+            - "chronic_venous_disease": Chronic Venous Disease (varicose veins, CEAP, reflux)
+            - "vascular_trauma": Vascular Trauma (REBOA, penetrating/blunt injury)
+            - "vascular_graft_infections": Vascular Graft Infections (graft excision, MAGIC)
+            - "vascular_access": Vascular Access (dialysis, AVF, steal syndrome)
         :return: Evidence-based recommendations and citations
         """
         
@@ -49,7 +70,8 @@ class Tools:
         }
         payload = {
             "question": question,
-            "history": history  # Send conversation context
+            "history": history,  # Send conversation context
+            "guideline": guideline  # LLM-driven guideline selection
         }
 
         try:
