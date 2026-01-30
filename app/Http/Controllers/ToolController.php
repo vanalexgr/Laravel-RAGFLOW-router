@@ -115,25 +115,39 @@ class ToolController extends Controller
 
     protected function validateGuideline(string $guideline): ?string
     {
-        // Build a map of display names -> keys
         $categories = config('guidelines.categories', []);
         $nameMap = [];
-        $keywordMap = []; // Maps keywords to keys
+        $keywordMap = [];
         $allKeys = [];
 
         foreach ($categories as $category) {
             foreach ($category['guidelines'] as $key => $info) {
                 $allKeys[] = $key;
-                // Accept the key exactly
+
+                // Accept exact key
                 $nameMap[strtolower($key)] = $key;
-                // Accept the display name exactly
+                // Accept exact display name
                 $nameMap[strtolower($info['name'])] = $key;
 
-                // Extract keywords from key name (e.g., "vascular_graft_infections" -> ["vascular", "graft", "infections"])
+                // Extract keywords from key name
                 $keyWords = explode('_', strtolower($key));
                 foreach ($keyWords as $word) {
-                    if (strlen($word) > 3) { // Skip short words
+                    if (strlen($word) > 2) {
                         $keywordMap[$word][] = $key;
+                    }
+                }
+
+                // Also add key_concepts as exact matches and keywords
+                foreach ($info['key_concepts'] ?? [] as $concept) {
+                    $conceptLower = strtolower($concept);
+                    $nameMap[$conceptLower] = $key;
+
+                    // Also extract words from concepts
+                    $conceptWords = preg_split('/[\s\-_]+/', $conceptLower);
+                    foreach ($conceptWords as $word) {
+                        if (strlen($word) > 2) {
+                            $keywordMap[$word][] = $key;
+                        }
                     }
                 }
             }
@@ -143,11 +157,11 @@ class ToolController extends Controller
 
         // 1. Try exact match
         if (isset($nameMap[$guidelineLower])) {
-            Log::info("[GUIDELINE MATCH] Exact match: '{$guideline}' -> '{$nameMap[$guidelineLower]}'");
+            Log::info("[GUIDELINE MATCH] Exact: '{$guideline}' -> '{$nameMap[$guidelineLower]}'");
             return $nameMap[$guidelineLower];
         }
 
-        // 2. Try keyword matching - find the key with most matching keywords
+        // 2. Try keyword scoring
         $scores = [];
         foreach ($keywordMap as $keyword => $keys) {
             if (str_contains($guidelineLower, $keyword)) {
@@ -161,13 +175,13 @@ class ToolController extends Controller
             arsort($scores);
             $bestKey = array_key_first($scores);
             $bestScore = $scores[$bestKey];
-            if ($bestScore >= 2) { // Require at least 2 keyword matches
-                Log::info("[GUIDELINE MATCH] Keyword match: '{$guideline}' -> '{$bestKey}' (score: {$bestScore})");
+            if ($bestScore >= 1) { // Accept even 1 keyword match
+                Log::info("[GUIDELINE MATCH] Keyword: '{$guideline}' -> '{$bestKey}' (score: {$bestScore})");
                 return $bestKey;
             }
         }
 
-        // 3. Failed - log what we received
+        // 3. Failed
         Log::warning("[GUIDELINE VALIDATION FAILED]", [
             'received' => $guideline,
             'available_keys' => $allKeys
