@@ -20,45 +20,47 @@ class ToolController extends Controller
         $request->validate([
             'question' => 'required|string',
             'history' => 'nullable|array',
-            'guidelines' => 'required|array|min:1|max:3', // LLM must select 1-3 guidelines
-            'guidelines.*' => 'string', // Each item must be a string
+            'guidelines' => 'nullable|array|max:3', // Encouraged but not required
+            'guidelines.*' => 'string',
         ]);
 
         $question = $request->input('question');
         $history = $request->input('history', []);
-        $guidelinesInput = $request->input('guidelines', []);
+        $guidelinesInput = $request->input('guidelines', null);
 
         // Validate and convert guideline names to keys
-        $requestedKeys = [];
-        $invalidGuidelines = [];
+        $requestedKeys = null; // null = auto-routing
 
-        foreach ($guidelinesInput as $guideline) {
-            $guidelineKey = $this->validateGuideline($guideline);
-            if ($guidelineKey) {
-                $requestedKeys[] = $guidelineKey;
-            } else {
-                $invalidGuidelines[] = $guideline;
+        if (!empty($guidelinesInput) && is_array($guidelinesInput)) {
+            $validKeys = [];
+            $invalidGuidelines = [];
+
+            foreach ($guidelinesInput as $guideline) {
+                $guidelineKey = $this->validateGuideline($guideline);
+                if ($guidelineKey) {
+                    $validKeys[] = $guidelineKey;
+                } else {
+                    $invalidGuidelines[] = $guideline;
+                }
             }
-        }
 
-        if (!empty($invalidGuidelines)) {
-            return response()->json([
-                'error' => "Invalid guideline(s): " . implode(', ', $invalidGuidelines) . ". Check tool documentation for valid options."
-            ], 400);
-        }
+            if (!empty($invalidGuidelines)) {
+                return response()->json([
+                    'error' => "Invalid guideline(s): " . implode(', ', $invalidGuidelines) . ". Check tool documentation for valid options."
+                ], 400);
+            }
 
-        if (empty($requestedKeys)) {
-            return response()->json([
-                'error' => "No valid guidelines provided. LLM must select 1-3 guidelines."
-            ], 400);
+            if (!empty($validKeys)) {
+                $requestedKeys = $validKeys;
+            }
         }
 
         // Debug logging
         Log::info('Tool API Request', [
             'question' => $question,
             'history_count' => count($history),
-            'guidelines_selected' => $requestedKeys,
-            'guidelines_count' => count($requestedKeys)
+            'guidelines_selected' => $requestedKeys ?? 'auto',
+            'selection_mode' => $requestedKeys ? 'explicit' : 'auto-routing'
         ]);
 
         // Call retrieval service with optional guideline override
