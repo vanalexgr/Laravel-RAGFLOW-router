@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Mcp\Tools\ConsultGuidelines;
 use App\Services\RetrievalService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class ToolController extends Controller
 {
@@ -23,6 +24,13 @@ class ToolController extends Controller
 
         $question = $request->input('question');
         $history = $request->input('history', []);
+
+        // Debug logging
+        Log::info('Tool API Request', [
+            'question' => $question,
+            'history_count' => count($history),
+            'history' => $history
+        ]);
 
         // Instantiate the tool directly
         $tool = new ConsultGuidelines($this->retrievalService);
