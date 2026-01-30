@@ -35,50 +35,72 @@ class Tools:
         Consult ESVS Vascular Guidelines. **STRONGLY RECOMMENDED: Select 1-3 specific guidelines for best results.**
         
         :param question: The clinical question to answer
-        :param guidelines: **REQUIRED**. List of 1-3 guideline(s) to query. Select based on:
+        :param guidelines: **OPTIONAL**. List of 1-3 guideline KEY(s) to query. 
         
-        **GUIDELINE SELECTION RULES:**
-        1. **Anatomy First**: Match guidelines to the anatomical territory (aorta, limb, cerebral, venous)
-        2. **Acuity Second**: Distinguish acute vs chronic presentations
-        3. **Pathology Third**: Consider the specific condition (aneurysm, occlusion, dissection, etc.)
-        4. **Multi-select**: If uncertain or question spans domains, select 2-3 relevant guidelines
-        5. **Reconsider Every Time**: Even for follow-ups, re-evaluate which guideline(s) fit best
+        ⚠️ **CRITICAL: Use EXACT key strings below. Do NOT invent names or use descriptions!**
         
-        **Available Guidelines:**
+        **SELECTION STRATEGY:**
+        1. Match anatomical territory (aorta, limb, cerebral, venous)
+        2. Consider acuity (acute vs chronic)
+        3. Identify pathology (aneurysm, occlusion, dissection)
+        4. Select 2-3 if uncertain or multi-domain question
+        5. Reconsider for every new question (including follow-ups)
         
-        🫀 **Aortic & Central**
-        - "aortic_arch" → Arch aneurysm/dissection, Zone 0-2, FET, hybrid arch repair
-        - "descending_thoracic_aorta" → Type B dissection, TEVAR, thoracic aneurysm, spinal cord ischemia
-        - "abdominal_aortic_aneurysm" → AAA, EVAR, rupture, endoleaks, iliac aneurysms
-        - "mesenteric_renal" → Mesenteric ischemia (CMI/AMI), renal artery stenosis, visceral aneurysms
+        **VALID GUIDELINE KEYS (copy exactly):**
         
-        🦵 **Limb (Arterial)**
-        - "asymptomatic_pad" → Claudication, asymptomatic PAD, exercise therapy, screening
-        - "clti" → Rest pain, tissue loss, gangrene, limb salvage, amputation
-        - "acute_limb_ischaemia" → ALI, sudden limb pain, embolism, acute thrombosis
+        🫀 Aortic & Central:
+        • "aortic_arch" - Arch aneurysm/dissection, Zone 0-2, FET, hybrid arch
+        • "descending_thoracic_aorta" - Type B dissection, TEVAR, thoracic aneurysm
+        • "abdominal_aortic_aneurysm" - AAA, EVAR, rupture, endoleaks
+        • "mesenteric_renal" - Mesenteric ischemia, renal artery stenosis, visceral aneurysms
         
-        🧠 **Cerebrovascular**
-        - "carotid_vertrebral" → Stroke, TIA, carotid stenosis, CEA, CAS
+        🦵 Limb (Arterial):
+        • "asymptomatic_pad" - Claudication, PAD screening, exercise therapy, lifestyle
+        • "clti" - Rest pain, tissue loss, gangrene, limb salvage
+        • "acute_limb_ischaemia" - ALI, sudden limb pain, embolism, acute thrombosis
         
-        🔵 **Venous**
-        - "venous_thrombosis" → DVT, PE, VTE, anticoagulation duration
-        - "chronic_venous_disease" → Varicose veins, venous ulcers, CEAP, ablation
+        🧠 Cerebrovascular:
+        • "carotid_vertebral" - Stroke, TIA, carotid stenosis, CEA, CAS
         
-        💊 **Medications**
-        - "antithrombotic_therapy" → Aspirin, DOACs, DAPT, bleeding risk, perioperative management
+        🔵 Venous:
+        • "venous_thrombosis" - DVT, PE, VTE, anticoagulation duration
+        • "chronic_venous_disease" - Varicose veins, venous ulcers, CEAP, ablation
         
-        🚨 **Specialty**
-        - "vascular_trauma" → Penetrating/blunt injury, REBOA, damage control, hard/soft signs
-        - "vascular_graft_infections" → Graft/endograft infection, fever post-procedure, fistulas
-        - "vascular_access" → Dialysis access, AVF, steal syndrome, thrombosis
+        💊 Medications:
+        • "antithrombotic_therapy" - Aspirin, DOACs, DAPT, bleeding risk
         
-        **EXAMPLES:**
-        - Q: "What are AAA guidelines?" → `["abdominal_aortic_aneurysm"]`
-        - Q: "Post-EVAR fever and elevated CRP?" → `["vascular_graft_infections", "abdominal_aortic_aneurysm"]`
-        - Q: "Claudication treatment?" → `["asymptomatic_pad"]`
-        - Q: "When to revascularize?" (follow-up to claudication) → `["asymptomatic_pad"]` or `["asymptomatic_pad", "clti"]` if progression suspected
-        - Q: "Sudden cold pulseless leg?" → `["acute_limb_ischaemia"]`
-        - Q: "DVT anticoagulation duration?" → `["venous_thrombosis", "antithrombotic_therapy"]`
+        🚨 Specialty:
+        • "vascular_trauma" - Penetrating/blunt injury, REBOA, damage control
+        • "vascular_graft_infections" - Graft infection, fever post-EVAR/TEVAR
+        • "vascular_access" - Dialysis access, AVF, steal syndrome
+        
+        **CORRECT USAGE EXAMPLES:**
+        ✅ Q: "What are AAA guidelines?" 
+           → guidelines=["abdominal_aortic_aneurysm"]
+        
+        ✅ Q: "Can lifestyle changes help manage PAD?"
+           → guidelines=["asymptomatic_pad"]
+        
+        ✅ Q: "Post-EVAR fever and elevated CRP?"
+           → guidelines=["vascular_graft_infections", "abdominal_aortic_aneurysm"]
+        
+        ✅ Q: "Claudication treatment options?"
+           → guidelines=["asymptomatic_pad"]
+        
+        ✅ Q: "When to revascularize?" (follow-up to claudication)
+           → guidelines=["asymptomatic_pad"]  OR  ["asymptomatic_pad", "clti"] if progression suspected
+        
+        ✅ Q: "Sudden cold pulseless leg?"
+           → guidelines=["acute_limb_ischaemia"]
+        
+        ✅ Q: "DVT anticoagulation duration?"
+           → guidelines=["venous_thrombosis", "antithrombotic_therapy"]
+        
+        ❌ WRONG: guidelines=["Chronic Limb-Threatening Ischemia (CLTI)"]
+        ❌ WRONG: guidelines=["Management of PAD"]
+        ❌ WRONG: guidelines=["lifestyle"]
+        
+        **If unsure, omit `guidelines` parameter to use auto-routing.**
         
         :return: Evidence-based recommendations and citations
         """
