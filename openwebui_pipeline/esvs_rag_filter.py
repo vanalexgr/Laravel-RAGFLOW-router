@@ -501,7 +501,7 @@ class Filter:
         return (None, last_error)
 
     def _inject_failure_warning(
-        self, body: dict, user_message: str, error: str, correlation_id: str
+        self, body: dict, user_message: str, error: str, correlation_id: str, msg_idx: int = -1
     ) -> dict:
         """Inject a warning message when retrieval fails so user knows context is missing."""
         if not self.valves.SHOW_FAILURE_WARNING:
@@ -522,10 +522,15 @@ The medical guidelines database could not be reached.
 
 **Original Question:** {user_message}"""
 
-        for i, msg in enumerate(body["messages"]):
-            if msg.get("role") == "user" and msg.get("content") == user_message:
-                body["messages"][i]["content"] = warning
-                break
+        # Use index-based injection if provided
+        if msg_idx >= 0 and msg_idx < len(body["messages"]):
+            body["messages"][msg_idx]["content"] = warning
+        else:
+            # Fallback to content-based matching
+            for i, msg in enumerate(body["messages"]):
+                if msg.get("role") == "user" and msg.get("content") == user_message:
+                    body["messages"][i]["content"] = warning
+                    break
 
         return body
 
@@ -546,14 +551,38 @@ The medical guidelines database could not be reached.
         if not messages:
             return body
 
+        # Debug: Log message structure for external API debugging
+        roles = [m.get("role", "?") for m in messages]
+        print(f"[{self.name}] INLET: {len(messages)} messages, roles={roles}")
+        
         user_message = ""
-        for msg in reversed(messages):
-            if msg.get("role") == "user":
-                user_message = msg.get("content", "")
+        last_user_idx = -1
+        for i in range(len(messages) - 1, -1, -1):
+            if messages[i].get("role") == "user":
+                user_message = messages[i].get("content", "")
+                last_user_idx = i
                 break
 
-        if not user_message:
+        if not user_message or last_user_idx == -1:
             return body
+
+        # Debug: Check if user message appears to be already RAG-modified
+        is_already_modified = user_message.startswith("## ESVS Vascular Surgery Guidelines")
+        print(f"[{self.name}] User message preview: '{user_message[:100]}...' (already_modified={is_already_modified})")
+        
+        if is_already_modified:
+            print(f"[{self.name}] WARNING: User message already contains RAG context - likely from external app history. Extracting original question...")
+            # Try to extract original question from modified content
+            if "## User Question" in user_message:
+                parts = user_message.split("## User Question")
+                if len(parts) > 1:
+                    # Extract the original question (between ## User Question and ---)
+                    original = parts[1].strip()
+                    if "---" in original:
+                        original = original.split("---")[0].strip()
+                    if original:
+                        print(f"[{self.name}] Extracted original question: '{original[:100]}...'")
+                        user_message = original
 
         correlation_id = str(uuid.uuid4())[:8]
         
@@ -602,7 +631,7 @@ The medical guidelines database could not be reached.
             )
             await self._emit_status(emitter, f"Retrieval failed: {error}", done=True)
             return self._inject_failure_warning(
-                body, user_message, error, correlation_id
+                body, user_message, error, correlation_id, last_user_idx
             )
 
         narrative_chunks = data.get("narrative_chunks", [])
@@ -638,7 +667,7 @@ The medical guidelines database could not be reached.
             )
             await self._emit_status(emitter, "No relevant guidelines found", done=True)
             return self._inject_failure_warning(
-                body, user_message, "No relevant guidelines found", correlation_id
+                body, user_message, "No relevant guidelines found", correlation_id, last_user_idx
             )
 
         await self._emit_status(emitter, "Formatting clinical context...")
@@ -681,10 +710,12 @@ The medical guidelines database could not be reached.
 4. Format: Rec [ID] (Class [X], Level [Y]) with verbatim quote
 5. If guidelines don't fully cover the case, state this clearly"""
 
-        for i, msg in enumerate(body["messages"]):
-            if msg.get("role") == "user" and msg.get("content") == user_message:
-                body["messages"][i]["content"] = rag_prompt
-                break
+        # Use tracked index to inject RAG prompt (works for both clean and already-modified messages)
+        if last_user_idx >= 0 and last_user_idx < len(body["messages"]):
+            body["messages"][last_user_idx]["content"] = rag_prompt
+            print(f"[{self.name}] [{correlation_id}] Injected RAG context at message index {last_user_idx}")
+        else:
+            print(f"[{self.name}] [{correlation_id}] WARNING: Could not inject RAG context - invalid index {last_user_idx}")
 
         await self._emit_status(emitter, "Context ready, generating response...", done=True)
         
