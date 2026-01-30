@@ -87,6 +87,13 @@ class ConsultGuidelines extends Tool
             $output .= "> \"{$chunk['text']}\"{$metaStr}\n";
         }
 
+        // Add format reminder to help LLM maintain structure in follow-ups
+        $output .= "\n\n=== IMPORTANT ===\n";
+        $output .= "Present this using the mandatory response format:\n";
+        $output .= "1. 🩺 Clinical Synthesis (3-6 bullets with inline citations)\n";
+        $output .= "2. 📑 Recommendations used in this answer (verbatim quotes)\n";
+        $output .= "3. 📌 Guideline supporting statements\n";
+
         return [
             'content' => [
                 [
