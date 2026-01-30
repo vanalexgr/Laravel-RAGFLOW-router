@@ -118,6 +118,7 @@ class ToolController extends Controller
         // Build a map of display names -> keys
         $categories = config('guidelines.categories', []);
         $nameMap = [];
+        $keywordMap = []; // Maps keywords to keys
         $allKeys = [];
 
         foreach ($categories as $category) {
@@ -128,11 +129,13 @@ class ToolController extends Controller
                 // Accept the display name exactly
                 $nameMap[strtolower($info['name'])] = $key;
 
-                // Also accept partial matches (e.g., "Vascular Graft Infections" -> "vascular_graft_infections")
-                // Strip common words and see if it's a substring match
-                $cleanName = strtolower(preg_replace('/\b(of|and|the|in|for|with)\b/i', '', $info['name']));
-                $cleanName = preg_replace('/\s+/', ' ', trim($cleanName));
-                $nameMap[$cleanName] = $key;
+                // Extract keywords from key name (e.g., "vascular_graft_infections" -> ["vascular", "graft", "infections"])
+                $keyWords = explode('_', strtolower($key));
+                foreach ($keyWords as $word) {
+                    if (strlen($word) > 3) { // Skip short words
+                        $keywordMap[$word][] = $key;
+                    }
+                }
             }
         }
 
@@ -140,14 +143,27 @@ class ToolController extends Controller
 
         // 1. Try exact match
         if (isset($nameMap[$guidelineLower])) {
+            Log::info("[GUIDELINE MATCH] Exact match: '{$guideline}' -> '{$nameMap[$guidelineLower]}'");
             return $nameMap[$guidelineLower];
         }
 
-        // 2. Try fuzzy match (contains key words)
-        foreach ($nameMap as $name => $key) {
-            if (str_contains($guidelineLower, $name) || str_contains($name, $guidelineLower)) {
-                Log::info("[GUIDELINE MATCH] Fuzzy matched '{$guideline}' -> '{$key}'");
-                return $key;
+        // 2. Try keyword matching - find the key with most matching keywords
+        $scores = [];
+        foreach ($keywordMap as $keyword => $keys) {
+            if (str_contains($guidelineLower, $keyword)) {
+                foreach ($keys as $key) {
+                    $scores[$key] = ($scores[$key] ?? 0) + 1;
+                }
+            }
+        }
+
+        if (!empty($scores)) {
+            arsort($scores);
+            $bestKey = array_key_first($scores);
+            $bestScore = $scores[$bestKey];
+            if ($bestScore >= 2) { // Require at least 2 keyword matches
+                Log::info("[GUIDELINE MATCH] Keyword match: '{$guideline}' -> '{$bestKey}' (score: {$bestScore})");
+                return $bestKey;
             }
         }
 
