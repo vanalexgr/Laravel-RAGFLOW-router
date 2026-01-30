@@ -20,48 +20,103 @@ class ToolController extends Controller
         $request->validate([
             'question' => 'required|string',
             'history' => 'nullable|array',
+            'guideline' => 'nullable|string', // New: LLM-driven guideline selection
         ]);
 
         $question = $request->input('question');
         $history = $request->input('history', []);
+        $guideline = $request->input('guideline', null);
+
+        // Validate and convert guideline name to key format
+        $requestedKeys = null;
+        if ($guideline && $guideline !== 'auto') {
+            $guidelineKey = $this->validateGuideline($guideline);
+            if ($guidelineKey) {
+                $requestedKeys = [$guidelineKey];
+            } else {
+                return response()->json([
+                    'error' => "Invalid guideline: {$guideline}. Use 'auto' or one of the valid guideline names."
+                ], 400);
+            }
+        }
 
         // Debug logging
         Log::info('Tool API Request', [
             'question' => $question,
             'history_count' => count($history),
-            'history' => $history
+            'history' => $history,
+            'guideline' => $guideline ?? 'auto',
+            'requestedKeys' => $requestedKeys
         ]);
 
-        // Instantiate the tool directly
-        $tool = new ConsultGuidelines($this->retrievalService);
+        // Call retrieval service with optional guideline override
+        $result = $this->retrievalService->retrieve($question, $history, $requestedKeys);
 
-        // Execute logic
-        $result = $tool->handle($question, $history);
+        // Format for LLM Consumption (same as ConsultGuidelines tool)
+        $output = "RETRIEVED GUIDELINES for: \"{$result['question']}\"\n";
+        $output .= "Guidelines Used: " . implode(', ', array_column($result['selected_guidelines'], 'name')) . "\n\n";
 
-        // Extract the text content from the MCP format
-        // Expected format: ['content' => [['type' => 'text', 'text' => '...']]]
-        $textContent = "";
-        if (isset($result['content']) && is_array($result['content'])) {
-            foreach ($result['content'] as $block) {
-                if (($block['type'] ?? '') === 'text') {
-                    $textContent .= $block['text'];
-                }
-            }
+        $output .= "=== NARRATIVE EVIDENCE (Use for context) ===\n";
+        foreach ($result['narrative_chunks'] as $chunk) {
+            $output .= "- " . ($chunk['content'] ?? '') . "\n";
         }
+        $output .= "\n";
+
+        $output .= "=== CITATIONS (Use for verbatim quoting) ===\n";
+        foreach ($result['citation_chunks'] as $chunk) {
+            $meta = [];
+            if (!empty($chunk['recommendation_id']))
+                $meta[] = $chunk['recommendation_id'];
+            if (!empty($chunk['class']))
+                $meta[] = $chunk['class'];
+            if (!empty($chunk['level']))
+                $meta[] = $chunk['level'];
+            $metaStr = !empty($meta) ? " [" . implode(', ', $meta) . "]" : "";
+
+            $output .= "> \"{$chunk['text']}\"{$metaStr}\n";
+        }
+
+        // Add format reminder
+        $output .= "\n\n=== IMPORTANT ===\n";
+        $output .= "Present this using the mandatory response format:\n";
+        $output .= "1. 🩺 Clinical Synthesis (3-6 bullets with inline citations)\n";
+        $output .= "2. 📑 Recommendations used in this answer (verbatim quotes)\n";
+        $output .= "3. 📌 Guideline supporting statements\n";
 
         // Debug: Log what we're returning
         Log::info('Tool API Response', [
             'question' => $question,
-            'text_length' => strlen($textContent),
-            'text_preview' => substr($textContent, 0, 200),
-            'has_content' => !empty($textContent)
+            'text_length' => strlen($output),
+            'text_preview' => substr($output, 0, 200),
+            'has_content' => !empty($output)
         ]);
 
         // Return simple JSON for OpenWebUI Action
         return response()->json([
-            'result' => $textContent
+            'result' => $output
         ])->header('Access-Control-Allow-Origin', '*')
             ->header('Access-Control-Allow-Methods', 'POST, OPTIONS')
             ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    }
+
+    /**
+     * Validate guideline name and return the key if valid
+     */
+    protected function validateGuideline(string $guideline): ?string
+    {
+        // Build a map of display names -> keys
+        $categories = config('guidelines.categories', []);
+        $nameMap = [];
+
+        foreach ($categories as $category) {
+            foreach ($category['guidelines'] as $key => $info) {
+                // Accept both the key and the display name
+                $nameMap[strtolower($key)] = $key;
+                $nameMap[strtolower($info['name'])] = $key;
+            }
+        }
+
+        $guidelineLower = strtolower(trim($guideline));
+        return $nameMap[$guidelineLower] ?? null;
     }
 }
