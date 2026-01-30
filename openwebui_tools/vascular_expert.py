@@ -3,11 +3,31 @@ title: Vascular Expert Tools
 author: open-webui
 author_url: https://github.com/open-webui
 funding_url: https://github.com/open-webui
-version: 1.0.0
+version: 2.0.0
 """
 
 import requests
 from pydantic import BaseModel, Field
+from typing import Literal, Optional
+
+
+# Enum of all valid guideline keys
+GuidelineKey = Literal[
+    "aortic_arch",
+    "descending_thoracic_aorta", 
+    "abdominal_aortic_aneurysm",
+    "mesenteric_renal",
+    "asymptomatic_pad",
+    "clti",
+    "acute_limb_ischaemia",
+    "carotid_vertebral",
+    "venous_thrombosis",
+    "chronic_venous_disease",
+    "antithrombotic_therapy",
+    "vascular_trauma",
+    "vascular_graft_infections",
+    "vascular_access"
+]
 
 
 class Tools:
@@ -27,16 +47,49 @@ class Tools:
     def consult_vascular_guidelines(
         self, 
         question: str,
+        guideline_1: GuidelineKey,
+        guideline_2: Optional[GuidelineKey] = None,
+        guideline_3: Optional[GuidelineKey] = None,
         __user__: dict = {}, 
         __messages__: list = []
     ) -> str:
         """
-        Consult ESVS Vascular Guidelines. Use this for any clinical vascular surgery question.
-        The system will automatically select the most relevant guideline(s) based on the question.
+        Consult ESVS Vascular Guidelines. Select 1-3 guidelines based on the clinical question.
+        
+        SELECTION RULES:
+        1. Match anatomical territory first (aorta, limb, cerebral, venous)
+        2. Consider acuity (acute vs chronic)
+        3. Add companion guidelines if question spans domains
+        
+        GUIDELINE REFERENCE:
+        - aortic_arch: Arch aneurysm, Zone 0-2, FET, hybrid arch
+        - descending_thoracic_aorta: Type B dissection, TEVAR, thoracic aneurysm
+        - abdominal_aortic_aneurysm: AAA, EVAR, rupture, endoleaks, iliac aneurysm
+        - mesenteric_renal: Mesenteric ischemia (CMI/AMI), renal artery stenosis
+        - asymptomatic_pad: Claudication, PAD screening, exercise therapy
+        - clti: Rest pain, tissue loss, gangrene, limb salvage
+        - acute_limb_ischaemia: ALI, sudden limb pain, 6Ps, embolism
+        - carotid_vertebral: Stroke, TIA, carotid stenosis, CEA, CAS
+        - venous_thrombosis: DVT, PE, VTE, anticoagulation
+        - chronic_venous_disease: Varicose veins, venous ulcers, CEAP
+        - antithrombotic_therapy: Aspirin, DOACs, DAPT, bleeding risk
+        - vascular_trauma: Penetrating/blunt injury, REBOA
+        - vascular_graft_infections: Graft/endograft infection, post-procedure fever
+        - vascular_access: Dialysis AVF, steal syndrome
         
         :param question: The clinical question to answer
+        :param guideline_1: Primary guideline (required)
+        :param guideline_2: Secondary guideline (optional)
+        :param guideline_3: Tertiary guideline (optional)
         :return: Evidence-based recommendations and citations
         """
+        
+        # Collect selected guidelines
+        guidelines = [guideline_1]
+        if guideline_2:
+            guidelines.append(guideline_2)
+        if guideline_3:
+            guidelines.append(guideline_3)
         
         # Extract conversation history for context fusion
         history = []
@@ -54,7 +107,8 @@ class Tools:
         }
         payload = {
             "question": question,
-            "history": history  # Send conversation context (auto-routing)
+            "history": history,
+            "guidelines": guidelines  # LLM-selected guidelines (enum-constrained)
         }
 
         try:
