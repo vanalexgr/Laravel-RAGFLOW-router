@@ -27,30 +27,59 @@ class Tools:
     def consult_vascular_guidelines(
         self, 
         question: str,
-        guideline: str = "auto",
+        guidelines: list[str],
         __user__: dict = {}, 
         __messages__: list = []
     ) -> str:
         """
-        Consult ESVS Vascular Guidelines. Use this for any clinical vascular surgery question.
+        Consult ESVS Vascular Guidelines. **CRITICAL: You MUST select 1-3 guidelines for EVERY question.**
         
         :param question: The clinical question to answer
-        :param guideline: Which guideline to query. Options:
-            - "auto" (default): Let the system automatically select the best guideline(s)
-            - "aortic_arch": Aortic Arch (Zone 0-4, FET, arch dissection/aneurysm)
-            - "descending_thoracic_aorta": Descending Thoracic Aorta (Type B Dissection, TEVAR, IMH)
-            - "abdominal_aortic_aneurysm": Abdominal Aortic Aneurysm (AAA, EVAR, rupture)
-            - "mesenteric_renal": Mesenteric & Renal (CMI, AMI, RAS, visceral aneurysms)
-            - "carotid_vertebral": Carotid & Vertebral (Stroke, TIA, CEA, CAS)
-            - "asymptomatic_pad": Asymptomatic PAD / Claudication (IC, SET, exercise therapy)
-            - "clti": Chronic Limb-Threatening Ischemia (rest pain, tissue loss, gangrene)
-            - "acute_limb_ischaemia": Acute Limb Ischaemia (ALI, 6 Ps, Rutherford)
-            - "antithrombotic_therapy": Antithrombotic Therapy (DOACs, aspirin, clopidogrel)
-            - "venous_thrombosis": Venous Thrombosis (DVT, PE, PTS)
-            - "chronic_venous_disease": Chronic Venous Disease (varicose veins, CEAP, reflux)
-            - "vascular_trauma": Vascular Trauma (REBOA, penetrating/blunt injury)
-            - "vascular_graft_infections": Vascular Graft Infections (graft excision, MAGIC)
-            - "vascular_access": Vascular Access (dialysis, AVF, steal syndrome)
+        :param guidelines: **REQUIRED**. List of 1-3 guideline(s) to query. Select based on:
+        
+        **GUIDELINE SELECTION RULES:**
+        1. **Anatomy First**: Match guidelines to the anatomical territory (aorta, limb, cerebral, venous)
+        2. **Acuity Second**: Distinguish acute vs chronic presentations
+        3. **Pathology Third**: Consider the specific condition (aneurysm, occlusion, dissection, etc.)
+        4. **Multi-select**: If uncertain or question spans domains, select 2-3 relevant guidelines
+        5. **Reconsider Every Time**: Even for follow-ups, re-evaluate which guideline(s) fit best
+        
+        **Available Guidelines:**
+        
+        🫀 **Aortic & Central**
+        - "aortic_arch" → Arch aneurysm/dissection, Zone 0-2, FET, hybrid arch repair
+        - "descending_thoracic_aorta" → Type B dissection, TEVAR, thoracic aneurysm, spinal cord ischemia
+        - "abdominal_aortic_aneurysm" → AAA, EVAR, rupture, endoleaks, iliac aneurysms
+        - "mesenteric_renal" → Mesenteric ischemia (CMI/AMI), renal artery stenosis, visceral aneurysms
+        
+        🦵 **Limb (Arterial)**
+        - "asymptomatic_pad" → Claudication, asymptomatic PAD, exercise therapy, screening
+        - "clti" → Rest pain, tissue loss, gangrene, limb salvage, amputation
+        - "acute_limb_ischaemia" → ALI, sudden limb pain, embolism, acute thrombosis
+        
+        🧠 **Cerebrovascular**
+        - "carotid_vertrebral" → Stroke, TIA, carotid stenosis, CEA, CAS
+        
+        🔵 **Venous**
+        - "venous_thrombosis" → DVT, PE, VTE, anticoagulation duration
+        - "chronic_venous_disease" → Varicose veins, venous ulcers, CEAP, ablation
+        
+        💊 **Medications**
+        - "antithrombotic_therapy" → Aspirin, DOACs, DAPT, bleeding risk, perioperative management
+        
+        🚨 **Specialty**
+        - "vascular_trauma" → Penetrating/blunt injury, REBOA, damage control, hard/soft signs
+        - "vascular_graft_infections" → Graft/endograft infection, fever post-procedure, fistulas
+        - "vascular_access" → Dialysis access, AVF, steal syndrome, thrombosis
+        
+        **EXAMPLES:**
+        - Q: "What are AAA guidelines?" → `["abdominal_aortic_aneurysm"]`
+        - Q: "Post-EVAR fever and elevated CRP?" → `["vascular_graft_infections", "abdominal_aortic_aneurysm"]`
+        - Q: "Claudication treatment?" → `["asymptomatic_pad"]`
+        - Q: "When to revascularize?" (follow-up to claudication) → `["asymptomatic_pad"]` or `["asymptomatic_pad", "clti"]` if progression suspected
+        - Q: "Sudden cold pulseless leg?" → `["acute_limb_ischaemia"]`
+        - Q: "DVT anticoagulation duration?" → `["venous_thrombosis", "antithrombotic_therapy"]`
+        
         :return: Evidence-based recommendations and citations
         """
         
@@ -63,6 +92,14 @@ class Tools:
                 if content and isinstance(content, str):
                     history.append(f"{role}: {content}")
         
+        
+        # Validate guidelines input
+        if not isinstance(guidelines, list):
+            guidelines = [guidelines]  # Convert single string to list
+        
+        # Limit to 3 guidelines
+        guidelines = guidelines[:3]
+        
         url = f"{self.valves.VASCULAR_API_BASE_URL}/api/v1/vascular-consult"
         headers = {
             "Authorization": f"Bearer {self.valves.VASCULAR_API_KEY}",
@@ -71,7 +108,7 @@ class Tools:
         payload = {
             "question": question,
             "history": history,  # Send conversation context
-            "guideline": guideline  # LLM-driven guideline selection
+            "guidelines": guidelines  # LLM-driven guideline selection (1-3)
         }
 
         try:
