@@ -25,7 +25,7 @@ class Tools:
         )
 
     def consult_vascular_guidelines(
-        self, question: str, __user__: dict = {}
+        self, question: str, __user__: dict = {}, __messages__: list = []
     ) -> str:
         """
         Consult ESVS Vascular Guidelines. Use this for any clinical vascular surgery question.
@@ -33,12 +33,24 @@ class Tools:
         :return: Evidence-based recommendations and citations
         """
         
+        # Extract conversation history for context fusion
+        history = []
+        if __messages__:
+            for msg in __messages__[-5:]:  # Last 5 messages for context
+                role = msg.get("role", "")
+                content = msg.get("content", "")
+                if content and isinstance(content, str):
+                    history.append(f"{role}: {content}")
+        
         url = f"{self.valves.VASCULAR_API_BASE_URL}/api/v1/vascular-consult"
         headers = {
             "Authorization": f"Bearer {self.valves.VASCULAR_API_KEY}",
             "Content-Type": "application/json",
         }
-        payload = {"question": question}
+        payload = {
+            "question": question,
+            "history": history  # Send conversation context
+        }
 
         try:
             response = requests.post(url, json=payload, headers=headers, timeout=30)
