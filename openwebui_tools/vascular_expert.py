@@ -27,12 +27,12 @@ class Tools:
     def consult_vascular_guidelines(
         self, 
         question: str,
-        guidelines: list[str],
+        guidelines: list[str] = None,
         __user__: dict = {}, 
         __messages__: list = []
     ) -> str:
         """
-        Consult ESVS Vascular Guidelines. **CRITICAL: You MUST select 1-3 guidelines for EVERY question.**
+        Consult ESVS Vascular Guidelines. **STRONGLY RECOMMENDED: Select 1-3 specific guidelines for best results.**
         
         :param question: The clinical question to answer
         :param guidelines: **REQUIRED**. List of 1-3 guideline(s) to query. Select based on:
@@ -94,11 +94,13 @@ class Tools:
         
         
         # Validate guidelines input
-        if not isinstance(guidelines, list):
+        if guidelines is None:
+            guidelines = []  # Use auto-routing if not provided
+        elif not isinstance(guidelines, list):
             guidelines = [guidelines]  # Convert single string to list
         
         # Limit to 3 guidelines
-        guidelines = guidelines[:3]
+        guidelines = guidelines[:3] if guidelines else []
         
         url = f"{self.valves.VASCULAR_API_BASE_URL}/api/v1/vascular-consult"
         headers = {
