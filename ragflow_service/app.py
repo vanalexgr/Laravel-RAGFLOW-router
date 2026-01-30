@@ -583,25 +583,18 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
         """Fetch citation chunks WITHOUT KG from recommendations-only dataset."""
         cit_start = datetime.now()
         
-        # Isolation: Ensure citations belong to the guidelines selected by the router.
-        # We inject guideline names as mandatory keywords to prevent the global search from leaking noise.
+        # Get guideline names for post-filtering
         guideline_names = [ds.name for ds in body.narrative_datasets]
-        if guideline_names:
-            # Use +() for mandatory inclusion in RAGFlow/ES syntax
-            # Correct way to construct mandatory keywords for Python < 3.12
-            quoted_names = [f'"{name}"' for name in guideline_names]
-            filter_str = f" +({' OR '.join(quoted_names)})"
-            isolated_question = body.question + filter_str
-            logger.info(f"  Citation Isolation: {filter_str}")
-        else:
-            isolated_question = body.question
-
+        
+        # Retrieve more than needed to allow for filtering
+        retrieve_size = body.citation_max * 3  # Get 3x to have room after filtering
+        
         payload = {
-            "question": isolated_question,
+            "question": body.question,  # Clean question without keyword injection
             "dataset_ids": [body.citation_dataset_id],
             "top_k": body.top_k,
             "page": 1,
-            "size": body.citation_max,
+            "size": retrieve_size,
             "similarity_threshold": body.similarity_threshold,
             "vector_similarity_weight": body.vector_similarity_weight,
             "keyword": body.keyword,
@@ -611,7 +604,7 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
         if body.rerank_id:
             payload["rerank_id"] = body.rerank_id
 
-        logger.info(f"  Citation Payload Question: '{isolated_question}'")
+        logger.info(f"  Citation Query: '{body.question[:60]}...' (retrieve {retrieve_size}, filter to {body.citation_max})")
 
         try:
             response = await client.post(
@@ -626,6 +619,38 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
             result = response.json()
             chunks = result.get("data", {}).get("chunks", [])
             
+            # POST-FILTERING: Only keep citations that match selected guidelines
+            if guideline_names:
+                filtered_chunks = []
+                for chunk in chunks:
+                    content = chunk.get("content", "") or chunk.get("content_with_weight", "") or ""
+                    doc_name = chunk.get("doc_name", "") or chunk.get("document_keyword", "") or ""
+                    
+                    # Extract GUIDELINE: field from content
+                    import re
+                    guideline_match = re.search(r'GUIDELINE[_\s]*(ID|NAME)?:\s*(.+?)(?=\n|RECOMMENDATION|CLASS|LEVEL|$)', content, re.IGNORECASE)
+                    chunk_guideline = guideline_match.group(2).strip().lower() if guideline_match else ""
+                    
+                    # Check if chunk belongs to any of the selected guidelines
+                    matches = False
+                    for name in guideline_names:
+                        name_lower = name.lower()
+                        # Match by guideline field or doc_name
+                        if (name_lower in chunk_guideline or 
+                            name_lower in doc_name.lower() or
+                            # Also check common abbreviations
+                            (name_lower == "abdominal aortic aneurysm" and "aaa" in chunk_guideline) or
+                            (name_lower == "vascular graft infections" and "graft" in chunk_guideline) or
+                            (name_lower == "carotid & vertebral" and "carotid" in chunk_guideline)):
+                            matches = True
+                            break
+                    
+                    if matches:
+                        filtered_chunks.append(chunk)
+                
+                logger.info(f"  Citations: retrieved={len(chunks)} filtered={len(filtered_chunks)} (guidelines: {guideline_names})")
+                chunks = filtered_chunks
+            
             # Tag chunks
             for chunk in chunks:
                 chunk["_source_guideline"] = "ESVS Recommendations"
@@ -633,7 +658,7 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
                 chunk["_chunk_type"] = "citation"
             
             capped = chunks[:body.citation_max]
-            logger.info(f"  Citations: retrieved={len(chunks)} capped={len(capped)} ({cit_duration:.0f}ms)")
+            logger.info(f"  Citations: final={len(capped)} ({cit_duration:.0f}ms)")
             return {
                 "chunks": capped,
                 "total": len(chunks),
