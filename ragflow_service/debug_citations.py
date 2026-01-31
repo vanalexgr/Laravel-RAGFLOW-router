@@ -83,8 +83,8 @@ if __name__ == "__main__":
     DATASET_ID = PAD_ID
     test_retrieval("What is PAD?", threshold=0.1)
     
-    # Test 3: Test Recommendations Dataset (Suspect)
-    DATASET_ID = dataset_bkp
-    print(f"\n--- SUSPECT TEST: Recommendations (ID: {DATASET_ID}) ---")
+    # Test 3: Test Recommendations Dataset (New Fixed ID)
+    DATASET_ID = "bc4896bdf5fb11f084fe32d89964721d"
+    print(f"\n--- FIX VERIFICATION: Recommendations (ID: {DATASET_ID}) ---")
     test_retrieval("What is PAD?", threshold=0.1)
-    test_retrieval("recommendation", threshold=0.01) # Try broad keyword for Recs
+    test_retrieval("recommendation", threshold=0.01)
