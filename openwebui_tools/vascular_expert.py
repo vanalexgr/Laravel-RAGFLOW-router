@@ -269,9 +269,9 @@ class Tools:
                 
                 llm_output += "=== INSTRUCTIONS (STRICT) ===\n"
                 llm_output += "1. USE 'Clinical Synthesis' bullets first, then 'Recommendations used'.\n"
-                llm_output += "2. You MUST use the citation ID `[n]` for the clickable link.\n"
-                llm_output += "3. Narrative chunks (Context) are also valid evidence. Cite them!\n"
-                llm_output += "4. If no Recommendations are listed above, rely on Narrative Evidence.\n"
+                llm_output += "2. EVERY factual statement MUST have an inline citation `[n]` at the end of the sentence.\n"
+                llm_output += "3. Narrative Evidence (Context) is valid and CRITICAL. If you use it, CITE IT as `[n]`.\n"
+                llm_output += "4. In 'Recommendations used' list, copy the header exactly (e.g. '[1] Rec 25...').\n"
                 llm_output += "5. DO NOT hallucinate Recs not shown above."
                 
                 return llm_output
