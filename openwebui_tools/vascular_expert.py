@@ -228,23 +228,42 @@ class Tools:
                 await self._emit_status(emitter, status_msg, done=True)
                 
                 # Build formatted text for the LLM
-                # We MUST return the text so the LLM can read it.
-                # We format it with [1], [2] etc. to match our emitted citations.
-                llm_output = f"Consultation successful. found {total_chunks} chunks:\n\n"
+                # We format strict headers to match the System Prompt requirements
+                llm_output = f"Consultation successful. Retrieved {total_chunks} evidence sources:\n\n"
                 
                 chunk_num = 1
-                for chunk in citation_chunks: # Recommendations
-                    text = chunk.get("text", chunk.get("content", ""))
-                    rec_id = chunk.get("recommendation_id", "Rec")
-                    llm_output += f"[{chunk_num}] Recommendation {rec_id}\n{text}\n\n"
-                    chunk_num += 1
-                    
-                for chunk in narrative_chunks[:15]: # Context (limit to 15)
-                    content = chunk.get("content", "")
-                    llm_output += f"[{chunk_num}] Context\n{content}\n\n"
-                    chunk_num += 1
                 
-                llm_output += "Instructions: Answer using the information above. Cite using [1], [2] notation."
+                # SECTION 1: RECOMMENDATIONS (Must match System Prompt format)
+                if citation_chunks:
+                    llm_output += "=== RECOMMENDATIONS ===\n"
+                    for chunk in citation_chunks:
+                        text = chunk.get("text", chunk.get("content", ""))
+                        rec_id = chunk.get("recommendation_id", "Rec")
+                        cls = chunk.get("class", "N/A")
+                        lvl = chunk.get("level", "N/A")
+                        guideline = chunk.get("guideline", "ESVS")
+                        
+                        # Format: [n] Rec {rec_id} (Class {cls}, Level {level}) — {guideline}
+                        header = f"[{chunk_num}] Rec {rec_id} (Class {cls}, Level {lvl}) — {guideline}"
+                        llm_output += f"{header}\n> {text}\n\n"
+                        chunk_num += 1
+
+                # SECTION 2: NARRATIVE (Context)
+                if narrative_chunks:
+                    llm_output += "=== NARRATIVE CONTEXT ===\n"
+                    for chunk in narrative_chunks[:15]: 
+                        content = chunk.get("content", "")
+                        source = chunk.get("source_guideline", "ESVS")
+                        
+                        header = f"[{chunk_num}] Narrative Evidence — {source}"
+                        llm_output += f"{header}\n{content}\n\n"
+                        chunk_num += 1
+                
+                llm_output += "=== INSTRUCTIONS ===\n"
+                llm_output += "1. You MUST use the citation ID `[n]` for the clickable link.\n"
+                llm_output += "2. Example: 'This is recommended (Rec 37 [1]).'\n"
+                llm_output += "3. Copy the Rec/Class/Level exactly as shown above in the headers."
+                
                 return llm_output
             else:
                 await self._emit_status(
