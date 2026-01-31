@@ -76,83 +76,53 @@ class Tools:
             except Exception as e:
                 print(f"[VascularExpert] Status emit error: {e}")
 
-    async def _emit_citations(self, emitter, citation_chunks: list, narrative_chunks: list):
-        """Emit individual citations as OpenWebUI citation events for clickable badges."""
-        if not emitter:
+    async def _emit_citations(self, emitter, evidence: list):
+        """Emit structured evidence items as individual OpenWebUI citation badges.
+        
+        Each evidence item becomes a separate clickable citation showing:
+        - The guideline name and recommendation ID
+        - The full quote text when clicked
+        """
+        if not emitter or not evidence:
             return
         
         try:
-            # Group citations by guideline for proper source attribution
-            sources_by_guideline = {}
-            
-            # Process citation chunks (recommendations with metadata)
-            for chunk in citation_chunks:
-                guideline = chunk.get("guideline", "ESVS Guidelines")
-                rec_id = chunk.get("recommendation_id", "")
-                text = chunk.get("text", "")
+            for item in evidence:
+                cite_id = item.get("cite_id", "E?")
+                rec_id = item.get("rec_id", "")
+                guideline = item.get("guideline", "ESVS")
+                cls = item.get("class", "")
+                level = item.get("level", "")
+                quote = item.get("quote", "")
+                score = item.get("score", 0)
                 
-                if guideline not in sources_by_guideline:
-                    sources_by_guideline[guideline] = {
-                        "documents": [],
-                        "metadatas": [],
-                        "distances": []
-                    }
+                # Create a unique source name for this evidence
+                source_name = f"{guideline} - {rec_id}" if rec_id else guideline
+                source_id = f"{cite_id}_{rec_id}" if rec_id else cite_id
                 
-                # Build document content with full citation info
-                doc_content = text
-                if rec_id:
-                    cls = chunk.get("class", "")
-                    level = chunk.get("level", "")
-                    doc_content = f"[{rec_id}] ({cls}, {level})\n{text}"
+                # Build document content with metadata
+                doc_content = f"[{rec_id}] {cls} | {level}\n\n{quote}" if rec_id else quote
                 
-                sources_by_guideline[guideline]["documents"].append(doc_content)
-                sources_by_guideline[guideline]["metadatas"].append({
-                    "source": guideline,
-                    "name": f"{guideline} - {rec_id}" if rec_id else guideline,
-                    "recommendation_id": rec_id,
-                    "class": chunk.get("class", ""),
-                    "level": chunk.get("level", ""),
-                })
-                sources_by_guideline[guideline]["distances"].append(
-                    chunk.get("similarity", 0) / 100.0  # Convert percentage to 0-1
-                )
-            
-            # Process narrative chunks (for context)
-            for chunk in narrative_chunks:
-                guideline = chunk.get("source_guideline", "ESVS Guidelines")
-                content = chunk.get("content", "")
-                
-                if guideline not in sources_by_guideline:
-                    sources_by_guideline[guideline] = {
-                        "documents": [],
-                        "metadatas": [],
-                        "distances": []
-                    }
-                
-                sources_by_guideline[guideline]["documents"].append(content)
-                sources_by_guideline[guideline]["metadatas"].append({
-                    "source": guideline,
-                    "name": guideline,
-                })
-                sources_by_guideline[guideline]["distances"].append(
-                    chunk.get("similarity", 0) / 100.0
-                )
-            
-            # Emit each guideline as a separate citation source
-            for guideline, data in sources_by_guideline.items():
                 await emitter({
                     "type": "citation",
                     "data": {
-                        "document": data["documents"],
-                        "metadata": data["metadatas"],
+                        "document": [doc_content],
+                        "metadata": [{
+                            "source": source_id,
+                            "name": source_name,
+                            "recommendation_id": rec_id,
+                            "class": cls,
+                            "level": level,
+                            "guideline": guideline,
+                        }],
                         "source": {
-                            "id": guideline,
-                            "name": guideline,
+                            "id": source_id,
+                            "name": source_name,
                         },
-                        "distances": data["distances"],
+                        "distances": [score / 100.0 if score > 1 else score],
                     }
                 })
-                print(f"[VascularExpert] Emitted citation for: {guideline} ({len(data['documents'])} docs)")
+                print(f"[VascularExpert] Emitted citation: {cite_id} ({source_name})")
                 
         except Exception as e:
             print(f"[VascularExpert] Citation emit error: {e}")
@@ -257,10 +227,9 @@ class Tools:
                     done=True
                 )
                 
-                # Emit individual citations for clickable badges in OpenWebUI
-                narrative_chunks = data.get("narrative_chunks", [])
-                citation_chunks = data.get("citation_chunks", [])
-                await self._emit_citations(emitter, citation_chunks, narrative_chunks)
+                # Emit structured evidence items as clickable citation badges
+                evidence = data.get("evidence", [])
+                await self._emit_citations(emitter, evidence)
             else:
                 await self._emit_status(
                     emitter, 
