@@ -215,7 +215,8 @@ class Tools:
                     doc_name = chunk.get("doc_name", "Context")
                     source_guideline = chunk.get("source_guideline", "ESVS Guidelines")
                     
-                    title = f"Narrative: {doc_name} ({source_guideline})"
+                    # Make title UNIQUE and descriptive
+                    title = f"Narrative Fragment {chunk_number}: {doc_name}"
                     
                     try:
                         await emitter({
@@ -263,14 +264,15 @@ class Tools:
                         content = chunk.get("content", "")
                         source = chunk.get("source_guideline", "ESVS")
                         
-                        header = f"[{chunk_num}] Narrative Evidence — {source}"
+                        # Use "Narrative Fragment [n]" in the LLM input too, to match the Citation Title logic
+                        header = f"[{chunk_num}] Narrative Fragment — {source}"
                         llm_output += f"{header}\n{content}\n\n"
                         chunk_num += 1
                 
                 llm_output += "=== INSTRUCTIONS (STRICT) ===\n"
                 llm_output += "1. USE 'Clinical Synthesis' bullets first, then 'Recommendations used'.\n"
                 llm_output += "2. EVERY factual statement MUST have an inline citation `[n]` at the end of the sentence.\n"
-                llm_output += "3. Narrative Evidence (Context) is valid and CRITICAL. If you use it, CITE IT as `[n]`.\n"
+                llm_output += "3. For general knowledge, cite the specific 'Narrative Fragment' `[n]` that contains it.\n"
                 llm_output += "4. In 'Recommendations used' list, copy the header exactly (e.g. '[1] Rec 25...').\n"
                 llm_output += "5. DO NOT hallucinate Recs not shown above."
                 
