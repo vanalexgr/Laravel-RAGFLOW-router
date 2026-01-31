@@ -1,5 +1,6 @@
 import os
 import logging
+import json
 import asyncio
 from datetime import datetime
 from fastapi import FastAPI, Request, HTTPException
@@ -605,6 +606,7 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
             payload["rerank_id"] = body.rerank_id
 
         logger.info(f"  Citation Query: '{body.question[:60]}...' (retrieve {retrieve_size}, filter to {body.citation_max})")
+        logger.info(f"  Citation Payload: {json.dumps(payload, default=str)[:500]}...") # Log payload start
 
         try:
             response = await client.post(
