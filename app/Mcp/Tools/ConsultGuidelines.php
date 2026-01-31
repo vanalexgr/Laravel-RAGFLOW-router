@@ -82,6 +82,8 @@ class ConsultGuidelines extends Tool
                 $meta[] = $chunk['class'];
             if (!empty($chunk['level']))
                 $meta[] = $chunk['level'];
+            if (!empty($chunk['guideline']))
+                $meta[] = $chunk['guideline'];
             $metaStr = !empty($meta) ? " [" . implode(', ', $meta) . "]" : "";
 
             $output .= "> \"{$chunk['text']}\"{$metaStr}\n";
