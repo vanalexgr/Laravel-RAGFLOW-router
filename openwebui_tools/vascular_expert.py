@@ -76,57 +76,6 @@ class Tools:
             except Exception as e:
                 print(f"[VascularExpert] Status emit error: {e}")
 
-    async def _emit_citations(self, emitter, evidence: list):
-        """Emit structured evidence items as individual OpenWebUI citation badges.
-        
-        Each evidence item becomes a separate clickable citation showing:
-        - The guideline name and recommendation ID
-        - The full quote text when clicked
-        """
-        if not emitter or not evidence:
-            return
-        
-        try:
-            for item in evidence:
-                cite_id = item.get("cite_id", "E?")
-                rec_id = item.get("rec_id", "")
-                guideline = item.get("guideline", "ESVS")
-                cls = item.get("class", "")
-                level = item.get("level", "")
-                quote = item.get("quote", "")
-                score = item.get("score", 0)
-                
-                # Create a unique source name for this evidence
-                source_name = f"{guideline} - {rec_id}" if rec_id else guideline
-                source_id = f"{cite_id}_{rec_id}" if rec_id else cite_id
-                
-                # Build document content with metadata
-                doc_content = f"[{rec_id}] {cls} | {level}\n\n{quote}" if rec_id else quote
-                
-                await emitter({
-                    "type": "citation",
-                    "data": {
-                        "document": [doc_content],
-                        "metadata": [{
-                            "source": source_id,
-                            "name": source_name,
-                            "recommendation_id": rec_id,
-                            "class": cls,
-                            "level": level,
-                            "guideline": guideline,
-                        }],
-                        "source": {
-                            "id": source_id,
-                            "name": source_name,
-                        },
-                        "distances": [score / 100.0 if score > 1 else score],
-                    }
-                })
-                print(f"[VascularExpert] Emitted citation: {cite_id} ({source_name})")
-                
-        except Exception as e:
-            print(f"[VascularExpert] Citation emit error: {e}")
-
     async def consult_vascular_guidelines(
         self, 
         question: str,
@@ -226,10 +175,6 @@ class Tools:
                     f"Retrieved {total_chunks} evidence chunks from {guideline_display}",
                     done=True
                 )
-                
-                # Emit structured evidence items as clickable citation badges
-                evidence = data.get("evidence", [])
-                await self._emit_citations(emitter, evidence)
             else:
                 await self._emit_status(
                     emitter, 
