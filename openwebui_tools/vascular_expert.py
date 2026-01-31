@@ -227,11 +227,25 @@ class Tools:
                 status_msg = f"Retrieved {total_chunks} evidence chunks from {guideline_display}"
                 await self._emit_status(emitter, status_msg, done=True)
                 
-                # RETURN SUMMARY ONLY - Do not return the full text block!
-                # This forces the LLM to use the emitted citations (documents) as context,
-                # ensuring that citations in the final answer link to the specific chunks
-                # rather than the entire tool output.
-                return f"Consultation successful. {status_msg}. Please answer the user's question using the provided guideline documents."
+                # Build formatted text for the LLM
+                # We MUST return the text so the LLM can read it.
+                # We format it with [1], [2] etc. to match our emitted citations.
+                llm_output = f"Consultation successful. found {total_chunks} chunks:\n\n"
+                
+                chunk_num = 1
+                for chunk in citation_chunks: # Recommendations
+                    text = chunk.get("text", chunk.get("content", ""))
+                    rec_id = chunk.get("recommendation_id", "Rec")
+                    llm_output += f"[{chunk_num}] Recommendation {rec_id}\n{text}\n\n"
+                    chunk_num += 1
+                    
+                for chunk in narrative_chunks[:15]: # Context (limit to 15)
+                    content = chunk.get("content", "")
+                    llm_output += f"[{chunk_num}] Context\n{content}\n\n"
+                    chunk_num += 1
+                
+                llm_output += "Instructions: Answer using the information above. Cite using [1], [2] notation."
+                return llm_output
             else:
                 await self._emit_status(
                     emitter, 
