@@ -164,10 +164,61 @@ class Tools:
             
             data = response.json()
             
-            # Extract chunk count if available in response
-            narrative_count = len(data.get("narrative_chunks", []))
-            citation_count = len(data.get("citation_chunks", []))
-            total_chunks = narrative_count + citation_count
+            # Extract chunks from response
+            narrative_chunks = data.get("narrative_chunks", [])
+            citation_chunks = data.get("citation_chunks", [])
+            total_chunks = len(narrative_chunks) + len(citation_chunks)
+            
+            # EMIT INDIVIDUAL CITATIONS for each chunk
+            # This enables per-chunk citation popups in OpenWebUI
+            if emitter:
+                chunk_number = 1
+                
+                # Emit citation chunks first (recommendations)
+                for chunk in citation_chunks:
+                    text = chunk.get("text", chunk.get("content", ""))
+                    rec_id = chunk.get("recommendation_id", "")
+                    cls = chunk.get("class", "")
+                    level = chunk.get("level", "")
+                    
+                    # Build citation title
+                    if rec_id:
+                        title = f"[{chunk_number}] {rec_id} ({cls}, {level})"
+                    else:
+                        title = f"[{chunk_number}] Recommendation"
+                    
+                    try:
+                        await emitter({
+                            "type": "citation",
+                            "data": {
+                                "document": [text],
+                                "metadata": [{"source": title}],
+                                "source": {"id": f"cite_{chunk_number}", "name": title},
+                            }
+                        })
+                        chunk_number += 1
+                    except Exception as e:
+                        print(f"[VascularExpert] Citation emit error: {e}")
+                
+                # Emit narrative chunks (context)
+                for chunk in narrative_chunks[:10]:  # Limit to 10 to avoid overload
+                    content = chunk.get("content", "")
+                    source = chunk.get("source_guideline", "ESVS")
+                    
+                    title = f"[{chunk_number}] {source}"
+                    
+                    try:
+                        await emitter({
+                            "type": "citation",
+                            "data": {
+                                "document": [content[:1500]],  # Truncate very long chunks
+                                "metadata": [{"source": title}],
+                                "source": {"id": f"cite_{chunk_number}", "name": title},
+                            }
+                        })
+                        chunk_number += 1
+                    except Exception as e:
+                        print(f"[VascularExpert] Citation emit error: {e}")
             
             if total_chunks > 0:
                 await self._emit_status(
