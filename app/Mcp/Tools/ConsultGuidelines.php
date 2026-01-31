@@ -61,17 +61,12 @@ class ConsultGuidelines extends Tool
         // 1. Retrieve raw data
         $result = $this->retrievalService->retrieve($question, $history);
 
-        // 2. Separate CONTEXT (for LLM reasoning) from EVIDENCE (for citations)
+        // 2. Get guideline names and top evidence only
         $guidelineNames = implode(', ', array_column($result['selected_guidelines'], 'name'));
-
-        // CONTEXT: All narrative chunks (for LLM to reason over)
-        $contextChunks = $this->formatContextChunks($result['narrative_chunks']);
-
-        // EVIDENCE: Top 5 most relevant citation chunks (for display)
         $evidence = $this->selectTopEvidence($result['citation_chunks'], 5);
 
-        // 3. Build structured output
-        $output = $this->buildFormattedOutput($question, $guidelineNames, $contextChunks, $evidence);
+        // 3. Build concise output (evidence only - for clean citation popups)
+        $output = $this->buildFormattedOutput($question, $guidelineNames, [], $evidence);
 
         return [
             'content' => [
@@ -166,49 +161,25 @@ class ConsultGuidelines extends Tool
         $output = "# 📋 ESVS Guidelines Consultation\n\n";
         $output .= "**Query:** {$question}\n\n";
         $output .= "**Guidelines:** {$guidelineNames}\n\n";
-
-        // CONTEXT SECTION (for LLM reasoning - not shown as citations)
         $output .= "---\n\n";
-        $output .= "## 📚 Clinical Context\n\n";
-        $output .= "*Use this section for background understanding. Do not cite directly.*\n\n";
 
-        foreach (array_slice($contextChunks, 0, 12) as $chunk) {
-            $output .= "**[{$chunk['id']}] {$chunk['source']}** *(relevance: {$chunk['relevance']}%)*\n\n";
-            $output .= "{$chunk['text']}\n\n";
-        }
-
-        // EVIDENCE SECTION (small, specific - these are the citations)
-        $output .= "---\n\n";
-        $output .= "## 📑 Evidence (Cite These Verbatim)\n\n";
-
+        // EVIDENCE ONLY - these become the citation popup content
         if (empty($evidence)) {
-            $output .= "*No specific recommendations retrieved for this query.*\n\n";
+            $output .= "**No specific ESVS recommendations found for this query.**\n\n";
+            $output .= "Please provide a general answer based on clinical knowledge.\n";
         } else {
-            $output .= "| Cite | Recommendation | Class | Level | Guideline |\n";
-            $output .= "|------|----------------|-------|-------|------------|\n";
+            $output .= "## 📑 ESVS Recommendations\n\n";
 
             foreach ($evidence as $e) {
-                $output .= "| **{$e['cite_id']}** | {$e['rec_id']} | {$e['class']} | {$e['level']} | {$e['guideline']} |\n";
-            }
-
-            $output .= "\n";
-
-            foreach ($evidence as $e) {
-                $output .= "### {$e['cite_id']}: {$e['rec_id']}\n\n";
-                if ($e['guideline']) {
-                    $output .= "**Source:** {$e['guideline']} | {$e['class']} | {$e['level']}\n\n";
-                }
+                $output .= "### {$e['cite_id']}: {$e['rec_id']}\n";
+                $output .= "**{$e['guideline']}** | {$e['class']} | {$e['level']}\n\n";
                 $output .= "> {$e['quote']}\n\n";
             }
-        }
 
-        // Instructions
-        $output .= "---\n\n";
-        $output .= "## ⚠️ Response Format\n\n";
-        $output .= "In your answer:\n";
-        $output .= "1. **🩺 Clinical Synthesis** - Use context to form answer, cite evidence as (E1), (E2)\n";
-        $output .= "2. **📑 Evidence Used** - List only the E1, E2 citations you actually used\n";
-        $output .= "3. If no evidence matches, state: *\"No specific ESVS recommendation available\"*\n";
+            $output .= "---\n\n";
+            $output .= "**Instructions:** Synthesize an answer using these recommendations. ";
+            $output .= "Cite as (E1), (E2) etc. in your response.\n";
+        }
 
         return $output;
     }
