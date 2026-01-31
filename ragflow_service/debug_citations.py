@@ -72,8 +72,19 @@ def list_datasets():
             print(f"Response: {e.response.text}")
 
 if __name__ == "__main__":
-    # Step 1: List all datasets to confirm ID
+    # Test 1: List datasets (might fail if permissions restricted)
     list_datasets()
     
-    # Step 2: Test the specific ID
+    # Test 2: Test Asymptomatic PAD Dataset (Known Working for Narrative)
+    # ID from config/guidelines.php
+    PAD_ID = "c7c42f76507211f0b6356a892e29a549"
+    print(f"\n--- CONTROL TEST: Asymptomatic PAD (ID: {PAD_ID}) ---")
+    dataset_bkp = DATASET_ID
+    DATASET_ID = PAD_ID
     test_retrieval("What is PAD?", threshold=0.1)
+    
+    # Test 3: Test Recommendations Dataset (Suspect)
+    DATASET_ID = dataset_bkp
+    print(f"\n--- SUSPECT TEST: Recommendations (ID: {DATASET_ID}) ---")
+    test_retrieval("What is PAD?", threshold=0.1)
+    test_retrieval("recommendation", threshold=0.01) # Try broad keyword for Recs
