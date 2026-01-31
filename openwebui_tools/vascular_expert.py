@@ -259,10 +259,12 @@ class Tools:
                         llm_output += f"{header}\n{content}\n\n"
                         chunk_num += 1
                 
-                llm_output += "=== INSTRUCTIONS ===\n"
-                llm_output += "1. You MUST use the citation ID `[n]` for the clickable link.\n"
-                llm_output += "2. Example: 'This is recommended (Rec 37 [1]).'\n"
-                llm_output += "3. Copy the Rec/Class/Level exactly as shown above in the headers."
+                llm_output += "=== INSTRUCTIONS (STRICT) ===\n"
+                llm_output += "1. USE 'Clinical Synthesis' bullets first, then 'Recommendations used'.\n"
+                llm_output += "2. You MUST use the citation ID `[n]` for the clickable link.\n"
+                llm_output += "3. Narrative chunks (Context) are also valid evidence. Cite them!\n"
+                llm_output += "4. If no Recommendations are listed above, rely on Narrative Evidence.\n"
+                llm_output += "5. DO NOT hallucinate Recs not shown above."
                 
                 return llm_output
             else:
