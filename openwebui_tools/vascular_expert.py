@@ -221,19 +221,21 @@ class Tools:
                         print(f"[VascularExpert] Citation emit error: {e}")
             
             if total_chunks > 0:
-                await self._emit_status(
-                    emitter, 
-                    f"Retrieved {total_chunks} evidence chunks from {guideline_display}",
-                    done=True
-                )
+                status_msg = f"Retrieved {total_chunks} evidence chunks from {guideline_display}"
+                await self._emit_status(emitter, status_msg, done=True)
+                
+                # RETURN SUMMARY ONLY - Do not return the full text block!
+                # This forces the LLM to use the emitted citations (documents) as context,
+                # ensuring that citations in the final answer link to the specific chunks
+                # rather than the entire tool output.
+                return f"Consultation successful. {status_msg}. Please answer the user's question using the provided guideline documents."
             else:
                 await self._emit_status(
                     emitter, 
                     f"Consultation complete ({guideline_display})",
                     done=True
                 )
-            
-            return data.get("result", "No results returned")
+                return "No specific guidelines found. Please answer based on general medical knowledge."
             
         except httpx.TimeoutException:
             await self._emit_status(emitter, "Request timed out", done=True)
