@@ -61,80 +61,17 @@ class ConsultGuidelines extends Tool
         // 1. Retrieve raw data
         $result = $this->retrievalService->retrieve($question, $history);
 
-        // 2. Format for LLM Consumption with clean markdown
+        // 2. Separate CONTEXT (for LLM reasoning) from EVIDENCE (for citations)
         $guidelineNames = implode(', ', array_column($result['selected_guidelines'], 'name'));
 
-        $output = "# 📋 ESVS Guidelines Evidence\n\n";
-        $output .= "**Query:** {$result['question']}\n\n";
-        $output .= "**Guidelines:** {$guidelineNames}\n\n";
-        $output .= "---\n\n";
+        // CONTEXT: All narrative chunks (for LLM to reason over)
+        $contextChunks = $this->formatContextChunks($result['narrative_chunks']);
 
-        // Format narrative evidence - cleaned up
-        $output .= "## 📚 Clinical Context\n\n";
+        // EVIDENCE: Top 5 most relevant citation chunks (for display)
+        $evidence = $this->selectTopEvidence($result['citation_chunks'], 5);
 
-        $evidenceNum = 1;
-        foreach ($result['narrative_chunks'] as $chunk) {
-            $content = $chunk['content'] ?? '';
-            $source = $chunk['source_guideline'] ?? 'ESVS';
-            $relevance = $chunk['similarity'] ?? 0;
-
-            // Clean the content
-            $cleanContent = $this->cleanNarrativeContent($content);
-
-            if (empty(trim($cleanContent))) {
-                continue;
-            }
-
-            $output .= "### [{$evidenceNum}] {$source} (Relevance: {$relevance}%)\n\n";
-            $output .= "{$cleanContent}\n\n";
-            $evidenceNum++;
-        }
-
-        // Format citations - clean structured format
-        $output .= "---\n\n";
-        $output .= "## 📑 Recommendations (Verbatim Citations)\n\n";
-
-        if (empty($result['citation_chunks'])) {
-            $output .= "*No specific recommendations retrieved. Use narrative evidence above for context.*\n\n";
-        } else {
-            foreach ($result['citation_chunks'] as $idx => $chunk) {
-                $num = $idx + 1;
-                $recId = $chunk['recommendation_id'] ?? '';
-                $class = $chunk['class'] ?? '';
-                $level = $chunk['level'] ?? '';
-                $guideline = $chunk['guideline'] ?? '';
-                $text = $chunk['text'] ?? '';
-
-                // Build header
-                $header = [];
-                if ($recId)
-                    $header[] = "**{$recId}**";
-                if ($class)
-                    $header[] = $class;
-                if ($level)
-                    $header[] = $level;
-                $headerStr = implode(' | ', $header);
-
-                if ($guideline) {
-                    $output .= "### [{$num}] {$guideline}\n";
-                } else {
-                    $output .= "### [{$num}] Recommendation\n";
-                }
-
-                if ($headerStr) {
-                    $output .= "{$headerStr}\n\n";
-                }
-
-                $output .= "> {$text}\n\n";
-            }
-        }
-
-        // Instructions for LLM
-        $output .= "---\n\n";
-        $output .= "## ⚠️ Response Format\n\n";
-        $output .= "1. **🩺 Clinical Synthesis** - 3-6 bullet points with inline citations [1], [2]\n";
-        $output .= "2. **📑 Recommendations** - Quote verbatim from above\n";
-        $output .= "3. **📌 Supporting Statements** - Additional guideline context\n";
+        // 3. Build structured output
+        $output = $this->buildFormattedOutput($question, $guidelineNames, $contextChunks, $evidence);
 
         return [
             'content' => [
@@ -147,52 +84,173 @@ class ConsultGuidelines extends Tool
     }
 
     /**
-     * Clean narrative content by removing noise and formatting issues.
+     * Format context chunks for LLM consumption (cleaned, summarized).
      */
-    protected function cleanNarrativeContent(string $content): string
+    protected function formatContextChunks(array $narrativeChunks): array
     {
-        // Remove entity blocks (---- Entities ---- sections)
-        $content = preg_replace('/----\s*Entities\s*----.*?(?=\n[A-Z]|\n\n\n|$)/s', '', $content);
+        $formatted = [];
 
-        // Remove CSV-style entity tables
-        $content = preg_replace('/^,Entity,Score,Description\n.*?(?=\n[A-Z]|\n\n|$)/ms', '', $content);
-        $content = preg_replace('/^\d+,[A-Z][A-Z\s]+,\d+\.\d+,.*$/m', '', $content);
+        foreach ($narrativeChunks as $idx => $chunk) {
+            $content = $chunk['content'] ?? '';
+            $cleanContent = $this->cleanNarrativeContent($content);
 
-        // Remove visual type descriptions (figure descriptions)
-        $content = preg_replace('/- Visual Type:.*?(?=\n\n|\n-\s+[A-Z]|$)/s', '', $content);
+            if (empty(trim($cleanContent))) {
+                continue;
+            }
 
-        // Remove "Title:", "Axes / Legends", "Data Points:", "Trends / Insights:", "Captions" blocks
-        $content = preg_replace('/- (Title|Axes|Data Points|Trends|Captions|Legends)[^:]*:.*?(?=\n-\s+[A-Z]|\n\n|$)/s', '', $content);
+            $formatted[] = [
+                'id' => 'ctx_' . ($idx + 1),
+                'source' => $chunk['source_guideline'] ?? 'ESVS',
+                'relevance' => $chunk['similarity'] ?? 0,
+                'text' => $cleanContent,
+            ];
+        }
 
-        // Clean up HTML tables - extract text content
-        if (preg_match_all('/<tr><td[^>]*>([^<]+)<\/td><\/tr>/i', $content, $matches)) {
-            $tableItems = array_filter($matches[1], fn($item) => strlen(trim($item)) > 10);
-            if (!empty($tableItems)) {
-                $cleanTable = "Key points:\n";
-                foreach (array_slice($tableItems, 0, 5) as $item) {
-                    $cleanTable .= "• " . trim($item) . "\n";
-                }
-                $content = preg_replace('/<table>.*?<\/table>/s', $cleanTable, $content);
+        return $formatted;
+    }
+
+    /**
+     * Select top N evidence items from citation chunks.
+     * Evidence = specific recommendations for verbatim quoting.
+     */
+    protected function selectTopEvidence(array $citationChunks, int $limit = 5): array
+    {
+        $evidence = [];
+        $seenRecIds = [];
+
+        // Sort by similarity score (highest first)
+        usort(
+            $citationChunks,
+            fn($a, $b) =>
+            ($b['similarity'] ?? 0) <=> ($a['similarity'] ?? 0)
+        );
+
+        foreach ($citationChunks as $idx => $chunk) {
+            $recId = $chunk['recommendation_id'] ?? '';
+
+            // Deduplicate by recommendation ID
+            if ($recId && in_array($recId, $seenRecIds)) {
+                continue;
+            }
+            if ($recId) {
+                $seenRecIds[] = $recId;
+            }
+
+            $evidence[] = [
+                'cite_id' => 'E' . (count($evidence) + 1),
+                'rec_id' => $recId,
+                'guideline' => $chunk['guideline'] ?? '',
+                'class' => $chunk['class'] ?? '',
+                'level' => $chunk['level'] ?? '',
+                'quote' => $chunk['text'] ?? '',
+                'score' => $chunk['similarity'] ?? 0,
+            ];
+
+            if (count($evidence) >= $limit) {
+                break;
             }
         }
 
-        // Remove any remaining HTML tags
+        return $evidence;
+    }
+
+    /**
+     * Build the formatted output for the LLM.
+     */
+    protected function buildFormattedOutput(
+        string $question,
+        string $guidelineNames,
+        array $contextChunks,
+        array $evidence
+    ): string {
+        $output = "# 📋 ESVS Guidelines Consultation\n\n";
+        $output .= "**Query:** {$question}\n\n";
+        $output .= "**Guidelines:** {$guidelineNames}\n\n";
+
+        // CONTEXT SECTION (for LLM reasoning - not shown as citations)
+        $output .= "---\n\n";
+        $output .= "## 📚 Clinical Context\n\n";
+        $output .= "*Use this section for background understanding. Do not cite directly.*\n\n";
+
+        foreach (array_slice($contextChunks, 0, 6) as $chunk) {
+            $output .= "**[{$chunk['id']}] {$chunk['source']}** *(relevance: {$chunk['relevance']}%)*\n\n";
+            $output .= "{$chunk['text']}\n\n";
+        }
+
+        // EVIDENCE SECTION (small, specific - these are the citations)
+        $output .= "---\n\n";
+        $output .= "## 📑 Evidence (Cite These Verbatim)\n\n";
+
+        if (empty($evidence)) {
+            $output .= "*No specific recommendations retrieved for this query.*\n\n";
+        } else {
+            $output .= "| Cite | Recommendation | Class | Level | Guideline |\n";
+            $output .= "|------|----------------|-------|-------|------------|\n";
+
+            foreach ($evidence as $e) {
+                $output .= "| **{$e['cite_id']}** | {$e['rec_id']} | {$e['class']} | {$e['level']} | {$e['guideline']} |\n";
+            }
+
+            $output .= "\n";
+
+            foreach ($evidence as $e) {
+                $output .= "### {$e['cite_id']}: {$e['rec_id']}\n\n";
+                if ($e['guideline']) {
+                    $output .= "**Source:** {$e['guideline']} | {$e['class']} | {$e['level']}\n\n";
+                }
+                $output .= "> {$e['quote']}\n\n";
+            }
+        }
+
+        // Instructions
+        $output .= "---\n\n";
+        $output .= "## ⚠️ Response Format\n\n";
+        $output .= "In your answer:\n";
+        $output .= "1. **🩺 Clinical Synthesis** - Use context to form answer, cite evidence as (E1), (E2)\n";
+        $output .= "2. **📑 Evidence Used** - List only the E1, E2 citations you actually used\n";
+        $output .= "3. If no evidence matches, state: *\"No specific ESVS recommendation available\"*\n";
+
+        return $output;
+    }
+
+    /**
+     * Clean narrative content by removing noise.
+     */
+    protected function cleanNarrativeContent(string $content): string
+    {
+        // Remove entity blocks
+        $content = preg_replace('/----\s*Entities\s*----.*?(?=\n[A-Z]|\n\n\n|$)/s', '', $content);
+        $content = preg_replace('/^,Entity,Score,Description\n.*?(?=\n[A-Z]|\n\n|$)/ms', '', $content);
+        $content = preg_replace('/^\d+,[A-Z][A-Z\s]+,\d+\.\d+,.*$/m', '', $content);
+
+        // Remove visual descriptions
+        $content = preg_replace('/- Visual Type:.*?(?=\n\n|\n-\s+[A-Z]|$)/s', '', $content);
+        $content = preg_replace('/- (Title|Axes|Data Points|Trends|Captions|Legends)[^:]*:.*?(?=\n-\s+[A-Z]|\n\n|$)/s', '', $content);
+
+        // Extract useful text from HTML tables
+        if (preg_match_all('/<tr><td[^>]*>\s*(\d+\..*?)<\/td><\/tr>/i', $content, $matches)) {
+            $recommendations = array_filter($matches[1], fn($item) => strlen(trim($item)) > 20);
+            if (!empty($recommendations)) {
+                $cleanRecs = "";
+                foreach (array_slice($recommendations, 0, 4) as $rec) {
+                    $cleanRecs .= "• " . trim(strip_tags($rec)) . "\n";
+                }
+                $content = preg_replace('/<table>.*?<\/table>/s', $cleanRecs, $content);
+            }
+        }
+
+        // Clean HTML
         $content = strip_tags($content);
 
-        // Remove lines that are just dashes or equals
-        $content = preg_replace('/^[-=]{3,}$/m', '', $content);
+        // Remove reference citations
+        $content = preg_replace('/^\d+\s+[A-Z][a-z]+\s+[A-Z]{2,}.*$/m', '', $content);
 
-        // Remove reference numbers and citations like "42.el." or "350 Stone WM..."
-        $content = preg_replace('/^\d+\.?\s*[A-Z][a-z]+\s+[A-Z]{1,2}.*$/m', '', $content);
-        $content = preg_replace('/^\d+\s+[A-Z][a-z]+\s+[A-Z]{2,}.*?(?:;|\.)$/m', '', $content);
-
-        // Clean excess whitespace
+        // Clean whitespace
         $content = preg_replace('/\n{3,}/', "\n\n", $content);
-        $content = preg_replace('/^\s+$/m', '', $content);
 
-        // Truncate very long content
-        if (strlen($content) > 800) {
-            $content = substr($content, 0, 800) . '...';
+        // Truncate
+        if (strlen($content) > 600) {
+            $content = substr($content, 0, 600) . '...';
         }
 
         return trim($content);
