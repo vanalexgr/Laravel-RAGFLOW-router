@@ -63,58 +63,120 @@ class ToolController extends Controller
             'selection_mode' => $requestedKeys ? 'explicit' : 'auto-routing'
         ]);
 
-        // Call retrieval service with optional guideline override
+        // Call retrieval service
         $result = $this->retrievalService->retrieve($question, $history, $requestedKeys);
 
-        // Format for LLM Consumption (same as ConsultGuidelines tool)
-        $output = "RETRIEVED GUIDELINES for: \"{$result['question']}\"\n";
-        $output .= "Guidelines Used: " . implode(', ', array_column($result['selected_guidelines'], 'name')) . "\n\n";
+        // Select top 5 evidence items (deduplicated by rec_id)
+        $evidence = $this->selectTopEvidence($result['citation_chunks'], 5);
+        $guidelineNames = implode(', ', array_column($result['selected_guidelines'], 'name'));
 
-        $output .= "=== NARRATIVE EVIDENCE (Use for context) ===\n";
-        foreach ($result['narrative_chunks'] as $chunk) {
-            $output .= "- " . ($chunk['content'] ?? '') . "\n";
-        }
-        $output .= "\n";
+        // Format as structured text for LLM
+        $output = "# 📋 ESVS Guidelines Consultation\n\n";
+        $output .= "**Query:** {$result['question']}\n\n";
+        $output .= "**Guidelines:** {$guidelineNames}\n\n";
 
-        $output .= "=== CITATIONS (Use for verbatim quoting) ===\n";
-        foreach ($result['citation_chunks'] as $chunk) {
-            $meta = [];
-            if (!empty($chunk['recommendation_id']))
-                $meta[] = $chunk['recommendation_id'];
-            if (!empty($chunk['class']))
-                $meta[] = $chunk['class'];
-            if (!empty($chunk['level']))
-                $meta[] = $chunk['level'];
-            if (!empty($chunk['guideline']))
-                $meta[] = $chunk['guideline'];
-            $metaStr = !empty($meta) ? " [" . implode(', ', $meta) . "]" : "";
+        // Context section (background for LLM reasoning)
+        $output .= "---\n\n## 📚 Clinical Context\n\n";
 
-            $output .= "> \"{$chunk['text']}\"{$metaStr}\n";
+        $ctxNum = 1;
+        foreach (array_slice($result['narrative_chunks'], 0, 6) as $chunk) {
+            $content = $this->cleanNarrativeContent($chunk['content'] ?? '');
+            if (empty(trim($content)))
+                continue;
+
+            $source = $chunk['source_guideline'] ?? 'ESVS';
+            $relevance = $chunk['similarity'] ?? 0;
+            $output .= "**[ctx_{$ctxNum}] {$source}** *(relevance: {$relevance}%)*\n\n{$content}\n\n";
+            $ctxNum++;
         }
 
-        // Add format reminder
-        $output .= "\n\n=== IMPORTANT ===\n";
-        $output .= "Present this using the mandatory response format:\n";
-        $output .= "1. 🩺 Clinical Synthesis (3-6 bullets with inline citations)\n";
-        $output .= "2. 📑 Recommendations used in this answer (verbatim quotes)\n";
-        $output .= "3. 📌 Guideline supporting statements\n";
+        // Evidence section (citations)
+        $output .= "---\n\n## 📑 Evidence (Cite These)\n\n";
 
-        // Debug: Log what we're returning
+        if (empty($evidence)) {
+            $output .= "*No specific recommendations retrieved.*\n\n";
+        } else {
+            foreach ($evidence as $e) {
+                $output .= "### {$e['cite_id']}: {$e['rec_id']}\n";
+                $output .= "**{$e['guideline']}** | {$e['class']} | {$e['level']}\n\n";
+                $output .= "> {$e['quote']}\n\n";
+            }
+        }
+
+        $output .= "---\n\n## ⚠️ Response Format\n\n";
+        $output .= "Use (E1), (E2), etc. to cite evidence in your answer.\n";
+
+        // Debug log
         Log::info('Tool API Response', [
             'question' => $question,
-            'text_length' => strlen($output),
-            'text_preview' => substr($output, 0, 200),
-            'has_content' => !empty($output)
+            'evidence_count' => count($evidence),
         ]);
 
-        // Return JSON with result and raw chunks for citation emission
+        // Return JSON with structured data for citation emission
         return response()->json([
             'result' => $output,
+            'evidence' => $evidence,
             'narrative_chunks' => $result['narrative_chunks'],
             'citation_chunks' => $result['citation_chunks'],
         ])->header('Access-Control-Allow-Origin', '*')
             ->header('Access-Control-Allow-Methods', 'POST, OPTIONS')
             ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    }
+
+    /**
+     * Select top N evidence items, deduplicated by recommendation ID.
+     */
+    protected function selectTopEvidence(array $citationChunks, int $limit = 5): array
+    {
+        $evidence = [];
+        $seenRecIds = [];
+
+        // Sort by similarity (highest first)
+        usort($citationChunks, fn($a, $b) => ($b['similarity'] ?? 0) <=> ($a['similarity'] ?? 0));
+
+        foreach ($citationChunks as $chunk) {
+            $recId = $chunk['recommendation_id'] ?? '';
+
+            // Dedupe by rec_id
+            if ($recId && in_array($recId, $seenRecIds))
+                continue;
+            if ($recId)
+                $seenRecIds[] = $recId;
+
+            $evidence[] = [
+                'cite_id' => 'E' . (count($evidence) + 1),
+                'rec_id' => $recId,
+                'guideline' => $chunk['guideline'] ?? '',
+                'class' => $chunk['class'] ?? '',
+                'level' => $chunk['level'] ?? '',
+                'quote' => $chunk['text'] ?? '',
+                'score' => $chunk['similarity'] ?? 0,
+            ];
+
+            if (count($evidence) >= $limit)
+                break;
+        }
+
+        return $evidence;
+    }
+
+    /**
+     * Clean narrative content for readability.
+     */
+    protected function cleanNarrativeContent(string $content): string
+    {
+        // Remove entity blocks and visual descriptions
+        $content = preg_replace('/----\s*Entities\s*----.*?(?=\n[A-Z]|\n\n\n|$)/s', '', $content);
+        $content = preg_replace('/- Visual Type:.*?(?=\n\n|\n-\s+[A-Z]|$)/s', '', $content);
+        $content = preg_replace('/^,Entity,Score,Description\n.*?(?=\n[A-Z]|\n\n|$)/ms', '', $content);
+        $content = strip_tags($content);
+        $content = preg_replace('/\n{3,}/', "\n\n", $content);
+
+        if (strlen($content) > 500) {
+            $content = substr($content, 0, 500) . '...';
+        }
+
+        return trim($content);
     }
 
     protected function validateGuideline(string $guideline): ?string
