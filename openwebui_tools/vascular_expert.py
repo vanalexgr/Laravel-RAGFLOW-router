@@ -183,12 +183,17 @@ class Tools:
                     rec_id = chunk.get("recommendation_id", "")
                     cls = chunk.get("class", "")
                     level = chunk.get("level", "")
+                    guideline = chunk.get("guideline", "ESVS")
                     
-                    # Build citation title
+                    # Build citation title (User Request: "Recommendation 25 from xxx - Class IIA, Level C")
                     if rec_id:
-                        title = f"[{chunk_number}] {rec_id} ({cls}, {level})"
+                        # Clean rec_id if it has prefixes like "vascular_trauma_R002" -> "R002"? 
+                        # User example "25" suggests short ID. But dataset has long IDs. 
+                        # Let's keep the ID as is for identifying, or maybe just distinct part?
+                        # For now, use the full rec_id but formatted nicely.
+                        title = f"Recommendation {rec_id} from {guideline} - Class {cls}, Level {level}"
                     else:
-                        title = f"[{chunk_number}] Recommendation"
+                        title = f"Recommendation from {guideline}"
                     
                     try:
                         await emitter({
@@ -199,29 +204,32 @@ class Tools:
                                 "source": {"id": f"cite_{chunk_number}", "name": title},
                             }
                         })
-                        chunk_number += 1
                     except Exception as e:
-                        print(f"[VascularExpert] Citation emit error: {e}")
+                        print(f"Error emitting citation: {e}")
+                    
+                    chunk_number += 1
                 
                 # Emit narrative chunks (context)
-                for chunk in narrative_chunks[:10]:  # Limit to 10 to avoid overload
+                for chunk in narrative_chunks[:15]:
                     content = chunk.get("content", "")
-                    source = chunk.get("source_guideline", "ESVS")
+                    doc_name = chunk.get("doc_name", "Context")
+                    source_guideline = chunk.get("source_guideline", "ESVS Guidelines")
                     
-                    title = f"[{chunk_number}] {source}"
+                    title = f"Narrative: {doc_name} ({source_guideline})"
                     
                     try:
                         await emitter({
                             "type": "citation",
                             "data": {
-                                "document": [content[:1500]],  # Truncate very long chunks
+                                "document": [content],
                                 "metadata": [{"source": title}],
                                 "source": {"id": f"cite_{chunk_number}", "name": title},
                             }
                         })
-                        chunk_number += 1
                     except Exception as e:
-                        print(f"[VascularExpert] Citation emit error: {e}")
+                        print(f"Error emitting citation: {e}")
+                        
+                    chunk_number += 1
             
             if total_chunks > 0:
                 status_msg = f"Retrieved {total_chunks} evidence chunks from {guideline_display}"
@@ -243,7 +251,7 @@ class Tools:
                         lvl = chunk.get("level", "N/A")
                         guideline = chunk.get("guideline", "ESVS")
                         
-                        # Format: [n] Rec {rec_id} (Class {cls}, Level {level}) — {guideline}
+                        # INSTRUCTION TO LLM: Include [n] in the header so it is clickable in the final answer
                         header = f"[{chunk_num}] Rec {rec_id} (Class {cls}, Level {lvl}) — {guideline}"
                         llm_output += f"{header}\n> {text}\n\n"
                         chunk_num += 1
