@@ -635,14 +635,39 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
                     matches = False
                     for name in guideline_names:
                         name_lower = name.lower()
-                        # Match by guideline field or doc_name
-                        if (name_lower in chunk_guideline or 
-                            name_lower in doc_name.lower() or
-                            # Also check common abbreviations
-                            (name_lower == "abdominal aortic aneurysm" and "aaa" in chunk_guideline) or
-                            (name_lower == "vascular graft infections" and "graft" in chunk_guideline) or
-                            (name_lower == "carotid & vertebral" and "carotid" in chunk_guideline)):
+                        # Match by guideline field or doc_name (direct match)
+                        if name_lower in chunk_guideline or name_lower in doc_name.lower():
                             matches = True
+                            break
+                        
+                        # Also check common abbreviations and partial matches
+                        keywords = name_lower.replace("&", " ").replace("-", " ").split()
+                        key_matches = sum(1 for kw in keywords if len(kw) > 3 and kw in chunk_guideline)
+                        if key_matches >= 1:  # At least one significant keyword
+                            matches = True
+                            break
+                        
+                        # Specific abbreviation mappings
+                        abbreviation_map = {
+                            "abdominal aortic aneurysm": ["aaa", "abdominal", "evar"],
+                            "vascular graft infections": ["graft", "magic"],
+                            "carotid & vertebral": ["carotid", "vertebral", "cea", "stroke"],
+                            "mesenteric & renal": ["mesenteric", "renal", "sma", "ami"],
+                            "thoracic aorta": ["thoracic", "tevar", "tbad", "descending"],
+                            "chronic venous disease": ["venous", "varicose", "cvd"],
+                            "venous thrombosis": ["dvt", "vte", "thrombosis"],
+                            "vascular trauma": ["trauma", "injury"],
+                            "antithrombotic": ["antithrombotic", "anticoagulation", "doac"],
+                            "clti": ["clti", "cli", "critical limb", "gangrene"],
+                            "asymptomatic pad": ["pad", "claudication", "peripheral"],
+                        }
+                        
+                        for full_name, abbrevs in abbreviation_map.items():
+                            if full_name in name_lower:
+                                if any(abbrev in chunk_guideline or abbrev in doc_name.lower() for abbrev in abbrevs):
+                                    matches = True
+                                    break
+                        if matches:
                             break
                     
                     if matches:
