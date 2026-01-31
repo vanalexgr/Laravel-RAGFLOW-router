@@ -101,8 +101,9 @@ class ToolController extends Controller
         Log::info('Tool API Response', [
             'question' => $question,
             'text_length' => strlen($output),
-            'text_preview' => substr($output, 0, 200),
-            'has_content' => !empty($output)
+            'has_narrative_chunks' => !empty($result['narrative_chunks']),
+            'narrative_count' => count($result['narrative_chunks'] ?? []),
+            'citation_count' => count($result['citation_chunks'] ?? []),
         ]);
 
         // Return JSON with structured data for citation emission
