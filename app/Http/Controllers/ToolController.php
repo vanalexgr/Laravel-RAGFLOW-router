@@ -105,9 +105,11 @@ class ToolController extends Controller
             'has_content' => !empty($output)
         ]);
 
-        // Return simple JSON for OpenWebUI Action
+        // Return JSON with structured data for citation emission
         return response()->json([
-            'result' => $output
+            'result' => $output,
+            'narrative_chunks' => $result['narrative_chunks'],
+            'citation_chunks' => $result['citation_chunks'],
         ])->header('Access-Control-Allow-Origin', '*')
             ->header('Access-Control-Allow-Methods', 'POST, OPTIONS')
             ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
