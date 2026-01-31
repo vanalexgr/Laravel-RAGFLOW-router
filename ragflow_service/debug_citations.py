@@ -49,9 +49,31 @@ def test_retrieval(question, threshold=0.1):
         if hasattr(e, 'response') and e.response:
             print(f"Response: {e.response.text}")
 
+def list_datasets():
+    url = f"{BASE_URL}/datasets"
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json"
+    }
+    print(f"\n--- Listing Available Datasets ---")
+    try:
+        response = requests.get(url, headers=headers, params={"page": 1, "size": 100})
+        response.raise_for_status()
+        data = response.json()
+        
+        datasets = data.get("data", [])
+        print(f"Total Datasets: {len(datasets)}")
+        for ds in datasets:
+            print(f"ID: {ds.get('id')} | Name: {ds.get('name')} | Chunks: {ds.get('chunk_count')}")
+            
+    except Exception as e:
+        print(f"ERROR Listing Datasets: {e}")
+        if hasattr(e, 'response') and e.response:
+            print(f"Response: {e.response.text}")
+
 if __name__ == "__main__":
-    # Test 1: Standard Question
-    test_retrieval("What is PAD?")
+    # Step 1: List all datasets to confirm ID
+    list_datasets()
     
-    # Test 2: Very generic (should return something if dataset exists)
-    test_retrieval("aortic", threshold=0.01)
+    # Step 2: Test the specific ID
+    test_retrieval("What is PAD?", threshold=0.1)
