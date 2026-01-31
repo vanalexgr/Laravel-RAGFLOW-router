@@ -163,10 +163,13 @@ class Tools:
                 response.raise_for_status()
             
             data = response.json()
+            print(f"[VascularExpert] Response keys: {data.keys()}")
             
             # Extract chunks from response
             narrative_chunks = data.get("narrative_chunks", [])
             citation_chunks = data.get("citation_chunks", [])
+            print(f"[VascularExpert] Chunks: narrative={len(narrative_chunks)}, citation={len(citation_chunks)}")
+            
             total_chunks = len(narrative_chunks) + len(citation_chunks)
             
             # EMIT INDIVIDUAL CITATIONS for each chunk
