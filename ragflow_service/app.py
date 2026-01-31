@@ -620,6 +620,10 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
             cit_duration = (datetime.now() - cit_start).total_seconds() * 1000
             result = response.json()
             chunks = result.get("data", {}).get("chunks", [])
+            logger.info(f"  Raw Citations Retrieved: {len(chunks)}")
+            if len(chunks) > 0:
+                logger.info(f"  Sample Chunk [0] Content: {chunks[0].get('content', '')[:200]}...")
+                logger.info(f"  Sample Chunk [0] DocName: {chunks[0].get('doc_name', '')}")
             
             # POST-FILTERING: Only keep citations that match selected guidelines
             if guideline_names:
