@@ -293,7 +293,10 @@ class RetrievalService
                     $meta['class'] = $m[1];
                 if (preg_match('/LEVEL:\s*(Level\s*\S+)/i', $content, $m))
                     $meta['level'] = $m[1];
-                if (preg_match('/RECOMMENDATION_TEXT:\s*(.+?)(?=TRIPLES:|CLASS:|LEVEL:|$)/is', $content, $m))
+                // Extract guideline name from content
+                if (preg_match('/GUIDELINE[_\s]*(?:ID|NAME)?:\s*(.+?)(?=\n|RECOMMENDATION|CLASS|LEVEL|$)/i', $content, $m))
+                    $meta['guideline'] = trim($m[1]);
+                if (preg_match('/RECOMMENDATION_TEXT:\s*(.+?)(?=TRIPLES:|CLASS:|LEVEL:|GUIDELINE:|$)/is', $content, $m))
                     $text = trim($m[1]);
 
                 $meta['text'] = strlen($text) > 800 ? substr($text, 0, 800) . '...' : $text;
