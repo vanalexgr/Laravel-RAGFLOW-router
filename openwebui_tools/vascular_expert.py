@@ -76,6 +76,87 @@ class Tools:
             except Exception as e:
                 print(f"[VascularExpert] Status emit error: {e}")
 
+    async def _emit_citations(self, emitter, citation_chunks: list, narrative_chunks: list):
+        """Emit individual citations as OpenWebUI citation events for clickable badges."""
+        if not emitter:
+            return
+        
+        try:
+            # Group citations by guideline for proper source attribution
+            sources_by_guideline = {}
+            
+            # Process citation chunks (recommendations with metadata)
+            for chunk in citation_chunks:
+                guideline = chunk.get("guideline", "ESVS Guidelines")
+                rec_id = chunk.get("recommendation_id", "")
+                text = chunk.get("text", "")
+                
+                if guideline not in sources_by_guideline:
+                    sources_by_guideline[guideline] = {
+                        "documents": [],
+                        "metadatas": [],
+                        "distances": []
+                    }
+                
+                # Build document content with full citation info
+                doc_content = text
+                if rec_id:
+                    cls = chunk.get("class", "")
+                    level = chunk.get("level", "")
+                    doc_content = f"[{rec_id}] ({cls}, {level})\n{text}"
+                
+                sources_by_guideline[guideline]["documents"].append(doc_content)
+                sources_by_guideline[guideline]["metadatas"].append({
+                    "source": guideline,
+                    "name": f"{guideline} - {rec_id}" if rec_id else guideline,
+                    "recommendation_id": rec_id,
+                    "class": chunk.get("class", ""),
+                    "level": chunk.get("level", ""),
+                })
+                sources_by_guideline[guideline]["distances"].append(
+                    chunk.get("similarity", 0) / 100.0  # Convert percentage to 0-1
+                )
+            
+            # Process narrative chunks (for context)
+            for chunk in narrative_chunks:
+                guideline = chunk.get("source_guideline", "ESVS Guidelines")
+                content = chunk.get("content", "")
+                
+                if guideline not in sources_by_guideline:
+                    sources_by_guideline[guideline] = {
+                        "documents": [],
+                        "metadatas": [],
+                        "distances": []
+                    }
+                
+                sources_by_guideline[guideline]["documents"].append(content)
+                sources_by_guideline[guideline]["metadatas"].append({
+                    "source": guideline,
+                    "name": guideline,
+                })
+                sources_by_guideline[guideline]["distances"].append(
+                    chunk.get("similarity", 0) / 100.0
+                )
+            
+            # Emit each guideline as a separate citation source
+            for guideline, data in sources_by_guideline.items():
+                await emitter({
+                    "type": "citation",
+                    "data": {
+                        "document": data["documents"],
+                        "metadata": data["metadatas"],
+                        "source": {
+                            "id": guideline,
+                            "name": guideline,
+                        },
+                        "distances": data["distances"],
+                    }
+                })
+                print(f"[VascularExpert] Emitted citation for: {guideline} ({len(data['documents'])} docs)")
+                
+        except Exception as e:
+            print(f"[VascularExpert] Citation emit error: {e}")
+
     async def consult_vascular_guidelines(
         self, 
         question: str,
@@ -175,6 +256,11 @@ class Tools:
                     f"Retrieved {total_chunks} evidence chunks from {guideline_display}",
                     done=True
                 )
+                
+                # Emit individual citations for clickable badges in OpenWebUI
+                narrative_chunks = data.get("narrative_chunks", [])
+                citation_chunks = data.get("citation_chunks", [])
+                await self._emit_citations(emitter, citation_chunks, narrative_chunks)
             else:
                 await self._emit_status(
                     emitter, 
