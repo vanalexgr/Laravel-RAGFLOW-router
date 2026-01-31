@@ -79,7 +79,7 @@ class ToolController extends Controller
         $output .= "---\n\n## 📚 Clinical Context\n\n";
 
         $ctxNum = 1;
-        foreach (array_slice($result['narrative_chunks'], 0, 6) as $chunk) {
+        foreach (array_slice($result['narrative_chunks'], 0, 12) as $chunk) {
             $content = $this->cleanNarrativeContent($chunk['content'] ?? '');
             if (empty(trim($content)))
                 continue;
@@ -172,8 +172,8 @@ class ToolController extends Controller
         $content = strip_tags($content);
         $content = preg_replace('/\n{3,}/', "\n\n", $content);
 
-        if (strlen($content) > 500) {
-            $content = substr($content, 0, 500) . '...';
+        if (strlen($content) > 2000) {
+            $content = substr($content, 0, 2000) . '...';
         }
 
         return trim($content);
