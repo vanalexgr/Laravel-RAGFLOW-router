@@ -286,15 +286,37 @@ class RetrievalService
 
             if ($type === 'citation') {
                 $text = $content;
-                // Parse Citation Metadata
-                if (preg_match('/RECOMMENDATION_ID:\s*(Rec\s*\d+)/i', $content, $m))
+                // Parse Citation Metadata - Handle both formats
+                // Format 1: RECOMMENDATION_ID: Rec 12
+                if (preg_match('/RECOMMENDATION_ID:\s*(Rec\s*[\d\w]+)/i', $content, $m))
                     $meta['recommendation_id'] = $m[1];
+                // Format 2: rec_id:vascular_trauma_R002
+                elseif (preg_match('/rec_id:\s*([^\s;]+)/i', $content, $m))
+                    $meta['recommendation_id'] = $m[1];
+
                 if (preg_match('/CLASS:\s*(Class\s*\S+)/i', $content, $m))
                     $meta['class'] = $m[1];
+                elseif (preg_match('/class:\s*([^\s;]+)/i', $content, $m))
+                    $meta['class'] = $m[1];
+
                 if (preg_match('/LEVEL:\s*(Level\s*\S+)/i', $content, $m))
                     $meta['level'] = $m[1];
+                elseif (preg_match('/level:\s*([^\s;]+)/i', $content, $m))
+                    $meta['level'] = $m[1];
+
+                // Extract guideline name if present
+                if (preg_match('/guideline_name:\s*([^;]+)/i', $content, $m))
+                    $meta['guideline'] = trim($m[1]);
+
+                // Extract text content (remove metadata headers if possible)
                 if (preg_match('/RECOMMENDATION_TEXT:\s*(.+?)(?=TRIPLES:|CLASS:|LEVEL:|$)/is', $content, $m))
                     $text = trim($m[1]);
+                elseif (preg_match('/recommendation_text:\s*(.+?)(?=;|$)/is', $content, $m))
+                    $text = trim($m[1]);
+                // If the content is just metadata-heavy, we might want to clean it, but usually the text is in there.
+                // For the new format, if no explicit text field, use the whole thing?
+                // The chunk preview showed "rec_id:...". Let's assume the text follows or is the whole thing?
+                // Actually, let's keep the full content as fallback.
 
                 $meta['text'] = strlen($text) > 800 ? substr($text, 0, 800) . '...' : $text;
             } else {
