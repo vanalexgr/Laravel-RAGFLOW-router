@@ -172,7 +172,7 @@ class ConsultGuidelines extends Tool
         $output .= "## 📚 Clinical Context\n\n";
         $output .= "*Use this section for background understanding. Do not cite directly.*\n\n";
 
-        foreach (array_slice($contextChunks, 0, 6) as $chunk) {
+        foreach (array_slice($contextChunks, 0, 12) as $chunk) {
             $output .= "**[{$chunk['id']}] {$chunk['source']}** *(relevance: {$chunk['relevance']}%)*\n\n";
             $output .= "{$chunk['text']}\n\n";
         }
@@ -248,9 +248,9 @@ class ConsultGuidelines extends Tool
         // Clean whitespace
         $content = preg_replace('/\n{3,}/', "\n\n", $content);
 
-        // Truncate
-        if (strlen($content) > 600) {
-            $content = substr($content, 0, 600) . '...';
+        // Truncate (generous limit to preserve context)
+        if (strlen($content) > 2000) {
+            $content = substr($content, 0, 2000) . '...';
         }
 
         return trim($content);
