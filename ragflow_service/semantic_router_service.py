@@ -121,7 +121,7 @@ GUIDELINES_CONFIG = {
         ],
     },
     "abdominal_aortic_aneurysm": {
-        "id": "1e8b73dcf49911f09b845ef3771a102d",
+        "id": "7fb152c6ffbd11f0b2af32d89964721d",
         "name": "Abdominal Aortic Aneurysm",
         "utterances": [
             "Abdominal aortic aneurysm AAA",
@@ -232,7 +232,7 @@ GUIDELINES_CONFIG = {
         ],
     },
     "carotid_vertebral": {
-        "id": "29b2a1e84ed111f0b3bb3aabfab5e99c",
+        "id": "87c72055ffbe11f095ef32d89964721d",
         "name": "Carotid & Vertebral",
         "utterances": [
             "Carotid artery stenosis",
@@ -456,7 +456,7 @@ GUIDELINES_CONFIG = {
         ],
     },
     "antithrombotic_therapy": {
-        "id": "b404c5e0585611f0b053823a24ef0d59",
+        "id": "b6b02fdaffad11f0885f32d89964721d",
         "name": "Antithrombotic Therapy",
         "utterances": [
             "Antithrombotic therapy",
