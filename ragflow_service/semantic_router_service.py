@@ -9,7 +9,7 @@ logger = logging.getLogger("semantic_router_service")
 
 GUIDELINES_CONFIG = {
     "aortic_arch": {
-        "id": "be20b02cdc4311f09021f2381272676b",
+        "id": "5b51acbfffa411f0905532d89964721d",
         "name": "Aortic Arch",
         "utterances": [
             "Aortic arch aneurysm",
@@ -176,7 +176,7 @@ GUIDELINES_CONFIG = {
         ],
     },
     "mesenteric_renal": {
-        "id": "d94f2a06dc4111f09021f2381272676b",
+        "id": "681e339bffa311f08abc32d89964721d",
         "name": "Mesenteric & Renal",
         "utterances": [
             "Coeliac artery coeliac trunk CA",
@@ -400,7 +400,7 @@ GUIDELINES_CONFIG = {
         ],
     },
     "acute_limb_ischaemia": {
-        "id": "7dcce66ef3eb11f0b82c5ef3771a102d",
+        "id": "9eeed489ff9d11f0b82f32d89964721d",
         "name": "Acute Limb Ischaemia",
         "utterances": [
             "Acute limb ischemia ALI",
@@ -568,7 +568,7 @@ GUIDELINES_CONFIG = {
         ],
     },
     "chronic_venous_disease": {
-        "id": "ecb621444d8f11f09f7a2e382eabde98",
+        "id": "ec53f8c1ff9811f0a09132d89964721d",
         "name": "Chronic Venous Disease",
         "utterances": [
             "Chronic venous disease CVD",
