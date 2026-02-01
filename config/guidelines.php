@@ -18,7 +18,7 @@ return [
                     'key_concepts' => ['Type B Dissection', 'TBAD', 'Intramural Hematoma', 'IMH', 'TEVAR', 'Spinal Cord Ischemia', 'thoracic aneurysm', 'penetrating ulcer'],
                 ],
                 'abdominal_aortic_aneurysm' => [
-                    'id' => '1e8b73dcf49911f09b845ef3771a102d',
+                    'id' => '7fb152c6ffbd11f0b2af32d89964721d',
                     'name' => 'Abdominal Aortic Aneurysm',
                     'key_concepts' => ['EVAR', 'Open Repair', 'surveillance', '5.0cm', '5.5cm', 'endoleaks', 'AAA', 'rupture', 'abdominal aneurysm'],
                 ],
@@ -33,7 +33,7 @@ return [
             'name' => 'Peripheral & Carotid',
             'guidelines' => [
                 'carotid_vertebral' => [
-                    'id' => '29b2a1e84ed111f0b3bb3aabfab5e99c',
+                    'id' => '87c72055ffbe11f095ef32d89964721d',
                     'name' => 'Carotid & Vertebral',
                     'key_concepts' => ['Stroke', 'TIA', 'CEA', 'CAS', 'TCAR', 'symptomatic stenosis', 'asymptomatic stenosis', 'carotid endarterectomy', 'carotid stenting', 'vertebral artery'],
                 ],
@@ -58,7 +58,7 @@ return [
             'name' => 'Venous & Thrombosis',
             'guidelines' => [
                 'antithrombotic_therapy' => [
-                    'id' => 'b404c5e0585611f0b053823a24ef0d59',
+                    'id' => 'b6b02fdaffad11f0885f32d89964721d',
                     'name' => 'Antithrombotic Therapy',
                     'key_concepts' => ['DOACs', 'warfarin', 'triple therapy', 'cancer-associated thrombosis', 'anticoagulation', 'aspirin', 'clopidogrel', 'dual antiplatelet'],
                 ],
@@ -99,13 +99,13 @@ return [
     'all_guideline_datasets' => [
         '5b51acbfffa411f0905532d89964721d',
         'fd679d82dc3311f09021f2381272676b',
-        '1e8b73dcf49911f09b845ef3771a102d',
+        '7fb152c6ffbd11f0b2af32d89964721d',
         '681e339bffa311f08abc32d89964721d',
-        '29b2a1e84ed111f0b3bb3aabfab5e99c',
+        '87c72055ffbe11f095ef32d89964721d',
         'c7c42f76507211f0b6356a892e29a549',
         'acd1930edc3411f09021f2381272676b',
         '9eeed489ff9d11f0b82f32d89964721d',
-        'b404c5e0585611f0b053823a24ef0d59',
+        'b6b02fdaffad11f0885f32d89964721d',
         '7104532adc4311f09021f2381272676b',
         'ec53f8c1ff9811f0a09132d89964721d',
         '8f58aeadec9411f0a38066bc68590b9b',
