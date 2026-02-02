@@ -78,7 +78,7 @@ return [
             'name' => 'Specialty',
             'guidelines' => [
                 'vascular_trauma' => [
-                    'id' => '8f58aeadec9411f0a38066bc68590b9b',
+                    'id' => '94269d17007f11f1b59a32d89964721d',
                     'name' => 'Vascular Trauma',
                     'key_concepts' => ['REBOA', 'mangled extremity', 'MESS', 'hard signs', 'soft signs', 'penetrating trauma', 'blunt trauma', 'vascular injury', 'hemorrhage control'],
                 ],
@@ -88,7 +88,7 @@ return [
                     'key_concepts' => ['MAGIC criteria', 'graft excision', 'antibiotic protocols', 'graft infection', 'prosthetic infection', 'aortic graft infection'],
                 ],
                 'vascular_access' => [
-                    'id' => 'bbe0b3a0f39611f08b265ef3771a102d',
+                    'id' => '079b4aea008311f1b45632d89964721d',
                     'name' => 'Vascular Access',
                     'key_concepts' => ['AV fistula', 'AVF', 'dialysis access', 'hemodialysis', 'graft', 'steal syndrome', 'access thrombosis'],
                 ],
@@ -108,8 +108,8 @@ return [
         'b6b02fdaffad11f0885f32d89964721d',
         '7104532adc4311f09021f2381272676b',
         'ec53f8c1ff9811f0a09132d89964721d',
-        '8f58aeadec9411f0a38066bc68590b9b',
+        '94269d17007f11f1b59a32d89964721d',
         '29981e72dc4311f09021f2381272676b',
-        'bbe0b3a0f39611f08b265ef3771a102d',
+        '079b4aea008311f1b45632d89964721d',
     ],
 ];

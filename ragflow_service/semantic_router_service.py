@@ -624,7 +624,7 @@ GUIDELINES_CONFIG = {
         ],
     },
     "vascular_trauma": {
-        "id": "8f58aeadec9411f0a38066bc68590b9b",
+        "id": "94269d17007f11f1b59a32d89964721d",
         "name": "Vascular Trauma",
         "utterances": [
             "Vascular trauma",
@@ -736,7 +736,7 @@ GUIDELINES_CONFIG = {
         ],
     },
     "vascular_access": {
-        "id": "bbe0b3a0f39611f08b265ef3771a102d",
+        "id": "079b4aea008311f1b45632d89964721d",
         "name": "Vascular Access",
         "utterances": [
             "Vascular access",
