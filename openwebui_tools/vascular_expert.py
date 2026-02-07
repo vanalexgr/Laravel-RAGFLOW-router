@@ -196,10 +196,12 @@ class Tools:
                 response = await response_task
                 response.raise_for_status()
                 
-                elapsed = int(time.time() - start_time)
-                await self._emit_status(emitter, f"✅ Retrieved in {elapsed}s - parsing results...")
+                # Parse JSON inside the client context
+                data = response.json()
+                
+            elapsed = int(time.time() - start_time)
+            await self._emit_status(emitter, f"✅ Retrieved in {elapsed}s - parsing results...")
             
-            data = response.json()
             print(f"[VascularExpert] Response keys: {data.keys()}")
             
             # Extract chunks from response
