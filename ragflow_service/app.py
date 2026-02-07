@@ -1,28 +1,11 @@
 import os
 import logging
-import json
 import asyncio
 from datetime import datetime
 from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
-from typing import Optional, Literal
+from typing import Optional
 import httpx
-
-# Language detection for query translation
-try:
-    from langdetect import detect, LangDetectException
-    LANGDETECT_AVAILABLE = True
-except ImportError:
-    LANGDETECT_AVAILABLE = False
-    logging.warning("langdetect not available - all queries will be treated as English")
-
-# OpenAI for translation
-try:
-    from openai import AzureOpenAI
-    OPENAI_AVAILABLE = True
-except ImportError:
-    OPENAI_AVAILABLE = False
-    logging.warning("openai not available - translation disabled")
 
 
 logging.basicConfig(
@@ -37,76 +20,6 @@ RAGFLOW_API_KEY = os.getenv("RAGFLOW_API_KEY")
 RAGFLOW_BASE_URL = os.getenv("RAGFLOW_ENDPOINT", "https://ragflow.clinicalguidelines.io/api/v1")
 SHARED_SECRET = os.getenv("RAGFLOW_BRIDGE_SECRET")
 
-# Azure OpenAI configuration for translation
-AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
-AZURE_OPENAI_DEPLOYMENT = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-5-chat")
-AZURE_OPENAI_VERSION = os.getenv("AZURE_OPENAI_VERSION", "2024-12-01-preview")
-
-# Initialize Azure OpenAI client for translation
-azure_client = None
-if OPENAI_AVAILABLE and AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT:
-    try:
-        azure_client = AzureOpenAI(
-            api_key=AZURE_OPENAI_API_KEY,
-            api_version=AZURE_OPENAI_VERSION,
-            azure_endpoint=AZURE_OPENAI_ENDPOINT,
-        )
-        logger.info("Azure OpenAI client initialized for query translation")
-    except Exception as e:
-        logger.warning(f"Failed to initialize Azure OpenAI client: {e}")
-
-
-def detect_language(text: str) -> str:
-    """Detect the language of the input text. Returns ISO 639-1 code (e.g., 'en', 'de', 'fr')."""
-    if not LANGDETECT_AVAILABLE:
-        return "en"
-    try:
-        lang = detect(text)
-        return lang
-    except LangDetectException:
-        return "en"
-
-
-def translate_to_english(text: str, source_lang: str) -> tuple[str, float]:
-    """
-    Translate text to English using Azure OpenAI.
-    Returns (translated_text, duration_ms).
-    """
-    if not azure_client:
-        logger.warning("Azure OpenAI client not available for translation")
-        return text, 0.0
-    
-    start_time = datetime.now()
-    
-    try:
-        response = azure_client.chat.completions.create(
-            model=AZURE_OPENAI_DEPLOYMENT,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a medical translator. Translate the following medical query to English. Preserve all medical terminology and clinical context. Output only the translation, nothing else."
-                },
-                {
-                    "role": "user", 
-                    "content": text
-                }
-            ],
-            temperature=0.1,
-            max_tokens=500,
-        )
-        
-        translated = response.choices[0].message.content.strip()
-        duration_ms = (datetime.now() - start_time).total_seconds() * 1000
-        
-        logger.info(f"Translated query ({source_lang}->en): '{text[:50]}...' -> '{translated[:50]}...' ({duration_ms:.0f}ms)")
-        
-        return translated, duration_ms
-        
-    except Exception as e:
-        logger.error(f"Translation failed: {e}")
-        duration_ms = (datetime.now() - start_time).total_seconds() * 1000
-        return text, duration_ms
 
 @app.get("/health")
 async def health_check():
@@ -124,8 +37,6 @@ async def status():
         "service": "RAGFlow Bridge API",
         "status": "healthy",
         "version": "1.0.0",
-        "langdetect_available": LANGDETECT_AVAILABLE,
-        "openai_available": OPENAI_AVAILABLE,
     }
 
 class RetrieveRequest(BaseModel):

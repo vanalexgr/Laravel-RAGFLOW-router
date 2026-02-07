@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Mcp\Tools\ConsultGuidelines;
 use App\Services\RetrievalService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;

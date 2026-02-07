@@ -4,7 +4,6 @@ namespace App\Services;
 
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Cache;
 
 class GuidelineRouterService
 {
@@ -13,8 +12,6 @@ class GuidelineRouterService
     protected ?string $deployment;
     protected ?string $apiVersion;
     protected bool $isConfigured = false;
-    protected string $routingMethod;
-    protected string $bridgeUrl;
 
     public function __construct()
     {
@@ -24,8 +21,6 @@ class GuidelineRouterService
         $this->apiVersion = config('prism.providers.azure.api_version') ?: env('AZURE_OPENAI_VERSION', '2024-12-01-preview');
 
         $this->isConfigured = !empty($this->endpoint) && !empty($this->apiKey) && !empty($this->deployment);
-        $this->routingMethod = config('ragflow.routing_method', 'semantic');
-        $this->bridgeUrl = config('ragflow.bridge_url', 'http://localhost:8000');
     }
 
     /**
