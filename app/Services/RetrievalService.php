@@ -213,8 +213,7 @@ class RetrievalService
     /**
      * Apply post-routing guardrails to ensure critical guidelines are not missed.
      * 
-     * Guardrail A: Thrombosis keywords → ensure venous_thrombosis
-     * Guardrail B: Anticoagulation keywords → ensure antithrombotic_therapy
+     * Guardrails A-N cover all 14 ESVS guidelines with keyword detection.
      * 
      * @param array $selectedGuidelines Current selection (key => guideline info)
      * @param string $question The scrubbed user question
@@ -227,56 +226,226 @@ class RetrievalService
         $registry = $this->buildGuidelineRegistry();
         $modified = false;
 
-        // Guardrail A: Thrombosis terms → ensure venous_thrombosis
-        $thrombosisTerms = [
-            'svt',
-            'superficial vein thrombosis',
-            'thrombophlebitis',
-            'dvt',
-            'deep vein thrombosis',
-            'venous thrombosis',
-            'pulmonary embolism',
-            'pe',
-            'vte',
-            'venous thromboembolism'
+        // Define all guardrails: [guideline_key => [trigger_terms]]
+        $guardrails = [
+            // Guardrail A: Thrombosis terms → venous_thrombosis
+            'venous_thrombosis' => [
+                'svt',
+                'superficial vein thrombosis',
+                'thrombophlebitis',
+                'dvt',
+                'deep vein thrombosis',
+                'venous thrombosis',
+                'pulmonary embolism',
+                'vte',
+                'venous thromboembolism',
+                'ivc filter',
+                'post-thrombotic',
+                'catheter-directed thrombolysis'
+            ],
+
+            // Guardrail B: Anticoag terms → antithrombotic_therapy
+            'antithrombotic_therapy' => [
+                'anticoag',
+                'anticoagulation',
+                'fondaparinux',
+                'heparin',
+                'lmwh',
+                'doac',
+                'apixaban',
+                'rivaroxaban',
+                'warfarin',
+                'dabigatran',
+                'edoxaban',
+                'aspirin',
+                'clopidogrel',
+                'dual antiplatelet',
+                'dapt',
+                'triple therapy'
+            ],
+
+            // Guardrail C: Aortic Arch terms → aortic_arch
+            'aortic_arch' => [
+                'aortic arch',
+                'zone 0',
+                'zone 1',
+                'zone 2',
+                'frozen elephant trunk',
+                'fet',
+                'arch aneurysm',
+                'hybrid arch',
+                'arch repair',
+                'total arch'
+            ],
+
+            // Guardrail D: Thoracic Aorta terms → descending_thoracic_aorta
+            'descending_thoracic_aorta' => [
+                'type b dissection',
+                'tbad',
+                'tevar',
+                'thoracic aneurysm',
+                'intramural hematoma',
+                'imh',
+                'descending aorta',
+                'penetrating ulcer',
+                'thoracic aortic',
+                'spinal cord ischemia'
+            ],
+
+            // Guardrail E: AAA terms → abdominal_aortic_aneurysm
+            'abdominal_aortic_aneurysm' => [
+                'aaa',
+                'abdominal aortic aneurysm',
+                'evar',
+                'endoleak',
+                'infrarenal aneurysm',
+                'iliac aneurysm',
+                'aortic rupture',
+                'abdominal aneurysm',
+                'open repair'
+            ],
+
+            // Guardrail F: Mesenteric/Renal terms → mesenteric_renal
+            'mesenteric_renal' => [
+                'mesenteric ischemia',
+                'cmi',
+                'ami',
+                'bowel ischemia',
+                'sma stenosis',
+                'celiac stenosis',
+                'renal artery stenosis',
+                'ras',
+                'visceral aneurysm',
+                'chronic mesenteric',
+                'acute mesenteric'
+            ],
+
+            // Guardrail G: Carotid terms → carotid_vertebral
+            'carotid_vertebral' => [
+                'stroke',
+                'tia',
+                'transient ischemic',
+                'carotid stenosis',
+                'cea',
+                'cas',
+                'tcar',
+                'carotid endarterectomy',
+                'carotid stenting',
+                'vertebral artery',
+                'carotid artery'
+            ],
+
+            // Guardrail H: PAD/Claudication terms → asymptomatic_pad
+            'asymptomatic_pad' => [
+                'claudication',
+                'intermittent claudication',
+                'peripheral arterial disease',
+                'abi',
+                'ankle brachial',
+                'supervised exercise',
+                'walking distance',
+                'exercise therapy'
+            ],
+
+            // Guardrail I: CLTI terms → clti
+            'clti' => [
+                'clti',
+                'cli',
+                'critical limb',
+                'rest pain',
+                'tissue loss',
+                'gangrene',
+                'wifi',
+                'wif-i',
+                'limb salvage',
+                'heel ulcer',
+                'angiosome',
+                'ischemic ulcer'
+            ],
+
+            // Guardrail J: ALI terms → acute_limb_ischaemia
+            'acute_limb_ischaemia' => [
+                'acute limb ischemia',
+                'acute limb ischaemia',
+                'ali',
+                'embolectomy',
+                '6 ps',
+                'pulseless limb',
+                'sudden leg pain',
+                'rutherford',
+                'acute arterial occlusion'
+            ],
+
+            // Guardrail K: Venous/Varicose terms → chronic_venous_disease
+            'chronic_venous_disease' => [
+                'varicose veins',
+                'venous ulcer',
+                'ceap',
+                'venous reflux',
+                'gsv',
+                'great saphenous',
+                'ssv',
+                'small saphenous',
+                'sclerotherapy',
+                'venous ablation',
+                'leg ulcer',
+                'venous insufficiency'
+            ],
+
+            // Guardrail L: Trauma terms → vascular_trauma
+            'vascular_trauma' => [
+                'vascular trauma',
+                'reboa',
+                'penetrating injury',
+                'blunt vascular',
+                'mangled extremity',
+                'mess score',
+                'vascular injury',
+                'hemorrhage control',
+                'vascular laceration',
+                'arterial injury'
+            ],
+
+            // Guardrail M: Graft Infection terms → vascular_graft_infections
+            'vascular_graft_infections' => [
+                'graft infection',
+                'prosthetic infection',
+                'aortic graft infection',
+                'magic criteria',
+                'infected graft',
+                'endograft infection',
+                'graft excision',
+                'infected bypass'
+            ],
+
+            // Guardrail N: Vascular Access terms → vascular_access
+            'vascular_access' => [
+                'avf',
+                'av fistula',
+                'arteriovenous fistula',
+                'dialysis access',
+                'hemodialysis access',
+                'steal syndrome',
+                'access thrombosis',
+                'fistula maturation',
+                'dialysis catheter'
+            ],
         ];
 
-        foreach ($thrombosisTerms as $term) {
-            if (str_contains($questionLower, $term) && !isset($selectedGuidelines['venous_thrombosis'])) {
-                if (isset($registry['venous_thrombosis'])) {
-                    $selectedGuidelines['venous_thrombosis'] = $registry['venous_thrombosis'];
-                    $modified = true;
-                    $log->info("[GUARDRAIL A] Added venous_thrombosis (detected: $term)");
-                    break;
-                }
+        // Apply each guardrail
+        foreach ($guardrails as $guidelineKey => $triggerTerms) {
+            if (isset($selectedGuidelines[$guidelineKey])) {
+                continue; // Already selected
             }
-        }
 
-        // Guardrail B: Anticoag terms → ensure antithrombotic_therapy
-        $anticoagTerms = [
-            'anticoag',
-            'anticoagulation',
-            'fondaparinux',
-            'heparin',
-            'lmwh',
-            'doac',
-            'apixaban',
-            'rivaroxaban',
-            'warfarin',
-            'dabigatran',
-            'edoxaban',
-            'duration',
-            'dose',
-            'dosing'
-        ];
-
-        foreach ($anticoagTerms as $term) {
-            if (str_contains($questionLower, $term) && !isset($selectedGuidelines['antithrombotic_therapy'])) {
-                if (isset($registry['antithrombotic_therapy'])) {
-                    $selectedGuidelines['antithrombotic_therapy'] = $registry['antithrombotic_therapy'];
-                    $modified = true;
-                    $log->info("[GUARDRAIL B] Added antithrombotic_therapy (detected: $term)");
-                    break;
+            foreach ($triggerTerms as $term) {
+                if (str_contains($questionLower, $term)) {
+                    if (isset($registry[$guidelineKey])) {
+                        $selectedGuidelines[$guidelineKey] = $registry[$guidelineKey];
+                        $modified = true;
+                        $log->info("[GUARDRAIL] Added $guidelineKey (detected: $term)");
+                        break;
+                    }
                 }
             }
         }
