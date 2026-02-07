@@ -134,13 +134,16 @@ class Tools:
         await self._emit_status(emitter, f"Selecting guidelines: {guideline_display}")
         
         # Extract conversation history for context fusion
+        # Only include USER messages, not assistant responses (which are very long)
         history = []
         if __messages__:
-            for msg in __messages__[-5:]:  # Last 5 messages for context
+            for msg in __messages__[-6:]:  # Last 6 messages to get ~3 user turns
                 role = msg.get("role", "")
                 content = msg.get("content", "")
-                if content and isinstance(content, str):
-                    history.append(f"{role}: {content}")
+                if role == "user" and content and isinstance(content, str):
+                    # Truncate very long user messages (attachments, etc.)
+                    truncated = content[:500] if len(content) > 500 else content
+                    history.append(truncated)
         
         await self._emit_status(emitter, f"Consulting {len(guidelines)} ESVS guideline(s)...")
         
