@@ -24,15 +24,6 @@ except ImportError:
     OPENAI_AVAILABLE = False
     logging.warning("openai not available - translation disabled")
 
-# Make semantic router optional - may fail if fastembed/onnx dependencies unavailable
-try:
-    from semantic_router_service import semantic_router_service, GUIDELINES_CONFIG
-    SEMANTIC_ROUTER_AVAILABLE = True
-except ImportError as e:
-    SEMANTIC_ROUTER_AVAILABLE = False
-    semantic_router_service = None
-    GUIDELINES_CONFIG = {}
-    logging.warning(f"Semantic router not available (missing dependencies): {e}")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -120,20 +111,21 @@ def translate_to_english(text: str, source_lang: str) -> tuple[str, float]:
 @app.get("/health")
 async def health_check():
     """Health check endpoint for service monitoring."""
-    router_status = {}
-    if SEMANTIC_ROUTER_AVAILABLE and semantic_router_service:
-        try:
-            router_status = semantic_router_service.get_status()
-        except Exception:
-            router_status = {"initialized": False, "model_name": "error"}
-    
     return {
         "status": "ok",
         "service": "ragflow_bridge",
         "ragflow_configured": bool(RAGFLOW_API_KEY),
         "ragflow_endpoint": RAGFLOW_BASE_URL,
-        "semantic_router_available": SEMANTIC_ROUTER_AVAILABLE,
-        "semantic_router": router_status,
+    }
+
+@app.get("/status")
+async def status():
+    return {
+        "service": "RAGFlow Bridge API",
+        "status": "healthy",
+        "version": "1.0.0",
+        "langdetect_available": LANGDETECT_AVAILABLE,
+        "openai_available": OPENAI_AVAILABLE,
     }
 
 class RetrieveRequest(BaseModel):
@@ -411,6 +403,7 @@ class RetrieveDualRequest(BaseModel):
     question: str
     narrative_datasets: list[DatasetInfo]
     citation_dataset_id: str
+    citation_document_ids: Optional[list[str]] = None  # NEW: for hard scoping by document ID
     narrative_max: int = 15  # Increased from 8 for better context coverage
     citation_max: int = 4
     top_k: int = 256
@@ -580,18 +573,24 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
             "per_dataset": [{"name": r["dataset_name"], "count": len(r["chunks"])} for r in results],
         }
 
+
     async def fetch_citation_chunks(client: httpx.AsyncClient) -> dict:
         """Fetch citation chunks WITHOUT KG from recommendations-only dataset."""
         cit_start = datetime.now()
         
-        # Get guideline names for post-filtering
-        guideline_names = [ds.name for ds in body.narrative_datasets]
+        # NEW: Get citation document IDs for hard scoping
+        citation_document_ids = body.citation_document_ids or []
         
-        # Retrieve more than needed to allow for filtering
-        retrieve_size = body.citation_max * 3  # Get 3x to have room after filtering
+        # Adjust retrieval size based on scoping method
+        if citation_document_ids:
+            # With hard scoping, we don't need to over-retrieve for filtering
+            retrieve_size = max(30, body.citation_max * 6)
+        else:
+            # Without scoping, retrieve more for potential filtering (old behavior)
+            retrieve_size = body.citation_max * 3
         
         payload = {
-            "question": body.question,  # Clean question without keyword injection
+            "question": body.question,
             "dataset_ids": [body.citation_dataset_id],
             "top_k": body.top_k,
             "page": 1,
@@ -602,11 +601,18 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
             "highlight": body.highlight,
             # NO use_kg - recommendations dataset doesn't have KG
         }
+        
+        # NEW: Add document_ids scoping if available
+        if citation_document_ids:
+            payload["document_ids"] = citation_document_ids
+            logger.info(f"  Citation Scoping: {len(citation_document_ids)} document IDs - {citation_document_ids}")
+        else:
+            logger.warning("  No citation_document_ids provided - using unscoped retrieval (old behavior)")
+        
         if body.rerank_id:
             payload["rerank_id"] = body.rerank_id
 
-        logger.info(f"  Citation Query: '{body.question[:60]}...' (retrieve {retrieve_size}, filter to {body.citation_max})")
-        logger.info(f"  Citation Payload: {json.dumps(payload, default=str)[:500]}...") # Log payload start
+        logger.info(f"  Citation Query: '{body.question[:60]}...' (retrieve {retrieve_size}, final {body.citation_max})")
 
         try:
             response = await client.post(
@@ -621,66 +627,18 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
             result = response.json()
             chunks = result.get("data", {}).get("chunks", [])
             logger.info(f"  Raw Citations Retrieved: {len(chunks)}")
-            if len(chunks) > 0:
-                logger.info(f"  Sample Chunk [0] Content: {chunks[0].get('content', '')[:200]}...")
-                logger.info(f"  Sample Chunk [0] DocName: {chunks[0].get('doc_name', '')}")
             
-            # POST-FILTERING: Only keep citations that match selected guidelines
-            if guideline_names:
-                filtered_chunks = []
-                for chunk in chunks:
-                    content = chunk.get("content", "") or chunk.get("content_with_weight", "") or ""
-                    doc_name = chunk.get("doc_name", "") or chunk.get("document_keyword", "") or ""
-                    
-                    # Extract GUIDELINE: field from content
-                    import re
-                    guideline_match = re.search(r'GUIDELINE[_\s]*(ID|NAME)?:\s*(.+?)(?=\n|RECOMMENDATION|CLASS|LEVEL|$)', content, re.IGNORECASE)
-                    chunk_guideline = guideline_match.group(2).strip().lower() if guideline_match else ""
-                    
-                    # Check if chunk belongs to any of the selected guidelines
-                    matches = False
-                    for name in guideline_names:
-                        name_lower = name.lower()
-                        # Match by guideline field or doc_name (direct match)
-                        if name_lower in chunk_guideline or name_lower in doc_name.lower():
-                            matches = True
-                            break
-                        
-                        # Also check common abbreviations and partial matches
-                        keywords = name_lower.replace("&", " ").replace("-", " ").split()
-                        key_matches = sum(1 for kw in keywords if len(kw) > 3 and kw in chunk_guideline)
-                        if key_matches >= 1:  # At least one significant keyword
-                            matches = True
-                            break
-                        
-                        # Specific abbreviation mappings
-                        abbreviation_map = {
-                            "abdominal aortic aneurysm": ["aaa", "abdominal", "evar"],
-                            "vascular graft infections": ["graft", "magic"],
-                            "carotid & vertebral": ["carotid", "vertebral", "cea", "stroke"],
-                            "mesenteric & renal": ["mesenteric", "renal", "sma", "ami"],
-                            "thoracic aorta": ["thoracic", "tevar", "tbad", "descending"],
-                            "chronic venous disease": ["venous", "varicose", "cvd"],
-                            "venous thrombosis": ["dvt", "vte", "thrombosis"],
-                            "vascular trauma": ["trauma", "injury"],
-                            "antithrombotic": ["antithrombotic", "anticoagulation", "doac"],
-                            "clti": ["clti", "cli", "critical limb", "gangrene"],
-                            "asymptomatic pad": ["pad", "claudication", "peripheral"],
-                        }
-                        
-                        for full_name, abbrevs in abbreviation_map.items():
-                            if full_name in name_lower:
-                                if any(abbrev in chunk_guideline or abbrev in doc_name.lower() for abbrev in abbrevs):
-                                    matches = True
-                                    break
-                        if matches:
-                            break
-                    
-                    if matches:
-                        filtered_chunks.append(chunk)
-                
-                logger.info(f"  Citations: retrieved={len(chunks)} filtered={len(filtered_chunks)} (guidelines: {guideline_names})")
-                chunks = filtered_chunks
+            # Debug: Verify all chunks are from allowed document IDs
+            if citation_document_ids:
+                for i, chunk in enumerate(chunks[:3]):  # Check first 3
+                    doc_id = chunk.get("document_id") or chunk.get("doc_id") or chunk.get("DocumentID")
+                    if doc_id:
+                        if doc_id not in citation_document_ids:
+                            logger.error(f"  ⚠️ SCOPE VIOLATION: chunk doc_id={doc_id} not in allowed {citation_document_ids}")
+                        else:
+                            logger.debug(f"  ✓ Chunk [{i}] doc_id={doc_id} (within scope)")
+                    else:
+                        logger.warning(f"  No document_id found in chunk [{i}]: {chunk.get('id', 'unknown')}")
             
             # Tag chunks
             for chunk in chunks:
@@ -689,7 +647,7 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
                 chunk["_chunk_type"] = "citation"
             
             capped = chunks[:body.citation_max]
-            logger.info(f"  Citations: final={len(capped)} ({cit_duration:.0f}ms)")
+            logger.info(f"  Citations: final={len(capped)} scoped_by_doc_ids={bool(citation_document_ids)} ({cit_duration:.0f}ms)")
             return {
                 "chunks": capped,
                 "total": len(chunks),
@@ -707,20 +665,29 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
 
         total_duration = (datetime.now() - start_time).total_seconds() * 1000
 
-        logger.info(f"Retrieve DUAL complete: narrative={len(narrative_result['chunks'])} citations={len(citation_result['chunks'])} total_duration={total_duration:.0f}ms")
+        # NEW: Cap sources for UI display
+        max_narrative_display = 6
+        max_citation_display = 6
+        
+        narrative_for_ui = narrative_result["chunks"][:max_narrative_display]
+        citations_for_ui = citation_result["chunks"][:max_citation_display]
+        
+        logger.info(f"Retrieve DUAL complete: narrative={len(narrative_result['chunks'])}→{len(narrative_for_ui)} citations={len(citation_result['chunks'])}→{len(citations_for_ui)} total_duration={total_duration:.0f}ms")
 
         return {
             "status": 200,
             "duration_ms": total_duration,
             "narrative": {
-                "chunks": narrative_result["chunks"],
-                "count": len(narrative_result["chunks"]),
+                "chunks": narrative_for_ui,  # ← Capped for UI
+                "total_retrieved": len(narrative_result["chunks"]),
+                "count": len(narrative_for_ui),
                 "per_dataset": narrative_result.get("per_dataset", []),
                 "duration_ms": narrative_result.get("duration_ms", 0),
             },
             "citations": {
-                "chunks": citation_result["chunks"],
-                "count": len(citation_result["chunks"]),
+                "chunks": citations_for_ui,  # ← Capped for UI
+                "total_retrieved": len(citation_result["chunks"]),
+                "count": len(citations_for_ui),
                 "duration_ms": citation_result.get("duration_ms", 0),
             },
             "retrieval_info": {
@@ -729,6 +696,8 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
                 "citation_use_kg": False,
                 "narrative_max": body.narrative_max,
                 "citation_max": body.citation_max,
+                "citation_document_ids": body.citation_document_ids,  # ← NEW: for debugging
+                "ui_capped": True,  # ← NEW: flag indicating capping was applied
             }
         }
 
@@ -789,129 +758,7 @@ async def get_dataset(dataset_id: str, request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-class RouteRequest(BaseModel):
-    query: str
-    max_routes: int = 4
-    min_confidence: float = 0.35
-    min_score_threshold: float = 0.68  # Absolute score floor - include all guidelines above this
-    auto_translate: bool = True  # Automatically translate non-English queries before routing
 
-
-class RouteResponse(BaseModel):
-    method: str
-    guidelines: list[dict]
-    duration_ms: float
-    router_available: bool
-    original_query: Optional[str] = None  # Original query if translation was used
-    detected_language: Optional[str] = None  # Detected source language
-    translated_query: Optional[str] = None  # English translation if used
-    translation_ms: Optional[float] = None  # Translation duration
-
-
-@app.on_event("startup")
-async def startup_event():
-    if not SEMANTIC_ROUTER_AVAILABLE:
-        logger.warning("Semantic router not available - LLM fallback will be used")
-        return
-    try:
-        logger.info("Initializing semantic router (this may download ~1.2GB multilingual model on first run)...")
-        semantic_router_service.initialize()
-        logger.info("Semantic router initialized on startup")
-        
-        # Warm-up: Run a test query to ensure model is fully loaded and cached
-        # This forces the embedding model to download if not already cached
-        logger.info("Running warm-up query to pre-load embeddings...")
-        warmup_result = semantic_router_service.route_multi("aortic aneurysm repair", max_routes=1)
-        if warmup_result:
-            logger.info(f"Warm-up complete - model ready. Test route: {warmup_result[0].get('guideline_key', 'unknown')}")
-        else:
-            logger.info("Warm-up complete - model ready (no route matched)")
-            
-    except Exception as e:
-        logger.warning(f"Failed to initialize semantic router: {e}")
-
-
-@app.post("/route")
-async def route_query(request: Request, body: RouteRequest):
-    start_time = datetime.now()
-    
-    # Translation tracking
-    original_query = None
-    detected_lang = None
-    translated_query = None
-    translation_duration = None
-    query_for_routing = body.query
-
-    if not SEMANTIC_ROUTER_AVAILABLE or not semantic_router_service or not semantic_router_service.is_initialized:
-        duration = (datetime.now() - start_time).total_seconds() * 1000
-        return RouteResponse(
-            method="none",
-            guidelines=[],
-            duration_ms=duration,
-            router_available=False,
-        )
-
-    try:
-        # Detect language and translate if needed
-        if body.auto_translate and azure_client:
-            detected_lang = detect_language(body.query)
-            
-            if detected_lang != "en":
-                original_query = body.query
-                translated_query, translation_duration = translate_to_english(body.query, detected_lang)
-                query_for_routing = translated_query
-                logger.info(f"Query translated for routing: {detected_lang} -> en ({translation_duration:.0f}ms)")
-        
-        results = semantic_router_service.route_multi(
-            query_for_routing, 
-            max_routes=body.max_routes, 
-            min_score_threshold=body.min_score_threshold,
-            min_confidence=body.min_confidence,
-        )
-        duration = (datetime.now() - start_time).total_seconds() * 1000
-
-        keys = [r['guideline_key'] for r in results]
-        scores = [r.get('confidence', 'N/A') for r in results]
-        primaries = [r.get('is_primary', False) for r in results]
-        
-        log_query = translated_query if translated_query else body.query
-        lang_info = f" (translated from {detected_lang})" if detected_lang and detected_lang != "en" else ""
-        
-        # Log all scores for debugging discrepancies
-        logger.info(f"Semantic route: query='{log_query[:50]}...'{lang_info} -> selected: {keys} (scores: {scores})")
-        for r in results:
-             logger.info(f"  - {r['guideline_key']}: {r['confidence']} (primary: {r.get('is_primary', False)})")
-
-        return RouteResponse(
-            method="semantic",
-            guidelines=results,
-            duration_ms=duration,
-            router_available=True,
-            original_query=original_query,
-            detected_language=detected_lang,
-            translated_query=translated_query,
-            translation_ms=translation_duration,
-        )
-
-    except Exception as e:
-        logger.error(f"Semantic routing failed: {e}")
-        duration = (datetime.now() - start_time).total_seconds() * 1000
-        return RouteResponse(
-            method="error",
-            guidelines=[],
-            duration_ms=duration,
-            router_available=True,
-        )
-
-
-@app.get("/route/guidelines")
-async def list_guideline_routes():
-    if not SEMANTIC_ROUTER_AVAILABLE or not semantic_router_service:
-        return {
-            "guidelines": [],
-            "router_available": False,
-        }
-    return {
-        "guidelines": semantic_router_service.get_all_guidelines(),
-        "router_available": semantic_router_service.is_initialized,
-    }
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
