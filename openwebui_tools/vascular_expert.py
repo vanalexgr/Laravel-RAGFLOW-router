@@ -158,7 +158,7 @@ class Tools:
         try:
             await self._emit_status(emitter, "Searching ESVS guidelines for evidence...")
             
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=90.0) as client:
                 response = await client.post(url, json=payload, headers=headers)
                 response.raise_for_status()
             
@@ -287,7 +287,7 @@ class Tools:
             
         except httpx.TimeoutException:
             await self._emit_status(emitter, "Request timed out", done=True)
-            return "Error: Request timed out after 30 seconds"
+            return "Error: Request timed out after 90 seconds"
         except httpx.HTTPStatusError as e:
             await self._emit_status(emitter, f"API error: {e.response.status_code}", done=True)
             return f"Error calling Vascular Expert API: HTTP {e.response.status_code}"
