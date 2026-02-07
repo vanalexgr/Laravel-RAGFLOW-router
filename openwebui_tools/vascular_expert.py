@@ -251,19 +251,18 @@ class Tools:
                 # Emit narrative chunks (context)
                 for chunk in narrative_chunks[:15]:
                     content = chunk.get("content", "")
-                    doc_name = chunk.get("doc_name", "Context")
-                    source_guideline = chunk.get("source_guideline", "ESVS Guidelines")
+                    source_guideline = chunk.get("source_guideline", "ESVS")
                     
-                    # Make title UNIQUE and descriptive
-                    title = f"Narrative Fragment {chunk_number}: {doc_name}"
+                    # Simple title: just guideline name
+                    title = f"[{chunk_number}] {source_guideline}"
                     
                     try:
                         await emitter({
                             "type": "citation",
                             "data": {
                                 "document": [content],
-                                "metadata": [{"source": title}],
-                                "source": {"id": f"cite_{chunk_number}", "name": title},
+                                "metadata": [{"source": source_guideline}],
+                                "source": {"id": f"{chunk_number}", "name": title},
                             }
                         })
                     except Exception as e:
@@ -303,17 +302,16 @@ class Tools:
                         content = chunk.get("content", "")
                         source = chunk.get("source_guideline", "ESVS")
                         
-                        # Use "Narrative Fragment [n]" in the LLM input too, to match the Citation Title logic
-                        header = f"[{chunk_num}] Narrative Fragment — {source}"
-                        llm_output += f"{header}\n{content}\n\n"
+                        llm_output += f"[{chunk_num}] {source}\n"
+                        llm_output += f"{content}\n\n"
                         chunk_num += 1
                 
-                llm_output += "=== INSTRUCTIONS (STRICT) ===\n"
-                llm_output += "1. USE 'Clinical Synthesis' bullets first, then 'Recommendations used'.\n"
-                llm_output += "2. EVERY factual statement MUST have an inline citation `[n]` at the end of the sentence.\n"
-                llm_output += "3. For general knowledge, cite the specific 'Narrative Fragment' `[n]` that contains it.\n"
-                llm_output += "4. In 'Recommendations used' list, copy the header exactly (e.g. '[1] Rec 25...').\n"
-                llm_output += "5. DO NOT hallucinate Recs not shown above."
+                llm_output += "=== CITATION RULES ===\n"
+                llm_output += "1. Use simple numbered citations [1], [2], [3] inline after each fact.\n"
+                llm_output += "2. ONLY list sources you actually cited at the end.\n"
+                llm_output += "3. End with: 📑 References (only if recommendations were used)\n"
+                llm_output += "   [1] Rec X (Class Y, Level Z) — Guideline\n"
+                llm_output += "4. Omit the References section if only narrative was used."
                 
                 return llm_output
             else:
