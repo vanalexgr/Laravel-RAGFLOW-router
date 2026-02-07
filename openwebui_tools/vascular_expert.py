@@ -156,11 +156,48 @@ class Tools:
         }
 
         try:
-            await self._emit_status(emitter, "Searching ESVS guidelines for evidence...")
+            import time
+            start_time = time.time()
+            
+            await self._emit_status(emitter, f"🔍 Routing query to {len(guidelines)} guideline(s)...")
+            await asyncio.sleep(0.1)  # Give UI time to update
+            
+            await self._emit_status(emitter, f"📚 Searching {guideline_display}...")
             
             async with httpx.AsyncClient(timeout=90.0) as client:
-                response = await client.post(url, json=payload, headers=headers)
+                # Start the request
+                response_task = asyncio.create_task(
+                    client.post(url, json=payload, headers=headers)
+                )
+                
+                # Emit progress updates while waiting
+                elapsed = 0
+                while not response_task.done():
+                    elapsed = int(time.time() - start_time)
+                    
+                    if elapsed < 5:
+                        await self._emit_status(emitter, f"📚 Searching {guideline_display}...")
+                    elif elapsed < 10:
+                        await self._emit_status(emitter, f"🔎 Retrieving evidence chunks... ({elapsed}s)")
+                    elif elapsed < 20:
+                        await self._emit_status(emitter, f"📊 Processing multi-guideline results... ({elapsed}s)")
+                    elif elapsed < 40:
+                        await self._emit_status(emitter, f"⏳ Complex query - still processing... ({elapsed}s)")
+                    else:
+                        await self._emit_status(emitter, f"⏳ Almost there - finalizing results... ({elapsed}s)")
+                    
+                    # Check again in 2 seconds
+                    try:
+                        await asyncio.wait_for(asyncio.shield(response_task), timeout=2.0)
+                    except asyncio.TimeoutError:
+                        continue
+                    break
+                
+                response = await response_task
                 response.raise_for_status()
+                
+                elapsed = int(time.time() - start_time)
+                await self._emit_status(emitter, f"✅ Retrieved in {elapsed}s - parsing results...")
             
             data = response.json()
             print(f"[VascularExpert] Response keys: {data.keys()}")
