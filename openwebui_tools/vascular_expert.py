@@ -89,9 +89,21 @@ class Tools:
         """
         Consult ESVS Vascular Guidelines. Select 1-3 guidelines based on the clinical question.
         
-        **IMPORTANT**: Call this tool for EVERY vascular surgery question, including follow-up 
-        questions in the same conversation. Each question requires fresh evidence retrieval.
-        Do NOT rely on previous tool responses for new questions.
+        **CRITICAL**: You MUST call this tool in ALL of these scenarios:
+        1. ANY vascular surgery question (direct or follow-up)
+        2. When the user attaches a patient case/document and asks about ESVS compliance
+        3. When comparing patient management against guidelines
+        
+        **DOCUMENT ATTACHMENT HANDLING**:
+        If the user attaches a patient document (discharge summary, case report, etc.) and asks:
+        - "Was this managed per ESVS guidelines?"
+        - "Does this follow guidelines?"
+        - "What does ESVS recommend for this case?"
+        
+        YOU MUST:
+        1. Read the attached document to identify the condition (e.g., AAA, carotid stenosis)
+        2. Call this tool with the appropriate guideline(s)
+        3. Compare the patient's management against the retrieved ESVS content
         
         SELECTION RULES:
         1. Match anatomical territory first (aorta, limb, cerebral, venous)
