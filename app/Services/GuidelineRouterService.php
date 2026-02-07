@@ -29,88 +29,19 @@ class GuidelineRouterService
     }
 
     /**
-     * Route query using semantic router (ultra-fast, ~10ms)
-     * 
-     * @return array Array of guideline keys with optional 'scores' key containing confidence values
-     */
-    public function selectGuidelinesViaSemantic(string $question, int $maxGuidelines = 2): array
-    {
-        $cacheKey = 'semantic_route_' . md5($question . '|' . $maxGuidelines);
-        $ttl = config('ragflow.cache_ttl', 3600); // Default 1 hour
-
-        return Cache::remember($cacheKey, $ttl, function () use ($question, $maxGuidelines) {
-            $log = Log::channel('retrieval');
-            $startTime = microtime(true);
-
-            try {
-                $response = Http::timeout(5)
-                    ->withHeaders(['Content-Type' => 'application/json'])
-                    ->post("{$this->bridgeUrl}/route", [
-                        'query' => $question,
-                        'max_routes' => max(5, $maxGuidelines), // Request more to allow for guardrail exclusions
-                    ]);
-
-                if (!$response->successful()) {
-                    $log->warning('[SEMANTIC ROUTER] Request failed', [
-                        'status' => $response->status(),
-                    ]);
-                    return [];
-                }
-
-                $data = $response->json();
-                $duration = round((microtime(true) - $startTime) * 1000);
-
-                $selected = array_map(fn($g) => $g['guideline_key'], $data['guidelines'] ?? []);
-
-                // Build scores map and filter by threshold
-                $scores = [];
-                $selected = [];
-                // Use config with 0.70 default from original code
-                $threshold = config('ragflow.routing_threshold', 0.70);
-
-                foreach ($data['guidelines'] ?? [] as $g) {
-                    $score = $g['confidence'] ?? 0.0;
-                    if ($score >= $threshold) {
-                        $key = $g['guideline_key'];
-                        $selected[] = $key;
-                        $scores[$key] = $score;
-                    } else {
-                        // Log skipped items only inside the cache generation
-                        //$log->info('[SEMANTIC ROUTER] Dropped candidate below threshold', ...); 
-                    }
-                }
-
-                $log->info('[SEMANTIC ROUTER] API Success (Cached)', [
-                    'selected_keys' => $selected,
-                    'scores' => $scores,
-                    'duration_ms' => $duration,
-                ]);
-
-                return ['keys' => $selected, 'scores' => $scores];
-
-            } catch (\Exception $e) {
-                $log->error('[SEMANTIC ROUTER] Exception', ['error' => $e->getMessage()]);
-                return [];
-            }
-        });
-    }
-
-    /**
-     * Smart routing: uses configured method (semantic or llm) with fallback
+     * Smart routing: uses LLM-based routing with abbreviation expansion and guardrails.
      * 
      * @return array With 'keys' array of guideline keys and 'scores' map of key => confidence
      */
     public function routeQuery(string $question, int $maxGuidelines = 2): array
     {
         $log = Log::channel('retrieval');
-        $method = $this->routingMethod;
 
-        $log->info('[ROUTER] Routing query', [
-            'method' => $method,
+        $log->info('[ROUTER] Routing query (LLM)', [
             'question_preview' => substr($question, 0, 60),
         ]);
 
-        // NEW: Abbreviation expansion
+        // Abbreviation expansion
         $expansionEnabled = config('router_abbreviations.enabled', true);
         $expandedQuery = $question;
         $expansionDebug = null;
@@ -135,52 +66,32 @@ class GuidelineRouterService
             }
         }
 
-        if ($method === 'semantic' || $method === 'semantic_with_llm_fallback') {
-            $result = $this->selectGuidelinesViaSemantic($expandedQuery, $maxGuidelines);
-            $keys = $result['keys'] ?? [];
+        // LLM routing
+        $llmKeys = $this->selectGuidelines($expandedQuery, $maxGuidelines);
+        $result = ['keys' => $llmKeys, 'scores' => [], 'expansion_debug' => $expansionDebug];
 
-            if (!empty($keys)) {
-                // NEW: Apply guardrails
-                $guardrailsEnabled = config('router_abbreviations.guardrails_enabled', true);
+        // Apply guardrails
+        $guardrailsEnabled = config('router_abbreviations.guardrails_enabled', true);
 
-                if ($guardrailsEnabled) {
-                    try {
-                        $guardrails = app(\App\Services\Routing\GuardrailDecider::class);
-                        // CHANGE: Pass expanded query to guardrails so keywords match expanded terms (e.g. sTBAD -> Type B)
-                        $guardrailResult = $guardrails->apply($expandedQuery, $result);
+        if ($guardrailsEnabled && !empty($llmKeys)) {
+            try {
+                $guardrails = app(\App\Services\Routing\GuardrailDecider::class);
+                $guardrailResult = $guardrails->apply($expandedQuery, $result);
 
-                        return [
-                            'keys' => $guardrailResult->selectedRoutes,
-                            'scores' => $result['scores'] ?? [],
-                            'expansion_debug' => $expansionDebug,
-                            'guardrail_debug' => $guardrailResult,
-                        ];
-                    } catch (\Exception $e) {
-                        $log->warning('[GUARDRAILS] Failed to apply, using original routing', [
-                            'error' => $e->getMessage(),
-                        ]);
-                    }
-                }
-
-                // Return result without guardrails if disabled or failed
-                return array_merge($result, [
+                return [
+                    'keys' => $guardrailResult->selectedRoutes,
+                    'scores' => [],
                     'expansion_debug' => $expansionDebug,
+                    'guardrail_debug' => $guardrailResult,
+                ];
+            } catch (\Exception $e) {
+                $log->warning('[GUARDRAILS] Failed to apply, using original routing', [
+                    'error' => $e->getMessage(),
                 ]);
             }
-
-            if ($method === 'semantic_with_llm_fallback') {
-                $log->info('[ROUTER] Semantic routing empty, falling back to LLM');
-                // CHANGE: Use expanded query for LLM fallback too
-                $llmKeys = $this->selectGuidelines($expandedQuery, $maxGuidelines);
-                return ['keys' => $llmKeys, 'scores' => [], 'expansion_debug' => $expansionDebug];
-            }
-
-            return array_merge($result, ['expansion_debug' => $expansionDebug]);
         }
 
-        // Default: LLM routing (no scores available)
-        $llmKeys = $this->selectGuidelines($expandedQuery, $maxGuidelines);
-        return ['keys' => $llmKeys, 'scores' => [], 'expansion_debug' => $expansionDebug];
+        return $result;
     }
 
     public function selectGuidelines(string $question, int $maxGuidelines = 3): array
@@ -347,63 +258,15 @@ PROMPT;
             }
         }
 
-        // Check if semantic routing is enabled
-        if (in_array($this->routingMethod, ['semantic', 'semantic_with_llm_fallback'])) {
-            $semanticResult = $this->selectGuidelinesViaSemantic($routingQuery, $maxGuidelines);
-            $semanticKeys = $semanticResult['keys'] ?? [];
-            $semanticScores = $semanticResult['scores'] ?? [];
-
-            if (!empty($semanticKeys) || $this->routingMethod === 'semantic') {
-                // Use semantic results, optionally do LLM expansion if enabled
-                $expanded = $queryForExpansion;
-                if (config('router_abbreviations.enabled', true)) {
-                    $expanded = $this->expandQuery($queryForExpansion);
-                }
-
-                $queryExpansionEnabled = config('ragflow.query_expansion', false);
-                if ($this->isConfigured && $queryExpansionEnabled && !str_contains($expanded, 'Abbreviations:')) {
-                    $expanded = $this->expandQuery($expanded);
-                    $log->info('[QUERY EXPANSION] LLM Enabled, expanded query');
-                } else {
-                    $log->info('[QUERY EXPANSION] Using regex-expanded or original query');
-                }
-                $selected = $this->mergeDocumentAndQuestionRouting($semanticKeys, $documentAnalysis, $log, $maxGuidelines);
-
-                // NEW: Apply guardrails to final selection if enabled
-                if (config('router_abbreviations.guardrails_enabled', true)) {
-                    try {
-                        $guardrails = app(\App\Services\Routing\GuardrailDecider::class);
-                        $guardrailResult = $guardrails->apply($routingQuery, [
-                            'keys' => $selected,
-                            'scores' => $semanticScores
-                        ]);
-                        $selected = $guardrailResult->selectedRoutes;
-                        $log->info('[GUARDRAILS] Applied to Web request', [
-                            'final_keys' => $selected
-                        ]);
-                    } catch (\Exception $e) {
-                        $log->warning('[GUARDRAILS] Failed to apply to Web request', ['error' => $e->getMessage()]);
-                    }
-                }
-
-                $log->info('[SEMANTIC+EXPAND] Complete', [
-                    'semantic_selected' => $semanticKeys,
-                    'semantic_scores' => $semanticScores,
-                    'final_selected' => $selected,
-                    'duration_ms' => round((microtime(true) - $startTime) * 1000),
-                ]);
-
-                return ['selected' => $selected, 'expanded' => $expanded, 'scores' => $semanticScores, 'routing_method' => 'semantic'];
-            }
-            // Fallback to LLM routing if semantic returned empty and method allows fallback
-            $log->info('[SEMANTIC ROUTER] Empty result, falling back to LLM routing');
-        }
-
+        // If not configured for LLM, use document analysis only
         if (!$this->isConfigured) {
-            $log->warning('[PARALLEL LLM] Azure OpenAI not configured, using document analysis only');
+            $log->warning('[ROUTER] Azure OpenAI not configured, using document analysis only');
             $selected = $this->mergeDocumentAndQuestionRouting([], $documentAnalysis, $log, $maxGuidelines);
             return ['selected' => $selected, 'expanded' => $queryForExpansion, 'scores' => [], 'routing_method' => 'document_only'];
         }
+
+        // Run routing and expansion in parallel using LLM
+        Log::info('[ROUTER] Running parallel LLM routing + expansion');
 
         $guidelineList = $this->buildGuidelineList();
         $routingPrompt = $this->buildPrompt($routingQuery, $guidelineList, $maxGuidelines);
