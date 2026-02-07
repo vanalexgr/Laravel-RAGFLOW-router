@@ -84,6 +84,9 @@ class RetrievalService
             $routingMethod = 'explicit';
         }
 
+        // Apply post-routing guardrails (SVT/anticoag)
+        $selectedGuidelines = $this->applyGuardrails($selectedGuidelines, $scrubbedQuestion);
+
         // 4. Fallback Keyword Scoring (if still empty)
         if (empty($selectedGuidelines)) {
             $selectedGuidelines = $this->selectGuidelinesByKeywordScore($scrubbedQuestion, 4);
@@ -228,16 +231,141 @@ class RetrievalService
         return $result;
     }
 
+    /**
+     * Apply post-routing guardrails to ensure critical guidelines are not missed.
+     * 
+     * Guardrail A: Thrombosis keywords → ensure venous_thrombosis
+     * Guardrail B: Anticoagulation keywords → ensure antithrombotic_therapy
+     * 
+     * @param array $selectedGuidelines Current selection (key => guideline info)
+     * @param string $question The scrubbed user question
+     * @return array Updated selection with guardrails applied
+     */
+    protected function applyGuardrails(array $selectedGuidelines, string $question): array
+    {
+        $log = Log::channel('retrieval');
+        $questionLower = strtolower($question);
+        $registry = $this->buildGuidelineRegistry();
+        $modified = false;
+
+        // Guardrail A: Thrombosis terms → ensure venous_thrombosis
+        $thrombosisTerms = [
+            'svt',
+            'superficial vein thrombosis',
+            'thrombophlebitis',
+            'dvt',
+            'deep vein thrombosis',
+            'venous thrombosis',
+            'pulmonary embolism',
+            'pe',
+            'vte',
+            'venous thromboembolism'
+        ];
+
+        foreach ($thrombosisTerms as $term) {
+            if (str_contains($questionLower, $term) && !isset($selectedGuidelines['venous_thrombosis'])) {
+                if (isset($registry['venous_thrombosis'])) {
+                    $selectedGuidelines['venous_thrombosis'] = $registry['venous_thrombosis'];
+                    $modified = true;
+                    $log->info("[GUARDRAIL A] Added venous_thrombosis (detected: $term)");
+                    break;
+                }
+            }
+        }
+
+        // Guardrail B: Anticoag terms → ensure antithrombotic_therapy
+        $anticoagTerms = [
+            'anticoag',
+            'anticoagulation',
+            'fondaparinux',
+            'heparin',
+            'lmwh',
+            'doac',
+            'apixaban',
+            'rivaroxaban',
+            'warfarin',
+            'dabigatran',
+            'edoxaban',
+            'duration',
+            'dose',
+            'dosing'
+        ];
+
+        foreach ($anticoagTerms as $term) {
+            if (str_contains($questionLower, $term) && !isset($selectedGuidelines['antithrombotic_therapy'])) {
+                if (isset($registry['antithrombotic_therapy'])) {
+                    $selectedGuidelines['antithrombotic_therapy'] = $registry['antithrombotic_therapy'];
+                    $modified = true;
+                    $log->info("[GUARDRAIL B] Added antithrombotic_therapy (detected: $term)");
+                    break;
+                }
+            }
+        }
+
+        // Enforce max 3 guidelines
+        if (count($selectedGuidelines) > 3) {
+            $keys = array_keys($selectedGuidelines);
+            $count = count($selectedGuidelines);
+            $log->warning("[GUARDRAIL] Exceeded 3 guidelines ($count), keeping first 3", [
+                'all_keys' => $keys
+            ]);
+            $selectedGuidelines = array_slice($selectedGuidelines, 0, 3, true);
+        }
+
+        if ($modified) {
+            $log->info("[GUARDRAILS] Final guideline keys after guardrails", [
+                'guideline_keys' => array_keys($selectedGuidelines)
+            ]);
+        }
+
+        return $selectedGuidelines;
+    }
+
+    /**
+     * Get full guideline config including recs_doc_id from config file.
+     */
+    protected function getGuidelineConfig(string $key): ?array
+    {
+        $categories = config('guidelines.categories', []);
+        foreach ($categories as $category) {
+            if (isset($category['guidelines'][$key])) {
+                return $category['guidelines'][$key];
+            }
+        }
+        return null;
+    }
+
+
     protected function retrieveDualChunks(string $question, array $guidelines, int $narrativeMax, int $citationMax, array $scores = []): array
     {
         $narrativeDatasets = [];
+        $citationDocumentIds = []; // NEW: for hard scoping citations
+
         foreach ($guidelines as $key => $info) {
+            // Build narrative datasets
             $narrativeDatasets[] = [
                 'id' => $info['id'],
                 'name' => $info['name'],
                 'score' => $scores[$key] ?? null,
             ];
+
+            // NEW: Collect citation document IDs
+            $guidelineConfig = $this->getGuidelineConfig($key);
+            if (!empty($guidelineConfig['recs_doc_id'])) {
+                // Only add if it's not a placeholder
+                if (!str_starts_with($guidelineConfig['recs_doc_id'], 'NEED_')) {
+                    $citationDocumentIds[] = $guidelineConfig['recs_doc_id'];
+                }
+            }
         }
+
+        // Log citation document IDs
+        Log::info("[CITATION SCOPE] Document IDs for selected guidelines", [
+            'guideline_keys' => array_keys($guidelines),
+            'citation_document_ids' => $citationDocumentIds,
+            'count' => count($citationDocumentIds),
+            'has_placeholders' => count($citationDocumentIds) < count($guidelines)
+        ]);
 
         $citationDatasetId = config('guidelines.recommendations_dataset');
         if (empty($citationDatasetId))
@@ -248,6 +376,7 @@ class RetrievalService
             'question' => $question,
             'narrative_max' => $narrativeMax,
             'citation_max' => $citationMax,
+            'citation_document_ids' => $citationDocumentIds, // NEW: pass to Python
             'top_k' => $retrievalConfig['top_k'] ?? 256,
             'similarity_threshold' => $retrievalConfig['similarity_threshold'] ?? 0.2,
             'keyword' => true,
