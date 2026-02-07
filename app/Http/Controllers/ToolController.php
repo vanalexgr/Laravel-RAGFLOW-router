@@ -106,12 +106,18 @@ class ToolController extends Controller
             'citation_count' => count($result['citation_chunks'] ?? []),
         ]);
 
+        // Sanitize UTF-8 to prevent JSON encoding errors from malformed characters
+        $output = mb_convert_encoding($output, 'UTF-8', 'UTF-8');
+        $narrativeChunks = json_decode(json_encode($result['narrative_chunks'], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
+        $citationChunks = json_decode(json_encode($result['citation_chunks'], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
+
         // Return JSON with structured data for citation emission
         return response()->json([
             'result' => $output,
-            'narrative_chunks' => $result['narrative_chunks'],
-            'citation_chunks' => $result['citation_chunks'],
-        ])->header('Access-Control-Allow-Origin', '*')
+            'narrative_chunks' => $narrativeChunks,
+            'citation_chunks' => $citationChunks,
+        ], 200, [], JSON_INVALID_UTF8_SUBSTITUTE)
+            ->header('Access-Control-Allow-Origin', '*')
             ->header('Access-Control-Allow-Methods', 'POST, OPTIONS')
             ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     }
