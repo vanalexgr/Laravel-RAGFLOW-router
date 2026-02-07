@@ -219,7 +219,7 @@ For improved security and speed between your **Laravel VM** and **OpenWebUI VM**
 1.  **VNet Peering**: Ensure both VMs are in the same Azure Virtual Network (VNet).
 2.  **Private IPs**: Use the Private IP address (e.g., `10.0.0.x`) instead of the Public IP.
     *   **Laravel**: Configure web server (Caddy/Nginx) to listen on `0.0.0.0` or the private IP.
-    *   **OpenWebUI**: Point the pipeline URL to `http://<LARAVEL_PRIVATE_IP>/api/v1/retrieve`.
+    *   **OpenWebUI**: Configure the tool base URL to `http://<LARAVEL_PRIVATE_IP>` (tool calls `POST /api/v1/vascular-consult`).
 3.  **Firewall (NSG)**: 
     *   Create an Inbound Rule to **Allow** traffic on port 80/8080 from the OpenWebUI VM's Private IP.
     *   **Deny** traffic on port 80/8080 from the Internet (`*`).
