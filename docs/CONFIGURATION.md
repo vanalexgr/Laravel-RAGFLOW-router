@@ -1,4 +1,4 @@
-# RAGFlow & VascularExpert Agent Configuration Guide
+# RAGFlow & Vascular Expert Configuration Guide
 
 This document explains all configurable settings for the medical guidelines consultation system.
 
@@ -23,29 +23,46 @@ RAGFLOW_REQUEST_TIMEOUT=60
 
 ---
 
+### API Authentication
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `API_SECRET_KEY` | (required) | API key required for `POST /api/v1/vascular-consult` |
+
+**Example:**
+```env
+API_SECRET_KEY=your-api-key-here
+```
+
+---
+
 ### Retrieval Settings
 
 These control how documents are retrieved from RAGFlow datasets.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `RAGFLOW_TOP_K` | `20` | Number of chunks to retrieve initially (before reranking) |
-| `RAGFLOW_TOP_N` | `6` | Number of chunks to return after reranking |
+| `RAGFLOW_TOP_K` | `256` | Number of candidate chunks retrieved before reranking |
+| `RAGFLOW_SIZE` | `10` | Number of chunks returned per dataset |
+| `RAGFLOW_PAGE` | `1` | Pagination page for retrieval |
 | `RAGFLOW_SIMILARITY_THRESHOLD` | `0.2` | Minimum similarity score (0.0-1.0). Lower = more results |
 | `RAGFLOW_KEYWORD_MODE` | `true` | Enable hybrid search (keyword + vector) |
 | `RAGFLOW_VECTOR_WEIGHT` | `0.3` | Weight for vector similarity in hybrid search (0.0-1.0) |
-| `RAGFLOW_RERANK_MODEL` | `Cohere-rerank-v3-5-rdrns` | Reranking model for improved relevance |
-| `RAGFLOW_USE_KNOWLEDGE_GRAPH` | `true` | Enable knowledge graph for multi-hop QA |
+| `RAGFLOW_RERANK_ID` | `Cohere-rerank-v4.0-pro___OpenAI-API@OpenAI-API-Compatible` | Reranker ID string |
+| `RAGFLOW_USE_KG` | `true` | Enable knowledge graph expansion |
+| `RAGFLOW_HIGHLIGHT` | `true` | Include highlight snippets in results |
 
 **Example:**
 ```env
-RAGFLOW_TOP_K=20
-RAGFLOW_TOP_N=6
+RAGFLOW_TOP_K=256
+RAGFLOW_SIZE=10
+RAGFLOW_PAGE=1
 RAGFLOW_SIMILARITY_THRESHOLD=0.2
 RAGFLOW_KEYWORD_MODE=true
 RAGFLOW_VECTOR_WEIGHT=0.3
-RAGFLOW_RERANK_MODEL=Cohere-rerank-v3-5-rdrns
-RAGFLOW_USE_KNOWLEDGE_GRAPH=true
+RAGFLOW_RERANK_ID=Cohere-rerank-v4.0-pro___OpenAI-API@OpenAI-API-Compatible
+RAGFLOW_USE_KG=true
+RAGFLOW_HIGHLIGHT=true
 ```
 
 **Note:** TOC (Table of Contents) and Auto Keywords & Meta must be configured in the RAGFlow UI when setting up the dataset, not via API.
@@ -55,7 +72,11 @@ RAGFLOW_USE_KNOWLEDGE_GRAPH=true
 **Top-K (RAGFLOW_TOP_K)**
 - Higher values return more results but may include less relevant content
 - Lower values are more focused but may miss relevant information
-- Recommended: 5-15 for most queries
+- Recommended: 50-256 depending on reranker capacity
+
+**Size (RAGFLOW_SIZE)**
+- Number of chunks returned per dataset after reranking
+- Recommended: 6-12 depending on response length
 
 **Similarity Threshold (RAGFLOW_SIMILARITY_THRESHOLD)**
 - `0.0` = Return all results regardless of relevance
@@ -76,21 +97,35 @@ RAGFLOW_USE_KNOWLEDGE_GRAPH=true
 
 ---
 
+### RAGFlow Bridge (Optional)
+
+Use the local bridge for parallel retrieval and tighter latency control.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RAGFLOW_USE_BRIDGE` | `false` | Route retrieval via the local bridge |
+| `RAGFLOW_BRIDGE_URL` | `http://localhost:8000` | Bridge base URL |
+| `RAGFLOW_BRIDGE_SECRET` | (optional) | Shared secret for bridge access |
+
+---
+
 ### Azure OpenAI Connection
+
+Azure OpenAI is used for guideline routing and query expansion.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AZURE_OPENAI_API_KEY` | (required) | Your Azure OpenAI API key |
 | `AZURE_OPENAI_ENDPOINT` | (required) | Azure OpenAI endpoint URL |
 | `AZURE_OPENAI_DEPLOYMENT` | `gpt-5-chat` | Deployment name |
-| `AZURE_OPENAI_API_VERSION` | `2024-12-01-preview` | API version |
+| `AZURE_OPENAI_VERSION` | `2024-12-01-preview` | API version |
 
 **Example:**
 ```env
 AZURE_OPENAI_API_KEY=your-azure-key
 AZURE_OPENAI_ENDPOINT=https://your-resource.cognitiveservices.azure.com
 AZURE_OPENAI_DEPLOYMENT=gpt-5-chat
-AZURE_OPENAI_API_VERSION=2024-12-01-preview
+AZURE_OPENAI_VERSION=2024-12-01-preview
 ```
 
 ---
@@ -106,73 +141,84 @@ return [
     'request_timeout' => env('RAGFLOW_REQUEST_TIMEOUT', 30),
 
     'retrieval' => [
-        'top_k' => (int) env('RAGFLOW_TOP_K', 10),
+        'top_k' => (int) env('RAGFLOW_TOP_K', 256),
+        'size' => (int) env('RAGFLOW_SIZE', 10),
+        'page' => (int) env('RAGFLOW_PAGE', 1),
         'similarity_threshold' => (float) env('RAGFLOW_SIMILARITY_THRESHOLD', 0.2),
         'keyword_mode' => filter_var(env('RAGFLOW_KEYWORD_MODE', true), FILTER_VALIDATE_BOOLEAN),
         'vector_similarity_weight' => (float) env('RAGFLOW_VECTOR_WEIGHT', 0.3),
+        'rerank_id' => env('RAGFLOW_RERANK_ID', 'Cohere-rerank-v4.0-pro___OpenAI-API@OpenAI-API-Compatible'),
+        'use_kg' => filter_var(env('RAGFLOW_USE_KG', true), FILTER_VALIDATE_BOOLEAN),
+        'highlight' => filter_var(env('RAGFLOW_HIGHLIGHT', true), FILTER_VALIDATE_BOOLEAN),
     ],
-
-    'datasets' => [
-        'esvs_guidelines' => '4fff3622eb1b11f09021f2381272676b',
-    ],
+    // Dataset registry is defined in config/guidelines.php
 ];
 ```
 
 ### Adding New Datasets
 
-Edit `config/ragflow.php` to add more datasets:
+Edit `config/guidelines.php` to add or update guideline datasets and their recommendation document IDs:
 
 ```php
-'datasets' => [
-    'esvs_guidelines' => '4fff3622eb1b11f09021f2381272676b',
-    'aha_guidelines' => 'your-aha-dataset-id',
-    'esc_guidelines' => 'your-esc-dataset-id',
+'recommendations_dataset' => 'your-recommendations-dataset-id',
+
+'categories' => [
+    'peripheral_carotid' => [
+        'name' => 'Peripheral & Carotid',
+        'guidelines' => [
+            'carotid_vertebral' => [
+                'id' => 'your-guideline-dataset-id',
+                'name' => 'Carotid & Vertebral',
+                'recs_doc_id' => 'your-recommendations-doc-id',
+                'key_concepts' => ['CEA', 'CAS', 'TIA'],
+            ],
+        ],
+    ],
 ],
 ```
 
 ---
 
-## Agent Configuration
+## OpenWebUI Tool Integration
 
-### VascularExpertAgent Settings
+This project integrates with OpenWebUI using a custom tool in `openwebui_tools/vascular_expert.py`.
 
-Located in `app/Agents/VascularExpertAgent.php`:
+### Tool Endpoint
 
-| Property | Value | Description |
-|----------|-------|-------------|
-| `$provider` | `'azure'` | LLM provider (must be 'azure' for Azure OpenAI) |
-| `$model` | `'gpt-5-chat'` | Model deployment name |
-| `$includeHistory` | `true` | Enable multi-turn conversation memory |
-| `$contextStrategy` | `'full'` | Include full conversation history |
-| `$maxSteps` | `5` | Maximum tool call iterations per query |
+- `POST /api/v1/vascular-consult`
+- Requires `API_SECRET_KEY` via `Authorization: Bearer YOUR_API_KEY`
+- OpenAPI spec: `public/openapi.json`
 
-### Memory & Multi-turn Behavior
+### Configure the Tool in OpenWebUI
 
-- **includeHistory**: When `true`, the agent remembers previous messages in the session
-- **contextStrategy**: 
-  - `'full'` = Include all previous messages
-  - `'summary'` = Include summarized history
-  - `'none'` = No history (stateless)
-- **maxSteps**: Limits how many times the agent can call tools in a single query (prevents infinite loops)
+1. Open OpenWebUI and go to **Admin Panel → Tools**.
+2. Upload `openwebui_tools/vascular_expert.py`.
+3. Configure tool valves:
+   - `VASCULAR_API_BASE_URL`: `https://your-domain.com`
+   - `VASCULAR_API_KEY`: your `API_SECRET_KEY`
+4. Enable the tool for your model and use `consult_vascular_guidelines`.
+
+### Test the Tool Endpoint
+
+```bash
+curl -X POST https://YOUR-DOMAIN.com/api/v1/vascular-consult \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{
+    "question": "What is the timing for CEA in symptomatic carotid stenosis?",
+    "guidelines": ["carotid_vertebral"]
+  }'
+```
 
 ---
 
-## Runtime Overrides
+## MCP Integration (Optional)
 
-The `consult_guideline` tool accepts runtime overrides for retrieval settings:
+This app also exposes an MCP server for integration with other clients.
 
-```php
-// The agent can override settings per-query:
-{
-    "topic": "Carotid",
-    "question": "timing for CEA",
-    "top_k": 5,                    // Override top_k
-    "similarity_threshold": 0.5,   // Override threshold
-    "keyword_mode": false          // Override keyword mode
-}
-```
-
-This allows the agent to adjust retrieval behavior based on query complexity.
+- SSE stream: `GET /vascular`
+- Message endpoint: `POST /vascular`
+- Tool name: `consult_vascular_guidelines`
 
 ---
 
@@ -202,8 +248,10 @@ Retrieved chunks automatically extract these metadata fields:
    ```env
    RAGFLOW_API_KEY=your-ragflow-key
    RAGFLOW_ENDPOINT=https://your-ragflow-instance/api/v1
+   API_SECRET_KEY=your-api-secret-key
    AZURE_OPENAI_API_KEY=your-azure-key
    AZURE_OPENAI_ENDPOINT=https://your-resource.cognitiveservices.azure.com
+   AZURE_OPENAI_VERSION=2024-12-01-preview
    ```
 3. Optionally customize retrieval:
    ```env
@@ -215,91 +263,13 @@ Retrieved chunks automatically extract these metadata fields:
    ```bash
    php artisan config:clear
    ```
-5. Test the agent:
+5. Test the tool endpoint:
    ```bash
-   php artisan vizra:chat vascular_expert
+   curl -X POST http://localhost/api/v1/vascular-consult \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer YOUR_API_KEY" \
+     -d '{\"question\": \"What is carotid stenosis?\"}'
    ```
-
----
-
-## OpenWebUI Integration
-
-Your VascularExpert agent is exposed as an OpenAI-compatible API endpoint.
-
-### API Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/v1/models` | GET | List available models |
-| `/api/v1/models/{model}` | GET | Get model info |
-| `/api/v1/chat/completions` | POST | Chat completions (streaming supported) |
-
-### API Authentication
-
-The OpenAI-compatible endpoints require API key authentication.
-
-| Variable | Description |
-|----------|-------------|
-| `API_SECRET_KEY` | Required. Your API key for authenticating requests |
-
-Pass the API key using one of these methods:
-- **Authorization header**: `Authorization: Bearer YOUR_API_KEY`
-- **X-API-Key header**: `X-API-Key: YOUR_API_KEY`
-
-### Connecting OpenWebUI
-
-1. Open OpenWebUI in your browser
-2. Go to **Settings** > **Connections** > **OpenAI**
-3. Click the wrench icon to **Manage**
-4. Click **Add Connection**
-5. Fill in:
-   ```
-   API URL: https://9287bb87-c6fb-4044-8c84-59a9d5d40a6c-00-bbjfytvmszqy.kirk.replit.dev/api/v1
-   API Key: your-api-secret-key
-   Model IDs: vascular_expert
-   ```
-6. Save and start chatting!
-
-### Testing the API
-
-```bash
-# List models (requires API key)
-curl https://YOUR-REPLIT-URL/api/v1/models \
-  -H "Authorization: Bearer YOUR_API_KEY"
-
-# Chat completion
-curl -X POST https://YOUR-REPLIT-URL/api/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_API_KEY" \
-  -d '{
-    "model": "vascular_expert",
-    "messages": [{"role": "user", "content": "What is carotid stenosis?"}]
-  }'
-
-# Streaming
-curl -X POST https://YOUR-REPLIT-URL/api/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_API_KEY" \
-  -d '{
-    "model": "vascular_expert",
-    "messages": [{"role": "user", "content": "What is carotid stenosis?"}],
-    "stream": true
-  }'
-```
-
-### Multi-Turn Conversations
-
-The API automatically handles conversation context from the messages array. OpenWebUI sends the full conversation history, which is passed to the agent for context-aware responses.
-
-For additional session persistence, you can pass a session ID header:
-```bash
-curl -X POST https://YOUR-REPLIT-URL/api/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "X-Session-ID: my-session-123" \
-  -d '{...}'
-```
-
----
 
 ## Troubleshooting
 
@@ -312,12 +282,3 @@ curl -X POST https://YOUR-REPLIT-URL/api/v1/chat/completions \
 - Lower `RAGFLOW_SIMILARITY_THRESHOLD` (try 0.1)
 - Increase `RAGFLOW_TOP_K` (try 20)
 - Enable `RAGFLOW_KEYWORD_MODE=true`
-
-### Agent Not Using Tools
-- Ensure `protected ?string $provider = 'azure';` is set in agent class
-- Verify tools array includes the tool class
-
-### Memory Not Working
-- Use same session ID across queries
-- Ensure `$includeHistory = true` in agent
-- Check `$contextStrategy = 'full'`
