@@ -7,12 +7,12 @@
     },
     "servers": [
         {
-            "url": "https://lavarel.eastus2.cloudapp.azure.com",
-            "description": "Production Server"
+            "url": "https://your-domain.com",
+            "description": "API Base URL"
         }
     ],
     "paths": {
-        "/api/vascular-consult": {
+        "/api/v1/vascular-consult": {
             "post": {
                 "operationId": "consult_guidelines",
                 "summary": "Consult Vascular Guidelines",
@@ -34,6 +34,13 @@
                                             "type": "string"
                                         },
                                         "description": "Optional conversation history"
+                                    },
+                                    "guidelines": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "description": "Optional list of guideline keys to scope retrieval (max 3)"
                                     }
                                 },
                                 "required": [
@@ -53,7 +60,21 @@
                                     "properties": {
                                         "result": {
                                             "type": "string",
-                                            "description": "The retrieved guidelines and citations"
+                                            "description": "Formatted retrieval output for LLMs"
+                                        },
+                                        "narrative_chunks": {
+                                            "type": "array",
+                                            "description": "Narrative chunks for synthesis",
+                                            "items": {
+                                                "type": "object"
+                                            }
+                                        },
+                                        "citation_chunks": {
+                                            "type": "array",
+                                            "description": "Citation chunks for verbatim recommendations",
+                                            "items": {
+                                                "type": "object"
+                                            }
                                         }
                                     }
                                 }

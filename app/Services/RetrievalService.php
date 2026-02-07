@@ -5,8 +5,6 @@ namespace App\Services;
 use Illuminate\Support\Facades\Log;
 use App\Services\GuidelineRouterService;
 use App\Services\PHIScrubberService;
-use App\Services\DocumentContextAnalyzerService;
-use Illuminate\Support\Facades\Http;
 
 class RetrievalService
 {
@@ -16,11 +14,9 @@ class RetrievalService
      * @param string $question
      * @param array $history
      * @param array|null $requestedKeys
-     * @param int $topK
-     * @param string $patientContext
      * @return array
      */
-    public function retrieve(string $question, array $history = [], ?array $requestedKeys = null, int $topK = 12, string $patientContext = ''): array
+    public function retrieve(string $question, array $history = [], ?array $requestedKeys = null): array
     {
         $startTime = microtime(true);
         $log = Log::channel('retrieval');
@@ -31,35 +27,20 @@ class RetrievalService
         $scrubResult = $phiScrubber->scrub($question);
         $scrubbedQuestion = $scrubResult['scrubbed_text'];
 
-        $scrubbedPatientContext = '';
-        $patientContextRedactions = 0;
-        if (!empty($patientContext)) {
-            $contextScrubResult = $phiScrubber->scrub($patientContext);
-            $scrubbedPatientContext = $contextScrubResult['scrubbed_text'];
-            $patientContextRedactions = $contextScrubResult['total_redactions'];
-        }
-
         $log->info('=== RETRIEVAL SERVICE ===', [
             'correlation_id' => $correlationId,
             'question_preview' => substr($scrubbedQuestion, 0, 50),
             'has_history' => !empty($history),
         ]);
 
-        // 2. Document Analysis (if context provided)
-        $documentAnalysis = null;
-        if (!empty($scrubbedPatientContext)) {
-            $documentAnalyzer = new DocumentContextAnalyzerService();
-            $documentAnalysis = $documentAnalyzer->analyze($scrubbedPatientContext);
-        }
-
-        // 3. Routing
+        // 2. Routing
         $guidelineScores = [];
         $routingMethod = 'manual';
 
         if (empty($requestedKeys)) {
             $router = new GuidelineRouterService();
             // Use context-aware routing
-            $llmResult = $router->routeWithContext($scrubbedQuestion, $history, 3, $documentAnalysis);
+            $llmResult = $router->routeWithContext($scrubbedQuestion, $history, 3);
 
             $selectedKeys = $llmResult['selected'];
             $guidelineScores = $llmResult['scores'] ?? [];
@@ -97,13 +78,13 @@ class RetrievalService
             }
         }
 
-        // 5. Dual Retrieval
+        // 4. Dual Retrieval
         $narrativeMax = 15;
         $citationMax = 5; // Reduced from 6
 
         // Create an expanded query for retrieval
         $router = new GuidelineRouterService();
-        $expansionResult = $router->selectAndExpand($scrubbedQuestion, 3, null, $documentAnalysis);
+        $expansionResult = $router->selectAndExpand($scrubbedQuestion, 3, null, null);
         $expandedQuery = $expansionResult['expanded'] ?? $scrubbedQuestion; // Use expanded or original
 
         $dualResult = $this->retrieveDualChunks($expandedQuery, $selectedGuidelines, $narrativeMax, $citationMax, $guidelineScores);
@@ -114,15 +95,13 @@ class RetrievalService
             'success' => true,
             'question' => $scrubbedQuestion,
             'expanded_query' => $expandedQuery, // Return for debug
-            'phi_scrubbed' => $scrubResult['was_modified'] || !empty($patientContext),
+            'phi_scrubbed' => $scrubResult['was_modified'],
             'selected_guidelines' => $selectedGuidelines,
             'routing_method' => $routingMethod,
             'narrative_chunks' => $dualResult['narrative_chunks'],
             'citation_chunks' => $dualResult['citation_chunks'],
             'duration_ms' => $duration,
             'system_prompt' => $this->getDualSystemPrompt(),
-            // Add scrubbed context if it existed
-            'scrubbed_patient_context' => $scrubbedPatientContext,
         ];
     }
 

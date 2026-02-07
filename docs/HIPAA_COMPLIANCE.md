@@ -101,8 +101,8 @@ Location: `storage/app/phi/common_names.json`
 
 PHI scrubbing is applied at:
 
-1. **Retrieve Endpoint** (`/api/v1/retrieve`): All queries are scrubbed before guideline routing and RAGFlow retrieval
-2. **Chat Completions** (`/api/v1/chat/completions`): Can be enabled for the agent pathway
+1. **Tool Endpoint** (`/api/v1/vascular-consult`): All queries are scrubbed before guideline routing and RAGFlow retrieval
+2. **MCP Tool** (`consult_vascular_guidelines`): Uses the same retrieval service and scrubbing pipeline
 
 ## Audit Trail
 
@@ -140,19 +140,17 @@ PHI scrubbing is applied at:
 
 ## API Response
 
-The retrieve endpoint includes PHI scrubbing status in responses:
+The tool endpoint returns the formatted retrieval output plus structured chunks:
 
 ```json
 {
-    "success": true,
-    "question": "[NAME], 90+yo female with carotid stenosis",
-    "phi_scrubbed": true,
-    "phi_redaction_count": 2,
-    "selected_guidelines": {...},
+    "result": "RETRIEVED GUIDELINES for: \"...\"",
     "narrative_chunks": [...],
     "citation_chunks": [...]
 }
 ```
+
+PHI scrubbing status is logged in the audit trail (not returned in the API response).
 
 ## Limitations
 

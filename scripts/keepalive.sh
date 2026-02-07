@@ -2,7 +2,7 @@
 # Keep-alive script to prevent Replit cold starts
 # Pings Laravel and RAGFlow Bridge every 3 minutes
 
-LARAVEL_URL="http://localhost:5000/api/v1/health/retrieval"
+LARAVEL_URL="http://localhost:5000/up"
 RAGFLOW_URL="http://localhost:8000/health"
 INTERVAL=180  # 3 minutes
 
@@ -13,9 +13,8 @@ echo "[KeepAlive] RAGFlow: $RAGFLOW_URL"
 while true; do
     TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
     
-    # Ping Laravel with auth header (which will cascade to RAGFlow)
+    # Ping Laravel health endpoint
     LARAVEL_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 \
-        -H "Authorization: Bearer $API_SECRET_KEY" \
         "$LARAVEL_URL" 2>/dev/null)
     
     # Ping RAGFlow directly as backup

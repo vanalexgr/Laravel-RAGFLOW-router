@@ -55,11 +55,11 @@ class Tools:
 
     class Valves(BaseModel):
         VASCULAR_API_BASE_URL: str = Field(
-            default="https://lavarel.eastus2.cloudapp.azure.com",
+            default="https://your-domain.com",
             description="Base URL for Vascular Expert API",
         )
         VASCULAR_API_KEY: str = Field(
-            default="gukUXd551qIobQVHVQLedUMmA4E8Cx4s",
+            default="your-api-key",
             description="API Key for authentication",
         )
 
