@@ -312,15 +312,19 @@ async def retrieve_multi(request: Request, body: RetrieveMultiRequest):
 class RetrieveDualRequest(BaseModel):
     """Dual retrieval: narrative chunks (KG on) + citation chunks (KG off, metatags)."""
     question: str
+    citation_query: Optional[str] = None
     narrative_datasets: list[DatasetInfo]
     citation_dataset_id: str
     citation_document_ids: Optional[list[str]] = None  # NEW: for hard scoping by document ID
-    narrative_max: int = 15  # Increased from 8 for better context coverage
+    narrative_max: int = 10
     citation_max: int = 4
-    top_k: int = 256
+    citation_min: int = 2
+    top_k: int = 128
     similarity_threshold: float = 0.2
+    citation_similarity_threshold: Optional[float] = None
     vector_similarity_weight: float = 0.3
     keyword: bool = True
+    citation_top_k: Optional[int] = None
     rerank_id: Optional[str] = None
     highlight: bool = True
     
@@ -501,12 +505,12 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
             retrieve_size = body.citation_max * 3
         
         payload = {
-            "question": body.question,
+            "question": body.citation_query or body.question,
             "dataset_ids": [body.citation_dataset_id],
-            "top_k": body.top_k,
+            "top_k": body.citation_top_k or body.top_k,
             "page": 1,
             "size": retrieve_size,
-            "similarity_threshold": body.similarity_threshold,
+            "similarity_threshold": body.citation_similarity_threshold or body.similarity_threshold,
             "vector_similarity_weight": body.vector_similarity_weight,
             "keyword": body.keyword,
             "highlight": body.highlight,
@@ -523,7 +527,7 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
         if body.rerank_id:
             payload["rerank_id"] = body.rerank_id
 
-        logger.info(f"  Citation Query: '{body.question[:60]}...' (retrieve {retrieve_size}, final {body.citation_max})")
+        logger.info(f"  Citation Query: '{payload['question'][:60]}...' (retrieve {retrieve_size}, final {body.citation_max})")
 
         try:
             response = await client.post(
@@ -559,6 +563,37 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
             
             capped = chunks[:body.citation_max]
             logger.info(f"  Citations: final={len(capped)} scoped_by_doc_ids={bool(citation_document_ids)} ({cit_duration:.0f}ms)")
+
+            if len(capped) < max(1, body.citation_min):
+                retry_threshold = max(0.05, (payload["similarity_threshold"] or 0.2) * 0.5)
+                retry_size = max(retrieve_size * 2, body.citation_max * 8)
+                retry_payload = dict(payload)
+                retry_payload["similarity_threshold"] = retry_threshold
+                retry_payload["size"] = retry_size
+                logger.info(f"  Citation Retry: threshold={retry_threshold} size={retry_size}")
+
+                try:
+                    retry_response = await client.post(
+                        f"{RAGFLOW_BASE_URL}/retrieval",
+                        json=retry_payload,
+                        headers={
+                            "Authorization": f"Bearer {RAGFLOW_API_KEY}",
+                            "Content-Type": "application/json",
+                        }
+                    )
+                    retry_result = retry_response.json()
+                    retry_chunks = retry_result.get("data", {}).get("chunks", [])
+                    for chunk in retry_chunks:
+                        chunk["_source_guideline"] = "ESVS Recommendations"
+                        chunk["_source_dataset_id"] = body.citation_dataset_id
+                        chunk["_chunk_type"] = "citation"
+                    retry_capped = retry_chunks[:body.citation_max]
+                    if len(retry_capped) > len(capped):
+                        capped = retry_capped
+                        logger.info(f"  Citation Retry Improved: final={len(capped)}")
+                except Exception as e:
+                    logger.warning(f"  Citation Retry FAILED - {str(e)}")
+
             return {
                 "chunks": capped,
                 "total": len(chunks),
@@ -608,6 +643,10 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
                 "narrative_max": body.narrative_max,
                 "citation_max": body.citation_max,
                 "citation_document_ids": body.citation_document_ids,  # ← NEW: for debugging
+                "citation_query": body.citation_query or body.question,
+                "citation_similarity_threshold": body.citation_similarity_threshold or body.similarity_threshold,
+                "citation_top_k": body.citation_top_k or body.top_k,
+                "citation_min": body.citation_min,
                 "ui_capped": True,  # ← NEW: flag indicating capping was applied
             }
         }
