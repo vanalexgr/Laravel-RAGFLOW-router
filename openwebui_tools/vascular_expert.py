@@ -228,23 +228,25 @@ class Tools:
             
             # EMIT INDIVIDUAL CITATIONS for each chunk
             # This enables per-chunk citation popups in OpenWebUI
+            # OpenWebUI caps displayed citations at ~7-10, so we limit total emissions
+            MAX_CITATIONS = 7
             if emitter:
                 chunk_number = 1
+                emitted_count = 0
                 
                 # Emit citation chunks first (recommendations)
                 for chunk in citation_chunks:
+                    if emitted_count >= MAX_CITATIONS:
+                        break
+                    
                     text = chunk.get("text", chunk.get("content", ""))
                     rec_id = chunk.get("recommendation_id", "")
                     cls = chunk.get("class", "")
                     level = chunk.get("level", "")
                     guideline = chunk.get("guideline", "ESVS")
                     
-                    # Build citation title (User Request: "Recommendation 25 from xxx - Class IIA, Level C")
+                    # Build citation title
                     if rec_id:
-                        # Clean rec_id if it has prefixes like "vascular_trauma_R002" -> "R002"? 
-                        # User example "25" suggests short ID. But dataset has long IDs. 
-                        # Let's keep the ID as is for identifying, or maybe just distinct part?
-                        # For now, use the full rec_id but formatted nicely.
                         title = f"Recommendation {rec_id} from {guideline} - Class {cls}, Level {level}"
                     else:
                         title = f"Recommendation from {guideline}"
@@ -258,13 +260,15 @@ class Tools:
                                 "source": {"id": f"{chunk_number}", "name": title},
                             }
                         })
+                        emitted_count += 1
                     except Exception as e:
                         print(f"Error emitting citation: {e}")
                     
                     chunk_number += 1
                 
-                # Emit narrative chunks (context)
-                for chunk in narrative_chunks[:15]:
+                # Emit narrative chunks (context) - only up to remaining limit
+                narratives_to_emit = min(len(narrative_chunks), MAX_CITATIONS - emitted_count)
+                for chunk in narrative_chunks[:narratives_to_emit]:
                     content = chunk.get("content", "")
                     source_guideline = chunk.get("source_guideline", "ESVS")
                     
@@ -280,6 +284,7 @@ class Tools:
                                 "source": {"id": f"{chunk_number}", "name": title},
                             }
                         })
+                        emitted_count += 1
                     except Exception as e:
                         print(f"Error emitting citation: {e}")
                         
@@ -311,9 +316,14 @@ class Tools:
                         chunk_num += 1
 
                 # SECTION 2: NARRATIVE (Context)
+                # Only show narratives that were actually emitted (within MAX_CITATIONS limit)
                 if narrative_chunks:
                     llm_output += "=== NARRATIVE CONTEXT ===\n"
-                    for chunk in narrative_chunks[:15]: 
+                    # Calculate how many narratives can fit in the 7-citation limit
+                    max_narratives = MAX_CITATIONS - len(citation_chunks)
+                    narratives_to_show = min(len(narrative_chunks), max_narratives)
+                    
+                    for chunk in narrative_chunks[:narratives_to_show]: 
                         content = chunk.get("content", "")
                         source = chunk.get("source_guideline", "ESVS")
                         
