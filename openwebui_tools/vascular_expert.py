@@ -228,16 +228,11 @@ class Tools:
             
             # EMIT INDIVIDUAL CITATIONS for each chunk
             # This enables per-chunk citation popups in OpenWebUI
-            # OpenWebUI caps displayed citations at ~7-10, so we limit total emissions
-            MAX_CITATIONS = 7
             if emitter:
                 chunk_number = 1
-                emitted_count = 0
                 
                 # Emit citation chunks first (recommendations)
                 for chunk in citation_chunks:
-                    if emitted_count >= MAX_CITATIONS:
-                        break
                     
                     text = chunk.get("text", chunk.get("content", ""))
                     rec_id = chunk.get("recommendation_id", "")
@@ -266,14 +261,13 @@ class Tools:
                     
                     chunk_number += 1
                 
-                # Emit narrative chunks (context) - only up to remaining limit
-                narratives_to_emit = min(len(narrative_chunks), MAX_CITATIONS - emitted_count)
-                for chunk in narrative_chunks[:narratives_to_emit]:
+                # Emit narrative chunks (context)
+                for chunk in narrative_chunks:
                     content = chunk.get("content", "")
                     source_guideline = chunk.get("source_guideline", "ESVS")
                     
-                    # Title with parentheses to avoid confusion with inline [n] brackets
-                    title = f"{source_guideline} (#{chunk_number})"
+                    # Simple title - just guideline name, no numbering
+                    title = source_guideline
                     
                     try:
                         await emitter({
@@ -316,14 +310,9 @@ class Tools:
                         chunk_num += 1
 
                 # SECTION 2: NARRATIVE (Context)
-                # Only show narratives that were actually emitted (within MAX_CITATIONS limit)
                 if narrative_chunks:
                     llm_output += "=== NARRATIVE CONTEXT ===\n"
-                    # Calculate how many narratives can fit in the 7-citation limit
-                    max_narratives = MAX_CITATIONS - len(citation_chunks)
-                    narratives_to_show = min(len(narrative_chunks), max_narratives)
-                    
-                    for chunk in narrative_chunks[:narratives_to_show]: 
+                    for chunk in narrative_chunks: 
                         content = chunk.get("content", "")
                         source = chunk.get("source_guideline", "ESVS")
                         
