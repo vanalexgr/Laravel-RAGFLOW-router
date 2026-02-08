@@ -79,15 +79,16 @@ class RetrievalService
         }
 
         // 4. Dual Retrieval
-        $narrativeMax = 15;
-        $citationMax = 5; // Reduced from 6
+        $narrativeMax = 10;
+        $citationMax = 4;
 
         // Create an expanded query for retrieval
         $router = new GuidelineRouterService();
         $expansionResult = $router->selectAndExpand($scrubbedQuestion, 3, null, null);
         $expandedQuery = $expansionResult['expanded'] ?? $scrubbedQuestion; // Use expanded or original
+        $citationQuery = $scrubbedQuestion; // Keep citations tight to the original question
 
-        $dualResult = $this->retrieveDualChunks($expandedQuery, $selectedGuidelines, $narrativeMax, $citationMax, $guidelineScores);
+        $dualResult = $this->retrieveDualChunks($expandedQuery, $citationQuery, $selectedGuidelines, $narrativeMax, $citationMax, $guidelineScores);
 
         $duration = round((microtime(true) - $startTime) * 1000);
 
@@ -484,7 +485,7 @@ class RetrievalService
     }
 
 
-    protected function retrieveDualChunks(string $question, array $guidelines, int $narrativeMax, int $citationMax, array $scores = []): array
+    protected function retrieveDualChunks(string $narrativeQuery, string $citationQuery, array $guidelines, int $narrativeMax, int $citationMax, array $scores = []): array
     {
         $narrativeDatasets = [];
         $citationDocumentIds = []; // NEW: for hard scoping citations
@@ -521,7 +522,8 @@ class RetrievalService
 
         $retrievalConfig = config('ragflow.retrieval', []);
         $params = [
-            'question' => $question,
+            'question' => $narrativeQuery,
+            'citation_query' => $citationQuery,
             'narrative_max' => $narrativeMax,
             'citation_max' => $citationMax,
             'citation_document_ids' => $citationDocumentIds, // NEW: pass to Python
