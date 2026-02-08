@@ -268,8 +268,8 @@ class Tools:
                     content = chunk.get("content", "")
                     source_guideline = chunk.get("source_guideline", "ESVS")
                     
-                    # Simple title: just guideline name (no number prefix to avoid confusion)
-                    title = source_guideline
+                    # Title with parentheses to avoid confusion with inline [n] brackets
+                    title = f"{source_guideline} (#{chunk_number})"
                     
                     try:
                         await emitter({
