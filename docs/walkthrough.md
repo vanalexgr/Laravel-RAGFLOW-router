@@ -17,6 +17,11 @@ User Question
 - Sends recent conversation history for context fusion
 - Calls `POST /api/v1/vascular-consult` and streams status updates
 
+## Dual Retrieval Logic
+- Narrative query uses the expanded query for broader context.
+- Citation query uses the original question to keep recommendation matching tight.
+- If citations are below a minimum threshold, the bridge retries with a lower similarity threshold and larger size to avoid missing recommendations.
+
 ## MCP Integration (Optional)
 - SSE stream: `GET /vascular`
 - Message endpoint: `POST /vascular`
