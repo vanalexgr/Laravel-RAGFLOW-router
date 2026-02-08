@@ -323,10 +323,12 @@ class Tools:
                 
                 llm_output += "=== CITATION RULES ===\n"
                 llm_output += "1. Use simple numbered citations [1], [2], [3] inline after each fact.\n"
-                llm_output += "2. ONLY list sources you actually cited at the end.\n"
-                llm_output += "3. End with: 📑 References (only if recommendations were used)\n"
-                llm_output += "   [1] Rec X (Class Y, Level Z) — Guideline\n"
-                llm_output += "4. Omit the References section if only narrative was used."
+                llm_output += "2. ALWAYS end with: 📑 References\n"
+                llm_output += "3. List ALL sources in the References section using this format:\n"
+                llm_output += "   - For recommendations: [1] Rec X (Class Y, Level Z) — Guideline\n"
+                llm_output += "   - For narrative sources: [6] Guideline Name\n"
+                llm_output += "4. ONLY list sources you actually cited in your answer.\n"
+                llm_output += "5. Match the bracketed numbers [n] in your answer EXACTLY to the reference list.\n"
                 
                 return llm_output
             else:
