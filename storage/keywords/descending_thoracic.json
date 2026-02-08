@@ -1,7 +1,7 @@
 {
     "guideline_key": "descending_thoracic_aorta",
-    "guideline_name": "ESVS 2017 Descending Thoracic Aorta Diseases",
-    "version": "2026-01-25",
+    "guideline_name": "ESVS 2024 Descending Thoracic & Thoracoabdominal Aortic Aneurysms",
+    "version": "2026-02-08",
     "source": "semantic_routing_keywords_all_guidelines.md",
     "keywords": {
         "tier1_core": [
@@ -40,6 +40,14 @@
             "thoraco-abdominal aortic aneurysm",
             "TAAA",
             "Crawford extent",
+            "Crawford classification",
+            "Crawford extent I",
+            "Crawford extent II",
+            "Crawford extent III",
+            "Crawford extent IV",
+            "Crawford extent V",
+            "extent-specific management",
+            "visceral segment involvement",
             "diameter thresholds",
             "rapid expansion",
             "saccular thoracic aneurysm"
@@ -80,6 +88,7 @@
     "exclude_keywords": [
         "ascending aorta",
         "type A dissection",
-        "type A dissection"
+        "isolated AAA",
+        "infrarenal AAA only"
     ]
 }
