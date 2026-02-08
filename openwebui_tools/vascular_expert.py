@@ -255,7 +255,7 @@ class Tools:
                             "data": {
                                 "document": [text],
                                 "metadata": [{"source": title}],
-                                "source": {"id": f"cite_{chunk_number}", "name": title},
+                                "source": {"id": f"{chunk_number}", "name": title},
                             }
                         })
                     except Exception as e:
