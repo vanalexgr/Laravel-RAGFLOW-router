@@ -14,10 +14,10 @@ return [
                     'key_concepts' => ['Zone 0-4 anatomy', 'Frozen Elephant Trunk', 'FET', 'Total Endovascular Arch Repair', 'dissection management', 'arch aneurysm', 'hybrid arch'],
                 ],
                 'descending_thoracic_aorta' => [
-                    'id' => 'fd679d82dc3311f09021f2381272676b',
-                    'name' => 'Descending Thoracic Aorta',
-                    'recs_doc_id' => 'NEED_DESCENDING_THORACIC_AORTA_DOC_ID',
-                    'key_concepts' => ['Type B Dissection', 'TBAD', 'Intramural Hematoma', 'IMH', 'TEVAR', 'Spinal Cord Ischemia', 'thoracic aneurysm', 'penetrating ulcer'],
+                    'id' => '28c643e104de11f1966232d89964721d',
+                    'name' => 'Descending Thoracic & Thoracoabdominal Aortic Aneurysms',
+                    'recs_doc_id' => 'a6b1efd204dd11f1992e32d89964721d',
+                    'key_concepts' => ['Type B Dissection', 'TBAD', 'Intramural Hematoma', 'IMH', 'TEVAR', 'Spinal Cord Ischemia', 'thoracic aneurysm', 'penetrating ulcer', 'thoracoabdominal aneurysm', 'TAAA', 'Crawford classification'],
                 ],
                 'abdominal_aortic_aneurysm' => [
                     'id' => '7fb152c6ffbd11f0b2af32d89964721d',
@@ -112,7 +112,7 @@ return [
 
     'all_guideline_datasets' => [
         '5b51acbfffa411f0905532d89964721d',
-        'fd679d82dc3311f09021f2381272676b',
+        '28c643e104de11f1966232d89964721d',
         '7fb152c6ffbd11f0b2af32d89964721d',
         '681e339bffa311f08abc32d89964721d',
         '87c72055ffbe11f095ef32d89964721d',
