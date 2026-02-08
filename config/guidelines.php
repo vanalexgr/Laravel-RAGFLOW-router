@@ -51,7 +51,7 @@ return [
                 'clti' => [
                     'id' => 'acd1930edc3411f09021f2381272676b',
                     'name' => 'Chronic Limb-Threatening Ischemia',
-                    'recs_doc_id' => 'NEED_CLTI_DOC_ID',
+                    'recs_doc_id' => '31f83c34052911f18ceb32d89964721d',
                     'key_concepts' => ['WIfI classification', 'angiosome', 'heel ulcer', 'tissue loss', 'rest pain', 'gangrene', 'limb salvage', 'critical limb ischemia', 'CLI', 'CLTI'],
                 ],
                 'acute_limb_ischaemia' => [
