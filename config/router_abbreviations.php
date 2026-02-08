@@ -385,13 +385,10 @@ return [
                 'type B dissection',
                 'aortic arch',
                 'descending thoracic',
-                'graft infection',  // New: Don't eat VGEI
-                'fistula',         // New: Don't eat VGEI
-                'mycotic',          // New: Don't eat VGEI
-                'TAAA',             // New: Don't eat TAAA
-                'Thoraco-Abdominal', // New: Don't eat TAAA
-                'arch',             // New
-                'TAA'               // New
+                'graft infection',
+                'fistula',
+                'mycotic',
+                'arch'
             ],
 
             'collision_rules' => [
@@ -627,6 +624,21 @@ return [
                     'PAU',
                     'intramural hematoma',
                     'IMH'
+                ],
+                'taaa' => [
+                    'thoracoabdominal aneurysm',
+                    'TAAA',
+                    'Crawford classification',
+                    'Crawford extent I',
+                    'Crawford extent II',
+                    'Crawford extent III',
+                    'Crawford extent IV',
+                    'Crawford extent V',
+                    'extent I',
+                    'extent II',
+                    'extent III',
+                    'extent IV',
+                    'extent V'
                 ],
                 'procedure' => [
                     'TEVAR',
