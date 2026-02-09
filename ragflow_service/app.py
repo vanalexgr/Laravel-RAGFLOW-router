@@ -327,6 +327,7 @@ class RetrieveDualRequest(BaseModel):
     citation_top_k: Optional[int] = None
     rerank_id: Optional[str] = None
     highlight: bool = True
+    use_kg: bool = False  # Whether to enable Knowledge Graph for narrative retrieval
     
     def get_proportional_allocation(self) -> dict[str, int]:
         """
