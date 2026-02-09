@@ -49,7 +49,7 @@ return [
                     'key_concepts' => ['peripheral arterial disease', 'PAD', 'LEAD', 'lower extremity arterial disease', 'Supervised Exercise Therapy', 'SET', 'risk factor optimization', 'claudication', 'intermittent claudication', 'walking distance', 'ABI screening', 'ankle brachial index', 'asymptomatic PAD'],
                 ],
                 'clti' => [
-                    'id' => 'acd1930edc3411f09021f2381272676b',
+                    'id' => '650c8742053511f1a14932d89964721d',
                     'name' => 'Chronic Limb-Threatening Ischemia',
                     'recs_doc_id' => '31f83c34052911f18ceb32d89964721d',
                     'key_concepts' => ['WIfI classification', 'angiosome', 'heel ulcer', 'tissue loss', 'rest pain', 'gangrene', 'limb salvage', 'critical limb ischemia', 'CLI', 'CLTI'],
@@ -117,7 +117,7 @@ return [
         '681e339bffa311f08abc32d89964721d',
         '87c72055ffbe11f095ef32d89964721d',
         'c7c42f76507211f0b6356a892e29a549',
-        'acd1930edc3411f09021f2381272676b',
+        '650c8742053511f1a14932d89964721d',
         '9eeed489ff9d11f0b82f32d89964721d',
         'b6b02fdaffad11f0885f32d89964721d',
         '7104532adc4311f09021f2381272676b',
