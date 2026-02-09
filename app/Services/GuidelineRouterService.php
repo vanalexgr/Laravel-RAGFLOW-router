@@ -275,6 +275,8 @@ PROMPT;
         ]);
 
         try {
+            // DISABLED: Parallel LLM expansion - causes keyword stuffing
+            // Only run routing now, skip expansion
             $responses = Http::pool(fn($pool) => [
                 $pool->as('routing')
                     ->timeout(10)
@@ -287,17 +289,7 @@ PROMPT;
                         'max_tokens' => 150,
                         'temperature' => 0,
                     ]),
-                $pool->as('expansion')
-                    ->timeout(10)
-                    ->withHeaders(['api-key' => $this->apiKey, 'Content-Type' => 'application/json'])
-                    ->post($url, [
-                        'messages' => [
-                            ['role' => 'system', 'content' => 'You are a medical terminology expert. Return only the expanded query, nothing else.'],
-                            ['role' => 'user', 'content' => $expansionPrompt],
-                        ],
-                        'max_tokens' => 200,
-                        'temperature' => 0,
-                    ]),
+                // Expansion call REMOVED - use original query instead
             ]);
 
             $llmSelected = [];
@@ -306,13 +298,8 @@ PROMPT;
                 $llmSelected = $this->parseResponse($content);
             }
 
+            // Use original query instead of LLM-expanded version
             $expanded = $queryForExpansion;
-            if ($responses['expansion']->successful()) {
-                $exp = trim($responses['expansion']->json('choices.0.message.content', ''));
-                if (!empty($exp) && strlen($exp) >= strlen($routingQuery)) {
-                    $expanded = $exp;
-                }
-            }
 
             $selected = $this->mergeDocumentAndQuestionRouting($llmSelected, $documentAnalysis, $log, $maxGuidelines);
 
@@ -322,6 +309,7 @@ PROMPT;
                 'document_recommended' => $documentAnalysis['recommended_guidelines'] ?? [],
                 'final_selected_keys' => $selected,
                 'expanded_preview' => substr($expanded, 0, 100),
+                'expansion_disabled' => true,
                 'duration_ms' => $duration,
             ]);
 
