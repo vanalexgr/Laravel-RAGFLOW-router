@@ -431,8 +431,10 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
                 "vector_similarity_weight": body.vector_similarity_weight,
                 "keyword": body.keyword,
                 "highlight": body.highlight,
-                "use_kg": True,  # KG enabled for narrative
             }
+            # Only enable KG if explicitly requested (some datasets don't have KG or it may error)
+            if body.use_kg:
+                payload["use_kg"] = True
             if body.rerank_id:
                 payload["rerank_id"] = body.rerank_id
 
