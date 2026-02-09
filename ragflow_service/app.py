@@ -438,6 +438,9 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
                 payload["use_kg"] = True
             if body.rerank_id:
                 payload["rerank_id"] = body.rerank_id
+            
+            # Log full payload for debugging
+            logger.info(f"  Narrative payload for {ds.name}: {payload}")
 
             try:
                 response = await client.post(
