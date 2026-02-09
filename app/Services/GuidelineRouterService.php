@@ -372,68 +372,10 @@ PROMPT;
             }
         }
 
-        if (!$this->isConfigured) {
-            $log->warning('[QUERY EXPANSION] Azure OpenAI not configured, returning query');
-            return $question;
-        }
-
-        $prompt = <<<PROMPT
-Expand this vascular surgery clinical query with medical synonyms and terminology to improve document retrieval.
-
-Add relevant:
-- Medical abbreviations (BCVI, AAA, PAD, CLI, CLTI, LEAD, DVT, PE, VTE, CAS, CEA, EVAR)
-- Alternate terms (e.g., "blunt carotid trauma" → "blunt cerebrovascular injury", "leg pain" → "intermittent claudication")
-- Related anatomical terms and procedures
-
-Return ONLY the expanded query as a single line. Keep original terms and add synonyms.
-
-Original query: "{$question}"
-PROMPT;
-
-        try {
-            $url = rtrim($this->endpoint, '/') . "/openai/deployments/{$this->deployment}/chat/completions?api-version={$this->apiVersion}";
-
-            $response = Http::timeout(8)
-                ->withHeaders([
-                    'api-key' => $this->apiKey,
-                    'Content-Type' => 'application/json',
-                ])
-                ->post($url, [
-                    'messages' => [
-                        ['role' => 'system', 'content' => 'You are a medical terminology expert. Return only the expanded query, nothing else.'],
-                        ['role' => 'user', 'content' => $prompt],
-                    ],
-                    'max_tokens' => 200,
-                    'temperature' => 0,
-                ]);
-
-            if (!$response->successful()) {
-                $log->error('[QUERY EXPANSION] LLM call failed', [
-                    'status' => $response->status(),
-                ]);
-                return $question;
-            }
-
-            $expanded = trim($response->json('choices.0.message.content', ''));
-
-            if (empty($expanded) || strlen($expanded) < strlen($question)) {
-                $log->warning('[QUERY EXPANSION] Invalid expansion, using original');
-                return $question;
-            }
-
-            $duration = round((microtime(true) - $startTime) * 1000);
-            $log->info('[QUERY EXPANSION] Success', [
-                'original' => substr($question, 0, 80),
-                'expanded' => substr($expanded, 0, 150),
-                'duration_ms' => $duration,
-            ]);
-
-            return $expanded;
-
-        } catch (\Exception $e) {
-            $log->error('[QUERY EXPANSION] Exception', ['error' => $e->getMessage()]);
-            return $question;
-        }
+        // DISABLED: LLM expansion causes keyword stuffing and poor semantic retrieval
+        // For now, only use regex-based abbreviation expansion above
+        $log->info('[QUERY EXPANSION] LLM expansion disabled, using original/regex-expanded query only');
+        return $question;
     }
 
     protected function mergeDocumentAndQuestionRouting(array $llmSelected, ?array $documentAnalysis, $log, int $maxGuidelines = 4): array
