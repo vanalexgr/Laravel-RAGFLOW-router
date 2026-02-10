@@ -12,7 +12,24 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+
 logger = logging.getLogger("ragflow_service")
+
+# Initialize Local Reranker (FlashRank)
+try:
+    from flashrank import Ranker, RerankRequest
+    HAS_FLASHRANK = True
+    # Use Nano model (~4MB) for speed, cache in ./models
+    RANKER = Ranker(model_name="ms-marco-TinyBERT-L-2-v2", cache_dir="./models")
+    logger.info("Local Reranker (FlashRank) initialized successfully.")
+except ImportError:
+    HAS_FLASHRANK = False
+    RANKER = None
+    logger.warning("FlashRank not installed. Local reranking disabled.")
+except Exception as e:
+    HAS_FLASHRANK = False
+    RANKER = None
+    logger.warning(f"Failed to initialize FlashRank: {str(e)}")
 
 app = FastAPI(title="RAGFlow Bridge Service")
 
@@ -485,14 +502,64 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
         tasks = [fetch_single(ds) for ds in body.narrative_datasets]
         results = await asyncio.gather(*tasks)
         
-        # Interleave chunks from all datasets
-        all_chunks_lists = [r["chunks"] for r in results]
-        max_rounds = max((len(c) for c in all_chunks_lists), default=0)
-        interleaved = []
-        for i in range(max_rounds):
-            for chunks in all_chunks_lists:
-                if i < len(chunks):
-                    interleaved.append(chunks[i])
+        if body.rerank_id == "local" and HAS_FLASHRANK and RANKER and results:
+            logger.info(f"  Performing Local Reranking on retrieved chunks...")
+            all_chunks = []
+            for r in results:
+                all_chunks.extend(r["chunks"])
+            
+            try:
+                start_rank = datetime.now()
+                passages = [
+                    {
+                        "id": str(i), 
+                        "text": (c.get("content_with_weight") or c.get("content") or "")[:2000], 
+                        "meta": {"original_index": i}
+                    }
+                    for i, c in enumerate(all_chunks)
+                ]
+                
+                if passages:
+                    rerank_req = RerankRequest(query=body.question, passages=passages)
+                    res = RANKER.rerank(rerank_req)
+                    
+                    # Apply new scores
+                    score_map = {r["id"]: r["score"] for r in res}
+                    for i, c in enumerate(all_chunks):
+                        c["similarity"] = score_map.get(str(i), c.get("similarity", 0))
+                        c["_reranked"] = True
+                    
+                    # Sort descending by new score
+                    all_chunks.sort(key=lambda x: x["similarity"], reverse=True)
+                    
+                    # Log top 3
+                    for i, c in enumerate(all_chunks[:3]):
+                        logger.info(f"  [LocalRank {i+1}] Score: {c.get('similarity'):.4f} | {(c.get('content') or '')[:50]}...")
+                        
+                    logger.info(f"  Local Reranking completed in {(datetime.now() - start_rank).total_seconds()*1000:.0f}ms")
+                    interleaved = all_chunks
+                else:
+                    interleaved = []
+                    
+            except Exception as e:
+                logger.error(f"  Local Reranking Failed: {str(e)}")
+                # Fallback to interleaving
+                all_chunks_lists = [r["chunks"] for r in results]
+                max_rounds = max((len(c) for c in all_chunks_lists), default=0)
+                interleaved = []
+                for i in range(max_rounds):
+                    for chunks in all_chunks_lists:
+                        if i < len(chunks):
+                            interleaved.append(chunks[i])
+        else:
+            # Standard Interleaving
+            all_chunks_lists = [r["chunks"] for r in results]
+            max_rounds = max((len(c) for c in all_chunks_lists), default=0)
+            interleaved = []
+            for i in range(max_rounds):
+                for chunks in all_chunks_lists:
+                    if i < len(chunks):
+                        interleaved.append(chunks[i])
         
         capped = interleaved[:body.narrative_max]
         total_duration = max((r.get("duration_ms", 0) for r in results), default=0)
