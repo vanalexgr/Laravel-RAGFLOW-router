@@ -521,19 +521,26 @@ class RetrievalService
             throw new \RuntimeException('Citation dataset not configured');
 
         $retrievalConfig = config('ragflow.retrieval', []);
+        // Treat retrieval params as server-owned defaults; clamp anything that could
+        // explode cost/latency or swamp reranking with noise.
+        $topK = (int) ($retrievalConfig['top_k'] ?? 256);
+        $topK = max(1, min($topK, 256));
+
         $params = [
             'question' => $narrativeQuery,
             'citation_query' => $citationQuery,
             'narrative_max' => $narrativeMax,
             'citation_max' => $citationMax,
             'citation_document_ids' => $citationDocumentIds, // NEW: pass to Python
-            'top_k' => $retrievalConfig['top_k'] ?? 256,
+            'top_k' => $topK,
             'similarity_threshold' => $retrievalConfig['similarity_threshold'] ?? 0.2,
             'keyword' => $retrievalConfig['keyword_mode'] ?? true,
             'vector_similarity_weight' => $retrievalConfig['vector_similarity_weight'] ?? 0.3,
-            'highlight' => true,
+            'highlight' => (bool) ($retrievalConfig['highlight'] ?? false),
         ];
-        if (!empty($retrievalConfig['rerank_id'])) {
+        // Always provide rerank_id if configured; ragflow_service will only forward it
+        // upstream if it is non-empty and not "local".
+        if (array_key_exists('rerank_id', $retrievalConfig) && !empty($retrievalConfig['rerank_id'])) {
             $params['rerank_id'] = $retrievalConfig['rerank_id'];
         }
 
