@@ -185,6 +185,10 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
+### OpenWebUI Tool Errors (Citations)
+
+If OpenWebUI shows tool errors related to emitting citations (for example a Python `UnboundLocalError` around an `emitted_count` variable), the tool definition may have been patched directly in the OpenWebUI SQLite database (`webui.db`). This is an operational hotfix (not a Laravel repo change). Restart the `open-webui` container after updating the tool.
+
 ### Services Keep Dying
 
 **Check the logs:**
