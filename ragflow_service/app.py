@@ -464,6 +464,13 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
                 # Use proportional allocation based on semantic score
                 max_per = allocation.get(ds.name, max(1, body.narrative_max // max(1, len(body.narrative_datasets))))
                 capped = chunks[:max_per]
+
+                # VERIFICATION: Log top 3 chunk scores to prove reranking
+                for i, c in enumerate(chunks[:3]):
+                    sim = c.get('similarity', 'N/A')
+                    snippet = (c.get('content_with_weight') or c.get('content') or '')[:60].replace('\n', ' ')
+                    logger.info(f"  [Chunk {i+1}] Score: {sim} | {snippet}...")
+
                 logger.info(f"  Narrative {ds.name}: retrieved={len(chunks)} allocated={max_per} capped={len(capped)} score={ds.score} ({ds_duration:.0f}ms)")
                 return {
                     "dataset_name": ds.name,
