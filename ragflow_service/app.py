@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 import httpx
+import re
 
 
 logging.basicConfig(
@@ -574,6 +575,21 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
     async def fetch_citation_chunks(client: httpx.AsyncClient) -> dict:
         """Fetch citation chunks WITHOUT KG from recommendations-only dataset."""
         cit_start = datetime.now()
+
+        def _chunk_text(c: dict) -> str:
+            # Prefer weighted content if present; otherwise fall back to raw content.
+            return (c.get("content_with_weight") or c.get("content") or "")
+
+        def _is_research_statement(c: dict) -> bool:
+            # Many guidelines include "Good research statement" items that are not
+            # actionable clinical recommendations and can distract the model.
+            t = _chunk_text(c)
+            if not t:
+                return False
+            # Match both key:value and plain text variants.
+            return bool(re.search(r"\bclass\s*:\s*Good\s+research\s+statement\b", t, flags=re.I)) or (
+                "good research statement" in t.lower()
+            )
         
         # NEW: Get citation document IDs for hard scoping
         citation_document_ids = body.citation_document_ids or []
@@ -642,8 +658,20 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
                 chunk["_source_guideline"] = "ESVS Recommendations"
                 chunk["_source_dataset_id"] = body.citation_dataset_id
                 chunk["_chunk_type"] = "citation"
-            
-            capped = chunks[:body.citation_max]
+
+            # Prefer clinically actionable citations over "Good research statement" citations.
+            filtered = [c for c in chunks if not _is_research_statement(c)]
+            if filtered and len(filtered) >= max(1, body.citation_min):
+                if len(filtered) != len(chunks):
+                    logger.info(
+                        f"  Citation Filter: removed_research_statements={len(chunks)-len(filtered)} kept={len(filtered)}"
+                    )
+                chunks_for_cap = filtered
+            else:
+                # If filtering would leave us with too few citations, keep the original list.
+                chunks_for_cap = chunks
+
+            capped = chunks_for_cap[:body.citation_max]
             logger.info(f"  Citations: final={len(capped)} scoped_by_doc_ids={bool(citation_document_ids)} ({cit_duration:.0f}ms)")
 
             if len(capped) < max(1, body.citation_min):
