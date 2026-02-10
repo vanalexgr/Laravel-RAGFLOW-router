@@ -16,6 +16,25 @@ This script automatically:
 - ✅ Clears Laravel config cache
 - ✅ Starts Laravel API on port 8001
 
+## Port Model (Important)
+
+- Nginx listens on `80/443`.
+- Laravel app server should run on `8001`.
+- RAGFlow Bridge should run on `8000`.
+- Nginx `/api` upstream must point to the same Laravel port (recommended `127.0.0.1:8001`).
+
+If Nginx points to `8080` while Laravel runs on `8001`, you will get `502 Bad Gateway`.
+
+## Host-Mode `.env` Baseline
+
+Use these values on host-based production runs (non-Sail):
+
+```bash
+APP_PORT=8001
+RAGFLOW_BRIDGE_URL=http://127.0.0.1:8000
+REDIS_HOST=127.0.0.1
+```
+
 ## Manual Restart (If Script Fails)
 
 ### 1. Stop Existing Services
@@ -148,6 +167,22 @@ sleep 2
 
 # Restart
 ./start_native.sh
+```
+
+### 502 Bad Gateway on `/api`
+
+**Cause:** Nginx upstream port mismatch (common after port changes).
+
+**Check:**
+```bash
+sudo nginx -T | grep -n "location /api\\|proxy_pass"
+ss -tlnp | grep -E "(8000|8001|8080)"
+```
+
+**Fix:** Ensure `location /api` proxies to `http://127.0.0.1:8001` and reload:
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
 ```
 
 ### Services Keep Dying

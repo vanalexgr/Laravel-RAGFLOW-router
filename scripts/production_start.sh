@@ -11,6 +11,8 @@ else
     PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 fi
 
+LARAVEL_PORT="${LARAVEL_PORT:-${APP_PORT:-8001}}"
+
 echo "[Production] Starting ESVS Medical Guidelines API..."
 echo "[Production] Project root: $PROJECT_ROOT"
 echo "[Production] Current directory: $(pwd)"
@@ -72,7 +74,7 @@ if ! wait_for_port 8000; then
 fi
 echo "[Production] RAGFlow Bridge started successfully (PID: $RAGFLOW_PID)"
 
-echo "[Production] Starting Laravel Server on port 5000..."
+echo "[Production] Starting Laravel Server on port ${LARAVEL_PORT}..."
 cd "$PROJECT_ROOT"
 
 echo "[Production] Clearing config cache..."
@@ -82,7 +84,7 @@ echo "[Production] Checking Laravel..."
 php artisan --version 2>&1
 
 echo "[Production] Starting serve..."
-php artisan serve --host=0.0.0.0 --port=5000 2>&1 &
+php artisan serve --host=0.0.0.0 --port="${LARAVEL_PORT}" 2>&1 &
 LARAVEL_PID=$!
 
 sleep 3
@@ -92,8 +94,8 @@ if ! kill -0 $LARAVEL_PID 2>/dev/null; then
     exit 1
 fi
 
-if ! wait_for_port 5000; then
-    echo "[Production] ERROR: Laravel Server not responding on port 5000"
+if ! wait_for_port "${LARAVEL_PORT}"; then
+    echo "[Production] ERROR: Laravel Server not responding on port ${LARAVEL_PORT}"
     kill $RAGFLOW_PID 2>/dev/null
     kill $LARAVEL_PID 2>/dev/null
     exit 1
@@ -102,7 +104,7 @@ echo "[Production] Laravel Server started successfully (PID: $LARAVEL_PID)"
 
 echo "[Production] All services running"
 echo "[Production] RAGFlow Bridge: http://localhost:8000"
-echo "[Production] Laravel Server: http://localhost:5000"
+echo "[Production] Laravel Server: http://localhost:${LARAVEL_PORT}"
 
 cleanup() {
     echo "[Production] Shutting down services..."
