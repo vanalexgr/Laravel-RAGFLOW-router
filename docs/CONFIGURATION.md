@@ -53,8 +53,8 @@ Some guideline exports include non-actionable "Good research statement" items. T
 | `RAGFLOW_KEYWORD_MODE` | `true` | Enable hybrid search (keyword + vector) |
 | `RAGFLOW_VECTOR_WEIGHT` | `0.3` | Weight for vector similarity in hybrid search (0.0-1.0) |
 | `RAGFLOW_RERANK_ID` | `Cohere-rerank-v4.0-pro___OpenAI-API` | Reranker ID string (must match tenant-authorized model name exactly) |
-| `RAGFLOW_USE_KG` | `true` | Enable knowledge graph expansion |
-| `RAGFLOW_HIGHLIGHT` | `true` | Include highlight snippets in results |
+| `RAGFLOW_USE_KG` | `false` | Enable knowledge graph expansion (disabled by default; often noisy/brittle) |
+| `RAGFLOW_HIGHLIGHT` | `false` | Include highlight snippets in results (disabled by default to reduce payload bloat) |
 
 **Example:**
 ```env
@@ -65,11 +65,13 @@ RAGFLOW_SIMILARITY_THRESHOLD=0.2
 RAGFLOW_KEYWORD_MODE=true
 RAGFLOW_VECTOR_WEIGHT=0.3
 RAGFLOW_RERANK_ID=Cohere-rerank-v4.0-pro___OpenAI-API
-RAGFLOW_USE_KG=true
-RAGFLOW_HIGHLIGHT=true
+RAGFLOW_USE_KG=false
+RAGFLOW_HIGHLIGHT=false
 ```
 
 **Note:** TOC (Table of Contents) and Auto Keywords & Meta must be configured in the RAGFlow UI when setting up the dataset, not via API.
+
+**Operational note:** In production we keep `RAGFLOW_TOP_K` modest (e.g. 128-256), `RAGFLOW_HIGHLIGHT=false`, and a tenant-authorized `RAGFLOW_RERANK_ID` set. This keeps candidate pools tight so reranking improves quality instead of amplifying noise.
 
 #### Understanding Retrieval Settings
 
