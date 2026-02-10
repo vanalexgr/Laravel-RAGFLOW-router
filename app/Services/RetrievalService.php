@@ -529,8 +529,8 @@ class RetrievalService
             'citation_document_ids' => $citationDocumentIds, // NEW: pass to Python
             'top_k' => $retrievalConfig['top_k'] ?? 256,
             'similarity_threshold' => $retrievalConfig['similarity_threshold'] ?? 0.2,
-            'keyword' => true,
-            'vector_similarity_weight' => 0.3,
+            'keyword' => $retrievalConfig['keyword_mode'] ?? true,
+            'vector_similarity_weight' => $retrievalConfig['vector_similarity_weight'] ?? 0.3,
             'highlight' => true,
         ];
         if (!empty($retrievalConfig['rerank_id'])) {
