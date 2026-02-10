@@ -54,6 +54,43 @@ class Tools:
     def __init__(self):
         self.valves = self.Valves()
 
+    def _strip_markdown(self, text: str) -> str:
+        """
+        Best-effort markdown -> plain text for citation popups.
+        Keeps content but removes headings markers, emphasis, links, and most HTML.
+        """
+        if not text:
+            return ""
+
+        s = text
+
+        # Drop HTML tags (e.g. <sub>2</sub>) to avoid noisy popup rendering.
+        s = re.sub(r"<[^>]+>", "", s)
+
+        # Convert markdown links: [label](url) -> label
+        s = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", s)
+
+        # Inline code: `x` -> x
+        s = re.sub(r"`([^`]+)`", r"\1", s)
+
+        # Normalize headings: "### Title" -> "Title"
+        s = re.sub(r"(?m)^\s{0,3}#{1,6}\s+", "", s)
+
+        # Blockquotes: "> text" -> "text"
+        s = re.sub(r"(?m)^\s{0,3}>\s?", "", s)
+
+        # Bold/italic emphasis
+        s = re.sub(r"\*\*([^*]+)\*\*", r"\1", s)
+        s = re.sub(r"__([^_]+)__", r"\1", s)
+        # Italics: avoid eating list bullets by only targeting pairs around non-space.
+        s = re.sub(r"(?<!\*)\*([^\s*][^*]*[^\s*])\*(?!\*)", r"\1", s)
+        s = re.sub(r"(?<!_)_([^\s_][^_]*[^\s_])_(?!_)", r"\1", s)
+
+        # Collapse excessive blank lines.
+        s = re.sub(r"\n{3,}", "\n\n", s)
+
+        return s.strip()
+
     def _parse_semicolon_kv(self, s: str) -> dict:
         """
         Parse strings like:
@@ -119,6 +156,17 @@ class Tools:
             lines.append(text.strip())
 
         return "\n".join(lines).strip()
+
+    def _format_narrative_popup(self, raw: str, fallback_title: str) -> str:
+        """
+        Narrative chunks come from markdown and can contain headings/emphasis.
+        Make the popup readable plain text.
+        """
+        if not raw:
+            return fallback_title
+
+        s = self._strip_markdown(raw)
+        return s if s else fallback_title
 
     class Valves(BaseModel):
         VASCULAR_API_BASE_URL: str = Field(
@@ -369,7 +417,7 @@ class Tools:
                     # If metadata.source is identical across narrative chunks (e.g., just the guideline
                     # name), they collapse into one reference and inline clicks may not map to a unique
                     # popup. Emit a stable per-chunk source label and keep the popup document small.
-                    excerpt = (content or "").strip()
+                    excerpt = self._format_narrative_popup(content, title)
                     if len(excerpt) > 6000:
                         excerpt = excerpt[:6000] + "\n\n[...truncated...]"
                     
