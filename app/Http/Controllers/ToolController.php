@@ -3,13 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Services\RetrievalService;
+use App\Services\GuidelineAssetService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class ToolController extends Controller
 {
     public function __construct(
-        protected RetrievalService $retrievalService
+        protected RetrievalService $retrievalService,
+        protected GuidelineAssetService $guidelineAssetService,
     ) {
     }
 
@@ -65,6 +67,14 @@ class ToolController extends Controller
         // Call retrieval service with optional guideline override
         $result = $this->retrievalService->retrieve($question, $history, $requestedKeys);
 
+        // Attach relevant figures/tables for user display (not for verbatim quoting).
+        $assets = $this->guidelineAssetService->findRelevantAssets(
+            $result['question'] ?? $question,
+            $result['narrative_chunks'] ?? [],
+            $result['citation_chunks'] ?? [],
+            $result['selected_guidelines'] ?? []
+        );
+
         // Format for LLM Consumption (same as ConsultGuidelines tool)
         $output = "RETRIEVED GUIDELINES for: \"{$result['question']}\"\n";
         $output .= "Guidelines Used: " . implode(', ', array_column($result['selected_guidelines'], 'name')) . "\n\n";
@@ -89,12 +99,36 @@ class ToolController extends Controller
             $output .= "> \"{$chunk['text']}\"{$metaStr}\n";
         }
 
+        if (!empty($assets)) {
+            $output .= "\n\n=== FIGURES / TABLES (For user display) ===\n";
+            $output .= "If relevant, you may include these in your response as Markdown images.\n";
+            foreach ($assets as $a) {
+                $label = $a['label'] ?? ($a['id'] ?? 'Asset');
+                $caption = $a['caption'] ?? '';
+                $url = $a['url'] ?? '';
+                $gk = $a['guideline_key'] ?? '';
+                if (empty($url)) {
+                    continue;
+                }
+
+                $output .= "- {$label}" . (!empty($gk) ? " ({$gk})" : "") . ": {$caption}\n";
+                $output .= "  {$url}\n";
+                if (!empty($caption)) {
+                    // Most UIs render this; if not, the raw URL is still visible.
+                    $output .= "  ![{$caption}]({$url})\n";
+                }
+            }
+        }
+
         // Add format reminder
         $output .= "\n\n=== IMPORTANT ===\n";
         $output .= "Present this using the mandatory response format:\n";
         $output .= "1. 🩺 Clinical Synthesis (3-6 bullets with inline citations)\n";
         $output .= "2. 📑 Recommendations used in this answer (verbatim quotes)\n";
         $output .= "3. 📌 Guideline supporting statements\n";
+        if (!empty($assets)) {
+            $output .= "4. 🖼️ Figures / Tables (optional; show images if they help)\n";
+        }
 
         // Debug: Log what we're returning
         Log::info('Tool API Response', [
@@ -103,18 +137,21 @@ class ToolController extends Controller
             'has_narrative_chunks' => !empty($result['narrative_chunks']),
             'narrative_count' => count($result['narrative_chunks'] ?? []),
             'citation_count' => count($result['citation_chunks'] ?? []),
+            'asset_count' => count($assets ?? []),
         ]);
 
         // Sanitize UTF-8 to prevent JSON encoding errors from malformed characters
         $output = mb_convert_encoding($output, 'UTF-8', 'UTF-8');
         $narrativeChunks = json_decode(json_encode($result['narrative_chunks'], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
         $citationChunks = json_decode(json_encode($result['citation_chunks'], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
+        $safeAssets = json_decode(json_encode($assets, JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
 
         // Return JSON with structured data for citation emission
         return response()->json([
             'result' => $output,
             'narrative_chunks' => $narrativeChunks,
             'citation_chunks' => $citationChunks,
+            'assets' => $safeAssets,
         ], 200, [], JSON_INVALID_UTF8_SUBSTITUTE)
             ->header('Access-Control-Allow-Origin', '*')
             ->header('Access-Control-Allow-Methods', 'POST, OPTIONS')
