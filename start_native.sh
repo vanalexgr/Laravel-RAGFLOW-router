@@ -23,10 +23,10 @@ cd ..
 # Start Laravel (Port 8001)
 echo "Starting Laravel..."
 php artisan config:clear > /dev/null 2>&1
-nohup php artisan serve --host 0.0.0.0 --port 8001 > laravel.log 2>&1 &
+nohup php artisan serve --host 0.0.0.0 --port 8080 > laravel.log 2>&1 &
 LARAVEL_PID=$!
 echo "Laravel running (PID: $LARAVEL_PID)"
 
 echo "Services started."
 echo "RAGFlow Bridge: http://localhost:8000"
-echo "Laravel API: http://localhost:8001"
+echo "Laravel API: http://localhost:8080"
