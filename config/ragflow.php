@@ -14,11 +14,10 @@ return [
         'size' => (int) env('RAGFLOW_SIZE', 10),
         'page' => (int) env('RAGFLOW_PAGE', 1),
         'similarity_threshold' => (float) env('RAGFLOW_SIMILARITY_THRESHOLD', 0.2),
-        // FORCE PURE SEMANTIC SEARCH FOR DEBUGGING
-        'keyword_mode' => false, // Disable keyword matching
-        'vector_similarity_weight' => 0.9, // Force 90% semantic weight
-        'rerank_id' => null, // Disable reranker to avoid potential ID mismatch issues
-        'use_kg' => filter_var(env('RAGFLOW_USE_KG', true), FILTER_VALIDATE_BOOLEAN),
+        'keyword_mode' => filter_var(env('RAGFLOW_KEYWORD_MODE', true), FILTER_VALIDATE_BOOLEAN),
+        'vector_similarity_weight' => (float) env('RAGFLOW_VECTOR_WEIGHT', 0.3),
+        'rerank_id' => env('RAGFLOW_RERANK_ID', 'Cohere-rerank-v3-5-rdrns___OpenAI-API@OpenAI-API-Compatible'),
+        'use_kg' => filter_var(env('RAGFLOW_USE_KG', false), FILTER_VALIDATE_BOOLEAN), // Server KG is broken
         'highlight' => filter_var(env('RAGFLOW_HIGHLIGHT', true), FILTER_VALIDATE_BOOLEAN),
     ],
 
