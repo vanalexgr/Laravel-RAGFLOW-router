@@ -1,0 +1,1065 @@
+{
+  "clti": [
+    {
+      "id": "fig_p026_001",
+      "kind": "figure",
+      "subtype": "chart",
+      "label": "Figure 1",
+      "caption": "Prevalence of Peripheral Artery Disease by Age and Sex in Different Income Countries",
+      "description": "This chart illustrates the prevalence of peripheral artery disease (PAD) in various age groups, segmented by sex and income level of countries. It compares high-income countries (HICs) and low- and middle-income countries (LMICs), showing a trend of increasing prevalence with age.",
+      "keywords": [
+        "Peripheral Artery Disease",
+        "Prevalence",
+        "Age Groups",
+        "High-Income Countries",
+        "Low- and Middle-Income Countries",
+        "Sex Differences"
+      ],
+      "path": "guideline_assets/clti/figures/fig_p026_001.png",
+      "aliases": [
+        "Fig. 1",
+        "figure 1"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p026_001.png"
+    },
+    {
+      "id": "fig_p027_002",
+      "kind": "figure",
+      "subtype": "chart",
+      "label": "Figure 2",
+      "caption": "Odds Ratios for Peripheral Artery Disease Risk Factors",
+      "description": "This chart displays the odds ratios (ORs) for various risk factors associated with peripheral artery disease (PAD) in high-income countries (HICs), low- and middle-income countries (LMICs), and globally. Factors include history of cardiovascular disease, CRP levels, cholesterol levels, smoking status, diabetes, hypertension, BMI, sex, and age.",
+      "keywords": [
+        "peripheral artery disease",
+        "risk factors",
+        "odds ratio",
+        "smoking",
+        "cardiovascular disease"
+      ],
+      "path": "guideline_assets/clti/figures/fig_p027_002.png",
+      "aliases": [
+        "Fig. 2",
+        "figure 2"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p027_002.png"
+    },
+    {
+      "id": "fig_p028_003",
+      "kind": "figure",
+      "subtype": "diagram",
+      "label": "Figure 3",
+      "caption": "Risk Factors and Atherosclerotic Lesion Levels in Lower Limbs",
+      "description": "This diagram illustrates the association between various risk factors and the levels of atherosclerotic lesions in the lower limbs. The red overlay indicates the correlation of each risk factor with specific patterns of atherosclerotic disease across different leg segments: iliac, femoro-popliteal, and crural.",
+      "keywords": [
+        "atherosclerosis",
+        "risk factors",
+        "lower limb",
+        "vascular disease"
+      ],
+      "path": "guideline_assets/clti/figures/fig_p028_003.png",
+      "aliases": [
+        "Fig. 3",
+        "figure 3"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p028_003.png"
+    },
+    {
+      "id": "fig_p033_004",
+      "kind": "figure",
+      "subtype": "flowchart",
+      "label": "Figure 4",
+      "caption": "Flowchart for Investigating Suspected CLTI",
+      "description": "This flowchart outlines the diagnostic process for patients with suspected chronic limb-threatening ischemia (CLTI). It begins with clinical suspicion and guides through physical exams, ABI measurements, and further testing based on results, leading to potential vascular imaging.",
+      "keywords": [
+        "CLTI",
+        "ABI",
+        "PAD",
+        "vascular imaging",
+        "diagnostic flowchart"
+      ],
+      "path": "guideline_assets/clti/figures/fig_p033_004.png",
+      "aliases": [
+        "Fig. 4",
+        "figure 4",
+        "Algorithm 4",
+        "algorithm 4"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p033_004.png"
+    },
+    {
+      "id": "fig_p038_005",
+      "kind": "figure",
+      "subtype": "flowchart",
+      "label": "Figure 5",
+      "caption": "Imaging Algorithm for CLTI Patients",
+      "description": "This flowchart outlines the suggested imaging algorithm for patients with chronic limb-threatening ischemia (CLTI) who are candidates for revascularization. It includes steps for using duplex ultrasound, CTA, MRA, and diagnostic catheter angiography to achieve adequate imaging of arterial anatomy.",
+      "keywords": [
+        "CLTI",
+        "imaging",
+        "revascularization",
+        "duplex ultrasound",
+        "CTA",
+        "MRA",
+        "angiography"
+      ],
+      "path": "guideline_assets/clti/figures/fig_p038_005.png",
+      "aliases": [
+        "Fig. 5",
+        "figure 5",
+        "Algorithm 5",
+        "algorithm 5"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p038_005.png"
+    },
+    {
+      "id": "fig_p044_006",
+      "kind": "figure",
+      "subtype": "diagram",
+      "label": "Figure 6",
+      "caption": "Infra-malleolar/Pedal Descriptor in GLASS",
+      "description": "This figure presents the infra-malleolar/pedal descriptors used in the Global Limb Anatomic Staging System (GLASS) to classify the condition of arteries crossing the ankle into the foot. It includes angiograms illustrating three patterns: P0, P1, and P2.",
+      "keywords": [
+        "GLASS",
+        "infra-malleolar",
+        "pedal arch",
+        "angiogram",
+        "artery classification"
+      ],
+      "path": "guideline_assets/clti/figures/fig_p044_006.png",
+      "aliases": [
+        "Fig. 6",
+        "figure 6"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p044_006.png"
+    },
+    {
+      "id": "fig_p045_007",
+      "kind": "figure",
+      "subtype": "diagram",
+      "label": "Figure 7",
+      "caption": "Illustration of Lower Limb Arterial Anatomy and Occlusions",
+      "description": "This diagram illustrates various anatomical views of the lower limb arteries, highlighting the common femoral artery (CFA), deep femoral artery (DFA), superficial femoral artery (SFA), and popliteal artery (Pop). It shows different patterns of arterial occlusions and stenosis.",
+      "keywords": [
+        "arterial anatomy",
+        "occlusion",
+        "vascular surgery",
+        "lower limb"
+      ],
+      "path": "guideline_assets/clti/figures/fig_p045_007.png",
+      "aliases": [
+        "Fig. 7",
+        "figure 7"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p045_007.png"
+    },
+    {
+      "id": "fig_p046_008",
+      "kind": "figure",
+      "subtype": "table",
+      "label": "Figure 8",
+      "caption": "Infrapopliteal Disease Grading in GLASS System",
+      "description": "This table illustrates the grading of infrapopliteal disease using the Global Limb Anatomic Staging System (GLASS). It categorizes disease severity from Grade 0 to Grade 4, based on the extent of stenosis and chronic total occlusion (CTO) in the tibial arteries.",
+      "keywords": [
+        "infrapopliteal disease",
+        "GLASS",
+        "stenosis",
+        "chronic total occlusion",
+        "vascular surgery"
+      ],
+      "path": "guideline_assets/clti/figures/fig_p046_008.png",
+      "aliases": [
+        "Fig. 8",
+        "figure 8"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p046_008.png"
+    },
+    {
+      "id": "fig_p047_009",
+      "kind": "figure",
+      "subtype": "table",
+      "label": "Figure 9",
+      "caption": "GLASS Stage Assignment Table",
+      "description": "This table outlines the assignment of Global Limb Anatomic Staging System (GLASS) stages based on femoropopliteal (FP) and infrapopliteal (IP) grades. It provides a matrix to determine GLASS stages I to III using angiographic images.",
+      "keywords": [
+        "GLASS",
+        "femoropopliteal",
+        "infrapopliteal",
+        "vascular staging"
+      ],
+      "path": "guideline_assets/clti/figures/fig_p047_009.png",
+      "aliases": [
+        "Fig. 9",
+        "figure 9"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p047_009.png"
+    },
+    {
+      "id": "fig_p047_010",
+      "kind": "figure",
+      "subtype": "image",
+      "label": "Figure 10",
+      "caption": "Representative Angiograms of GLASS Stage I Disease Patterns",
+      "description": "This figure shows angiograms illustrating the Global Limb Anatomic Staging System (GLASS) stage I disease patterns. The target arterial path (TAP) is highlighted in yellow. Two examples (A and B) demonstrate different grades of femoropopliteal (FP) and infrapopliteal (IP) disease.",
+      "keywords": [
+        "GLASS",
+        "angiogram",
+        "arterial disease",
+        "femoropopliteal",
+        "infrapopliteal"
+      ],
+      "path": "guideline_assets/clti/figures/fig_p047_010.png",
+      "aliases": [
+        "Fig. 10",
+        "figure 10"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p047_010.png"
+    },
+    {
+      "id": "fig_p048_011",
+      "kind": "figure",
+      "subtype": "image",
+      "label": "Figure 11",
+      "caption": "Angiograms of GLASS Stage II Disease Patterns",
+      "description": "This figure presents representative angiograms illustrating the Global Limb Anatomic Staging System (GLASS) stage II disease patterns. The target arterial path (TAP) is highlighted in yellow, showing the anterior tibial artery and femoropopliteal grade 1 occlusion.",
+      "keywords": [
+        "GLASS",
+        "angiogram",
+        "arterial path",
+        "femoropopliteal occlusion"
+      ],
+      "path": "guideline_assets/clti/figures/fig_p048_011.png",
+      "aliases": [
+        "Fig. 11",
+        "figure 11"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p048_011.png"
+    },
+    {
+      "id": "fig_p049_012",
+      "kind": "figure",
+      "subtype": "image",
+      "label": "Figure 12",
+      "caption": "Representative Angiograms of GLASS Stage III Patterns",
+      "description": "This figure displays angiograms illustrating Global Limb Anatomic Staging System (GLASS) stage III disease patterns. The target arterial path (TAP) is highlighted in yellow, showing different arterial involvements in two cases. Panel A focuses on the peroneal artery, while Panel B highlights the anterior tibial artery.",
+      "keywords": [
+        "GLASS",
+        "angiogram",
+        "arterial occlusion",
+        "vascular surgery",
+        "stage III"
+      ],
+      "path": "guideline_assets/clti/figures/fig_p049_012.png",
+      "aliases": [
+        "Fig. 12",
+        "figure 12"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p049_012.png"
+    },
+    {
+      "id": "fig_p050_013",
+      "kind": "figure",
+      "subtype": "flowchart",
+      "label": "Figure 13",
+      "caption": "Flowchart for Revascularization in CLTI Patients Using GLASS",
+      "description": "This flowchart outlines the steps for applying the Global Limb Anatomic Staging System (GLASS) to stage infrainguinal disease in patients with chronic limb-threatening ischemia (CLTI) who are candidates for revascularization. It includes obtaining angiographic imaging, defining the target artery path, grading arterial segments, and determining the revascularization strategy.",
+      "keywords": [
+        "CLTI",
+        "revascularization",
+        "GLASS",
+        "angiographic imaging",
+        "artery grading"
+      ],
+      "path": "guideline_assets/clti/figures/fig_p050_013.png",
+      "aliases": [
+        "Fig. 13",
+        "figure 13",
+        "Algorithm 13",
+        "algorithm 13"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p050_013.png"
+    },
+    {
+      "id": "fig_p052_014",
+      "kind": "figure",
+      "subtype": "chart",
+      "label": "Figure 14",
+      "caption": "3D Paradigm for Evidence-Based Revascularization in CLTI",
+      "description": "This 3D chart illustrates a paradigm for evidence-based revascularization in the treatment of chronic limb-threatening ischemia (CLTI). It integrates patient risk, limb severity, and anatomic complexity of disease to guide clinical decisions.",
+      "keywords": [
+        "CLTI",
+        "revascularization",
+        "patient risk",
+        "limb severity",
+        "anatomic complexity"
+      ],
+      "path": "guideline_assets/clti/figures/fig_p052_014.png",
+      "aliases": [
+        "Fig. 14",
+        "figure 14"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p052_014.png"
+    },
+    {
+      "id": "fig_p054_015",
+      "kind": "figure",
+      "subtype": "flowchart",
+      "label": "Figure 15",
+      "caption": "Clinical Decision-Making for Chronic Limb-Threatening Ischemia",
+      "description": "This flowchart outlines the decision-making process for managing patients with chronic limb-threatening ischemia (CLTI). It includes assessing limb threat severity, evaluating candidacy for limb salvage, and considering revascularization needs. The process involves staging the disease anatomically and determining the appropriate intervention based on risk assessment.",
+      "keywords": [
+        "CLTI",
+        "limb salvage",
+        "revascularization",
+        "WIfI",
+        "GLASS"
+      ],
+      "path": "guideline_assets/clti/figures/fig_p054_015.png",
+      "aliases": [
+        "Fig. 15",
+        "figure 15",
+        "Algorithm 15",
+        "algorithm 15"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p054_015.png"
+    },
+    {
+      "id": "fig_p055_016",
+      "kind": "figure",
+      "subtype": "chart",
+      "label": "Figure 16",
+      "caption": "Benefit of Revascularization in CLTI",
+      "description": "This chart illustrates the benefit of performing revascularization in patients with chronic limb-threatening ischemia (CLTI) based on the severity of ischemia and limb severity. The benefit is categorized into high and low/nil, with color coding for easy interpretation.",
+      "keywords": [
+        "revascularization",
+        "CLTI",
+        "ischemia",
+        "limb severity",
+        "benefit assessment"
+      ],
+      "path": "guideline_assets/clti/figures/fig_p055_016.png",
+      "aliases": [
+        "Fig. 16",
+        "figure 16"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p055_016.png"
+    },
+    {
+      "id": "fig_p059_017",
+      "kind": "figure",
+      "subtype": "chart",
+      "label": "Figure 17",
+      "caption": "Revascularization Strategy Matrix for Infrapopliteal Disease",
+      "description": "This chart presents a matrix for determining the preferred initial revascularization strategy based on limb severity (WIfI stage) and anatomic complexity (GLASS stage). It categorizes treatment options into open bypass, endovascular, indeterminate, and no revascularization.",
+      "keywords": [
+        "revascularization",
+        "WIfI stage",
+        "GLASS stage",
+        "vascular surgery"
+      ],
+      "path": "guideline_assets/clti/figures/fig_p059_017.png",
+      "aliases": [
+        "Fig. 17",
+        "figure 17"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p059_017.png"
+    },
+    {
+      "id": "fig_p083_018",
+      "kind": "figure",
+      "subtype": "diagram",
+      "label": "Figure 18",
+      "caption": "Stairway to Amputation Risk Diagram",
+      "description": "This diagram illustrates the progressive stages leading to amputation in diabetes patients. It highlights the increasing risk from diabetes to neuropathy, ulceration, ischemia, infection, and finally amputation.",
+      "keywords": [
+        "diabetes",
+        "amputation",
+        "risk progression",
+        "neuropathy",
+        "ulceration",
+        "ischemia",
+        "infection"
+      ],
+      "path": "guideline_assets/clti/figures/fig_p083_018.png",
+      "aliases": [
+        "Fig. 18",
+        "figure 18"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p083_018.png"
+    },
+    {
+      "id": "fig_p084_019",
+      "kind": "figure",
+      "subtype": "flowchart",
+      "label": "Figure 19",
+      "caption": "Diabetic Foot Care Organization Flowchart",
+      "description": "This flowchart illustrates the hierarchical organization of diabetic foot care within a multidisciplinary team. It starts with Clinical Practice Guidelines and progresses through Clinical Practice Pathways, Policies and Procedures, Quality Assurance, and ends with Performance Improvement.",
+      "keywords": [
+        "diabetic foot care",
+        "multidisciplinary team",
+        "clinical guidelines",
+        "quality assurance",
+        "performance improvement"
+      ],
+      "path": "guideline_assets/clti/figures/fig_p084_019.png",
+      "aliases": [
+        "Fig. 19",
+        "figure 19",
+        "Algorithm 19",
+        "algorithm 19"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p084_019.png"
+    },
+    {
+      "id": "fig_p087_020",
+      "kind": "figure",
+      "subtype": "chart",
+      "label": "Figure 20",
+      "caption": "Global Diabetes Projections by Region (2015-2040)",
+      "description": "This figure from the IDF Diabetes Atlas illustrates the projected increase in diabetes prevalence across different regions from 2015 to 2040. It highlights the significant rise in diabetes cases worldwide, with specific data for regions such as North America, Europe, and the Western Pacific.",
+      "keywords": [
+        "diabetes",
+        "global health",
+        "epidemiology",
+        "public health"
+      ],
+      "path": "guideline_assets/clti/figures/fig_p087_020.png",
+      "aliases": [
+        "Fig. 20",
+        "figure 20"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p087_020.png"
+    },
+    {
+      "id": "tbl_p006_004",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 4",
+      "caption": "List of Contributing Authors and Affiliations",
+      "description": "This table lists the contributing authors of the guideline, their affiliations, the sections they contributed to, and any conflicts of interest disclosures. It includes editors and steering committee members from various international institutions.",
+      "keywords": [
+        "authors",
+        "affiliations",
+        "conflict of interest",
+        "editorial board"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p006_004.png",
+      "aliases": [
+        "table 4"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p006_004.png"
+    },
+    {
+      "id": "tbl_p022_019",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 19",
+      "caption": "Classification Schemes for Chronic Limb Ischemia and Ulceration",
+      "description": "This table compares various classification systems used for assessing chronic limb ischemia and ulceration. It includes details on ischemic rest pain, ulcer, gangrene, ischemia, infection, and key features or comments for each system.",
+      "keywords": [
+        "chronic limb ischemia",
+        "ulceration",
+        "classification systems",
+        "Fontaine",
+        "Rutherford",
+        "TASC",
+        "Meggitt-Wagner"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p022_019.png",
+      "aliases": [
+        "table 19"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p022_019.png"
+    },
+    {
+      "id": "tbl_p023_020",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 20",
+      "caption": "Classification Systems for Diabetic Foot Ulcers",
+      "description": "This table compares various classification systems for diabetic foot ulcers, focusing on ischemic rest pain, ulcer grading, gangrene, ischemia, infection, and key features. It includes systems from the University of Texas, SAD, PEDIS, Saint Elian, and IDSA.",
+      "keywords": [
+        "diabetic foot ulcers",
+        "ischemia",
+        "infection",
+        "ulcer grading",
+        "classification systems"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p023_020.png",
+      "aliases": [
+        "table 20"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p023_020.png"
+    },
+    {
+      "id": "tbl_p024_021",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 21",
+      "caption": "SVS WIfI Threatened Limb Classification Overview (2014)",
+      "description": "This table presents the SVS WIfI classification system for chronic limb-threatening ischemia (CLTI), detailing criteria for ischemic rest pain, ulcers, gangrene, ischemia, and infection. It highlights the grading system used to assess the severity and need for revascularization.",
+      "keywords": [
+        "SVS WIfI",
+        "CLTI",
+        "ischemia",
+        "ulcer",
+        "gangrene",
+        "infection",
+        "vascular surgery"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p024_021.png",
+      "aliases": [
+        "table 21"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p024_021.png"
+    },
+    {
+      "id": "tbl_p024_022",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 22",
+      "caption": "One-year Major Limb Amputation Rate by WiFI Stage",
+      "description": "This table presents the one-year major limb amputation rates categorized by the Society for Vascular Surgery's Wound, Ischemia, and foot Infection (WiFI) clinical stages. It includes data from multiple studies, showing the number of limbs at risk and the percentage of amputations at each stage.",
+      "keywords": [
+        "amputation",
+        "WiFI stages",
+        "vascular surgery",
+        "clinical outcomes"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p024_022.png",
+      "aliases": [
+        "table 22"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p024_022.png"
+    },
+    {
+      "id": "tbl_p034_026",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 26",
+      "caption": "Comparison of Noninvasive Testing Methods for CLTI",
+      "description": "This table compares various noninvasive testing methods used in patients with chronic limb-threatening ischemia (CLTI), highlighting their advantages and limitations. Techniques include AP/ABI, TP/TBI, segmental pressures, TcPO2, and skin perfusion pressure.",
+      "keywords": [
+        "CLTI",
+        "noninvasive testing",
+        "AP/ABI",
+        "TP/TBI",
+        "segmental pressures",
+        "TcPO2",
+        "skin perfusion pressure"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p034_026.png",
+      "aliases": [
+        "table 26"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p034_026.png"
+    },
+    {
+      "id": "tbl_p035_027",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 27",
+      "caption": "Ischemia Grading in WIfI Classification",
+      "description": "This table outlines the grading of ischemia in the Wound, Ischemia, and foot Infection (WIfI) classification. It categorizes ischemia into four grades based on ABI, ankle systolic pressure, and TP/TcPO2 measurements.",
+      "keywords": [
+        "ischemia",
+        "WIfI classification",
+        "ABI",
+        "ankle systolic pressure",
+        "toe pressure",
+        "transcutaneous oximetry"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p035_027.png",
+      "aliases": [
+        "table 27"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p035_027.png"
+    },
+    {
+      "id": "tbl_p035_028",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 28",
+      "caption": "Foot Infection Grading in WIfI Classification",
+      "description": "This table outlines the grading system for foot infections within the Wound, Ischemia, and foot Infection (WIfI) classification. It categorizes infections based on clinical manifestations, assigning grades from 0 to 3, and correlates them with IDSA/PEDIS infection severity levels.",
+      "keywords": [
+        "foot infection",
+        "WIfI classification",
+        "IDSA/PEDIS",
+        "clinical grading"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p035_028.png",
+      "aliases": [
+        "table 28"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p035_028.png"
+    },
+    {
+      "id": "tbl_p036_029",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 29",
+      "caption": "Clinical Stages of Limb Amputation Risk by WIfI Classification",
+      "description": "This table categorizes the risk of major limb amputation based on the Wound, Ischemia, and foot Infection (WIfI) classification. It outlines four stages of clinical risk from very low to high, with corresponding WIfI spectrum scores.",
+      "keywords": [
+        "amputation risk",
+        "WIfI classification",
+        "clinical stages",
+        "vascular surgery"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p036_029.png",
+      "aliases": [
+        "table 29"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p036_029.png"
+    },
+    {
+      "id": "tbl_p037_031",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 31",
+      "caption": "Comparison of Imaging Modalities for CLTI Patients",
+      "description": "This table compares different imaging techniques for patients with chronic limb-threatening ischemia (CLTI), highlighting their advantages and limitations. Techniques include DUS, CTA, MRA, and DSA, each with unique benefits and drawbacks in clinical application.",
+      "keywords": [
+        "CLTI",
+        "imaging modalities",
+        "DUS",
+        "CTA",
+        "MRA",
+        "DSA"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p037_031.png",
+      "aliases": [
+        "table 31"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p037_031.png"
+    },
+    {
+      "id": "tbl_p037_032",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 32",
+      "caption": "Research Priorities for CLTI Diagnosis and Limb Staging",
+      "description": "This table outlines research priorities focused on improving diagnostic and staging methods for Chronic Limb-Threatening Ischemia (CLTI). It includes recommendations for enhancing foot perfusion measurement, validating ultrasound techniques, reducing nephropathy risk, and improving imaging methods.",
+      "keywords": [
+        "CLTI",
+        "diagnosis",
+        "limb staging",
+        "foot perfusion",
+        "ultrasound",
+        "nephropathy",
+        "MRA"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p037_032.png",
+      "aliases": [
+        "table 32"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p037_032.png"
+    },
+    {
+      "id": "tbl_p043_040",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 40",
+      "caption": "Research Priorities for Medical Management in CLTI",
+      "description": "This table outlines key research priorities for the medical management of patients with Chronic Limb-Threatening Ischemia (CLTI). It includes recommendations for optimizing antithrombotic regimens, lipid-lowering treatments, identifying predictive biomarkers, effective smoking cessation strategies, and analgesia for chronic pain.",
+      "keywords": [
+        "CLTI",
+        "antithrombotic",
+        "lipid-lowering",
+        "biomarkers",
+        "smoking cessation",
+        "analgesia",
+        "PAD"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p043_040.png",
+      "aliases": [
+        "table 40"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p043_040.png"
+    },
+    {
+      "id": "tbl_p045_042",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 42",
+      "caption": "Femoropopliteal Disease Grading in GLASS",
+      "description": "This table outlines the grading of femoropopliteal (FP) disease according to the Global Limb Anatomic Staging System (GLASS). It categorizes the severity of disease from Grade 0 to Grade 4 based on the extent of superficial femoral artery (SFA) disease and popliteal artery involvement.",
+      "keywords": [
+        "femoropopliteal disease",
+        "GLASS",
+        "artery grading",
+        "vascular surgery"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p045_042.png",
+      "aliases": [
+        "table 42"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p045_042.png"
+    },
+    {
+      "id": "tbl_p046_043",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 43",
+      "caption": "Infrapopliteal Disease Grading in GLASS System",
+      "description": "This table outlines the grading of infrapopliteal disease according to the Global Limb Anatomic Staging System (GLASS). It categorizes the severity of arterial stenosis and occlusion in the tibial arteries, providing visual illustrations for each grade.",
+      "keywords": [
+        "infrapopliteal disease",
+        "GLASS",
+        "arterial stenosis",
+        "chronic total occlusion",
+        "vascular surgery"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p046_043.png",
+      "aliases": [
+        "table 43"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p046_043.png"
+    },
+    {
+      "id": "tbl_p047_044",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 44",
+      "caption": "GLASS Stage Assignment Table",
+      "description": "This table assigns the Global Limb Anatomic Staging System (GLASS) stages based on femoropopliteal (FP) and infrapopliteal (IP) grades. It helps determine the severity of limb ischemia using angiographic images.",
+      "keywords": [
+        "GLASS",
+        "staging",
+        "limb ischemia",
+        "angiography"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p047_044.png",
+      "aliases": [
+        "table 44"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p047_044.png"
+    },
+    {
+      "id": "tbl_p048_045",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 45",
+      "caption": "GLASS Stages of Infrainguinal Arterial Disease",
+      "description": "This table summarizes the Global Limb Anatomic Staging System (GLASS) for infrainguinal arterial disease, detailing stages based on estimated peripheral vascular intervention (PVI) outcomes and anatomic patterns. It provides a framework for assessing technical failure rates and limb-based patency (LBP) over one year.",
+      "keywords": [
+        "GLASS",
+        "infrainguinal arterial disease",
+        "PVI outcomes",
+        "anatomic pattern"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p048_045.png",
+      "aliases": [
+        "table 45"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p048_045.png"
+    },
+    {
+      "id": "tbl_p050_046",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 46",
+      "caption": "Research Priorities for GLASS in Infrapopliteal Disease",
+      "description": "This table outlines research priorities for the Global Limb Anatomic Staging System (GLASS) focusing on infrapopliteal disease. It highlights key questions regarding procedural outcomes, disease grading, predictive measures, and treatment strategies.",
+      "keywords": [
+        "GLASS",
+        "infrapopliteal disease",
+        "revascularization",
+        "calcification",
+        "CLTI"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p050_046.png",
+      "aliases": [
+        "table 46"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p050_046.png"
+    },
+    {
+      "id": "tbl_p055_053",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 53",
+      "caption": "Comparison of Risk Stratification Tools for CLTI Population",
+      "description": "This table compares various risk stratification tools used for assessing chronic limb-threatening ischemia (CLTI) patients. It lists different tools, their endpoints, critical factors considered, and references for each tool.",
+      "keywords": [
+        "CLTI",
+        "risk stratification",
+        "mortality",
+        "survival",
+        "endpoints"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p055_053.png",
+      "aliases": [
+        "table 53"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p055_053.png"
+    },
+    {
+      "id": "tbl_p064_065",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 65",
+      "caption": "Research Priorities for Non-Revascularization Treatments of the Limb",
+      "description": "This table outlines research priorities focused on non-revascularization treatments for patients with Chronic Limb Threatening Ischemia (CLTI). It includes recommendations for assessing the effectiveness of various therapies such as pneumatic compression, exercise therapy, and hyperbaric oxygen therapy (HBOT).",
+      "keywords": [
+        "CLTI",
+        "non-revascularization",
+        "pneumatic compression",
+        "exercise therapy",
+        "HBOT"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p064_065.png",
+      "aliases": [
+        "table 65"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p064_065.png"
+    },
+    {
+      "id": "tbl_p066_066",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 66",
+      "caption": "Major Trials of Gene and Cell Therapy in Vascular Conditions",
+      "description": "This table summarizes major clinical trials comparing gene and cell therapies for vascular conditions, focusing on endpoints like amputation-free survival (AFS) and other clinical outcomes. It includes details on the number of participants, treatments, and significant findings.",
+      "keywords": [
+        "gene therapy",
+        "cell therapy",
+        "vascular conditions",
+        "clinical trials",
+        "amputation-free survival"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p066_066.png",
+      "aliases": [
+        "table 66"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p066_066.png"
+    },
+    {
+      "id": "tbl_p069_068",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 68",
+      "caption": "Outcomes of Major Lower Extremity Amputation",
+      "description": "This table presents the outcomes associated with different levels of major lower extremity amputation: below knee, through knee, and above knee. It includes data on primary healing rates, perioperative mortality, revision to a higher level, and ambulation success.",
+      "keywords": [
+        "amputation",
+        "lower extremity",
+        "primary healing",
+        "perioperative mortality",
+        "revision",
+        "ambulation"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p069_068.png",
+      "aliases": [
+        "table 68"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p069_068.png"
+    },
+    {
+      "id": "tbl_p071_071",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 71",
+      "caption": "Research Priorities for Amputation Techniques",
+      "description": "This table outlines research priorities focused on determining optimal amputation techniques and rehabilitation strategies. It emphasizes the need for noninvasive testing, comparison of healing rates, and quality of life assessments post-amputation.",
+      "keywords": [
+        "amputation",
+        "prosthesis",
+        "rehabilitation",
+        "quality of life",
+        "healing rates"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p071_071.png",
+      "aliases": [
+        "table 71"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p071_071.png"
+    },
+    {
+      "id": "tbl_p077_079",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 79",
+      "caption": "IDEAL Stages for CLTI Innovation",
+      "description": "This table outlines the stages of surgical and endovascular innovation for chronic limb-threatening ischemia (CLTI) using the IDEAL framework. It details the progression from idea to long-term study, highlighting patient selection, specialist involvement, procedural development, and outcome measures.",
+      "keywords": [
+        "IDEAL framework",
+        "CLTI",
+        "surgical innovation",
+        "endovascular procedures",
+        "RCT",
+        "patient outcomes"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p077_079.png",
+      "aliases": [
+        "table 79"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p077_079.png"
+    },
+    {
+      "id": "tbl_p079_082",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 82",
+      "caption": "Comparison of End Points in BASIL and BEST-CLI Trials",
+      "description": "This table compares the primary and secondary end points of the BASIL-2, BASIL-3, and BEST-CLI trials, which evaluate different interventions for severe leg ischemia. It highlights various clinical outcomes such as survival, morbidity, and quality of life.",
+      "keywords": [
+        "BASIL-2",
+        "BASIL-3",
+        "BEST-CLI",
+        "ischemia",
+        "angioplasty",
+        "stenting",
+        "bypass",
+        "clinical trials"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p079_082.png",
+      "aliases": [
+        "table 82"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p079_082.png"
+    },
+    {
+      "id": "tbl_p081_085",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 85",
+      "caption": "Research Priorities for CLTI Study Design and Endpoints",
+      "description": "This table outlines key research priorities for designing studies and determining trial endpoints in Chronic Limb-Threatening Ischemia (CLTI). It includes recommendations for constructing relevant RCTs, clarifying revascularization methods, and validating assessment tools.",
+      "keywords": [
+        "CLTI",
+        "RCTs",
+        "revascularization",
+        "endovascular therapy",
+        "WiFi system",
+        "assessment tools"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p081_085.png",
+      "aliases": [
+        "table 85"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p081_085.png"
+    },
+    {
+      "id": "tbl_p082_086",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 86",
+      "caption": "Three Tiers of Care for Amputation Prevention and Diabetic Foot Care Centers",
+      "description": "This table outlines three levels of care for preventing amputations and managing diabetic foot care. It details the settings, potential clinicians involved, and their roles at each level: basic, intermediate, and center of excellence.",
+      "keywords": [
+        "amputation prevention",
+        "diabetic foot care",
+        "clinical care levels",
+        "multidisciplinary teams"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p082_086.png",
+      "aliases": [
+        "table 86"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p082_086.png"
+    },
+    {
+      "id": "tbl_p082_087",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 87",
+      "caption": "Criteria for Center of Excellence in CLTI or Amputation Prevention",
+      "description": "This table outlines the criteria for a Center of Excellence designation in managing chronic limb-threatening ischemia (CLTI) or preventing amputation. It includes the need for a multidisciplinary team, protocol-driven care, outcomes monitoring, improvement methods, and educational resources.",
+      "keywords": [
+        "CLTI",
+        "amputation prevention",
+        "multidisciplinary care",
+        "protocol-driven care",
+        "outcomes monitoring",
+        "educational resources"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p082_087.png",
+      "aliases": [
+        "table 87"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p082_087.png"
+    },
+    {
+      "id": "tbl_p084_088",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 88",
+      "caption": "Essential Skills for Preventing Amputations in Diabetes",
+      "description": "This table outlines nine essential skills necessary to prevent amputations in diabetic patients, along with the corresponding medical specialties responsible for each skill. It emphasizes a multidisciplinary approach involving various healthcare professionals.",
+      "keywords": [
+        "diabetes",
+        "amputation prevention",
+        "multidisciplinary care",
+        "vascular assessment",
+        "wound management"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p084_088.png",
+      "aliases": [
+        "table 88"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p084_088.png"
+    },
+    {
+      "id": "tbl_p084_089",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 89",
+      "caption": "Outcome Measures for CLTI and Amputation Prevention",
+      "description": "This table outlines major outcome measures for chronic limb-threatening ischemia (CLTI) and strategies to prevent amputation. It includes calculations for limb salvage rates, amputation ratios, healing percentages, and revascularization success.",
+      "keywords": [
+        "CLTI",
+        "amputation prevention",
+        "limb salvage",
+        "healing percentage",
+        "revascularization"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p084_089.png",
+      "aliases": [
+        "table 89"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p084_089.png"
+    },
+    {
+      "id": "tbl_p088_091",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 91",
+      "caption": "Estimated PAD Prevalence Change by Age and Region (2000-2010)",
+      "description": "This table presents the estimated rate of change in the number of people living with peripheral artery disease (PAD) from 2000 to 2010, segmented by age groups and regions (High-income countries vs. Low- and middle-income countries).",
+      "keywords": [
+        "Peripheral Artery Disease",
+        "Epidemiology",
+        "Age Groups",
+        "Global Health",
+        "HICs",
+        "LMICs"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p088_091.png",
+      "aliases": [
+        "table 91"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p088_091.png"
+    },
+    {
+      "id": "tbl_p088_092",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 92",
+      "caption": "Prevalence of PAD in Diabetics by Country and Year",
+      "description": "This table presents the prevalence percentages of peripheral artery disease (PAD) among diabetics across various African countries over three time periods: 1990-2000, 2000-2010, and 2010. Data availability varies by country and period.",
+      "keywords": [
+        "PAD",
+        "diabetes",
+        "prevalence",
+        "Africa",
+        "epidemiology"
+      ],
+      "path": "guideline_assets/clti/tables/tbl_p088_092.png",
+      "aliases": [
+        "table 92"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p088_092.png"
+    }
+  ]
+}

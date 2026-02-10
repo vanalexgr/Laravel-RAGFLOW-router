@@ -1,0 +1,14 @@
+{
+  "carotid_vertebral": [
+    {
+      "id": "carotid_vertebral_figure_2",
+      "kind": "figure",
+      "label": "Figure 2",
+      "caption": "Diagnostic algorithm for symptomatic carotid stenosis (example).",
+      "keywords": ["diagnostic algorithm", "symptomatic carotid stenosis", "flowchart"],
+      "path": "guideline_assets/carotid_vertebral/figures/figure-2.png",
+      "aliases": ["Fig. 2", "figure 2"]
+    }
+  ]
+}
+
