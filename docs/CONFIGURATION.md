@@ -48,7 +48,7 @@ These control how documents are retrieved from RAGFlow datasets.
 | `RAGFLOW_SIMILARITY_THRESHOLD` | `0.2` | Minimum similarity score (0.0-1.0). Lower = more results |
 | `RAGFLOW_KEYWORD_MODE` | `true` | Enable hybrid search (keyword + vector) |
 | `RAGFLOW_VECTOR_WEIGHT` | `0.3` | Weight for vector similarity in hybrid search (0.0-1.0) |
-| `RAGFLOW_RERANK_ID` | `Cohere-rerank-v4.0-pro___OpenAI-API@OpenAI-API-Compatible` | Reranker ID string |
+| `RAGFLOW_RERANK_ID` | `Cohere-rerank-v4.0-pro___OpenAI-API` | Reranker ID string (must match tenant-authorized model name exactly) |
 | `RAGFLOW_USE_KG` | `true` | Enable knowledge graph expansion |
 | `RAGFLOW_HIGHLIGHT` | `true` | Include highlight snippets in results |
 
@@ -60,7 +60,7 @@ RAGFLOW_PAGE=1
 RAGFLOW_SIMILARITY_THRESHOLD=0.2
 RAGFLOW_KEYWORD_MODE=true
 RAGFLOW_VECTOR_WEIGHT=0.3
-RAGFLOW_RERANK_ID=Cohere-rerank-v4.0-pro___OpenAI-API@OpenAI-API-Compatible
+RAGFLOW_RERANK_ID=Cohere-rerank-v4.0-pro___OpenAI-API
 RAGFLOW_USE_KG=true
 RAGFLOW_HIGHLIGHT=true
 ```
@@ -147,7 +147,7 @@ return [
         'similarity_threshold' => (float) env('RAGFLOW_SIMILARITY_THRESHOLD', 0.2),
         'keyword_mode' => filter_var(env('RAGFLOW_KEYWORD_MODE', true), FILTER_VALIDATE_BOOLEAN),
         'vector_similarity_weight' => (float) env('RAGFLOW_VECTOR_WEIGHT', 0.3),
-        'rerank_id' => env('RAGFLOW_RERANK_ID', 'Cohere-rerank-v4.0-pro___OpenAI-API@OpenAI-API-Compatible'),
+        'rerank_id' => env('RAGFLOW_RERANK_ID', 'Cohere-rerank-v4.0-pro___OpenAI-API'),
         'use_kg' => filter_var(env('RAGFLOW_USE_KG', true), FILTER_VALIDATE_BOOLEAN),
         'highlight' => filter_var(env('RAGFLOW_HIGHLIGHT', true), FILTER_VALIDATE_BOOLEAN),
     ],
