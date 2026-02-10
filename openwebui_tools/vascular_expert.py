@@ -100,36 +100,64 @@ class Tools:
         except Exception:
             return None
 
-    def _format_assets_markdown(self, assets: list[dict], max_assets: int = 2) -> str:
-        """Render a small inline image gallery for OpenWebUI chat."""
+    def _format_assets_markdown(self, assets: list[dict], max_assets: int = 4) -> str:
+        """
+        Render a compact thumbnail gallery.
+
+        Notes:
+        - Plain Markdown images render huge in some clients (especially mobile).
+        - Use HTML <img width=...> inside an <a> so users can tap to expand.
+        - Keep it under a <details> to push it after the clinical text.
+        """
         if not assets:
             return ""
 
-        items = []
-        total_bytes = 0
+        tiles = []
         for a in assets[:max_assets]:
-            if not a:
+            url = (a or {}).get("url")
+            if not url:
                 continue
+            label = (a or {}).get("label") or (a or {}).get("id") or "Figure/Table"
+            caption = (a or {}).get("caption") or ""
+            # Escape minimal HTML entities
+            label_html = (
+                str(label)
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+            )
+            caption_html = (
+                str(caption)
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+            )
+            tile = (
+                f"<div style=\"width:170px\">"
+                f"<a href=\"{url}\" target=\"_blank\" rel=\"noopener\">"
+                f"<img src=\"{url}\" alt=\"{caption_html or label_html}\" "
+                f"style=\"width:170px;height:auto;border:1px solid #ddd;border-radius:8px\"/>"
+                f"</a>"
+                f"<div style=\"font-size:12px;line-height:1.2;margin-top:6px\">"
+                f"<b>{label_html}</b>"
+                f"{('<div>'+caption_html+'</div>') if caption_html else ''}"
+                f"</div>"
+                f"</div>"
+            )
+            tiles.append(tile)
 
-            # Prefer inlining as data URIs (mobile-friendly). If it fails or is too large,
-            # fall back to the external URL.
-            inlined = self._try_inline_data_uri(a)
-            if inlined:
-                a = dict(a)
-                a["url"] = inlined
-                # Rough accounting to prevent extreme message bloat.
-                total_bytes += len(inlined)
-                if total_bytes > 3_000_000:
-                    break
-
-            md = self._asset_to_markdown_image(a)
-            if md:
-                items.append(md)
-
-        if not items:
+        if not tiles:
             return ""
 
-        return "### Figures / Tables\n\n" + "\n\n".join(items) + "\n"
+        gallery = (
+            "<details>\n"
+            "<summary><b>Figures / Tables (tap to expand)</b></summary>\n\n"
+            "<div style=\"display:flex;flex-wrap:wrap;gap:12px;margin-top:10px\">\n"
+            + "\n".join(tiles)
+            + "\n</div>\n"
+            "</details>\n"
+        )
+        return gallery
 
     def _strip_markdown(self, text: str) -> str:
         """
@@ -436,16 +464,6 @@ class Tools:
             print(f"[VascularExpert] Chunks: narrative={len(narrative_chunks)}, citation={len(citation_chunks)}")
             
             total_chunks = len(narrative_chunks) + len(citation_chunks)
-
-            # If running as a native OpenWebUI tool, we can push inline images into the chat UI.
-            # (This doesn't work for external OpenAPI tool servers; it does work here.)
-            if emitter and assets:
-                try:
-                    md = self._format_assets_markdown(assets, max_assets=3)
-                    if md:
-                        await emitter({"type": "message", "data": {"content": md}})
-                except Exception as e:
-                    print(f"[VascularExpert] Error emitting assets message: {e}")
             
             # EMIT INDIVIDUAL CITATIONS for each chunk
             # This enables per-chunk citation popups in OpenWebUI
@@ -571,14 +589,8 @@ class Tools:
                 # SECTION 3: FIGURES / TABLES (User display)
                 if assets:
                     llm_output += "=== FIGURES / TABLES (User display) ===\n"
-                    llm_output += "If helpful, include these images inline in your answer:\n\n"
-                    for a in assets[:3]:
-                        url = (a or {}).get("url")
-                        if not url:
-                            continue
-                        label = (a or {}).get("label") or (a or {}).get("id") or "Figure/Table"
-                        caption = (a or {}).get("caption") or label
-                        llm_output += f"- {label}: {caption}\n  {url}\n  ![{caption}]({url})\n\n"
+                    llm_output += "Thumbnails (click to expand):\n\n"
+                    llm_output += self._format_assets_markdown(assets, max_assets=4) + "\n\n"
                 
                 llm_output += "=== CITATION RULES ===\n"
                 llm_output += "1. Use simple numbered citations [1], [2], [3] inline after each fact.\n"
