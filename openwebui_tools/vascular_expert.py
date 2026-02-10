@@ -10,6 +10,7 @@ import httpx
 import asyncio
 from pydantic import BaseModel, Field
 from typing import Literal, Optional, Callable, Awaitable
+import re
 
 
 # Enum of all valid guideline keys
@@ -133,6 +134,24 @@ class Tools:
         :return: Evidence-based recommendations and citations
         """
         emitter = __event_emitter__
+
+        def _short_label(text: str, max_len: int = 80) -> str:
+            """Create a stable short label from a narrative chunk."""
+            if not text:
+                return "Narrative"
+            # Prefer the first markdown heading if present.
+            for line in text.splitlines():
+                s = line.strip()
+                if s.startswith("#"):
+                    s = re.sub(r"^#+\s*", "", s).strip()
+                    if s:
+                        return (s[: max_len - 1] + "…") if len(s) > max_len else s
+            # Fallback: first non-empty line.
+            for line in text.splitlines():
+                s = " ".join(line.strip().split())
+                if s:
+                    return (s[: max_len - 1] + "…") if len(s) > max_len else s
+            return "Narrative"
         
         # Collect selected guidelines
         guidelines = [guideline_1]
@@ -229,6 +248,7 @@ class Tools:
             # EMIT INDIVIDUAL CITATIONS for each chunk
             # This enables per-chunk citation popups in OpenWebUI
             if emitter:
+                emitted_count = 0
                 chunk_number = 1
                 
                 # Emit citation chunks first (recommendations)
@@ -262,12 +282,14 @@ class Tools:
                     chunk_number += 1
                 
                 # Emit narrative chunks (context)
+                narrative_i = 1
                 for chunk in narrative_chunks:
                     content = chunk.get("content", "")
                     source_guideline = chunk.get("source_guideline", "ESVS")
                     
-                    # Simple title - just guideline name, no numbering
-                    title = source_guideline
+                    # Use a per-chunk title so OpenWebUI doesn't collapse all narrative chunks
+                    # into a single reference for the guideline.
+                    title = f"{source_guideline} — Narrative {narrative_i}: {_short_label(content)}"
                     
                     try:
                         await emitter({
@@ -283,6 +305,7 @@ class Tools:
                         print(f"Error emitting citation: {e}")
                         
                     chunk_number += 1
+                    narrative_i += 1
             
             if total_chunks > 0:
                 status_msg = f"Retrieved {total_chunks} evidence chunks from {guideline_display}"
@@ -312,13 +335,15 @@ class Tools:
                 # SECTION 2: NARRATIVE (Context)
                 if narrative_chunks:
                     llm_output += "=== NARRATIVE CONTEXT ===\n"
+                    narrative_i = 1
                     for chunk in narrative_chunks: 
                         content = chunk.get("content", "")
                         source = chunk.get("source_guideline", "ESVS")
                         
-                        llm_output += f"[{chunk_num}] {source}\n"
+                        llm_output += f"[{chunk_num}] {source} — Narrative {narrative_i}: {_short_label(content)}\n"
                         llm_output += f"{content}\n\n"
                         chunk_num += 1
+                        narrative_i += 1
                 
                 llm_output += "=== CITATION RULES ===\n"
                 llm_output += "1. Use simple numbered citations [1], [2], [3] inline after each fact.\n"
