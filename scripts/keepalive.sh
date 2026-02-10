@@ -2,7 +2,8 @@
 # Keep-alive script to prevent Replit cold starts
 # Pings Laravel and RAGFlow Bridge every 3 minutes
 
-LARAVEL_URL="http://localhost:5000/up"
+LARAVEL_PORT="${LARAVEL_PORT:-${APP_PORT:-8001}}"
+LARAVEL_URL="http://localhost:${LARAVEL_PORT}/up"
 RAGFLOW_URL="http://localhost:8000/health"
 INTERVAL=180  # 3 minutes
 
