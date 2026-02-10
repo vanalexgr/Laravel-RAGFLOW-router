@@ -16,6 +16,9 @@ User Question
 - Selects 1-3 guideline keys based on the question
 - Sends recent conversation history for context fusion
 - Calls `POST /api/v1/vascular-consult` and streams status updates
+- Emits OpenWebUI per-chunk citations for both recommendation chunks and narrative chunks.
+  - Recommendation citations are one-per-recommendation.
+  - Narrative citations are one-per-chunk and must have unique `source.name` values, otherwise OpenWebUI may collapse them into a single reference per guideline.
 
 ## Dual Retrieval Logic
 - Narrative query uses the expanded query for broader context.
