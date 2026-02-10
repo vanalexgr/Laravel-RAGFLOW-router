@@ -115,7 +115,7 @@ async def retrieve(request: Request, body: RetrieveRequest):
         "highlight": body.highlight,
     }
 
-    if body.rerank_id:
+    if body.rerank_id and body.rerank_id != "local":
         payload["rerank_id"] = body.rerank_id
         logger.info(f"Reranking ENABLED: rerank_id={body.rerank_id}")
 
@@ -229,7 +229,7 @@ async def retrieve_multi(request: Request, body: RetrieveMultiRequest):
             "keyword": body.keyword,
             "highlight": body.highlight,
         }
-        if body.rerank_id:
+        if body.rerank_id and body.rerank_id != "local":
             payload["rerank_id"] = body.rerank_id
         if body.use_kg:
             payload["use_kg"] = True
@@ -453,7 +453,7 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
             # Only enable KG if explicitly requested (some datasets don't have KG or it may error)
             if body.use_kg:
                 payload["use_kg"] = True
-            if body.rerank_id:
+            if body.rerank_id and body.rerank_id != "local":
                 payload["rerank_id"] = body.rerank_id
             
             # Log full payload for debugging
@@ -606,7 +606,7 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
         else:
             logger.warning("  No citation_document_ids provided - using unscoped retrieval (old behavior)")
         
-        if body.rerank_id:
+        if body.rerank_id and body.rerank_id != "local":
             payload["rerank_id"] = body.rerank_id
 
         logger.info(f"  Citation Query: '{payload['question'][:60]}...' (retrieve {retrieve_size}, final {body.citation_max})")
