@@ -54,6 +54,72 @@ class Tools:
     def __init__(self):
         self.valves = self.Valves()
 
+    def _parse_semicolon_kv(self, s: str) -> dict:
+        """
+        Parse strings like:
+          "rec_id:6.38; category_name:Peripheral; ...; rec_text_verbatim:Consider ..."
+        into a dict. Best-effort, tolerant of missing keys.
+        """
+        out: dict = {}
+        if not s or ":" not in s:
+            return out
+        for part in s.split(";"):
+            part = part.strip()
+            if not part or ":" not in part:
+                continue
+            k, v = part.split(":", 1)
+            k = k.strip()
+            v = v.strip()
+            if k:
+                out[k] = v
+        return out
+
+    def _format_rec_popup(self, raw: str, fallback_title: str) -> str:
+        """
+        Make recommendation citation popups readable. If raw is not parseable,
+        return a lightly formatted fallback.
+        """
+        kv = self._parse_semicolon_kv(raw)
+        if not kv:
+            return raw.strip() if raw else fallback_title
+
+        rec_id = kv.get("rec_id") or kv.get("recommendation_id") or ""
+        guideline_name = kv.get("guideline_name") or kv.get("guideline") or ""
+        guideline_year = kv.get("guideline_year") or kv.get("year") or ""
+        category_name = kv.get("category_name") or ""
+        cls = kv.get("class") or ""
+        level = kv.get("level") or ""
+        authors = kv.get("evidence_first_authors") or kv.get("evidence_authors") or ""
+        text = kv.get("rec_text_verbatim") or kv.get("text") or kv.get("content") or raw
+
+        # Clean authors formatting: ["A", "B"] -> A; B
+        authors_clean = authors.strip()
+        if authors_clean.startswith("[") and authors_clean.endswith("]"):
+            authors_clean = authors_clean[1:-1].strip()
+        authors_clean = authors_clean.replace('"', "").replace("'", "")
+
+        header = "Recommendation"
+        if rec_id:
+            header += f" {rec_id}"
+        if guideline_name:
+            header += f" — {guideline_name}"
+        if guideline_year:
+            header += f" ({guideline_year})"
+
+        lines = [header]
+        if category_name:
+            lines.append(f"Category: {category_name}")
+        if cls or level:
+            lines.append(f"Strength: Class {cls or 'N/A'}; Level {level or 'N/A'}")
+        if authors_clean:
+            lines.append(f"Evidence (first authors): {authors_clean}")
+        if text:
+            lines.append("")
+            lines.append("Text (verbatim):")
+            lines.append(text.strip())
+
+        return "\n".join(lines).strip()
+
     class Valves(BaseModel):
         VASCULAR_API_BASE_URL: str = Field(
             default="https://your-domain.com",
@@ -265,13 +331,21 @@ class Tools:
                         title = f"Recommendation {rec_id} from {guideline} - Class {cls}, Level {level}"
                     else:
                         title = f"Recommendation from {guideline}"
+
+                    # Render a readable popup from the (often semicolon-delimited) row.
+                    popup_text = self._format_rec_popup(text, title)
                     
                     try:
                         await emitter({
                             "type": "citation",
                             "data": {
-                                "document": [text],
-                                "metadata": [{"source": title}],
+                                "document": [popup_text],
+                                "metadata": [{
+                                    "source": title,
+                                    "kind": "recommendation",
+                                    "guideline": guideline,
+                                    "recommendation_id": rec_id,
+                                }],
                                 "source": {"id": f"{chunk_number}", "name": title},
                             }
                         })
