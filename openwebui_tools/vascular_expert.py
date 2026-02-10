@@ -290,13 +290,26 @@ class Tools:
                     # Use a per-chunk title so OpenWebUI doesn't collapse all narrative chunks
                     # into a single reference for the guideline.
                     title = f"{source_guideline} - Narrative {narrative_i}: {_short_label(content)}"
+
+                    # OpenWebUI's UI groups/labels citations based on metadata.source, not source.name.
+                    # If metadata.source is identical across narrative chunks (e.g., just the guideline
+                    # name), they collapse into one reference and inline clicks may not map to a unique
+                    # popup. Emit a stable per-chunk source label and keep the popup document small.
+                    excerpt = (content or "").strip()
+                    if len(excerpt) > 6000:
+                        excerpt = excerpt[:6000] + "\n\n[...truncated...]"
                     
                     try:
                         await emitter({
                             "type": "citation",
                             "data": {
-                                "document": [content],
-                                "metadata": [{"source": source_guideline}],
+                                "document": [excerpt],
+                                "metadata": [{
+                                    "source": title,
+                                    "kind": "narrative",
+                                    "guideline": source_guideline,
+                                    "chunk": narrative_i,
+                                }],
                                 "source": {"id": f"{chunk_number}", "name": title},
                             }
                         })
