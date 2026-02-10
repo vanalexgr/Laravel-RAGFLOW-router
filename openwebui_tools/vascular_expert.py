@@ -145,12 +145,12 @@ class Tools:
                 if s.startswith("#"):
                     s = re.sub(r"^#+\s*", "", s).strip()
                     if s:
-                        return (s[: max_len - 1] + "…") if len(s) > max_len else s
+                        return (s[: max_len - 3] + "...") if len(s) > max_len else s
             # Fallback: first non-empty line.
             for line in text.splitlines():
                 s = " ".join(line.strip().split())
                 if s:
-                    return (s[: max_len - 1] + "…") if len(s) > max_len else s
+                    return (s[: max_len - 3] + "...") if len(s) > max_len else s
             return "Narrative"
         
         # Collect selected guidelines
@@ -289,7 +289,7 @@ class Tools:
                     
                     # Use a per-chunk title so OpenWebUI doesn't collapse all narrative chunks
                     # into a single reference for the guideline.
-                    title = f"{source_guideline} — Narrative {narrative_i}: {_short_label(content)}"
+                    title = f"{source_guideline} - Narrative {narrative_i}: {_short_label(content)}"
                     
                     try:
                         await emitter({
@@ -340,7 +340,7 @@ class Tools:
                         content = chunk.get("content", "")
                         source = chunk.get("source_guideline", "ESVS")
                         
-                        llm_output += f"[{chunk_num}] {source} — Narrative {narrative_i}: {_short_label(content)}\n"
+                        llm_output += f"[{chunk_num}] {source} - Narrative {narrative_i}: {_short_label(content)}\n"
                         llm_output += f"{content}\n\n"
                         chunk_num += 1
                         narrative_i += 1
