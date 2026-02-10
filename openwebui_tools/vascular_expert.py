@@ -63,7 +63,7 @@ class Tools:
         caption = (asset or {}).get("caption") or label
         return f"**{label}**\n\n![{caption}]({url})"
 
-    def _try_inline_data_uri(self, asset: dict, max_bytes: int = 750_000) -> Optional[str]:
+    def _try_inline_data_uri(self, asset: dict, max_bytes: int = 1_200_000) -> Optional[str]:
         """
         Best-effort: fetch a public image URL and convert to data: URI.
         This avoids mobile clients that can't fetch external images reliably.
@@ -72,18 +72,26 @@ class Tools:
         if not url or not isinstance(url, str) or not url.startswith("https://"):
             return None
 
-        subtype = ((asset or {}).get("subtype") or "").lower()
-        # Only inline algorithms/diagrams by default; tables can be huge.
-        if subtype and subtype not in ("flowchart", "diagram"):
-            return None
-
         try:
             import requests
 
-            r = requests.get(url, timeout=20)
+            # Stream so we can enforce max_bytes without downloading huge blobs into memory.
+            r = requests.get(
+                url,
+                timeout=20,
+                stream=True,
+                headers={"User-Agent": "OpenWebUI/vascular-expert (inline-assets)"},
+            )
             r.raise_for_status()
-            data = r.content
-            if not data or len(data) > max_bytes:
+            data = b""
+            for chunk in r.iter_content(chunk_size=64 * 1024):
+                if not chunk:
+                    continue
+                data += chunk
+                if len(data) > max_bytes:
+                    return None
+
+            if not data:
                 return None
 
             ct = r.headers.get("Content-Type", "image/png")
@@ -92,21 +100,27 @@ class Tools:
         except Exception:
             return None
 
-    def _format_assets_markdown(self, assets: list[dict], max_assets: int = 3) -> str:
+    def _format_assets_markdown(self, assets: list[dict], max_assets: int = 2) -> str:
         """Render a small inline image gallery for OpenWebUI chat."""
         if not assets:
             return ""
 
         items = []
+        total_bytes = 0
         for a in assets[:max_assets]:
             if not a:
                 continue
 
-            # Prefer inlining certain diagrams/flowcharts as data URIs (mobile-friendly).
+            # Prefer inlining as data URIs (mobile-friendly). If it fails or is too large,
+            # fall back to the external URL.
             inlined = self._try_inline_data_uri(a)
             if inlined:
                 a = dict(a)
                 a["url"] = inlined
+                # Rough accounting to prevent extreme message bloat.
+                total_bytes += len(inlined)
+                if total_bytes > 3_000_000:
+                    break
 
             md = self._asset_to_markdown_image(a)
             if md:
