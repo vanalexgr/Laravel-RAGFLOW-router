@@ -11,6 +11,7 @@ import asyncio
 from pydantic import BaseModel, Field
 from typing import Literal, Optional, Callable, Awaitable
 import re
+import base64
 
 
 # Enum of all valid guideline keys
@@ -54,6 +55,43 @@ class Tools:
     def __init__(self):
         self.valves = self.Valves()
 
+    def _asset_to_markdown_image(self, asset: dict) -> Optional[str]:
+        url = (asset or {}).get("url")
+        if not url:
+            return None
+        label = (asset or {}).get("label") or (asset or {}).get("id") or "Figure/Table"
+        caption = (asset or {}).get("caption") or label
+        return f"**{label}**\n\n![{caption}]({url})"
+
+    def _try_inline_data_uri(self, asset: dict, max_bytes: int = 750_000) -> Optional[str]:
+        """
+        Best-effort: fetch a public image URL and convert to data: URI.
+        This avoids mobile clients that can't fetch external images reliably.
+        """
+        url = (asset or {}).get("url")
+        if not url or not isinstance(url, str) or not url.startswith("https://"):
+            return None
+
+        subtype = ((asset or {}).get("subtype") or "").lower()
+        # Only inline algorithms/diagrams by default; tables can be huge.
+        if subtype and subtype not in ("flowchart", "diagram"):
+            return None
+
+        try:
+            import requests
+
+            r = requests.get(url, timeout=20)
+            r.raise_for_status()
+            data = r.content
+            if not data or len(data) > max_bytes:
+                return None
+
+            ct = r.headers.get("Content-Type", "image/png")
+            b64 = base64.b64encode(data).decode("ascii")
+            return f"data:{ct};base64,{b64}"
+        except Exception:
+            return None
+
     def _format_assets_markdown(self, assets: list[dict], max_assets: int = 3) -> str:
         """Render a small inline image gallery for OpenWebUI chat."""
         if not assets:
@@ -61,12 +99,18 @@ class Tools:
 
         items = []
         for a in assets[:max_assets]:
-            url = (a or {}).get("url")
-            if not url:
+            if not a:
                 continue
-            label = (a or {}).get("label") or (a or {}).get("id") or "Figure/Table"
-            caption = (a or {}).get("caption") or label
-            items.append(f"**{label}**\n\n![{caption}]({url})")
+
+            # Prefer inlining certain diagrams/flowcharts as data URIs (mobile-friendly).
+            inlined = self._try_inline_data_uri(a)
+            if inlined:
+                a = dict(a)
+                a["url"] = inlined
+
+            md = self._asset_to_markdown_image(a)
+            if md:
+                items.append(md)
 
         if not items:
             return ""
