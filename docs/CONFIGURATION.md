@@ -40,6 +40,10 @@ API_SECRET_KEY=your-api-key-here
 
 These control how documents are retrieved from RAGFlow datasets.
 
+#### Citation quality (filtering research statements)
+
+Some guideline exports include non-actionable "Good research statement" items. These can be useful for methodology questions but often distract from clinical questions. The bridge filters these out from `citation_chunks` when enough actionable citations remain; if filtering would drop below `citation_min`, the original set is kept.
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `RAGFLOW_TOP_K` | `256` | Number of candidate chunks retrieved before reranking |
