@@ -54,6 +54,25 @@ class Tools:
     def __init__(self):
         self.valves = self.Valves()
 
+    def _format_assets_markdown(self, assets: list[dict], max_assets: int = 3) -> str:
+        """Render a small inline image gallery for OpenWebUI chat."""
+        if not assets:
+            return ""
+
+        items = []
+        for a in assets[:max_assets]:
+            url = (a or {}).get("url")
+            if not url:
+                continue
+            label = (a or {}).get("label") or (a or {}).get("id") or "Figure/Table"
+            caption = (a or {}).get("caption") or label
+            items.append(f"**{label}**\n\n![{caption}]({url})")
+
+        if not items:
+            return ""
+
+        return "### Figures / Tables\n\n" + "\n\n".join(items) + "\n"
+
     def _strip_markdown(self, text: str) -> str:
         """
         Best-effort markdown -> plain text for citation popups.
@@ -355,9 +374,20 @@ class Tools:
             # Extract chunks from response
             narrative_chunks = data.get("narrative_chunks", [])
             citation_chunks = data.get("citation_chunks", [])
+            assets = data.get("assets", []) or []
             print(f"[VascularExpert] Chunks: narrative={len(narrative_chunks)}, citation={len(citation_chunks)}")
             
             total_chunks = len(narrative_chunks) + len(citation_chunks)
+
+            # If running as a native OpenWebUI tool, we can push inline images into the chat UI.
+            # (This doesn't work for external OpenAPI tool servers; it does work here.)
+            if emitter and assets:
+                try:
+                    md = self._format_assets_markdown(assets, max_assets=3)
+                    if md:
+                        await emitter({"type": "message", "data": {"content": md}})
+                except Exception as e:
+                    print(f"[VascularExpert] Error emitting assets message: {e}")
             
             # EMIT INDIVIDUAL CITATIONS for each chunk
             # This enables per-chunk citation popups in OpenWebUI
@@ -479,6 +509,18 @@ class Tools:
                         llm_output += f"{content}\n\n"
                         chunk_num += 1
                         narrative_i += 1
+
+                # SECTION 3: FIGURES / TABLES (User display)
+                if assets:
+                    llm_output += "=== FIGURES / TABLES (User display) ===\n"
+                    llm_output += "If helpful, include these images inline in your answer:\n\n"
+                    for a in assets[:3]:
+                        url = (a or {}).get("url")
+                        if not url:
+                            continue
+                        label = (a or {}).get("label") or (a or {}).get("id") or "Figure/Table"
+                        caption = (a or {}).get("caption") or label
+                        llm_output += f"- {label}: {caption}\n  {url}\n  ![{caption}]({url})\n\n"
                 
                 llm_output += "=== CITATION RULES ===\n"
                 llm_output += "1. Use simple numbered citations [1], [2], [3] inline after each fact.\n"
