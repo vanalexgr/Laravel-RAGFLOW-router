@@ -449,11 +449,12 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
                 "similarity_threshold": body.similarity_threshold,
                 "vector_similarity_weight": body.vector_similarity_weight,
                 "keyword": body.keyword,
+                "use_kg": bool(body.use_kg),
                 "highlight": body.highlight,
             }
             # Only enable KG if explicitly requested (some datasets don't have KG or it may error)
             if body.use_kg:
-                payload["use_kg"] = True
+                logger.info("Knowledge Graph ENABLED: use_kg=true")
             if body.rerank_id and body.rerank_id != "local":
                 payload["rerank_id"] = body.rerank_id
             
@@ -611,6 +612,7 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
             "similarity_threshold": body.citation_similarity_threshold or body.similarity_threshold,
             "vector_similarity_weight": body.vector_similarity_weight,
             "keyword": body.keyword,
+            "use_kg": False,
             "highlight": body.highlight,
             # NO use_kg - recommendations dataset doesn't have KG
         }
@@ -748,7 +750,7 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
             },
             "retrieval_info": {
                 "rerank_id": body.rerank_id,
-                "narrative_use_kg": True,
+                "narrative_use_kg": body.use_kg,
                 "citation_use_kg": False,
                 "narrative_max": body.narrative_max,
                 "citation_max": body.citation_max,
