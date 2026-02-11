@@ -538,6 +538,8 @@ class RetrievalService
             'similarity_threshold' => $retrievalConfig['similarity_threshold'] ?? 0.2,
             'keyword' => $retrievalConfig['keyword_mode'] ?? true,
             'vector_similarity_weight' => $retrievalConfig['vector_similarity_weight'] ?? 0.3,
+            'use_kg' => $retrievalConfig['use_kg'] ?? false,
+            'citation_top_k' => (int) ($retrievalConfig['citation_top_k'] ?? 10),
             'highlight' => (bool) ($retrievalConfig['highlight'] ?? false),
         ];
         // Always provide rerank_id if configured; ragflow_service will only forward it
@@ -638,11 +640,11 @@ You are an ESVS (European Society for Vascular Surgery) clinical guideline assis
 ## YOUR TASK
 Answer vascular surgery questions using the provided evidence. You receive TWO types of chunks:
 
-### NARRATIVE_CHUNKS (use_kg=true)
+### NARRATIVE_CHUNKS (use_kg configurable)
 - Rich clinical context from full guideline text
 - Use these for understanding and synthesizing your clinical answer
 
-### CITATION_CHUNKS (use_kg=false) 
+### CITATION_CHUNKS (use_kg=false)
 - Exact recommendations with metatags: recommendation_id, class, level, guideline
 - Use these for VERBATIM citations only
 
