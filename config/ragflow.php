@@ -19,6 +19,7 @@ return [
         // Must match an authorized rerank model name in RAGFlow tenant settings.
         'rerank_id' => env('RAGFLOW_RERANK_ID', 'Cohere-rerank-v4.0-pro___OpenAI-API'),
         'use_kg' => filter_var(env('RAGFLOW_USE_KG', false), FILTER_VALIDATE_BOOLEAN), // Server KG is broken
+        'citation_top_k' => (int) env('RAGFLOW_CITATION_TOP_K', 10),
         // Highlighting bloats chunk payloads and can degrade downstream prompt quality.
         'highlight' => filter_var(env('RAGFLOW_HIGHLIGHT', false), FILTER_VALIDATE_BOOLEAN),
     ],
