@@ -23,5 +23,17 @@ return [
         'highlight' => filter_var(env('RAGFLOW_HIGHLIGHT', false), FILTER_VALIDATE_BOOLEAN),
     ],
 
+    // Optional bridge-side reranking (Laravel) to avoid RAGFlow rerank latency.
+    // When enabled, the bridge will rerank locally and *not* send rerank_id to RAGFlow.
+    'bridge_rerank' => [
+        'enabled' => filter_var(env('BRIDGE_RERANK_ENABLED', false), FILTER_VALIDATE_BOOLEAN),
+        'provider' => env('BRIDGE_RERANK_PROVIDER', 'cohere'),
+        'endpoint' => env('BRIDGE_RERANK_ENDPOINT', 'https://api.cohere.com/v1/rerank'),
+        'api_key' => env('BRIDGE_RERANK_API_KEY'),
+        'model' => env('BRIDGE_RERANK_MODEL', 'rerank-english-v3.0'),
+        'top_n' => (int) env('BRIDGE_RERANK_TOP_N', 20),
+        'timeout' => (int) env('BRIDGE_RERANK_TIMEOUT', 20),
+    ],
+
     // Dataset registry is defined in config/guidelines.php
 ];
