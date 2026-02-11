@@ -54,6 +54,7 @@ Some guideline exports include non-actionable "Good research statement" items. T
 | `RAGFLOW_VECTOR_WEIGHT` | `0.3` | Weight for vector similarity in hybrid search (0.0-1.0) |
 | `RAGFLOW_RERANK_ID` | `Cohere-rerank-v4.0-pro___OpenAI-API` | Reranker ID string (must match tenant-authorized model name exactly) |
 | `RAGFLOW_USE_KG` | `false` | Enable knowledge graph expansion (disabled by default; often noisy/brittle) |
+| `RAGFLOW_CITATION_TOP_K` | `10` | Candidate pool size for citation-only retrieval |
 | `RAGFLOW_HIGHLIGHT` | `false` | Include highlight snippets in results (disabled by default to reduce payload bloat) |
 
 **Example:**
@@ -66,6 +67,7 @@ RAGFLOW_KEYWORD_MODE=true
 RAGFLOW_VECTOR_WEIGHT=0.3
 RAGFLOW_RERANK_ID=Cohere-rerank-v4.0-pro___OpenAI-API
 RAGFLOW_USE_KG=false
+RAGFLOW_CITATION_TOP_K=10
 RAGFLOW_HIGHLIGHT=false
 ```
 
