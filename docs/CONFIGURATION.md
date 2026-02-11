@@ -73,6 +73,32 @@ RAGFLOW_HIGHLIGHT=false
 
 **Operational note:** In production we keep `RAGFLOW_TOP_K` modest (e.g. 128-256), `RAGFLOW_HIGHLIGHT=false`, and a tenant-authorized `RAGFLOW_RERANK_ID` set. This keeps candidate pools tight so reranking improves quality instead of amplifying noise.
 
+#### Bridge-side reranking (Laravel)
+
+If RAGFlow-side reranking is too slow or unstable, you can disable `RAGFLOW_RERANK_ID` and rerank inside the Laravel bridge instead. When bridge reranking is enabled, the bridge will *not* forward `rerank_id` to RAGFlow.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BRIDGE_RERANK_ENABLED` | `false` | Enable bridge-side reranking |
+| `BRIDGE_RERANK_PROVIDER` | `cohere` | Rerank provider (currently only `cohere` supported) |
+| `BRIDGE_RERANK_ENDPOINT` | `https://api.cohere.com/v1/rerank` | Rerank API endpoint |
+| `BRIDGE_RERANK_API_KEY` | _(empty)_ | API key for the rerank provider |
+| `BRIDGE_RERANK_MODEL` | `rerank-english-v3.0` | Rerank model name |
+| `BRIDGE_RERANK_TOP_N` | `20` | Number of top chunks to prioritize |
+| `BRIDGE_RERANK_TIMEOUT` | `20` | Rerank API timeout (seconds) |
+
+**Example:**
+```env
+RAGFLOW_RERANK_ID=
+BRIDGE_RERANK_ENABLED=true
+BRIDGE_RERANK_PROVIDER=cohere
+BRIDGE_RERANK_ENDPOINT=https://api.cohere.com/v1/rerank
+BRIDGE_RERANK_API_KEY=your_key_here
+BRIDGE_RERANK_MODEL=rerank-english-v3.0
+BRIDGE_RERANK_TOP_N=20
+BRIDGE_RERANK_TIMEOUT=20
+```
+
 #### Understanding Retrieval Settings
 
 **Top-K (RAGFLOW_TOP_K)**
