@@ -5,6 +5,7 @@ namespace App\Services;
 use Illuminate\Support\Facades\Log;
 use App\Services\GuidelineRouterService;
 use App\Services\PHIScrubberService;
+use App\Services\BridgeRerankService;
 
 class RetrievalService
 {
@@ -526,6 +527,7 @@ class RetrievalService
         $topK = (int) ($retrievalConfig['top_k'] ?? 256);
         $topK = max(1, min($topK, 256));
 
+        $bridgeRerank = new BridgeRerankService();
         $params = [
             'question' => $narrativeQuery,
             'citation_query' => $citationQuery,
@@ -539,8 +541,9 @@ class RetrievalService
             'highlight' => (bool) ($retrievalConfig['highlight'] ?? false),
         ];
         // Always provide rerank_id if configured; ragflow_service will only forward it
-        // upstream if it is non-empty and not "local".
-        if (array_key_exists('rerank_id', $retrievalConfig) && !empty($retrievalConfig['rerank_id'])) {
+        // upstream if it is non-empty and not "local". If bridge rerank is enabled,
+        // do not forward rerank_id to RAGFlow to avoid remote rerank latency.
+        if (!$bridgeRerank->enabled() && array_key_exists('rerank_id', $retrievalConfig) && !empty($retrievalConfig['rerank_id'])) {
             $params['rerank_id'] = $retrievalConfig['rerank_id'];
         }
 
@@ -554,9 +557,17 @@ class RetrievalService
             throw new \RuntimeException('RAGFlow retrieval failed');
         }
 
+        $narrativeChunks = $response['narrative']['chunks'] ?? [];
+        $citationChunks = $response['citations']['chunks'] ?? [];
+
+        if ($bridgeRerank->enabled()) {
+            $narrativeChunks = $bridgeRerank->rerank($narrativeQuery, $narrativeChunks, $narrativeMax, 'narrative');
+            $citationChunks = $bridgeRerank->rerank($citationQuery, $citationChunks, $citationMax, 'citation');
+        }
+
         return [
-            'narrative_chunks' => $this->formatChunks($response['narrative']['chunks'] ?? [], 'narrative', array_column($narrativeDatasets, 'name')),
-            'citation_chunks' => $this->formatChunks($response['citations']['chunks'] ?? [], 'citation'),
+            'narrative_chunks' => $this->formatChunks($narrativeChunks, 'narrative', array_column($narrativeDatasets, 'name')),
+            'citation_chunks' => $this->formatChunks($citationChunks, 'citation'),
         ];
     }
 
