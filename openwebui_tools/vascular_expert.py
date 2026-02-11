@@ -273,6 +273,16 @@ class Tools:
         s = self._strip_markdown(raw)
         return s if s else fallback_title
 
+    def _clean_narrative_snippet(self, raw: str, max_len: int = 600) -> str:
+        if not raw:
+            return ""
+        s = self._strip_markdown(raw)
+        s = " ".join(s.split())
+        if len(s) > max_len:
+            s = s[:max_len].rstrip() + "..."
+        return s
+
+
     class Valves(BaseModel):
         VASCULAR_API_BASE_URL: str = Field(
             default="https://your-domain.com",
@@ -575,14 +585,15 @@ class Tools:
 
                 # SECTION 2: NARRATIVE (Context)
                 if narrative_chunks:
-                    llm_output += "=== NARRATIVE CONTEXT ===\n"
+                    llm_output += "=== NARRATIVE CONTEXT ===
+"
                     narrative_i = 1
-                    for chunk in narrative_chunks: 
+                    for chunk in narrative_chunks[:4]:
                         content = chunk.get("content", "")
-                        source = chunk.get("source_guideline", "ESVS")
-                        
-                        llm_output += f"[{chunk_num}] {source} - Narrative {narrative_i}: {_short_label(content)}\n"
-                        llm_output += f"{content}\n\n"
+                        snippet = self._clean_narrative_snippet(content, max_len=600)
+                        llm_output += f"[{chunk_num}] {snippet}
+
+"
                         chunk_num += 1
                         narrative_i += 1
 
@@ -592,14 +603,32 @@ class Tools:
                     llm_output += "Thumbnails (click to expand):\n\n"
                     llm_output += self._format_assets_markdown(assets, max_assets=4) + "\n\n"
                 
+                # AUTO REFERENCES (copy as-is)
+                llm_output += "=== AUTO REFERENCES (COPY AS-IS) ===\n"
+                ref_lines = []
+                tmp_num = 1
+                if citation_chunks:
+                    for chunk in citation_chunks:
+                        rec_id = chunk.get("recommendation_id", "Rec")
+                        cls = chunk.get("class", "N/A")
+                        lvl = chunk.get("level", "N/A")
+                        guideline = chunk.get("guideline", "ESVS")
+                        ref_lines.append(f"[{tmp_num}] Rec {rec_id} (Class {cls}, Level {lvl}) — {guideline}")
+                        tmp_num += 1
+                if narrative_chunks:
+                    for chunk in narrative_chunks[:4]:
+                        source = chunk.get("source_guideline", "ESVS")
+                        ref_lines.append(f"[{tmp_num}] {source} (Narrative)")
+                        tmp_num += 1
+                llm_output += "\n".join(ref_lines) + "\n\n"
                 llm_output += "=== CITATION RULES ===\n"
-                llm_output += "1. Use simple numbered citations [1], [2], [3] inline after each fact.\n"
+                llm_output += "1. Use ONLY numbered citations [1], [2], [3] inline after each fact. Do not cite by name.\n"
                 llm_output += "2. ALWAYS end with: 📑 References\n"
                 llm_output += "3. List ALL sources in the References section using this format:\n"
                 llm_output += "   - For recommendations: [1] Rec X (Class Y, Level Z) — Guideline\n"
                 llm_output += "   - For narrative sources: [6] Guideline Name\n"
                 llm_output += "4. ONLY list sources you actually cited in your answer.\n"
-                llm_output += "5. Match the bracketed numbers [n] in your answer EXACTLY to the reference list.\n"
+                llm_output += "5. Match the bracketed numbers [n] in your answer EXACTLY to the reference list.\n6. You MUST copy the AUTO REFERENCES block verbatim into your final References section.\n"
                 
                 return llm_output
             else:
