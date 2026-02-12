@@ -525,6 +525,8 @@ class RetrievalService
         if (empty($citationDatasetId))
             throw new \RuntimeException('Citation dataset not configured');
 
+        $retrievalConfig = config('ragflow.retrieval', []);
+
         // Treat retrieval params as server-owned defaults; clamp anything that could
         // explode cost/latency or swamp reranking with noise.
         $topK = (int) ($retrievalConfig['top_k'] ?? 256);
