@@ -13,6 +13,9 @@ return [
         'top_k' => (int) env('RAGFLOW_TOP_K', 40),  // Keep candidate pool tight for bridge rerank
         'size' => (int) env('RAGFLOW_SIZE', 10),
         'page' => (int) env('RAGFLOW_PAGE', 1),
+        // Max chunks returned per branch (narrative/citation) after any reranking.
+        'narrative_max' => (int) env('RAGFLOW_NARRATIVE_MAX', 10),
+        'citation_max' => (int) env('RAGFLOW_CITATION_MAX', 4),
         'similarity_threshold' => (float) env('RAGFLOW_SIMILARITY_THRESHOLD', 0.2),
         'keyword_mode' => filter_var(env('RAGFLOW_KEYWORD_MODE', true), FILTER_VALIDATE_BOOLEAN),
         'vector_similarity_weight' => (float) env('RAGFLOW_VECTOR_WEIGHT', 0.5),
