@@ -723,9 +723,9 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
 
         total_duration = (datetime.now() - start_time).total_seconds() * 1000
 
-        # NEW: Cap sources for UI display
-        max_narrative_display = 6
-        max_citation_display = 6
+        # Cap sources for UI display (default to requested maxes)
+        max_narrative_display = max(1, body.narrative_max)
+        max_citation_display = max(1, body.citation_max)
         
         narrative_for_ui = narrative_result["chunks"][:max_narrative_display]
         citations_for_ui = citation_result["chunks"][:max_citation_display]
