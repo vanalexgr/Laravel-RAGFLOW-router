@@ -10,12 +10,12 @@ return [
     'bridge_secret' => env('RAGFLOW_BRIDGE_SECRET'),
 
     'retrieval' => [
-        'top_k' => (int) env('RAGFLOW_TOP_K', 256),  // Lowered from 1024 - reranker handles filtering
+        'top_k' => (int) env('RAGFLOW_TOP_K', 40),  // Keep candidate pool tight for bridge rerank
         'size' => (int) env('RAGFLOW_SIZE', 10),
         'page' => (int) env('RAGFLOW_PAGE', 1),
         'similarity_threshold' => (float) env('RAGFLOW_SIMILARITY_THRESHOLD', 0.2),
         'keyword_mode' => filter_var(env('RAGFLOW_KEYWORD_MODE', true), FILTER_VALIDATE_BOOLEAN),
-        'vector_similarity_weight' => (float) env('RAGFLOW_VECTOR_WEIGHT', 0.3),
+        'vector_similarity_weight' => (float) env('RAGFLOW_VECTOR_WEIGHT', 0.5),
         // Must match an authorized rerank model name in RAGFlow tenant settings.
         'rerank_id' => env('RAGFLOW_RERANK_ID', 'Cohere-rerank-v4.0-pro___OpenAI-API'),
         'use_kg' => filter_var(env('RAGFLOW_USE_KG', false), FILTER_VALIDATE_BOOLEAN), // Server KG is broken
