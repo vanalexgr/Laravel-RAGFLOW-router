@@ -54,6 +54,7 @@ class Tools:
     LLM_NARRATIVE_MAX_CHARS = 1500
     LLM_NARRATIVE_MAX_CHUNKS = 4
     LLM_REC_MAX_CHARS = 1200
+    LLM_REC_MAX_CHUNKS = 6
 
     def __init__(self):
         self.valves = self.Valves()
@@ -320,8 +321,11 @@ class Tools:
             narrative_chunks = data.get("narrative_chunks", [])
             citation_chunks = data.get("citation_chunks", [])
             print(f"[VascularExpert] Chunks: narrative={len(narrative_chunks)}, citation={len(citation_chunks)}")
-            
-            total_chunks = len(narrative_chunks) + len(citation_chunks)
+
+            # Only emit a small, stable subset so Sources list matches used citations
+            selected_citation_chunks = citation_chunks[: self.LLM_REC_MAX_CHUNKS]
+            selected_narrative_chunks = narrative_chunks[: self.LLM_NARRATIVE_MAX_CHUNKS]
+            total_chunks = len(selected_narrative_chunks) + len(selected_citation_chunks)
             
             # EMIT INDIVIDUAL CITATIONS for each chunk
             # This enables per-chunk citation popups in OpenWebUI
@@ -330,7 +334,7 @@ class Tools:
                 chunk_number = 1
                 
                 # Emit citation chunks first (recommendations)
-                for chunk in citation_chunks:
+                for chunk in selected_citation_chunks:
                     
                     text = chunk.get("text", chunk.get("content", ""))
                     rec_id = chunk.get("recommendation_id", "")
@@ -369,7 +373,7 @@ class Tools:
                 
                 # Emit narrative chunks (context)
                 narrative_i = 1
-                for chunk in narrative_chunks:
+                for chunk in selected_narrative_chunks:
                     content = chunk.get("content", "")
                     source_guideline = chunk.get("source_guideline", "ESVS")
                     
@@ -417,9 +421,9 @@ class Tools:
                 chunk_num = 1
                 
                 # SECTION 1: RECOMMENDATIONS (Must match System Prompt format)
-                if citation_chunks:
+                if selected_citation_chunks:
                     llm_output += "=== RECOMMENDATIONS ===\n"
-                    for chunk in citation_chunks:
+                    for chunk in selected_citation_chunks:
                         text = chunk.get("text", chunk.get("content", ""))
                         text = self._truncate_for_llm(text, self.LLM_REC_MAX_CHARS)
                         rec_id = chunk.get("recommendation_id", "Rec")
@@ -433,10 +437,10 @@ class Tools:
                         chunk_num += 1
 
                 # SECTION 2: NARRATIVE (Context)
-                if narrative_chunks:
+                if selected_narrative_chunks:
                     llm_output += "=== NARRATIVE CONTEXT ===\n"
                     narrative_i = 1
-                    for chunk in narrative_chunks[: self.LLM_NARRATIVE_MAX_CHUNKS]:
+                    for chunk in selected_narrative_chunks:
                         content = chunk.get("content", "")
                         content = self._truncate_for_llm(
                             content, self.LLM_NARRATIVE_MAX_CHARS
@@ -450,8 +454,9 @@ class Tools:
                 
                 llm_output += "=== CITATION RULES ===\n"
                 llm_output += "1. Use simple numbered citations [1], [2], [3] inline after each fact.\n"
-                llm_output += "2. Do NOT add a separate References section; the UI already shows a Sources list.\n"
-                llm_output += "3. Match the bracketed numbers [n] exactly to the evidence blocks above.\n"
+                llm_output += "2. Use ALL sources provided above at least once, so the Sources list matches cited evidence.\n"
+                llm_output += "3. Do NOT add a separate References section; the UI already shows a Sources list.\n"
+                llm_output += "4. Match the bracketed numbers [n] exactly to the evidence blocks above.\n"
                 
                 return llm_output
             else:
