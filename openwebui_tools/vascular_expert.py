@@ -450,12 +450,8 @@ class Tools:
                 
                 llm_output += "=== CITATION RULES ===\n"
                 llm_output += "1. Use simple numbered citations [1], [2], [3] inline after each fact.\n"
-                llm_output += "2. ALWAYS end with: 📑 References\n"
-                llm_output += "3. List ALL sources in the References section using this format:\n"
-                llm_output += "   - For recommendations: [1] Rec X (Class Y, Level Z) — Guideline\n"
-                llm_output += "   - For narrative sources: [6] Guideline Name\n"
-                llm_output += "4. ONLY list sources you actually cited in your answer.\n"
-                llm_output += "5. Match the bracketed numbers [n] in your answer EXACTLY to the reference list.\n"
+                llm_output += "2. Do NOT add a separate References section; the UI already shows a Sources list.\n"
+                llm_output += "3. Match the bracketed numbers [n] exactly to the evidence blocks above.\n"
                 
                 return llm_output
             else:
