@@ -162,6 +162,7 @@ class Tools:
         guideline_1: GuidelineKey,
         guideline_2: Optional[GuidelineKey] = None,
         guideline_3: Optional[GuidelineKey] = None,
+        standalone: bool = False,
         __user__: dict = {}, 
         __messages__: list = [],
         __event_emitter__: Callable[[dict], Awaitable[None]] = None
@@ -205,11 +206,16 @@ class Tools:
         - vascular_trauma: Penetrating/blunt injury, REBOA
         - vascular_graft_infections: Graft/endograft infection, post-procedure fever
         - vascular_access: Dialysis AVF, steal syndrome
+
+        **HISTORY CONTROL**:
+        - If the user explicitly asks for a "standalone" answer or says "ignore previous context",
+          set `standalone=true` to avoid using prior conversation history.
         
         :param question: The clinical question to answer
         :param guideline_1: Primary guideline (required)
         :param guideline_2: Secondary guideline (optional)
         :param guideline_3: Tertiary guideline (optional)
+        :param standalone: If true, do not use prior conversation history
         :return: Evidence-based recommendations and citations
         """
         emitter = __event_emitter__
@@ -246,7 +252,7 @@ class Tools:
         # Extract conversation history for context fusion
         # Only include USER messages, not assistant responses (which are very long)
         history = []
-        if __messages__:
+        if not standalone and __messages__:
             for msg in __messages__[-6:]:  # Last 6 messages to get ~3 user turns
                 role = msg.get("role", "")
                 content = msg.get("content", "")
