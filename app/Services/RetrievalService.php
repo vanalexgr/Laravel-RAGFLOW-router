@@ -80,8 +80,12 @@ class RetrievalService
         }
 
         // 4. Dual Retrieval
-        $narrativeMax = 10;
-        $citationMax = 4;
+        $retrievalConfig = config('ragflow.retrieval', []);
+        $narrativeMax = (int) ($retrievalConfig['narrative_max'] ?? 10);
+        $citationMax = (int) ($retrievalConfig['citation_max'] ?? 4);
+        // Prevent pathological values while still allowing larger pools for experimentation.
+        $narrativeMax = max(1, min($narrativeMax, 200));
+        $citationMax = max(1, min($citationMax, 200));
 
         // Create an expanded query for retrieval
         $router = new GuidelineRouterService();
@@ -521,7 +525,6 @@ class RetrievalService
         if (empty($citationDatasetId))
             throw new \RuntimeException('Citation dataset not configured');
 
-        $retrievalConfig = config('ragflow.retrieval', []);
         // Treat retrieval params as server-owned defaults; clamp anything that could
         // explode cost/latency or swamp reranking with noise.
         $topK = (int) ($retrievalConfig['top_k'] ?? 256);
