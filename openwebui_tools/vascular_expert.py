@@ -11,6 +11,7 @@ import asyncio
 from pydantic import BaseModel, Field
 from typing import Literal, Optional, Callable, Awaitable
 import re
+import html
 
 
 # Enum of all valid guideline keys
@@ -66,6 +67,62 @@ class Tools:
         if len(s) <= max_chars:
             return s
         return s[: max_chars - 20].rstrip() + "\n\n[...truncated...]"
+
+    def _html_table_to_text(self, html_text: str) -> str:
+        """Convert simple HTML tables to a readable pipe-delimited text."""
+        if not html_text or "<table" not in html_text.lower():
+            return ""
+        rows = re.findall(r"<tr[^>]*>(.*?)</tr>", html_text, flags=re.S | re.I)
+        out_rows = []
+        for row in rows:
+            cells = re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", row, flags=re.S | re.I)
+            cleaned = []
+            for c in cells:
+                c = re.sub(r"<[^>]+>", "", c or "")
+                c = html.unescape(c)
+                c = " ".join(c.split())
+                if c:
+                    cleaned.append(c)
+            if cleaned:
+                out_rows.append(" | ".join(cleaned))
+        return "\n".join(out_rows).strip()
+
+    def _strip_markdown(self, text: str) -> str:
+        """Best-effort markdown -> plain text (headings, emphasis, links, code)."""
+        if not text:
+            return ""
+        s = text
+        s = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", s)  # links
+        s = re.sub(r"`([^`]+)`", r"\1", s)  # inline code
+        s = re.sub(r"(?m)^\s{0,3}#{1,6}\s+", "", s)  # headings
+        s = re.sub(r"(?m)^\s{0,3}>\s?", "", s)  # blockquotes
+        s = re.sub(r"\*\*([^*]+)\*\*", r"\1", s)  # bold
+        s = re.sub(r"__([^_]+)__", r"\1", s)
+        s = re.sub(r"(?<!\*)\*([^\s*][^*]*[^\s*])\*(?!\*)", r"\1", s)  # italics
+        s = re.sub(r"(?<!_)_([^\s_][^_]*[^\s_])_(?!_)", r"\1", s)
+        return s
+
+    def _clean_narrative_text(self, text: str) -> str:
+        """Strip HTML/markdown and flatten tables for narrative popups/LLM."""
+        if not text:
+            return ""
+        s = text
+        # Replace HTML tables with pipe-delimited text
+        s = re.sub(
+            r"<table[^>]*>.*?</table>",
+            lambda m: self._html_table_to_text(m.group(0)),
+            s,
+            flags=re.S | re.I,
+        )
+        # Drop remaining HTML tags
+        s = re.sub(r"<[^>]+>", "", s)
+        s = html.unescape(s)
+        # Strip markdown
+        s = self._strip_markdown(s)
+        # Normalize whitespace
+        s = re.sub(r"\n{3,}", "\n\n", s)
+        s = re.sub(r"[ \t]{2,}", " ", s)
+        return s.strip()
 
     def _parse_semicolon_kv(self, s: str) -> dict:
         """
@@ -229,11 +286,13 @@ class Tools:
                 s = line.strip()
                 if s.startswith("#"):
                     s = re.sub(r"^#+\s*", "", s).strip()
+                    s = re.sub(r"<[^>]+>", "", s).strip()
                     if s:
                         return (s[: max_len - 3] + "...") if len(s) > max_len else s
             # Fallback: first non-empty line.
             for line in text.splitlines():
-                s = " ".join(line.strip().split())
+                s = re.sub(r"<[^>]+>", "", line)
+                s = " ".join(s.strip().split())
                 if s:
                     return (s[: max_len - 3] + "...") if len(s) > max_len else s
             return "Narrative"
@@ -391,7 +450,7 @@ class Tools:
                     # If metadata.source is identical across narrative chunks (e.g., just the guideline
                     # name), they collapse into one reference and inline clicks may not map to a unique
                     # popup. Emit a stable per-chunk source label and keep the popup document small.
-                    excerpt = (content or "").strip()
+                    excerpt = self._clean_narrative_text(content or "")
                     if len(excerpt) > 6000:
                         excerpt = excerpt[:6000] + "\n\n[...truncated...]"
                     
@@ -448,9 +507,8 @@ class Tools:
                     narrative_i = 1
                     for chunk in selected_narrative_chunks:
                         content = chunk.get("content", "")
-                        content = self._truncate_for_llm(
-                            content, self.LLM_NARRATIVE_MAX_CHARS
-                        )
+                        content = self._clean_narrative_text(content)
+                        content = self._truncate_for_llm(content, self.LLM_NARRATIVE_MAX_CHARS)
                         source = chunk.get("source_guideline", "ESVS")
                         
                         llm_output += f"[{chunk_num}] {source} - Narrative {narrative_i}: {_short_label(content)}\n"
