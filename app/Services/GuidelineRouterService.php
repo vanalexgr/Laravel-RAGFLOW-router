@@ -298,8 +298,8 @@ PROMPT;
                 $llmSelected = $this->parseResponse($content);
             }
 
-            // Use original query instead of LLM-expanded version
-            $expanded = $queryForExpansion;
+            // Use regex-based abbreviation expansion for retrieval queries
+            $expanded = $this->expandQuery($queryForExpansion);
 
             $selected = $this->mergeDocumentAndQuestionRouting($llmSelected, $documentAnalysis, $log, $maxGuidelines);
 
