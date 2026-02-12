@@ -11,7 +11,6 @@ import asyncio
 from pydantic import BaseModel, Field
 from typing import Literal, Optional, Callable, Awaitable
 import re
-import base64
 
 
 # Enum of all valid guideline keys
@@ -52,149 +51,20 @@ GUIDELINE_NAMES = {
 
 
 class Tools:
+    LLM_NARRATIVE_MAX_CHARS = 1500
+    LLM_NARRATIVE_MAX_CHUNKS = 4
+    LLM_REC_MAX_CHARS = 1200
+
     def __init__(self):
         self.valves = self.Valves()
 
-    def _asset_to_markdown_image(self, asset: dict) -> Optional[str]:
-        url = (asset or {}).get("url")
-        if not url:
-            return None
-        label = (asset or {}).get("label") or (asset or {}).get("id") or "Figure/Table"
-        caption = (asset or {}).get("caption") or label
-        return f"**{label}**\n\n![{caption}]({url})"
-
-    def _try_inline_data_uri(self, asset: dict, max_bytes: int = 1_200_000) -> Optional[str]:
-        """
-        Best-effort: fetch a public image URL and convert to data: URI.
-        This avoids mobile clients that can't fetch external images reliably.
-        """
-        url = (asset or {}).get("url")
-        if not url or not isinstance(url, str) or not url.startswith("https://"):
-            return None
-
-        try:
-            import requests
-
-            # Stream so we can enforce max_bytes without downloading huge blobs into memory.
-            r = requests.get(
-                url,
-                timeout=20,
-                stream=True,
-                headers={"User-Agent": "OpenWebUI/vascular-expert (inline-assets)"},
-            )
-            r.raise_for_status()
-            data = b""
-            for chunk in r.iter_content(chunk_size=64 * 1024):
-                if not chunk:
-                    continue
-                data += chunk
-                if len(data) > max_bytes:
-                    return None
-
-            if not data:
-                return None
-
-            ct = r.headers.get("Content-Type", "image/png")
-            b64 = base64.b64encode(data).decode("ascii")
-            return f"data:{ct};base64,{b64}"
-        except Exception:
-            return None
-
-    def _format_assets_markdown(self, assets: list[dict], max_assets: int = 4) -> str:
-        """
-        Render a compact thumbnail gallery.
-
-        Notes:
-        - Plain Markdown images render huge in some clients (especially mobile).
-        - Use HTML <img width=...> inside an <a> so users can tap to expand.
-        - Keep it under a <details> to push it after the clinical text.
-        """
-        if not assets:
-            return ""
-
-        tiles = []
-        for a in assets[:max_assets]:
-            url = (a or {}).get("url")
-            if not url:
-                continue
-            label = (a or {}).get("label") or (a or {}).get("id") or "Figure/Table"
-            caption = (a or {}).get("caption") or ""
-            # Escape minimal HTML entities
-            label_html = (
-                str(label)
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-            )
-            caption_html = (
-                str(caption)
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-            )
-            tile = (
-                f"<div style=\"width:170px\">"
-                f"<a href=\"{url}\" target=\"_blank\" rel=\"noopener\">"
-                f"<img src=\"{url}\" alt=\"{caption_html or label_html}\" "
-                f"style=\"width:170px;height:auto;border:1px solid #ddd;border-radius:8px\"/>"
-                f"</a>"
-                f"<div style=\"font-size:12px;line-height:1.2;margin-top:6px\">"
-                f"<b>{label_html}</b>"
-                f"{('<div>'+caption_html+'</div>') if caption_html else ''}"
-                f"</div>"
-                f"</div>"
-            )
-            tiles.append(tile)
-
-        if not tiles:
-            return ""
-
-        gallery = (
-            "<details>\n"
-            "<summary><b>Figures / Tables (tap to expand)</b></summary>\n\n"
-            "<div style=\"display:flex;flex-wrap:wrap;gap:12px;margin-top:10px\">\n"
-            + "\n".join(tiles)
-            + "\n</div>\n"
-            "</details>\n"
-        )
-        return gallery
-
-    def _strip_markdown(self, text: str) -> str:
-        """
-        Best-effort markdown -> plain text for citation popups.
-        Keeps content but removes headings markers, emphasis, links, and most HTML.
-        """
+    def _truncate_for_llm(self, text: str, max_chars: int) -> str:
         if not text:
             return ""
-
-        s = text
-
-        # Drop HTML tags (e.g. <sub>2</sub>) to avoid noisy popup rendering.
-        s = re.sub(r"<[^>]+>", "", s)
-
-        # Convert markdown links: [label](url) -> label
-        s = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", s)
-
-        # Inline code: `x` -> x
-        s = re.sub(r"`([^`]+)`", r"\1", s)
-
-        # Normalize headings: "### Title" -> "Title"
-        s = re.sub(r"(?m)^\s{0,3}#{1,6}\s+", "", s)
-
-        # Blockquotes: "> text" -> "text"
-        s = re.sub(r"(?m)^\s{0,3}>\s?", "", s)
-
-        # Bold/italic emphasis
-        s = re.sub(r"\*\*([^*]+)\*\*", r"\1", s)
-        s = re.sub(r"__([^_]+)__", r"\1", s)
-        # Italics: avoid eating list bullets by only targeting pairs around non-space.
-        s = re.sub(r"(?<!\*)\*([^\s*][^*]*[^\s*])\*(?!\*)", r"\1", s)
-        s = re.sub(r"(?<!_)_([^\s_][^_]*[^\s_])_(?!_)", r"\1", s)
-
-        # Collapse excessive blank lines.
-        s = re.sub(r"\n{3,}", "\n\n", s)
-
-        return s.strip()
+        s = text.strip()
+        if len(s) <= max_chars:
+            return s
+        return s[: max_chars - 20].rstrip() + "\n\n[...truncated...]"
 
     def _parse_semicolon_kv(self, s: str) -> dict:
         """
@@ -261,27 +131,6 @@ class Tools:
             lines.append(text.strip())
 
         return "\n".join(lines).strip()
-
-    def _format_narrative_popup(self, raw: str, fallback_title: str) -> str:
-        """
-        Narrative chunks come from markdown and can contain headings/emphasis.
-        Make the popup readable plain text.
-        """
-        if not raw:
-            return fallback_title
-
-        s = self._strip_markdown(raw)
-        return s if s else fallback_title
-
-    def _clean_narrative_snippet(self, raw: str, max_len: int = 600) -> str:
-        if not raw:
-            return ""
-        s = self._strip_markdown(raw)
-        s = " ".join(s.split())
-        if len(s) > max_len:
-            s = s[:max_len].rstrip() + "..."
-        return s
-
 
     class Valves(BaseModel):
         VASCULAR_API_BASE_URL: str = Field(
@@ -470,7 +319,6 @@ class Tools:
             # Extract chunks from response
             narrative_chunks = data.get("narrative_chunks", [])
             citation_chunks = data.get("citation_chunks", [])
-            assets = data.get("assets", []) or []
             print(f"[VascularExpert] Chunks: narrative={len(narrative_chunks)}, citation={len(citation_chunks)}")
             
             total_chunks = len(narrative_chunks) + len(citation_chunks)
@@ -533,7 +381,7 @@ class Tools:
                     # If metadata.source is identical across narrative chunks (e.g., just the guideline
                     # name), they collapse into one reference and inline clicks may not map to a unique
                     # popup. Emit a stable per-chunk source label and keep the popup document small.
-                    excerpt = self._format_narrative_popup(content, title)
+                    excerpt = (content or "").strip()
                     if len(excerpt) > 6000:
                         excerpt = excerpt[:6000] + "\n\n[...truncated...]"
                     
@@ -573,6 +421,7 @@ class Tools:
                     llm_output += "=== RECOMMENDATIONS ===\n"
                     for chunk in citation_chunks:
                         text = chunk.get("text", chunk.get("content", ""))
+                        text = self._truncate_for_llm(text, self.LLM_REC_MAX_CHARS)
                         rec_id = chunk.get("recommendation_id", "Rec")
                         cls = chunk.get("class", "N/A")
                         lvl = chunk.get("level", "N/A")
@@ -585,50 +434,28 @@ class Tools:
 
                 # SECTION 2: NARRATIVE (Context)
                 if narrative_chunks:
-                    llm_output += "=== NARRATIVE CONTEXT ===
-"
+                    llm_output += "=== NARRATIVE CONTEXT ===\n"
                     narrative_i = 1
-                    for chunk in narrative_chunks[:4]:
+                    for chunk in narrative_chunks[: self.LLM_NARRATIVE_MAX_CHUNKS]:
                         content = chunk.get("content", "")
-                        snippet = self._clean_narrative_snippet(content, max_len=600)
-                        llm_output += f"[{chunk_num}] {snippet}
-
-"
+                        content = self._truncate_for_llm(
+                            content, self.LLM_NARRATIVE_MAX_CHARS
+                        )
+                        source = chunk.get("source_guideline", "ESVS")
+                        
+                        llm_output += f"[{chunk_num}] {source} - Narrative {narrative_i}: {_short_label(content)}\n"
+                        llm_output += f"{content}\n\n"
                         chunk_num += 1
                         narrative_i += 1
-
-                # SECTION 3: FIGURES / TABLES (User display)
-                if assets:
-                    llm_output += "=== FIGURES / TABLES (User display) ===\n"
-                    llm_output += "Thumbnails (click to expand):\n\n"
-                    llm_output += self._format_assets_markdown(assets, max_assets=4) + "\n\n"
                 
-                # AUTO REFERENCES (copy as-is)
-                llm_output += "=== AUTO REFERENCES (COPY AS-IS) ===\n"
-                ref_lines = []
-                tmp_num = 1
-                if citation_chunks:
-                    for chunk in citation_chunks:
-                        rec_id = chunk.get("recommendation_id", "Rec")
-                        cls = chunk.get("class", "N/A")
-                        lvl = chunk.get("level", "N/A")
-                        guideline = chunk.get("guideline", "ESVS")
-                        ref_lines.append(f"[{tmp_num}] Rec {rec_id} (Class {cls}, Level {lvl}) — {guideline}")
-                        tmp_num += 1
-                if narrative_chunks:
-                    for chunk in narrative_chunks[:4]:
-                        source = chunk.get("source_guideline", "ESVS")
-                        ref_lines.append(f"[{tmp_num}] {source} (Narrative)")
-                        tmp_num += 1
-                llm_output += "\n".join(ref_lines) + "\n\n"
                 llm_output += "=== CITATION RULES ===\n"
-                llm_output += "1. Use ONLY numbered citations [1], [2], [3] inline after each fact. Do not cite by name.\n"
+                llm_output += "1. Use simple numbered citations [1], [2], [3] inline after each fact.\n"
                 llm_output += "2. ALWAYS end with: 📑 References\n"
                 llm_output += "3. List ALL sources in the References section using this format:\n"
                 llm_output += "   - For recommendations: [1] Rec X (Class Y, Level Z) — Guideline\n"
                 llm_output += "   - For narrative sources: [6] Guideline Name\n"
                 llm_output += "4. ONLY list sources you actually cited in your answer.\n"
-                llm_output += "5. Match the bracketed numbers [n] in your answer EXACTLY to the reference list.\n6. You MUST copy the AUTO REFERENCES block verbatim into your final References section.\n"
+                llm_output += "5. Match the bracketed numbers [n] in your answer EXACTLY to the reference list.\n"
                 
                 return llm_output
             else:
