@@ -49,6 +49,8 @@ Some guideline exports include non-actionable "Good research statement" items. T
 | `RAGFLOW_TOP_K` | `40` | Number of candidate chunks retrieved before reranking |
 | `RAGFLOW_SIZE` | `10` | Number of chunks returned per dataset |
 | `RAGFLOW_PAGE` | `1` | Pagination page for retrieval |
+| `RAGFLOW_NARRATIVE_MAX` | `10` | Max narrative chunks returned per response |
+| `RAGFLOW_CITATION_MAX` | `4` | Max citation chunks returned per response |
 | `RAGFLOW_SIMILARITY_THRESHOLD` | `0.2` | Minimum similarity score (0.0-1.0). Lower = more results |
 | `RAGFLOW_KEYWORD_MODE` | `true` | Enable hybrid search (keyword + vector) |
 | `RAGFLOW_VECTOR_WEIGHT` | `0.5` | Weight for vector similarity in hybrid search (0.0-1.0) |
@@ -62,6 +64,8 @@ Some guideline exports include non-actionable "Good research statement" items. T
 RAGFLOW_TOP_K=40
 RAGFLOW_SIZE=10
 RAGFLOW_PAGE=1
+RAGFLOW_NARRATIVE_MAX=10
+RAGFLOW_CITATION_MAX=4
 RAGFLOW_SIMILARITY_THRESHOLD=0.2
 RAGFLOW_KEYWORD_MODE=true
 RAGFLOW_VECTOR_WEIGHT=0.5
