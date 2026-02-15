@@ -236,8 +236,8 @@ class Tools:
                 headline += f": {self._truncate_for_llm(caption, 180)}"
 
             lines.append(headline)
-            # Clickable thumbnail: opens full-size asset in a new browser tab when clicked.
-            lines.append(f"  [![{alt_text}]({thumb_url})]({full_url})")
+            # OpenWebUI's in-app image popup uses the image src; use full-size src so popup is full-size.
+            lines.append(f"  ![{alt_text}]({full_url})")
             count += 1
 
         if count == 0:
