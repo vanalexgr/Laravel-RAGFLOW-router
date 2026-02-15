@@ -56,6 +56,7 @@ class Tools:
     LLM_NARRATIVE_MAX_CHUNKS = 4
     LLM_REC_MAX_CHARS = 1200
     LLM_REC_MAX_CHUNKS = 6
+    LLM_ASSET_MAX_ITEMS = 3
 
     def __init__(self):
         self.valves = self.Valves()
@@ -189,6 +190,60 @@ class Tools:
             lines.append(text.strip())
 
         return "\n".join(lines).strip()
+
+    def _format_assets_markdown(self, assets: list) -> str:
+        """
+        Build a compact markdown-image section for the LLM context.
+        No network fetches, no base64 encoding, URLs only.
+        """
+        if not assets:
+            return ""
+
+        lines = [
+            "=== FIGURES / TABLES (OPTIONAL VISUALS) ===",
+            "Use at most 1-3 images if they directly improve the answer.",
+            "Do not add [n] citations to image lines; those numbers are only for evidence chunks.",
+        ]
+        count = 0
+
+        for asset in assets:
+            if count >= self.LLM_ASSET_MAX_ITEMS:
+                break
+
+            if not isinstance(asset, dict):
+                continue
+
+            thumb_url = str(asset.get("thumbnail_url") or "").strip()
+            full_url = str(asset.get("url") or "").strip()
+            if not full_url.startswith(("http://", "https://")) and not thumb_url.startswith(("http://", "https://")):
+                continue
+            if not thumb_url:
+                thumb_url = full_url
+            if not full_url:
+                full_url = thumb_url
+
+            label = self._clean_narrative_text(str(asset.get("label", "")).strip()) or f"Figure {count + 1}"
+            caption = self._clean_narrative_text(str(asset.get("caption", "")).strip())
+            guideline_key = self._clean_narrative_text(str(asset.get("guideline_key", "")).strip())
+
+            alt_text = caption or label
+            alt_text = self._truncate_for_llm(alt_text, 140).replace("[", "(").replace("]", ")")
+
+            headline = f"- {label}"
+            if guideline_key:
+                headline += f" ({guideline_key})"
+            if caption:
+                headline += f": {self._truncate_for_llm(caption, 180)}"
+
+            lines.append(headline)
+            # Thumbnail in chat + full-size target for custom UI popup handling.
+            lines.append(f"  [![{alt_text}]({thumb_url})]({full_url})")
+            count += 1
+
+        if count == 0:
+            return ""
+
+        return "\n".join(lines) + "\n\n"
 
     class Valves(BaseModel):
         VASCULAR_API_BASE_URL: str = Field(
@@ -385,6 +440,7 @@ class Tools:
             # Extract chunks from response
             narrative_chunks = data.get("narrative_chunks", [])
             citation_chunks = data.get("citation_chunks", [])
+            assets = data.get("assets", [])
             print(f"[VascularExpert] Chunks: narrative={len(narrative_chunks)}, citation={len(citation_chunks)}")
 
             # Only emit a small, stable subset so Sources list matches used citations
@@ -515,12 +571,18 @@ class Tools:
                         llm_output += f"{content}\n\n"
                         chunk_num += 1
                         narrative_i += 1
+
+                assets_block = self._format_assets_markdown(assets)
+                if assets_block:
+                    llm_output += assets_block
                 
                 llm_output += "=== CITATION RULES ===\n"
                 llm_output += "1. Use simple numbered citations [1], [2], [3] inline after each fact.\n"
                 llm_output += "2. Use ALL sources provided above at least once, so the Sources list matches cited evidence.\n"
                 llm_output += "3. Do NOT add a separate References section; the UI already shows a Sources list.\n"
                 llm_output += "4. Match the bracketed numbers [n] exactly to the evidence blocks above.\n"
+                if assets_block:
+                    llm_output += "5. If images help, include up to 3 markdown image lines from the FIGURES / TABLES section.\n"
                 
                 return llm_output
             else:
