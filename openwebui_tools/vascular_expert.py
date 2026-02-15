@@ -202,6 +202,7 @@ class Tools:
         lines = [
             "=== FIGURES / TABLES (OPTIONAL VISUALS) ===",
             "Use at most 1-3 images if they directly improve the answer.",
+            "Use small thumbnails to avoid oversized images in the chat.",
             "Do not add [n] citations to image lines; those numbers are only for evidence chunks.",
         ]
         count = 0
@@ -231,7 +232,7 @@ class Tools:
                 headline += f": {self._truncate_for_llm(caption, 180)}"
 
             lines.append(headline)
-            lines.append(f"  ![{alt_text}]({url})")
+            lines.append(f"  <img src=\"{url}\" alt=\"{alt_text}\" width=\"220\" />")
             count += 1
 
         if count == 0:
@@ -576,7 +577,7 @@ class Tools:
                 llm_output += "3. Do NOT add a separate References section; the UI already shows a Sources list.\n"
                 llm_output += "4. Match the bracketed numbers [n] exactly to the evidence blocks above.\n"
                 if assets_block:
-                    llm_output += "5. If images help, include up to 3 markdown images from the FIGURES / TABLES section.\n"
+                    llm_output += "5. If images help, include up to 3 thumbnail image lines from the FIGURES / TABLES section.\n"
                 
                 return llm_output
             else:
