@@ -213,9 +213,14 @@ class Tools:
             if not isinstance(asset, dict):
                 continue
 
-            url = str(asset.get("thumbnail_url") or asset.get("url", "")).strip()
-            if not url.startswith(("http://", "https://")):
+            thumb_url = str(asset.get("thumbnail_url") or "").strip()
+            full_url = str(asset.get("url") or "").strip()
+            if not full_url.startswith(("http://", "https://")) and not thumb_url.startswith(("http://", "https://")):
                 continue
+            if not thumb_url:
+                thumb_url = full_url
+            if not full_url:
+                full_url = thumb_url
 
             label = self._clean_narrative_text(str(asset.get("label", "")).strip()) or f"Figure {count + 1}"
             caption = self._clean_narrative_text(str(asset.get("caption", "")).strip())
@@ -231,7 +236,8 @@ class Tools:
                 headline += f": {self._truncate_for_llm(caption, 180)}"
 
             lines.append(headline)
-            lines.append(f"  ![{alt_text}]({url})")
+            # Clickable thumbnail: opens full-size asset in a new browser tab when clicked.
+            lines.append(f"  [![{alt_text}]({thumb_url})]({full_url})")
             count += 1
 
         if count == 0:
