@@ -213,7 +213,7 @@ class Tools:
             if not isinstance(asset, dict):
                 continue
 
-            url = str(asset.get("url", "")).strip()
+            url = str(asset.get("thumbnail_url") or asset.get("url", "")).strip()
             if not url.startswith(("http://", "https://")):
                 continue
 
