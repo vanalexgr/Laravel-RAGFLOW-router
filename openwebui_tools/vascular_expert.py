@@ -236,8 +236,8 @@ class Tools:
                 headline += f": {self._truncate_for_llm(caption, 180)}"
 
             lines.append(headline)
-            # OpenWebUI's in-app image popup uses the image src; use full-size src so popup is full-size.
-            lines.append(f"  ![{alt_text}]({full_url})")
+            # Thumbnail in chat + full-size target for custom UI popup handling.
+            lines.append(f"  [![{alt_text}]({thumb_url})]({full_url})")
             count += 1
 
         if count == 0:
