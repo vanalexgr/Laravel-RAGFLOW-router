@@ -56,7 +56,7 @@ class Tools:
     LLM_NARRATIVE_MAX_CHUNKS = 4
     LLM_REC_MAX_CHARS = 1200
     LLM_REC_MAX_CHUNKS = 6
-    LLM_ASSET_MAX_ITEMS = 2
+    LLM_ASSET_MAX_ITEMS = 3
 
     def __init__(self):
         self.valves = self.Valves()
@@ -201,7 +201,7 @@ class Tools:
 
         lines = [
             "=== FIGURES / TABLES (OPTIONAL VISUALS) ===",
-            "Use at most 1-2 images if they directly improve the answer.",
+            "Use at most 1-3 images if they directly improve the answer.",
             "Do not add [n] citations to image lines; those numbers are only for evidence chunks.",
         ]
         count = 0
@@ -576,7 +576,7 @@ class Tools:
                 llm_output += "3. Do NOT add a separate References section; the UI already shows a Sources list.\n"
                 llm_output += "4. Match the bracketed numbers [n] exactly to the evidence blocks above.\n"
                 if assets_block:
-                    llm_output += "5. If images help, include up to 2 markdown images from the FIGURES / TABLES section.\n"
+                    llm_output += "5. If images help, include up to 3 markdown images from the FIGURES / TABLES section.\n"
                 
                 return llm_output
             else:
