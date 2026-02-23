@@ -509,4 +509,104 @@ PROMPT;
 
         return $question;
     }
+
+    /**
+     * Normalize non-English or mixed-language clinical queries into a compact English retrieval query.
+     * This is for retrieval only (not final answering).
+     *
+     * @param string $question
+     * @param array|null $guidelineKeys Optional selected/forced guideline keys to bias terminology
+     * @return array|null ['normalized_query' => string, 'language' => string, 'changed' => bool]
+     */
+    public function normalizeForRetrieval(string $question, ?array $guidelineKeys = null): ?array
+    {
+        $question = trim($question);
+        if ($question === '' || !$this->isConfigured) {
+            return null;
+        }
+
+        $log = Log::channel('retrieval');
+        $guidelineKeys = array_values(array_filter($guidelineKeys ?? [], fn($k) => is_string($k) && $k !== ''));
+        $guidelineHintText = empty($guidelineKeys)
+            ? 'No guideline preselection.'
+            : ('Selected guideline hints: ' . implode(', ', $guidelineKeys));
+
+        $prompt = <<<PROMPT
+Task: Convert the user's query into a concise English medical retrieval query for ESVS vascular guideline search.
+
+Rules:
+- Do NOT answer the question.
+- Preserve the user's clinical intent.
+- Translate non-English terms to English medical terminology.
+- Include 3-10 high-value English keywords/synonyms if helpful.
+- Prefer vascular/ESVS terms (e.g., CLTI, PAD, AAA, carotid stenosis, venous thrombosis, superficial venous thrombosis).
+- If the query is already suitable English retrieval text, keep it close to the original.
+- Return ONLY valid JSON with keys: normalized_query, language.
+
+{$guidelineHintText}
+
+User query:
+"{$question}"
+
+Example output:
+{"normalized_query":"superficial venous thrombosis saphenous vein thrombosis management ESVS guideline","language":"el"}
+PROMPT;
+
+        try {
+            $url = rtrim($this->endpoint, '/') . "/openai/deployments/{$this->deployment}/chat/completions?api-version={$this->apiVersion}";
+
+            $response = Http::timeout(5)
+                ->withHeaders([
+                    'api-key' => $this->apiKey,
+                    'Content-Type' => 'application/json',
+                ])
+                ->post($url, [
+                    'messages' => [
+                        ['role' => 'system', 'content' => 'You normalize multilingual vascular clinical queries for retrieval. Return ONLY valid JSON.'],
+                        ['role' => 'user', 'content' => $prompt],
+                    ],
+                    'max_tokens' => 120,
+                    'temperature' => 0,
+                ]);
+
+            if (!$response->successful()) {
+                $log->warning('[QUERY NORMALIZATION] Azure call failed', [
+                    'status' => $response->status(),
+                ]);
+                return null;
+            }
+
+            $content = trim((string) $response->json('choices.0.message.content', ''));
+            if ($content === '') {
+                return null;
+            }
+
+            if (preg_match('/\{.*\}/s', $content, $matches)) {
+                $content = $matches[0];
+            }
+
+            $decoded = json_decode($content, true);
+            if (!is_array($decoded)) {
+                $log->warning('[QUERY NORMALIZATION] JSON parse failed', ['content' => $content]);
+                return null;
+            }
+
+            $normalized = trim((string) ($decoded['normalized_query'] ?? ''));
+            $language = trim((string) ($decoded['language'] ?? 'unknown'));
+            if ($normalized === '') {
+                return null;
+            }
+
+            return [
+                'normalized_query' => $normalized,
+                'language' => $language !== '' ? $language : 'unknown',
+                'changed' => strcasecmp($normalized, $question) !== 0,
+            ];
+        } catch (\Exception $e) {
+            $log->warning('[QUERY NORMALIZATION] Exception', [
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
 }
