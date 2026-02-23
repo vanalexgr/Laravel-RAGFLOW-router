@@ -27,10 +27,40 @@ class RetrievalService
         $phiScrubber = new PHIScrubberService();
         $scrubResult = $phiScrubber->scrub($question);
         $scrubbedQuestion = $scrubResult['scrubbed_text'];
+        $retrievalQuestion = $scrubbedQuestion;
+        $normalizationOriginalQuestion = $scrubbedQuestion;
+        $normalizationMeta = null;
+
+        if ($this->containsNonAscii($scrubbedQuestion)) {
+            try {
+                $normalizer = new GuidelineRouterService();
+                $normalizationMeta = $normalizer->normalizeForRetrieval($scrubbedQuestion, $requestedKeys);
+                if (is_array($normalizationMeta) && !empty($normalizationMeta['normalized_query'])) {
+                    $candidate = trim((string) $normalizationMeta['normalized_query']);
+                    if ($candidate !== '') {
+                        $retrievalQuestion = $candidate;
+                    }
+                    $log->info('[QUERY NORMALIZATION] Applied multilingual retrieval normalization', [
+                        'correlation_id' => $correlationId,
+                        'original_preview' => substr($scrubbedQuestion, 0, 80),
+                        'normalized_preview' => substr($retrievalQuestion, 0, 120),
+                        'language' => $normalizationMeta['language'] ?? 'unknown',
+                        'changed' => (bool) ($normalizationMeta['changed'] ?? false),
+                        'requested_keys' => $requestedKeys ?? [],
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                $log->warning('[QUERY NORMALIZATION] Failed before retrieval; continuing with original query', [
+                    'correlation_id' => $correlationId,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
 
         $log->info('=== RETRIEVAL SERVICE ===', [
             'correlation_id' => $correlationId,
             'question_preview' => substr($scrubbedQuestion, 0, 50),
+            'retrieval_query_preview' => substr($retrievalQuestion, 0, 80),
             'has_history' => !empty($history),
         ]);
 
@@ -41,7 +71,7 @@ class RetrievalService
         if (empty($requestedKeys)) {
             $router = new GuidelineRouterService();
             // Use context-aware routing
-            $llmResult = $router->routeWithContext($scrubbedQuestion, $history, 3);
+            $llmResult = $router->routeWithContext($retrievalQuestion, $history, 3);
 
             $selectedKeys = $llmResult['selected'];
             $guidelineScores = $llmResult['scores'] ?? [];
@@ -58,7 +88,7 @@ class RetrievalService
                 }
             } else {
                 // Fallback to rule-based
-                $selectedGuidelines = $this->selectGuidelinesRuleBased($scrubbedQuestion);
+                $selectedGuidelines = $this->selectGuidelinesRuleBased($retrievalQuestion);
                 $routingMethod = 'rule_based_fallback';
             }
         } else {
@@ -67,11 +97,11 @@ class RetrievalService
         }
 
         // Apply post-routing guardrails (SVT/anticoag)
-        $selectedGuidelines = $this->applyGuardrails($selectedGuidelines, $scrubbedQuestion);
+        $selectedGuidelines = $this->applyGuardrails($selectedGuidelines, $retrievalQuestion);
 
         // 4. Fallback Keyword Scoring (if still empty)
         if (empty($selectedGuidelines)) {
-            $selectedGuidelines = $this->selectGuidelinesByKeywordScore($scrubbedQuestion, 4);
+            $selectedGuidelines = $this->selectGuidelinesByKeywordScore($retrievalQuestion, 4);
             $routingMethod = 'keyword_fallback';
 
             if (empty($selectedGuidelines)) {
@@ -89,9 +119,10 @@ class RetrievalService
 
         // Create an expanded query for retrieval
         $router = new GuidelineRouterService();
-        $expansionResult = $router->selectAndExpand($scrubbedQuestion, 3, null, null);
-        $expandedQuery = $expansionResult['expanded'] ?? $scrubbedQuestion; // Use expanded or original
-        $citationQuery = $scrubbedQuestion; // Keep citations tight to the original question
+        $expansionResult = $router->selectAndExpand($retrievalQuestion, 3, null, null);
+        $expandedQuery = $expansionResult['expanded'] ?? $retrievalQuestion; // Use expanded or original
+        $expandedQuery = $this->buildCitationQuery($expandedQuery, $normalizationOriginalQuestion, $normalizationMeta, array_keys($selectedGuidelines));
+        $citationQuery = $this->buildCitationQuery($retrievalQuestion, $normalizationOriginalQuestion, $normalizationMeta, array_keys($selectedGuidelines));
 
         $dualResult = $this->retrieveDualChunks($expandedQuery, $citationQuery, $selectedGuidelines, $narrativeMax, $citationMax, $guidelineScores);
 
@@ -100,6 +131,8 @@ class RetrievalService
         return [
             'success' => true,
             'question' => $scrubbedQuestion,
+            'retrieval_query' => $retrievalQuestion,
+            'query_normalization' => $normalizationMeta,
             'expanded_query' => $expandedQuery, // Return for debug
             'phi_scrubbed' => $scrubResult['was_modified'],
             'selected_guidelines' => $selectedGuidelines,
@@ -109,6 +142,11 @@ class RetrievalService
             'duration_ms' => $duration,
             'system_prompt' => $this->getDualSystemPrompt(),
         ];
+    }
+
+    protected function containsNonAscii(string $text): bool
+    {
+        return preg_match('/[^\x00-\x7F]/', $text) === 1;
     }
 
     // -- Helper Methods Refactored from Controller --
@@ -567,15 +605,107 @@ class RetrievalService
         $narrativeChunks = $response['narrative']['chunks'] ?? [];
         $citationChunks = $response['citations']['chunks'] ?? [];
 
+        // Hard safety filter: the citation dataset may return chunks from unrelated guidelines
+        // when recs_doc_id placeholders are missing and citation_document_ids is empty.
+        // Filter both citations and narratives to the explicitly/implicitly selected guidelines.
+        $selectedGuidelineKeys = array_keys($guidelines);
+        $selectedGuidelineNames = array_column($guidelines, 'name');
+        $narrativeBefore = count($narrativeChunks);
+        $citationBefore = count($citationChunks);
+        $narrativeChunks = $this->filterRawChunksToSelectedGuidelines($narrativeChunks, $selectedGuidelineKeys, $selectedGuidelineNames, 'narrative');
+        $citationChunks = $this->filterRawChunksToSelectedGuidelines($citationChunks, $selectedGuidelineKeys, $selectedGuidelineNames, 'citation');
+        if (count($narrativeChunks) !== $narrativeBefore || count($citationChunks) !== $citationBefore) {
+            Log::warning('[CHUNK FILTER] Dropped cross-guideline chunks after retrieval', [
+                'selected_guideline_keys' => $selectedGuidelineKeys,
+                'selected_guideline_names' => $selectedGuidelineNames,
+                'narrative_before' => $narrativeBefore,
+                'narrative_after' => count($narrativeChunks),
+                'citation_before' => $citationBefore,
+                'citation_after' => count($citationChunks),
+            ]);
+        }
+
         if ($bridgeRerank->enabled()) {
             $narrativeChunks = $bridgeRerank->rerank($narrativeQuery, $narrativeChunks, $narrativeMax, 'narrative');
             $citationChunks = $bridgeRerank->rerank($citationQuery, $citationChunks, $citationMax, 'citation');
         }
 
+        $formattedNarrative = $this->formatChunks($narrativeChunks, 'narrative', array_column($narrativeDatasets, 'name'));
+        $formattedCitation = $this->formatChunks($citationChunks, 'citation');
+
+        // Second-pass safety filter on formatted chunks. This catches cases where the
+        // raw chunk metadata is sparse/inconsistent but the parsed formatted chunk
+        // contains a reliable guideline label (e.g., citation text includes guideline_name).
+        $formattedNarrativeBefore = count($formattedNarrative);
+        $formattedCitationBefore = count($formattedCitation);
+        $formattedNarrative = $this->filterFormattedChunksToSelectedGuidelines(
+            $formattedNarrative,
+            $selectedGuidelineKeys,
+            $selectedGuidelineNames,
+            'narrative'
+        );
+        // Do not apply formatted-stage citation filtering. Raw-stage filtering has access to more
+        // reliable rec metadata patterns (guideline_name/category_name/rec_id prefixes). The
+        // formatted citation "guideline" field is often inconsistent for venous thrombosis and can
+        // incorrectly drop valid recommendations.
+        if (count($formattedNarrative) !== $formattedNarrativeBefore || count($formattedCitation) !== $formattedCitationBefore) {
+            Log::warning('[FORMATTED CHUNK FILTER] Dropped cross-guideline chunks after formatting', [
+                'selected_guideline_keys' => $selectedGuidelineKeys,
+                'selected_guideline_names' => $selectedGuidelineNames,
+                'narrative_before' => $formattedNarrativeBefore,
+                'narrative_after' => count($formattedNarrative),
+                'citation_before' => $formattedCitationBefore,
+                'citation_after' => count($formattedCitation),
+            ]);
+        }
+
         return [
-            'narrative_chunks' => $this->formatChunks($narrativeChunks, 'narrative', array_column($narrativeDatasets, 'name')),
-            'citation_chunks' => $this->formatChunks($citationChunks, 'citation'),
+            'narrative_chunks' => $formattedNarrative,
+            'citation_chunks' => $formattedCitation,
         ];
+    }
+
+    protected function buildCitationQuery(string $retrievalQuery, string $originalQuestion, ?array $normalizationMeta, array $selectedGuidelineKeys): string
+    {
+        $q = trim($retrievalQuery);
+        if ($q === '') {
+            return $retrievalQuery;
+        }
+
+        $selected = array_map('strval', $selectedGuidelineKeys);
+        $normalizedChanged = (bool) (($normalizationMeta['changed'] ?? false));
+        $originalLower = mb_strtolower($originalQuestion);
+        $retrievalLower = mb_strtolower($retrievalQuery);
+
+        // Targeted multilingual recall boost for venous thrombosis SVT/saphenous queries.
+        // This improves citation retrieval from the shared recommendations dataset when the
+        // venous thrombosis recs_doc_id is not yet configured.
+        if (
+            in_array('venous_thrombosis', $selected, true)
+            && $normalizedChanged
+            && (
+                str_contains($retrievalLower, 'saphenous')
+                || str_contains($retrievalLower, 'superficial venous thrombosis')
+                || str_contains($retrievalLower, 'svt')
+                || str_contains($originalLower, 'σαφην')
+            )
+        ) {
+            $extras = [
+                'SVT',
+                'superficial vein thrombosis',
+                'great saphenous vein',
+                'fondaparinux',
+                'LMWH',
+                'ultrasound',
+            ];
+            foreach ($extras as $term) {
+                if (!str_contains(mb_strtolower($q), mb_strtolower($term))) {
+                    $q .= ' ' . $term;
+                }
+            }
+        }
+
+        return $q;
     }
 
     protected function formatChunks(array $rawChunks, string $type, array $guidelineNames = []): array
@@ -635,6 +765,240 @@ class RetrievalService
             ], $meta);
         }
         return $formatted;
+    }
+
+    protected function filterRawChunksToSelectedGuidelines(array $rawChunks, array $selectedKeys, array $selectedNames, string $type): array
+    {
+        if (empty($rawChunks)) {
+            return [];
+        }
+
+        $allowedLabels = [];
+        foreach ($selectedKeys as $k) {
+            if (is_string($k) && $k !== '') {
+                $allowedLabels[$this->normalizeGuidelineLabel($k)] = true;
+                foreach ($this->recommendationGuidelineAliasesForKey($k) as $alias) {
+                    $allowedLabels[$this->normalizeGuidelineLabel($alias)] = true;
+                }
+            }
+        }
+        foreach ($selectedNames as $n) {
+            if (is_string($n) && $n !== '') {
+                $allowedLabels[$this->normalizeGuidelineLabel($n)] = true;
+            }
+        }
+        if (empty($allowedLabels)) {
+            return $rawChunks;
+        }
+
+        $out = [];
+        foreach ($rawChunks as $chunk) {
+            if (!is_array($chunk)) {
+                continue;
+            }
+
+            $content = (string) ($chunk['content'] ?? $chunk['content_with_weight'] ?? '');
+            $sourceGuideline = (string) ($chunk['_source_guideline'] ?? '');
+
+            // Narratives are already dataset-scoped; if metadata exists and mismatches, drop.
+            if ($type === 'narrative' && $sourceGuideline !== '') {
+                if ($this->guidelineLabelAllowed($sourceGuideline, $allowedLabels)) {
+                    $out[] = $chunk;
+                }
+                continue;
+            }
+
+            // Citations: try multiple metadata patterns used in the recs dataset.
+            $candidates = [];
+            $explicitGuidelineName = null;
+            if ($content !== '') {
+                if (preg_match('/guideline_name:\s*([^;\\n]+)/i', $content, $m)) {
+                    $explicitGuidelineName = trim($m[1]);
+                    $candidates[] = $explicitGuidelineName;
+                }
+                if (preg_match('/guideline_key:\s*([^;\\n]+)/i', $content, $m)) {
+                    $candidates[] = trim($m[1]);
+                }
+                if (preg_match('/rec_id:\s*([a-z0-9_]+)/i', $content, $m)) {
+                    $recId = strtolower(trim($m[1]));
+                    foreach ($selectedKeys as $k) {
+                        if (is_string($k) && $k !== '' && str_starts_with($recId, strtolower($k) . '_')) {
+                            $candidates[] = $k;
+                        }
+                    }
+                }
+                if (preg_match('/category_name:\s*([^;\\n]+)/i', $content, $m)) {
+                    $candidates[] = trim($m[1]);
+                }
+            }
+
+            // If the row explicitly declares a guideline_name and it is not one of the selected
+            // guidelines, treat that as authoritative and drop the chunk, even if other metadata
+            // fields (e.g., category_name / rec_id prefix) look compatible.
+            if ($explicitGuidelineName !== null && !$this->guidelineLabelAllowed($explicitGuidelineName, $allowedLabels)) {
+                continue;
+            }
+
+            // If we can identify a guideline and it matches, keep it. If we cannot identify at all,
+            // keep it (to avoid accidentally dropping valid chunks with sparse metadata).
+            if (empty($candidates)) {
+                $out[] = $chunk;
+                continue;
+            }
+
+            $keep = false;
+            foreach ($candidates as $label) {
+                if ($this->guidelineLabelAllowed($label, $allowedLabels)) {
+                    $keep = true;
+                    break;
+                }
+            }
+            if ($keep) {
+                $out[] = $chunk;
+            }
+        }
+
+        return $out;
+    }
+
+    protected function filterFormattedChunksToSelectedGuidelines(array $chunks, array $selectedKeys, array $selectedNames, string $type): array
+    {
+        if (empty($chunks)) {
+            return [];
+        }
+
+        $allowedLabels = [];
+        foreach ($selectedKeys as $k) {
+            if (is_string($k) && $k !== '') {
+                $allowedLabels[$this->normalizeGuidelineLabel($k)] = true;
+                foreach ($this->recommendationGuidelineAliasesForKey($k) as $alias) {
+                    $allowedLabels[$this->normalizeGuidelineLabel($alias)] = true;
+                }
+            }
+        }
+        foreach ($selectedNames as $n) {
+            if (is_string($n) && $n !== '') {
+                $allowedLabels[$this->normalizeGuidelineLabel($n)] = true;
+            }
+        }
+        if (empty($allowedLabels)) {
+            return $chunks;
+        }
+
+        $out = [];
+        foreach ($chunks as $chunk) {
+            if (!is_array($chunk)) {
+                continue;
+            }
+
+            $label = '';
+            if ($type === 'citation') {
+                $label = (string) ($chunk['guideline'] ?? '');
+            } else {
+                $label = (string) ($chunk['source_guideline'] ?? '');
+            }
+
+            // If no label is available at formatted stage, keep the chunk to avoid
+            // over-pruning valid evidence; raw filtering already ran earlier.
+            if ($label === '' || $this->guidelineLabelAllowed($label, $allowedLabels)) {
+                $out[] = $chunk;
+            }
+        }
+
+        return $out;
+    }
+
+    protected function guidelineLabelAllowed(string $label, array $allowedLabels): bool
+    {
+        $norm = $this->normalizeGuidelineLabel($label);
+        if ($norm === '') {
+            return false;
+        }
+        if (isset($allowedLabels[$norm])) {
+            return true;
+        }
+
+        // Fuzzy containment for labels like "Venous Thrombosis (DVT/PE)" vs "venous_thrombosis"
+        foreach (array_keys($allowedLabels) as $allowed) {
+            if ($allowed === '') {
+                continue;
+            }
+            if (str_contains($norm, $allowed) || str_contains($allowed, $norm)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    protected function normalizeGuidelineLabel(string $s): string
+    {
+        $s = mb_strtolower(trim($s));
+        if ($s === '') {
+            return '';
+        }
+        // Canonicalize separators and remove punctuation/noise while preserving alnum.
+        $s = str_replace(['&', '/'], ' ', $s);
+        $s = preg_replace('/[^\\p{L}\\p{N}]+/u', ' ', $s) ?? $s;
+        $s = trim(preg_replace('/\\s+/u', ' ', $s) ?? $s);
+        return str_replace(' ', '_', $s);
+    }
+
+    protected function recommendationGuidelineAliasesForKey(string $guidelineKey): array
+    {
+        $map = [
+            'aortic_arch' => [
+                'Treatment of Thoracic Aortic Pathologies Involving the Aortic Arch',
+            ],
+            'descending_thoracic_aorta' => [
+                'Management of Descending Thoracic and Thoraco-Abdominal Aortic Diseases',
+                'Management of Descending Thoracic and Thoracoabdominal Aortic Diseases',
+            ],
+            'abdominal_aortic_aneurysm' => [
+                'Management of Abdominal Aorto-Iliac Artery Aneurysms',
+                'AAA',
+            ],
+            'mesenteric_renal' => [
+                'Management of Diseases of the Mesenteric and Renal Arteries and Veins',
+                'Mesenteric and Renal Arteries',
+            ],
+            'asymptomatic_pad' => [
+                'Management of Asymptomatic Lower Limb Peripheral Arterial Disease and Intermittent Claudication',
+                'Asymptomatic Lower Limb Peripheral Arterial Disease and Intermittent Claudication',
+            ],
+            'clti' => [
+                'Global Vascular Guidelines on CLTI Management',
+                'Chronic Limb-Threatening Ischemia',
+            ],
+            'acute_limb_ischaemia' => [
+                'Management of Acute Limb Ischaemia',
+                'Acute Limb Ischemia',
+            ],
+            'carotid_vertebral' => [
+                'Management of Atherosclerotic Carotid and Vertebral Artery Disease',
+            ],
+            'antithrombotic_therapy' => [
+                'Antithrombotic Therapy for Vascular Diseases',
+            ],
+            'venous_thrombosis' => [
+                'Venous Thrombosis (DVT/PE)',
+                'Management of Venous Thrombosis',
+            ],
+            'chronic_venous_disease' => [
+                'Chronic Venous Disease of the Lower Limbs',
+            ],
+            'vascular_trauma' => [
+                'Management of Vascular Trauma',
+            ],
+            'vascular_graft_infections' => [
+                'Management of Vascular Graft and Endograft Infection',
+                'Management of Vascular Graft and Endograft Infections',
+            ],
+            'vascular_access' => [
+                'Vascular Access',
+            ],
+        ];
+
+        return $map[$guidelineKey] ?? [];
     }
 
     public function getDualSystemPrompt(): string

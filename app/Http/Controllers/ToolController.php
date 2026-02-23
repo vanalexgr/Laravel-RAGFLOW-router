@@ -64,8 +64,62 @@ class ToolController extends Controller
             'selection_mode' => $requestedKeys ? 'explicit' : 'auto-routing'
         ]);
 
+        $guardrailType = $this->preRetrievalGuardrailType($question);
+        if ($guardrailType !== null) {
+            Log::warning('[GUARDRAIL] Out-of-scope or onboarding prompt routed to consult endpoint; short-circuiting retrieval', [
+                'question' => $question,
+                'guidelines_selected' => $requestedKeys ?? 'auto',
+                'guardrail_type' => $guardrailType,
+            ]);
+
+            $message = $this->buildOutOfScopeGuidance($question, $guardrailType);
+
+            return response()->json([
+                'result' => $message,
+                'narrative_chunks' => [],
+                'citation_chunks' => [],
+                'assets' => [],
+                'guardrail' => [
+                    'type' => $guardrailType,
+                    'short_circuited' => true,
+                ],
+            ], 200)
+                ->header('Access-Control-Allow-Origin', '*')
+                ->header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+                ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        }
+
         // Call retrieval service with optional guideline override
         $result = $this->retrievalService->retrieve($question, $history, $requestedKeys);
+
+        $narrativeCount = count($result['narrative_chunks'] ?? []);
+        $citationCount = count($result['citation_chunks'] ?? []);
+        if ($narrativeCount === 0 && $citationCount === 0 && $this->containsNonAscii($question)) {
+            $fallbackQuery = $this->buildMultilingualRetrievalFallbackQuery($question, $requestedKeys, $result['selected_guidelines'] ?? []);
+            if ($fallbackQuery !== null) {
+                Log::info('[MULTILINGUAL RETRY] No evidence for non-English query; retrying retrieval with guideline-aware English hints', [
+                    'question' => $question,
+                    'fallback_query' => $fallbackQuery,
+                    'guidelines_selected' => $requestedKeys ?? 'auto',
+                ]);
+
+                $retryResult = $this->retrievalService->retrieve($fallbackQuery, $history, $requestedKeys);
+                $retryNarrativeCount = count($retryResult['narrative_chunks'] ?? []);
+                $retryCitationCount = count($retryResult['citation_chunks'] ?? []);
+                if ($retryNarrativeCount > 0 || $retryCitationCount > 0) {
+                    Log::info('[MULTILINGUAL RETRY] Recovery succeeded', [
+                        'question' => $question,
+                        'retry_question' => $fallbackQuery,
+                        'narrative_count' => $retryNarrativeCount,
+                        'citation_count' => $retryCitationCount,
+                    ]);
+                    $result = $retryResult;
+                    $result['question'] = $question; // Preserve original user query in outward response text.
+                    $narrativeCount = $retryNarrativeCount;
+                    $citationCount = $retryCitationCount;
+                }
+            }
+        }
 
         // Attach relevant figures/tables for user display (not for verbatim quoting).
         $assets = $this->guidelineAssetService->findRelevantAssets(
@@ -74,6 +128,31 @@ class ToolController extends Controller
             $result['citation_chunks'] ?? [],
             $result['selected_guidelines'] ?? []
         );
+
+        if ($narrativeCount === 0 && $citationCount === 0) {
+            Log::warning('[GUARDRAIL] Retrieval returned no evidence; returning predefined out-of-scope/help guidance', [
+                'question' => $question,
+                'guidelines_selected' => $requestedKeys ?? 'auto',
+            ]);
+
+            $guardrailType = $this->containsNonAscii($question)
+                ? 'no_relevant_esvs_context_non_english'
+                : 'no_relevant_esvs_context';
+
+            return response()->json([
+                'result' => $this->buildOutOfScopeGuidance($question, $guardrailType),
+                'narrative_chunks' => [],
+                'citation_chunks' => [],
+                'assets' => [],
+                'guardrail' => [
+                    'type' => $guardrailType,
+                    'short_circuited' => true,
+                ],
+            ], 200)
+                ->header('Access-Control-Allow-Origin', '*')
+                ->header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+                ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        }
 
         // Format for LLM Consumption (same as ConsultGuidelines tool)
         $output = "RETRIEVED GUIDELINES for: \"{$result['question']}\"\n";
@@ -233,5 +312,184 @@ class ToolController extends Controller
         ]);
 
         return null;
+    }
+
+    protected function preRetrievalGuardrailType(string $question): ?string
+    {
+        if ($this->isGenericCapabilityPrompt($question)) {
+            return 'capabilities_onboarding';
+        }
+        if ($this->isLikelyOutOfScopePrompt($question)) {
+            return 'out_of_scope';
+        }
+        return null;
+    }
+
+    protected function isGenericCapabilityPrompt(string $question): bool
+    {
+        $q = mb_strtolower(trim($question));
+        if ($q === '') {
+            return false;
+        }
+
+        $capabilityIntent = preg_match(
+            '/\b(how can (you|this app) help|can this app help|what can (you|this app) do|what does this app do|how should i use|how do i use|who is this (for|app for)|what is this app)\b/u',
+            $q
+        ) === 1;
+
+        if (!$capabilityIntent) {
+            return false;
+        }
+
+        return !$this->hasConcreteVascularTarget($q);
+    }
+
+    protected function isLikelyOutOfScopePrompt(string $question): bool
+    {
+        $q = mb_strtolower(trim($question));
+        if ($q === '') {
+            return false;
+        }
+
+        if ($this->hasConcreteVascularTarget($q)) {
+            return false;
+        }
+
+        $nonClinicalTechOrGeneral = preg_match(
+            '/\b(openfortivpn|linux|ubuntu|debian|nginx|docker|ssh|git|python|php|javascript|sql|excel|spreadsheet|powerpoint|email|auth0|cloudflare|dns|ssl|tls|certificate|vm|azure|aws|gcp|kubernetes|devops|api key|json|yaml|regex|code|programming)\b/u',
+            $q
+        ) === 1;
+
+        $broadNonVascularMedical = preg_match(
+            '/\b(internal medicine|pediatrics|psychiatry|dermatology|orthopedic|ophthalmology|obgyn|gynaecology|gynecology|oncology|neurology|endocrinology|gastroenterology|pulmonology|nephrology|infectious disease)\b/u',
+            $q
+        ) === 1;
+
+        $generalAskWithoutESVSContext = preg_match(
+            '/\b(can you help|help me|what should i do|what do you think|explain this|summarize this|translate|write|draft)\b/u',
+            $q
+        ) === 1 && !preg_match('/\b(esvs|guideline|vascular)\b/u', $q);
+
+        return $nonClinicalTechOrGeneral || $broadNonVascularMedical || $generalAskWithoutESVSContext;
+    }
+
+    protected function hasConcreteVascularTarget(string $q): bool
+    {
+        return preg_match(
+            '/\b(aaa|aneurysm|clti|critical limb|acute limb|ischaemi|ischemi|carotid|vertebral|mesenteric|renal artery|dvt|pe\b|vte|venous thrombosis|saphenous|varicose|venous ulcer|antithrombotic|aspirin|doac|dapt|vascular trauma|graft infection|endograft|vascular access|avf|fistula|tevar|evar|endarterectomy|stenting|stroke|tia|peripheral arterial disease|pad)\b/u',
+            $q
+        ) === 1;
+    }
+
+    protected function buildOutOfScopeGuidance(string $question, string $type = 'out_of_scope'): string
+    {
+        $q = trim($question);
+        $lines = [];
+        if ($q !== '') {
+            $lines[] = "This question is outside the supported ESVS retrieval scope (or not specific enough for guideline retrieval): {$q}";
+            $lines[] = '';
+        }
+
+        $lines[] = 'What this app is for';
+        $lines[] = '- ESVS vascular guideline retrieval and evidence support for specific vascular clinical questions.';
+        $lines[] = '- Case-to-guideline comparison using retrieved ESVS recommendations and supporting statements.';
+        $lines[] = '- Figures/tables display when relevant assets exist.';
+        $lines[] = '';
+        $lines[] = 'What to expect';
+        $lines[] = '- For in-scope queries, the app retrieves ESVS evidence chunks and returns a citation-based answer.';
+        $lines[] = '- For out-of-scope or vague queries, the app returns this usage guidance instead of guessing a guideline.';
+        if ($type === 'no_relevant_esvs_context_non_english') {
+            $lines[] = '- For non-English queries, retrieval may miss relevant evidence even when the topic is in scope.';
+        }
+        $lines[] = '';
+        if ($type === 'no_relevant_esvs_context_non_english') {
+            $lines[] = 'Language note (important)';
+            $lines[] = '- Your question appears to be non-English. Guideline retrieval currently works best with English phrasing.';
+            $lines[] = '- Please rephrase in English or include key English medical terms (e.g., "saphenous vein thrombosis", "superficial venous thrombosis", "CLTI", "AAA", "carotid stenosis").';
+            $lines[] = '- You can keep the rest of the question in your language, but include the main diagnosis/condition in English for best results.';
+            $lines[] = '';
+        }
+        $lines[] = 'How to use it properly (best results)';
+        $lines[] = '- Include the condition/problem (e.g., AAA, CLTI, carotid stenosis, venous thrombosis).';
+        $lines[] = '- Include anatomy/territory, acuity, and treatment decision you need help with.';
+        $lines[] = '- For case review, include key patient details and ask what ESVS recommends or whether management aligns.';
+        $lines[] = '- Ask one main clinical question per message when possible.';
+        $lines[] = '';
+        $lines[] = 'Good examples';
+        $lines[] = '- "What does ESVS recommend for superficial/saphenous venous thrombosis?"';
+        $lines[] = '- "Does this CLTI revascularization plan align with ESVS guidance?"';
+        $lines[] = '- "For carotid stenosis after TIA, what are ESVS recommendations?"';
+        $lines[] = '';
+        $lines[] = 'Out of scope examples';
+        $lines[] = '- General app onboarding without a clinical question (e.g., "Can this app help me?").';
+        $lines[] = '- Non-vascular or broad internal medicine questions without an ESVS vascular guideline target.';
+        $lines[] = '- Technical/IT support questions (Linux, VPN, coding, server issues).';
+        $lines[] = '';
+        $lines[] = 'Scope note';
+        $lines[] = '- This app is focused on ESVS vascular guidelines, not general internal medicine or non-medical support.';
+
+        return implode("\n", $lines);
+    }
+
+    protected function containsNonAscii(string $text): bool
+    {
+        return preg_match('/[^\x00-\x7F]/', $text) === 1;
+    }
+
+    protected function buildMultilingualRetrievalFallbackQuery(string $question, ?array $requestedKeys, array $selectedGuidelines = []): ?string
+    {
+        $keys = [];
+        if (is_array($requestedKeys)) {
+            $keys = $requestedKeys;
+        }
+
+        if (empty($keys)) {
+            foreach ($selectedGuidelines as $g) {
+                if (!is_array($g)) {
+                    continue;
+                }
+                foreach (['key', 'guideline_key', 'slug'] as $candidate) {
+                    if (!empty($g[$candidate]) && is_string($g[$candidate])) {
+                        $keys[] = $g[$candidate];
+                        break;
+                    }
+                }
+            }
+        }
+
+        $keys = array_values(array_unique(array_filter($keys, fn ($v) => is_string($v) && $v !== '')));
+        if (empty($keys)) {
+            return null;
+        }
+
+        $hintMap = [
+            'venous_thrombosis' => 'venous thrombosis dvt pe vte superficial venous thrombosis saphenous vein thrombosis management esvs',
+            'chronic_venous_disease' => 'chronic venous disease varicose veins venous ulcer superficial venous disease esvs',
+            'asymptomatic_pad' => 'peripheral arterial disease pad claudication exercise therapy asymptomatic pad esvs',
+            'clti' => 'chronic limb threatening ischaemia ischemia clti revascularization tissue loss rest pain esvs',
+            'acute_limb_ischaemia' => 'acute limb ischaemia ischemia ali embolism thrombosis 6Ps esvs',
+            'abdominal_aortic_aneurysm' => 'abdominal aortic aneurysm aaa evar open repair iliac aneurysm esvs',
+            'carotid_vertebral' => 'carotid stenosis vertebral artery tia stroke cea cas esvs',
+            'antithrombotic_therapy' => 'antithrombotic therapy aspirin doac dapt anticoagulation vascular disease esvs',
+            'mesenteric_renal' => 'mesenteric ischemia renal artery stenosis cmi ami esvs',
+            'descending_thoracic_aorta' => 'type b dissection thoracic aneurysm tevar descending thoracic aorta esvs',
+            'aortic_arch' => 'aortic arch aneurysm hybrid arch frozen elephant trunk fet esvs',
+            'vascular_trauma' => 'vascular trauma penetrating blunt injury reboa limb vascular injury esvs',
+            'vascular_graft_infections' => 'vascular graft infection endograft infection graft infection esvs',
+            'vascular_access' => 'vascular access dialysis fistula avf graft thrombosis esvs',
+        ];
+
+        $hintParts = [];
+        foreach ($keys as $k) {
+            if (isset($hintMap[$k])) {
+                $hintParts[] = $hintMap[$k];
+            }
+        }
+        $hintParts = array_values(array_unique($hintParts));
+        if (empty($hintParts)) {
+            return null;
+        }
+
+        return trim(implode(' ', $hintParts));
     }
 }
