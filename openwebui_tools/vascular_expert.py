@@ -183,6 +183,125 @@ class Tools:
         diversified.extend(unlabeled)
         return diversified
 
+    def _infer_intent_profile(self, question: str, query_normalization: Optional[dict]) -> dict:
+        q = (question or "").lower()
+        norm = query_normalization if isinstance(query_normalization, dict) else {}
+        normalized_q = str(norm.get("normalized_query") or "").lower()
+        intent = str(norm.get("intent") or "").strip().lower() or None
+        question_type = str(norm.get("question_type") or "").strip().lower() or None
+        key_terms = [str(t).strip().lower() for t in (norm.get("key_terms") or []) if str(t).strip()]
+
+        combined = f"{q} {normalized_q}".strip()
+        if not intent:
+            if re.search(r"\b(when|threshold|diameter|size|mm|cm|operate|repair|surgery|χειρουργ|επιδιόρθ|indication)\b", combined):
+                intent = "threshold"
+            elif re.search(r"\b(surveillance|follow[- ]?up|interval|monitor|παρακολ|surveil)\b", combined):
+                intent = "surveillance"
+            elif re.search(r"\b(imaging|scan|ultrasound|cta|cta\b|mra|mrv|dus|duplex|angiograph|απεικον|υπερηχο)\b", combined):
+                intent = "imaging"
+            elif re.search(r"\b(diagnos|workup|diagnostic|διάγν)\b", combined):
+                intent = "diagnosis"
+            elif re.search(r"\b(compare|versus|vs\\.?|difference|διαφορ)\b", combined):
+                intent = "comparison"
+            elif re.search(r"\b(risk|contraindicat|complication|bleed|αιμορρ|κίνδυ)\b", combined):
+                intent = "risk"
+            elif re.search(r"\b(what is|define|definition|τι ειναι|τι είναι)\b", combined):
+                intent = "definition"
+            else:
+                intent = "management"
+
+        return {
+            "intent": intent,
+            "question_type": question_type,
+            "key_terms": key_terms[:8],
+            "combined_query": combined,
+        }
+
+    def _intent_terms(self, intent: str) -> list[str]:
+        table = {
+            "threshold": ["threshold", "diameter", "size", "mm", "cm", "elective repair", "indication for repair", "operate", "surgery"],
+            "indication": ["indication", "indicated", "considered for", "recommended", "should be considered"],
+            "surveillance": ["surveillance", "follow-up", "follow up", "interval", "monitoring", "duplex", "ultrasound", "cta"],
+            "imaging": ["imaging", "ultrasound", "duplex", "cta", "ct angiography", "mra", "mrv", "scan"],
+            "diagnosis": ["diagnosis", "diagnostic", "work up", "workup", "ultrasound", "cta", "duplex"],
+            "treatment": ["treatment", "management", "recommended", "considered", "therapy", "procedure"],
+            "management": ["management", "recommended", "considered", "therapy", "treatment"],
+            "procedure": ["procedure", "repair", "intervention", "stenting", "endarterectomy", "evar", "tevar"],
+            "timing": ["timing", "when", "urgent", "delay", "early", "perioperative"],
+            "comparison": ["versus", "vs", "compared", "difference", "rather than", "preference"],
+            "risk": ["risk", "complication", "bleeding", "contraindication", "contraindicated"],
+            "prognosis": ["prognosis", "outcome", "survival", "mortality"],
+            "definition": ["definition", "is defined", "what is", "classification"],
+            "general": [],
+        }
+        return table.get(intent or "general", [])
+
+    def _chunk_text_for_scoring(self, chunk: dict, kind: str) -> str:
+        if not isinstance(chunk, dict):
+            return ""
+        fields = []
+        if kind == "citation":
+            fields.extend([
+                str(chunk.get("text") or chunk.get("content") or ""),
+                str(chunk.get("guideline") or ""),
+                str(chunk.get("category") or ""),
+                str(chunk.get("category_name") or ""),
+                str(chunk.get("class") or ""),
+                str(chunk.get("level") or ""),
+            ])
+        else:
+            fields.extend([
+                str(chunk.get("content") or ""),
+                str(chunk.get("source_guideline") or ""),
+            ])
+        return " ".join(fields).lower()
+
+    def _score_chunk_for_intent(self, chunk: dict, kind: str, profile: dict) -> int:
+        text = self._chunk_text_for_scoring(chunk, kind)
+        if not text:
+            return 0
+
+        score = 0
+        intent = str(profile.get("intent") or "general")
+        for term in self._intent_terms(intent):
+            if term and term.lower() in text:
+                score += 4
+
+        for term in profile.get("key_terms") or []:
+            t = str(term).lower().strip()
+            if t and t in text:
+                score += 3
+
+        combined_query = str(profile.get("combined_query") or "")
+        # Boost chunks that match decisive verbs/phrasing from the query.
+        for cue in ["recommended", "should be considered", "indicated", "surveillance", "imaging", "diagnosis", "repair"]:
+            if cue in combined_query and cue in text:
+                score += 2
+
+        # Prefer recommendation chunks for recommendation-like questions.
+        question_type = str(profile.get("question_type") or "")
+        if kind == "citation" and question_type in {"recommendation", "treatment_decision", "perioperative"}:
+            score += 2
+
+        # Small de-prioritization of generic methodology/front matter narrative chunks.
+        if kind == "narrative":
+            if "clinical practice guideline document" in text or "methodology" in text:
+                score -= 2
+            if "editor's choice" in text:
+                score -= 1
+
+        return score
+
+    def _rank_chunks_by_intent(self, chunks: list, kind: str, profile: dict) -> list:
+        if not chunks:
+            return chunks
+        scored = []
+        for idx, chunk in enumerate(chunks):
+            scored.append((self._score_chunk_for_intent(chunk, kind, profile), idx, chunk))
+        # stable: keep original order as tie-breaker
+        scored.sort(key=lambda x: (-x[0], x[1]))
+        return [c for _, _, c in scored]
+
     def _parse_semicolon_kv(self, s: str) -> dict:
         """
         Parse strings like:
@@ -604,7 +723,13 @@ class Tools:
             narrative_chunks = data.get("narrative_chunks", [])
             citation_chunks = data.get("citation_chunks", [])
             assets = data.get("assets", [])
+            query_normalization = data.get("query_normalization", {})
             print(f"[VascularExpert] Chunks: narrative={len(narrative_chunks)}, citation={len(citation_chunks)}")
+
+            intent_profile = self._infer_intent_profile(question, query_normalization)
+            print(f"[VascularExpert] Intent profile: {intent_profile}")
+            citation_chunks = self._rank_chunks_by_intent(citation_chunks, "citation", intent_profile)
+            narrative_chunks = self._rank_chunks_by_intent(narrative_chunks, "narrative", intent_profile)
 
             caps = self._select_chunk_caps(len(guidelines))
             prioritized_citation_chunks = self._diversify_chunks(citation_chunks, "citation", len(guidelines))
