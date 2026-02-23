@@ -54,8 +54,14 @@ GUIDELINE_NAMES = {
 class Tools:
     LLM_NARRATIVE_MAX_CHARS = 1500
     LLM_NARRATIVE_MAX_CHUNKS = 4
+    LLM_NARRATIVE_MAX_CHUNKS_MULTI = 8
     LLM_REC_MAX_CHARS = 1200
     LLM_REC_MAX_CHUNKS = 6
+    LLM_REC_MAX_CHUNKS_MULTI = 8
+    UI_NARRATIVE_MAX_CHUNKS = 8
+    UI_NARRATIVE_MAX_CHUNKS_MULTI = 12
+    UI_REC_MAX_CHUNKS = 12
+    UI_REC_MAX_CHUNKS_MULTI = 18
     LLM_ASSET_MAX_ITEMS = 3
 
     def __init__(self):
@@ -124,6 +130,58 @@ class Tools:
         s = re.sub(r"\n{3,}", "\n\n", s)
         s = re.sub(r"[ \t]{2,}", " ", s)
         return s.strip()
+
+    def _select_chunk_caps(self, guideline_count: int) -> dict:
+        multi = guideline_count > 1
+        return {
+            "llm_rec": self.LLM_REC_MAX_CHUNKS_MULTI if multi else self.LLM_REC_MAX_CHUNKS,
+            "llm_narr": self.LLM_NARRATIVE_MAX_CHUNKS_MULTI if multi else self.LLM_NARRATIVE_MAX_CHUNKS,
+            "ui_rec": self.UI_REC_MAX_CHUNKS_MULTI if multi else self.UI_REC_MAX_CHUNKS,
+            "ui_narr": self.UI_NARRATIVE_MAX_CHUNKS_MULTI if multi else self.UI_NARRATIVE_MAX_CHUNKS,
+        }
+
+    def _chunk_guideline_label(self, chunk: dict, kind: str) -> str:
+        if not isinstance(chunk, dict):
+            return ""
+        if kind == "citation":
+            return str(chunk.get("guideline") or chunk.get("source_guideline") or "").strip()
+        return str(chunk.get("source_guideline") or chunk.get("guideline") or "").strip()
+
+    def _diversify_chunks(self, chunks: list, kind: str, guideline_count: int) -> list:
+        """Round-robin by guideline label for multi-guideline queries."""
+        if guideline_count <= 1 or len(chunks) <= 1:
+            return chunks
+
+        buckets = {}
+        order = []
+        unlabeled = []
+
+        for chunk in chunks:
+            label = self._chunk_guideline_label(chunk, kind)
+            if not label:
+                unlabeled.append(chunk)
+                continue
+            if label not in buckets:
+                buckets[label] = []
+                order.append(label)
+            buckets[label].append(chunk)
+
+        if len(order) <= 1:
+            return chunks
+
+        diversified = []
+        while True:
+            progressed = False
+            for label in order:
+                bucket = buckets.get(label, [])
+                if bucket:
+                    diversified.append(bucket.pop(0))
+                    progressed = True
+            if not progressed:
+                break
+
+        diversified.extend(unlabeled)
+        return diversified
 
     def _parse_semicolon_kv(self, s: str) -> dict:
         """
@@ -548,10 +606,23 @@ class Tools:
             assets = data.get("assets", [])
             print(f"[VascularExpert] Chunks: narrative={len(narrative_chunks)}, citation={len(citation_chunks)}")
 
-            # Only emit a small, stable subset so Sources list matches used citations
-            selected_citation_chunks = citation_chunks[: self.LLM_REC_MAX_CHUNKS]
-            selected_narrative_chunks = narrative_chunks[: self.LLM_NARRATIVE_MAX_CHUNKS]
-            total_chunks = len(selected_narrative_chunks) + len(selected_citation_chunks)
+            caps = self._select_chunk_caps(len(guidelines))
+            prioritized_citation_chunks = self._diversify_chunks(citation_chunks, "citation", len(guidelines))
+            prioritized_narrative_chunks = self._diversify_chunks(narrative_chunks, "narrative", len(guidelines))
+
+            # UI Sources can expose more evidence than the LLM reads.
+            ui_citation_chunks = prioritized_citation_chunks[: caps["ui_rec"]]
+            ui_narrative_chunks = prioritized_narrative_chunks[: caps["ui_narr"]]
+
+            # LLM subset stays bounded for speed/cost and remains a prefix of UI-emitted chunks.
+            selected_citation_chunks = ui_citation_chunks[: caps["llm_rec"]]
+            selected_narrative_chunks = ui_narrative_chunks[: caps["llm_narr"]]
+            extra_ui_citation_chunks = ui_citation_chunks[len(selected_citation_chunks):]
+            extra_ui_narrative_chunks = ui_narrative_chunks[len(selected_narrative_chunks):]
+
+            llm_total_chunks = len(selected_narrative_chunks) + len(selected_citation_chunks)
+            ui_total_chunks = len(ui_narrative_chunks) + len(ui_citation_chunks)
+            backend_total_chunks = len(narrative_chunks) + len(citation_chunks)
             
             # EMIT INDIVIDUAL CITATIONS for each chunk
             # This enables per-chunk citation popups in OpenWebUI
@@ -559,7 +630,7 @@ class Tools:
                 emitted_count = 0
                 chunk_number = 1
                 
-                # Emit citation chunks first (recommendations)
+                # Emit LLM-visible recommendations first so answer [n] numbering maps to the UI.
                 for chunk in selected_citation_chunks:
                     
                     text = chunk.get("text", chunk.get("content", ""))
@@ -597,7 +668,7 @@ class Tools:
                     
                     chunk_number += 1
                 
-                # Emit narrative chunks (context)
+                # Emit LLM-visible narrative chunks next so numbering remains contiguous.
                 narrative_i = 1
                 for chunk in selected_narrative_chunks:
                     content = chunk.get("content", "")
@@ -635,14 +706,81 @@ class Tools:
                         
                     chunk_number += 1
                     narrative_i += 1
+
+                # Emit extra UI-only recommendations after the LLM-visible sources.
+                for chunk in extra_ui_citation_chunks:
+                    text = chunk.get("text", chunk.get("content", ""))
+                    rec_id = chunk.get("recommendation_id", "")
+                    cls = chunk.get("class", "")
+                    level = chunk.get("level", "")
+                    guideline = chunk.get("guideline", "ESVS")
+                    if rec_id:
+                        title = f"Recommendation {rec_id} from {guideline} - Class {cls}, Level {level}"
+                    else:
+                        title = f"Recommendation from {guideline}"
+                    popup_text = self._format_rec_popup(text, title)
+                    try:
+                        await emitter({
+                            "type": "citation",
+                            "data": {
+                                "document": [popup_text],
+                                "metadata": [{
+                                    "source": title,
+                                    "kind": "recommendation",
+                                    "guideline": guideline,
+                                    "recommendation_id": rec_id,
+                                }],
+                                "source": {"id": f"{chunk_number}", "name": title},
+                            }
+                        })
+                        emitted_count += 1
+                    except Exception as e:
+                        print(f"Error emitting citation: {e}")
+                    chunk_number += 1
+
+                # Emit extra UI-only narrative chunks last.
+                extra_narrative_i = len(selected_narrative_chunks) + 1
+                for chunk in extra_ui_narrative_chunks:
+                    content = chunk.get("content", "")
+                    source_guideline = chunk.get("source_guideline", "ESVS")
+                    title = f"{source_guideline} - Narrative {extra_narrative_i}: {_short_label(content)}"
+                    excerpt = self._clean_narrative_text(content or "")
+                    if len(excerpt) > 6000:
+                        excerpt = excerpt[:6000] + "\n\n[...truncated...]"
+                    try:
+                        await emitter({
+                            "type": "citation",
+                            "data": {
+                                "document": [excerpt],
+                                "metadata": [{
+                                    "source": title,
+                                    "kind": "narrative",
+                                    "guideline": source_guideline,
+                                    "chunk": extra_narrative_i,
+                                }],
+                                "source": {"id": f"{chunk_number}", "name": title},
+                            }
+                        })
+                        emitted_count += 1
+                    except Exception as e:
+                        print(f"Error emitting citation: {e}")
+                    chunk_number += 1
+                    extra_narrative_i += 1
             
-            if total_chunks > 0:
-                status_msg = f"Retrieved {total_chunks} evidence chunks from {guideline_display}"
+            if llm_total_chunks > 0:
+                status_msg = (
+                    f"Retrieved {backend_total_chunks} chunks from {guideline_display}; "
+                    f"using {llm_total_chunks} for answer, exposing {ui_total_chunks} in Sources"
+                )
                 await self._emit_status(emitter, status_msg, done=True)
                 
                 # Build formatted text for the LLM
                 # We format strict headers to match the System Prompt requirements
-                llm_output = f"Consultation successful. Retrieved {total_chunks} evidence sources:\n\n"
+                llm_output = (
+                    "Consultation successful. "
+                    f"Using {llm_total_chunks} evidence sources for answer synthesis "
+                    f"(from {backend_total_chunks} retrieved chunks; {ui_total_chunks} shown in Sources).\n\n"
+                )
                 
                 chunk_num = 1
                 
