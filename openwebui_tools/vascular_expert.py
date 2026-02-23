@@ -268,6 +268,95 @@ class Tools:
             except Exception as e:
                 print(f"[VascularExpert] Status emit error: {e}")
 
+    def _capabilities_response(self, question: str = "") -> str:
+        """Static predefined guidance for out-of-scope or non-specific questions."""
+        q = (question or "").strip()
+        lines = []
+        if q:
+            lines.append(
+                "This question is outside the supported ESVS retrieval scope (or not specific enough for guideline retrieval): "
+                + q
+            )
+            lines.append("")
+
+        lines.extend(
+            [
+                "=== APP CAPABILITIES GUIDANCE ===",
+                "What this app is for",
+                "- ESVS vascular guideline retrieval and evidence support for specific vascular clinical questions.",
+                "- Case-to-guideline comparison using retrieved ESVS recommendations and supporting statements.",
+                "- Figures/tables display when relevant assets exist.",
+                "",
+                "What to expect",
+                "- For in-scope queries, the app retrieves ESVS evidence chunks and returns a citation-based answer.",
+                "- For out-of-scope or vague queries, the app returns this usage guidance instead of guessing a guideline.",
+                "",
+                "How to use it properly (best results)",
+                "1. Ask a specific clinical question (condition + decision/problem).",
+                "2. Include anatomy/territory, acuity, and treatment context if known.",
+                "3. For case review, include key patient details and what decision you want checked against ESVS.",
+                "4. Ask for a standalone answer if you want it to ignore prior chat context.",
+                "5. Ask one main clinical question per message when possible.",
+                "",
+                "Good examples",
+                '- \"For CLTI with tissue loss, what does ESVS recommend for revascularization strategy?\"',
+                '- \"Does this carotid stenosis management plan align with ESVS guidance?\"',
+                '- \"What are ESVS recommendations for superficial/saphenous venous thrombosis treatment?\"',
+                "",
+                "Out of scope examples",
+                "- General app onboarding without a clinical question (e.g., 'Can this app help me?').",
+                "- Non-vascular or broad internal medicine questions without an ESVS vascular guideline target.",
+                "- Technical/IT support questions (Linux, VPN, coding, server issues).",
+                "",
+                "Scope note",
+                "- This app is focused on ESVS vascular guidelines, not general internal medicine or non-medical support.",
+                "- It supports clinical reasoning with citations but does not replace clinical judgment or local protocols.",
+            ]
+        )
+        return "\n".join(lines).strip()
+
+    def _ensure_capabilities_marker(self, text: str, question: str = "") -> str:
+        s = (text or "").strip()
+        if not s:
+            return self._capabilities_response(question)
+        if "=== APP CAPABILITIES GUIDANCE ===" in s:
+            return s
+        return f"=== APP CAPABILITIES GUIDANCE ===\n\n{s}"
+
+    async def explain_app_capabilities(
+        self,
+        question: str = "",
+        __messages__: list = [],
+        __event_emitter__: Callable[[dict], Awaitable[None]] = None,
+    ) -> str:
+        """
+        Explain what this ESVS guideline app does and how to use it correctly.
+
+        Use this tool instead of consult_vascular_guidelines for general onboarding/scope questions
+        that do not ask about a specific vascular condition, patient case, or guideline recommendation.
+
+        Examples:
+        - "I am a vascular surgeon, how can you help me?"
+        - "I am an internal medicine physician. Can this app help me?"
+        - "What does this app do?"
+        - "How should I ask questions to get the best results?"
+
+        DO NOT use this tool for a concrete clinical question (e.g. AAA, CLTI, carotid stenosis,
+        DVT/PE, venous thrombosis, antithrombotic therapy decisions). Use consult_vascular_guidelines instead.
+        """
+        emitter = __event_emitter__
+        if (not question) and __messages__:
+            # Recover gracefully if the function-calling model omitted parameters.
+            for msg in reversed(__messages__):
+                if msg.get("role") == "user" and isinstance(msg.get("content"), str):
+                    question = msg["content"].strip()
+                    if question:
+                        break
+        await self._emit_status(emitter, "Providing app usage guidance...")
+        await asyncio.sleep(0.05)
+        await self._emit_status(emitter, "Usage guidance ready", done=True)
+        return self._capabilities_response(question)
+
     async def consult_vascular_guidelines(
         self, 
         question: str,
@@ -282,10 +371,16 @@ class Tools:
         """
         Consult ESVS Vascular Guidelines. Select 1-3 guidelines based on the clinical question.
         
-        **CRITICAL**: You MUST call this tool in ALL of these scenarios:
+        **CRITICAL**: Call this tool for concrete vascular clinical/guideline questions:
         1. ANY vascular surgery question (direct or follow-up)
         2. When the user attaches a patient case/document and asks about ESVS compliance
         3. When comparing patient management against guidelines
+
+        **DO NOT CALL THIS TOOL** for general onboarding/capability questions such as:
+        - "How can you help me?"
+        - "Can this app help me?"
+        - "What does this app do?"
+        In those cases, call `explain_app_capabilities` instead.
         
         **DOCUMENT ATTACHMENT HANDLING**:
         If the user attaches a patient document (discharge summary, case report, etc.) and asks:
@@ -431,6 +526,16 @@ class Tools:
                 
                 # Parse JSON inside the client context
                 data = response.json()
+
+                guardrail = data.get("guardrail") or {}
+                if isinstance(guardrail, dict) and guardrail.get("short_circuited"):
+                    await self._emit_status(
+                        emitter,
+                        "Capability/onboarding query detected - skipping retrieval",
+                        done=True,
+                    )
+                    msg = str(data.get("result") or "").strip()
+                    return self._ensure_capabilities_marker(msg, question)
                 
             elapsed = int(time.time() - start_time)
             await self._emit_status(emitter, f"✅ Retrieved in {elapsed}s - parsing results...")
@@ -556,6 +661,9 @@ class Tools:
                         header = f"[{chunk_num}] Rec {rec_id} (Class {cls}, Level {lvl}) — {guideline}"
                         llm_output += f"{header}\n> {text}\n\n"
                         chunk_num += 1
+                elif selected_narrative_chunks:
+                    llm_output += "=== RECOMMENDATIONS ===\n"
+                    llm_output += "No guideline-specific recommendation chunks were retrieved for this query. Use narrative context to answer and state that no direct recommendation chunk was retrieved.\n\n"
 
                 # SECTION 2: NARRATIVE (Context)
                 if selected_narrative_chunks:
@@ -578,11 +686,14 @@ class Tools:
                 
                 llm_output += "=== CITATION RULES ===\n"
                 llm_output += "1. Use simple numbered citations [1], [2], [3] inline after each fact.\n"
-                llm_output += "2. Use ALL sources provided above at least once, so the Sources list matches cited evidence.\n"
+                llm_output += "2. Cite only sources you actually use; do not force-cite unrelated evidence.\n"
                 llm_output += "3. Do NOT add a separate References section; the UI already shows a Sources list.\n"
                 llm_output += "4. Match the bracketed numbers [n] exactly to the evidence blocks above.\n"
+                if not selected_citation_chunks and selected_narrative_chunks:
+                    llm_output += "5. It is valid to answer from narrative context only and explicitly say no direct recommendation chunk was retrieved.\n"
                 if assets_block:
-                    llm_output += "5. If images help, include up to 3 markdown image lines from the FIGURES / TABLES section.\n"
+                    next_rule_num = 6 if (not selected_citation_chunks and selected_narrative_chunks) else 5
+                    llm_output += f"{next_rule_num}. If images help, include up to 3 markdown image lines from the FIGURES / TABLES section.\n"
                 
                 return llm_output
             else:
@@ -591,7 +702,7 @@ class Tools:
                     f"Consultation complete ({guideline_display})",
                     done=True
                 )
-                return "No specific guidelines found. Please answer based on general medical knowledge."
+                return self._capabilities_response(question)
             
         except httpx.TimeoutException:
             await self._emit_status(emitter, "Request timed out", done=True)
