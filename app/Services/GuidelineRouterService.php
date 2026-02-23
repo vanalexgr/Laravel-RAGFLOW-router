@@ -516,7 +516,7 @@ PROMPT;
      *
      * @param string $question
      * @param array|null $guidelineKeys Optional selected/forced guideline keys to bias terminology
-     * @return array|null ['normalized_query' => string, 'language' => string, 'changed' => bool]
+     * @return array|null ['normalized_query' => string, 'language' => string, 'changed' => bool, 'intent' => ?string, 'question_type' => ?string, 'key_terms' => array]
      */
     public function normalizeForRetrieval(string $question, ?array $guidelineKeys = null): ?array
     {
@@ -541,7 +541,10 @@ Rules:
 - Include 3-10 high-value English keywords/synonyms if helpful.
 - Prefer vascular/ESVS terms (e.g., CLTI, PAD, AAA, carotid stenosis, venous thrombosis, superficial venous thrombosis).
 - If the query is already suitable English retrieval text, keep it close to the original.
-- Return ONLY valid JSON with keys: normalized_query, language.
+- Return ONLY valid JSON with keys: normalized_query, language, intent, question_type, key_terms.
+- intent must be one of: threshold, indication, contraindication, surveillance, diagnosis, imaging, treatment, management, procedure, timing, comparison, risk, prognosis, definition, general.
+- question_type must be one of: recommendation, definition, diagnostic_workup, surveillance, treatment_decision, perioperative, comparison, general.
+- key_terms must be an array of 2-8 short English medical terms.
 
 {$guidelineHintText}
 
@@ -549,7 +552,7 @@ User query:
 "{$question}"
 
 Example output:
-{"normalized_query":"superficial venous thrombosis saphenous vein thrombosis management ESVS guideline","language":"el"}
+{"normalized_query":"superficial venous thrombosis saphenous vein thrombosis management ESVS guideline","language":"el","intent":"management","question_type":"recommendation","key_terms":["superficial venous thrombosis","saphenous vein","management"]}
 PROMPT;
 
         try {
@@ -565,7 +568,7 @@ PROMPT;
                         ['role' => 'system', 'content' => 'You normalize multilingual vascular clinical queries for retrieval. Return ONLY valid JSON.'],
                         ['role' => 'user', 'content' => $prompt],
                     ],
-                    'max_tokens' => 120,
+                    'max_tokens' => 220,
                     'temperature' => 0,
                 ]);
 
@@ -593,6 +596,16 @@ PROMPT;
 
             $normalized = trim((string) ($decoded['normalized_query'] ?? ''));
             $language = trim((string) ($decoded['language'] ?? 'unknown'));
+            $intent = trim((string) ($decoded['intent'] ?? ''));
+            $questionType = trim((string) ($decoded['question_type'] ?? ''));
+            $keyTerms = $decoded['key_terms'] ?? [];
+            if (!is_array($keyTerms)) {
+                $keyTerms = [];
+            }
+            $keyTerms = array_values(array_filter(array_map(
+                fn($v) => trim((string) $v),
+                $keyTerms
+            ), fn($v) => $v !== ''));
             if ($normalized === '') {
                 return null;
             }
@@ -601,6 +614,9 @@ PROMPT;
                 'normalized_query' => $normalized,
                 'language' => $language !== '' ? $language : 'unknown',
                 'changed' => strcasecmp($normalized, $question) !== 0,
+                'intent' => $intent !== '' ? $intent : null,
+                'question_type' => $questionType !== '' ? $questionType : null,
+                'key_terms' => array_slice($keyTerms, 0, 8),
             ];
         } catch (\Exception $e) {
             $log->warning('[QUERY NORMALIZATION] Exception', [

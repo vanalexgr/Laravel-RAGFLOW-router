@@ -224,6 +224,7 @@ class ToolController extends Controller
         $narrativeChunks = json_decode(json_encode($result['narrative_chunks'], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
         $citationChunks = json_decode(json_encode($result['citation_chunks'], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
         $safeAssets = json_decode(json_encode($assets, JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
+        $queryNormalization = json_decode(json_encode($result['query_normalization'] ?? null, JSON_INVALID_UTF8_SUBSTITUTE), true);
 
         // Return JSON with structured data for citation emission
         return response()->json([
@@ -231,6 +232,7 @@ class ToolController extends Controller
             'narrative_chunks' => $narrativeChunks,
             'citation_chunks' => $citationChunks,
             'assets' => $safeAssets,
+            'query_normalization' => $queryNormalization,
         ], 200, [], JSON_INVALID_UTF8_SUBSTITUTE)
             ->header('Access-Control-Allow-Origin', '*')
             ->header('Access-Control-Allow-Methods', 'POST, OPTIONS')
