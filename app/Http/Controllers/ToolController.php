@@ -445,15 +445,20 @@ class ToolController extends Controller
             $keys = $requestedKeys;
         }
 
-        if (empty($keys)) {
-            foreach ($selectedGuidelines as $g) {
-                if (!is_array($g)) {
-                    continue;
-                }
-                foreach (['key', 'guideline_key', 'slug'] as $candidate) {
-                    if (!empty($g[$candidate]) && is_string($g[$candidate])) {
-                        $keys[] = $g[$candidate];
-                        break;
+        if (empty($keys) && !empty($selectedGuidelines)) {
+            // When selectedGuidelines is keyed by guideline key, prefer those keys directly.
+            if (!array_is_list($selectedGuidelines)) {
+                $keys = array_keys($selectedGuidelines);
+            } else {
+                foreach ($selectedGuidelines as $g) {
+                    if (!is_array($g)) {
+                        continue;
+                    }
+                    foreach (['key', 'guideline_key', 'slug'] as $candidate) {
+                        if (!empty($g[$candidate]) && is_string($g[$candidate])) {
+                            $keys[] = $g[$candidate];
+                            break;
+                        }
                     }
                 }
             }
