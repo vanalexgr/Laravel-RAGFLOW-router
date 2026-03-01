@@ -60,6 +60,12 @@ Some guideline exports include non-actionable "Good research statement" items. T
 | `RAGFLOW_HIGHLIGHT` | `false` | Include highlight snippets in results (disabled by default to reduce payload bloat) |
 | `RAGFLOW_QUERY_BOOSTS_ENABLED` | `true` | Enable short, rule-based phrase boosts for edge-case recall |
 | `RAGFLOW_NON_A_NON_B_BOOST_ENABLED` | `true` | Add arch-focused phrases when query includes non-A non-B dissection |
+| `RAGFLOW_FOCUSED_RECALL_ENABLED` | `true` | Enable focused second-pass retrieval for edge cases |
+| `RAGFLOW_NON_A_NON_B_RECALL_ENABLED` | `true` | Trigger focused recall pass for non-A non-B dissection queries |
+| `RAGFLOW_NON_A_NON_B_SIMILARITY_THRESHOLD` | `0.18` | Lower similarity threshold used in focused recall pass |
+| `RAGFLOW_NON_A_NON_B_TOP_K` | `120` | Candidate pool size for focused recall pass |
+| `RAGFLOW_NON_A_NON_B_NARRATIVE_MAX` | `40` | Narrative chunk cap for focused recall pass |
+| `RAGFLOW_NON_A_NON_B_CITATION_MAX` | `30` | Citation chunk cap for focused recall pass |
 
 **Example:**
 ```env
@@ -77,9 +83,17 @@ RAGFLOW_CITATION_TOP_K=10
 RAGFLOW_HIGHLIGHT=false
 RAGFLOW_QUERY_BOOSTS_ENABLED=true
 RAGFLOW_NON_A_NON_B_BOOST_ENABLED=true
+RAGFLOW_FOCUSED_RECALL_ENABLED=true
+RAGFLOW_NON_A_NON_B_RECALL_ENABLED=true
+RAGFLOW_NON_A_NON_B_SIMILARITY_THRESHOLD=0.18
+RAGFLOW_NON_A_NON_B_TOP_K=120
+RAGFLOW_NON_A_NON_B_NARRATIVE_MAX=40
+RAGFLOW_NON_A_NON_B_CITATION_MAX=30
 ```
 
 **Query boosts:** Small, deterministic phrase additions used only for retrieval (not answer generation). They help with edge cases like non-A non-B aortic dissection without enabling keyword mode. Set either env var to `false` for immediate rollback.
+
+**Focused recall:** Runs a second retrieval pass only when the query contains non-A non-B and the initial evidence set lacks that phrase. This pass uses a lower similarity threshold and larger candidate pool while keeping `keyword=false`. Disable via `RAGFLOW_FOCUSED_RECALL_ENABLED=false` or `RAGFLOW_NON_A_NON_B_RECALL_ENABLED=false` for instant rollback.
 
 **Note:** TOC (Table of Contents) and Auto Keywords & Meta must be configured in the RAGFlow UI when setting up the dataset, not via API.
 
