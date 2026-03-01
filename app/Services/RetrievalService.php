@@ -253,9 +253,14 @@ class RetrievalService
         return preg_match('/[^\x00-\x7F]/', $text) === 1;
     }
 
+    protected function nonANonBPattern(): string
+    {
+        return '/\bnon\s*[-\x{2010}-\x{2015}\x{2212}\x{00ad}\x{2011}]?\s*a\s*[,\-\/]?\s*non\s*[-\x{2010}-\x{2015}\x{2212}\x{00ad}\x{2011}]?\s*b\b/iu';
+    }
+
     protected function containsNonANonB(string $text): bool
     {
-        return preg_match('/\bnon\s*-?\s*a\s*non\s*-?\s*b\b/i', $text) === 1;
+        return preg_match($this->nonANonBPattern(), $text) === 1;
     }
 
     protected function appendUniqueTerms(string $query, array $terms): string
@@ -374,7 +379,7 @@ class RetrievalService
             return $dualResult;
         }
 
-        $pattern = '/\bnon\s*-?\s*a\s*non\s*-?\s*b\b/i';
+        $pattern = $this->nonANonBPattern();
         $hasNarrative = $this->chunksContainPattern($dualResult['narrative_chunks'] ?? [], $pattern, ['content']);
         $hasCitation = $this->chunksContainPattern($dualResult['citation_chunks'] ?? [], $pattern, ['text', 'content']);
 
