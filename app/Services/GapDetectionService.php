@@ -59,10 +59,20 @@ class GapDetectionService
 
         $queryTerms = $this->termsForMissingFields($missing);
 
+        $missingConcepts = [];
+        $graphTerms = $intentProfile['graph_terms'] ?? [];
+        if (is_array($graphTerms) && !empty($graphTerms) && (bool) config('graphrag.concept_gap_check', true)) {
+            $missingConcepts = $this->missingGraphConcepts($graphTerms, $text);
+            if (!empty($missingConcepts)) {
+                $queryTerms = array_values(array_unique(array_merge($queryTerms, $missingConcepts)));
+            }
+        }
+
         return [
             'intent' => $intent,
             'required' => $required,
             'missing' => $missing,
+            'missing_concepts' => $missingConcepts,
             'query_terms' => $queryTerms,
         ];
     }
@@ -144,5 +154,35 @@ class GapDetectionService
             }
         }
         return array_values(array_unique($terms));
+    }
+
+    protected function missingGraphConcepts(array $concepts, string $text): array
+    {
+        $max = (int) config('graphrag.concept_gap_max_terms', 6);
+        $max = max(0, min($max, 20));
+        $stop = [
+            'aortic', 'artery', 'disease', 'management', 'treatment', 'clinical', 'guideline',
+            'patient', 'patients', 'therapy', 'repair', 'surgery',
+        ];
+
+        $missing = [];
+        foreach ($concepts as $concept) {
+            $term = trim((string) $concept);
+            if ($term === '' || mb_strlen($term) < 4) {
+                continue;
+            }
+            $termLower = mb_strtolower($term);
+            if (in_array($termLower, $stop, true)) {
+                continue;
+            }
+            if (!str_contains($text, $termLower)) {
+                $missing[] = $term;
+                if (count($missing) >= $max) {
+                    break;
+                }
+            }
+        }
+
+        return $missing;
     }
 }
