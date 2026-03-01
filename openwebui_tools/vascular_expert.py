@@ -14,6 +14,12 @@ import re
 import html
 
 
+# Match non-A non-B variants (commas/slashes/hyphen variants).
+NON_A_NON_B_PATTERN = re.compile(
+    r"\bnon\s*[-\u2010-\u2015\u2212\u00ad]?\s*a\s*[,\\-/]?\s*non\s*[-\u2010-\u2015\u2212\u00ad]?\s*b\b",
+    re.IGNORECASE,
+)
+
 # Enum of all valid guideline keys
 GuidelineKey = Literal[
     "aortic_arch",
@@ -274,6 +280,9 @@ class Tools:
                 score += 3
 
         combined_query = str(profile.get("combined_query") or "")
+        if NON_A_NON_B_PATTERN.search(combined_query):
+            if NON_A_NON_B_PATTERN.search(text):
+                score += 12
         # Boost chunks that match decisive verbs/phrasing from the query.
         for cue in ["recommended", "should be considered", "indicated", "surveillance", "imaging", "diagnosis", "repair"]:
             if cue in combined_query and cue in text:
