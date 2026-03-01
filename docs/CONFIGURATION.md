@@ -135,6 +135,27 @@ BRIDGE_RERANK_TIMEOUT=20
 
 ---
 
+### Iterative Gap Detection (Exploratory)
+
+These flags control the second-pass retrieval loop and strict output template.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GAP_DETECTION_ENABLED` | `true` | Enable gap detection + focused second retrieval pass |
+| `GAP_DETECTION_MAX_PASSES` | `1` | Max additional retrieval passes |
+| `GAP_DETECTION_NARRATIVE_MAX` | `4` | Narrative chunk cap for second pass |
+| `GAP_DETECTION_CITATION_MAX` | `3` | Citation chunk cap for second pass |
+| `STRICT_TEMPLATE_ENABLED` | `true` | Enforce strict output structure hints |
+| `GAP_DETECTION_DEBUG` | `false` | Include gap debug info in API response |
+
+**Quick rollback to previous behavior:**
+```env
+GAP_DETECTION_ENABLED=false
+STRICT_TEMPLATE_ENABLED=false
+```
+
+---
+
 ### RAGFlow Bridge (Optional)
 
 Use the local bridge for parallel retrieval and tighter latency control.

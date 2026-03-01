@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Services\RetrievalService;
 use App\Services\GuidelineAssetService;
+use App\Services\GapDetectionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -207,6 +208,17 @@ class ToolController extends Controller
         $output .= "3. 📌 Guideline supporting statements\n";
         if (!empty($assets)) {
             $output .= "4. 🖼️ Figures / Tables (optional; show images if they help)\n";
+        }
+
+        $gapService = new GapDetectionService();
+        if ($gapService->strictTemplateEnabled()) {
+            $output .= "\n=== REQUIRED STRUCTURE (STRICT) ===\n";
+            $output .= "Assessment:\n";
+            $output .= "Imaging:\n";
+            $output .= "Indication for intervention:\n";
+            $output .= "Treatment options:\n";
+            $output .= "Follow-up:\n";
+            $output .= "Evidence used (Rec #, Class, Level):\n";
         }
 
         // Debug: Log what we're returning

@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Log;
 use App\Services\GuidelineRouterService;
 use App\Services\PHIScrubberService;
 use App\Services\BridgeRerankService;
+use App\Services\GapDetectionService;
 
 class RetrievalService
 {
@@ -126,6 +127,60 @@ class RetrievalService
 
         $dualResult = $this->retrieveDualChunks($expandedQuery, $citationQuery, $selectedGuidelines, $narrativeMax, $citationMax, $guidelineScores);
 
+        $gapReport = null;
+        $gapService = new GapDetectionService();
+        if ($gapService->enabled() && $gapService->maxPasses() > 0) {
+            $gapReport = $gapService->detect(
+                $scrubbedQuestion,
+                $dualResult['narrative_chunks'] ?? [],
+                $dualResult['citation_chunks'] ?? [],
+                $normalizationMeta
+            );
+
+            if (!empty($gapReport['missing']) && !empty($gapReport['query_terms'])) {
+                $limits = $gapService->secondPassLimits();
+                $focusedNarrativeQuery = trim($expandedQuery . ' ' . implode(' ', $gapReport['query_terms']));
+                $focusedCitationQuery = trim($citationQuery . ' ' . implode(' ', $gapReport['query_terms']));
+
+                $log->info('[GAP DETECTION] Missing fields detected; running focused second pass', [
+                    'missing' => $gapReport['missing'],
+                    'query_terms' => $gapReport['query_terms'],
+                    'narrative_max' => $limits['narrative_max'],
+                    'citation_max' => $limits['citation_max'],
+                ]);
+
+                $second = $this->retrieveDualChunks(
+                    $focusedNarrativeQuery,
+                    $focusedCitationQuery,
+                    $selectedGuidelines,
+                    $limits['narrative_max'],
+                    $limits['citation_max'],
+                    $guidelineScores
+                );
+
+                $dualResult = [
+                    'narrative_chunks' => $this->mergeChunks(
+                        $dualResult['narrative_chunks'] ?? [],
+                        $second['narrative_chunks'] ?? [],
+                        'narrative'
+                    ),
+                    'citation_chunks' => $this->mergeChunks(
+                        $dualResult['citation_chunks'] ?? [],
+                        $second['citation_chunks'] ?? [],
+                        'citation'
+                    ),
+                ];
+
+                // Re-evaluate gaps after second pass.
+                $gapReport = $gapService->detect(
+                    $scrubbedQuestion,
+                    $dualResult['narrative_chunks'] ?? [],
+                    $dualResult['citation_chunks'] ?? [],
+                    $normalizationMeta
+                );
+            }
+        }
+
         $duration = round((microtime(true) - $startTime) * 1000);
 
         return [
@@ -141,7 +196,43 @@ class RetrievalService
             'citation_chunks' => $dualResult['citation_chunks'],
             'duration_ms' => $duration,
             'system_prompt' => $this->getDualSystemPrompt(),
+            'gap_report' => $gapService->enabled() && config('gap_detection.include_debug', false) ? $gapReport : null,
         ];
+    }
+
+    protected function mergeChunks(array $primary, array $secondary, string $type): array
+    {
+        if (empty($secondary)) {
+            return $primary;
+        }
+
+        $seen = [];
+        $out = [];
+
+        $fingerprint = function (array $chunk) use ($type): string {
+            if ($type === 'citation') {
+                $text = (string) ($chunk['text'] ?? '');
+                $rec = (string) ($chunk['recommendation_id'] ?? '');
+                return md5($rec . '|' . $text);
+            }
+            $text = (string) ($chunk['content'] ?? '');
+            $source = (string) ($chunk['source_guideline'] ?? '');
+            return md5($source . '|' . $text);
+        };
+
+        foreach (array_merge($primary, $secondary) as $chunk) {
+            if (!is_array($chunk)) {
+                continue;
+            }
+            $key = $fingerprint($chunk);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $out[] = $chunk;
+        }
+
+        return $out;
     }
 
     protected function containsNonAscii(string $text): bool
