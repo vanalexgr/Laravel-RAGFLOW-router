@@ -25,6 +25,8 @@ return [
         'citation_top_k' => (int) env('RAGFLOW_CITATION_TOP_K', 10),
         // Highlighting bloats chunk payloads and can degrade downstream prompt quality.
         'highlight' => filter_var(env('RAGFLOW_HIGHLIGHT', false), FILTER_VALIDATE_BOOLEAN),
+        // Narrative excerpts are trimmed around query matches to keep prompts compact.
+        'narrative_excerpt_max_chars' => (int) env('RAGFLOW_NARRATIVE_EXCERPT_MAX_CHARS', 1000),
         // Lightweight phrase boosts for edge-case recall (kept short to avoid keyword stuffing).
         'query_boosts' => [
             'enabled' => filter_var(env('RAGFLOW_QUERY_BOOSTS_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
@@ -41,6 +43,18 @@ return [
             // Optional overrides for hybrid retrieval during focused recall.
             'keyword_mode' => filter_var(env('RAGFLOW_NON_A_NON_B_KEYWORD_MODE', false), FILTER_VALIDATE_BOOLEAN),
             'vector_similarity_weight' => (float) env('RAGFLOW_NON_A_NON_B_VECTOR_WEIGHT', 0.5),
+        ],
+        // Optional high-recall pass to match RAGFlow UI settings (hybrid, larger top-k).
+        'quality_pass' => [
+            'enabled' => filter_var(env('RAGFLOW_QUALITY_PASS_ENABLED', false), FILTER_VALIDATE_BOOLEAN),
+            'min_narrative' => (int) env('RAGFLOW_QUALITY_PASS_MIN_NARRATIVE', 0),
+            'min_citation' => (int) env('RAGFLOW_QUALITY_PASS_MIN_CITATION', 0),
+            'similarity_threshold' => (float) env('RAGFLOW_QUALITY_PASS_SIMILARITY_THRESHOLD', 0.2),
+            'top_k' => (int) env('RAGFLOW_QUALITY_PASS_TOP_K', 1024),
+            'keyword_mode' => filter_var(env('RAGFLOW_QUALITY_PASS_KEYWORD_MODE', true), FILTER_VALIDATE_BOOLEAN),
+            'vector_similarity_weight' => (float) env('RAGFLOW_QUALITY_PASS_VECTOR_WEIGHT', 0.2),
+            'narrative_max' => (int) env('RAGFLOW_QUALITY_PASS_NARRATIVE_MAX', 80),
+            'citation_max' => (int) env('RAGFLOW_QUALITY_PASS_CITATION_MAX', 80),
         ],
     ],
 

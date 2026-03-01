@@ -58,6 +58,7 @@ Some guideline exports include non-actionable "Good research statement" items. T
 | `RAGFLOW_USE_KG` | `false` | Enable knowledge graph expansion (disabled by default; often noisy/brittle) |
 | `RAGFLOW_CITATION_TOP_K` | `10` | Candidate pool size for citation-only retrieval |
 | `RAGFLOW_HIGHLIGHT` | `false` | Include highlight snippets in results (disabled by default to reduce payload bloat) |
+| `RAGFLOW_NARRATIVE_EXCERPT_MAX_CHARS` | `1000` | Max characters for narrative snippets (trimmed around query matches) |
 | `RAGFLOW_QUERY_BOOSTS_ENABLED` | `true` | Enable short, rule-based phrase boosts for edge-case recall |
 | `RAGFLOW_NON_A_NON_B_BOOST_ENABLED` | `true` | Add arch-focused phrases when query includes non-A non-B dissection |
 | `RAGFLOW_FOCUSED_RECALL_ENABLED` | `true` | Enable focused second-pass retrieval for edge cases |
@@ -68,6 +69,15 @@ Some guideline exports include non-actionable "Good research statement" items. T
 | `RAGFLOW_NON_A_NON_B_CITATION_MAX` | `30` | Citation chunk cap for focused recall pass |
 | `RAGFLOW_NON_A_NON_B_KEYWORD_MODE` | `false` | Enable hybrid keyword+vector only for non-A non-B focused recall |
 | `RAGFLOW_NON_A_NON_B_VECTOR_WEIGHT` | `0.5` | Vector similarity weight for non-A non-B focused recall |
+| `RAGFLOW_QUALITY_PASS_ENABLED` | `false` | Enable a high-recall pass (RAGFlow UI-like hybrid settings) |
+| `RAGFLOW_QUALITY_PASS_MIN_NARRATIVE` | `0` | Minimum narrative chunk count required to skip the quality pass |
+| `RAGFLOW_QUALITY_PASS_MIN_CITATION` | `0` | Minimum citation chunk count required to skip the quality pass |
+| `RAGFLOW_QUALITY_PASS_SIMILARITY_THRESHOLD` | `0.2` | Similarity threshold for the quality pass |
+| `RAGFLOW_QUALITY_PASS_TOP_K` | `1024` | Candidate pool size for the quality pass |
+| `RAGFLOW_QUALITY_PASS_KEYWORD_MODE` | `true` | Enable hybrid keyword+vector for the quality pass |
+| `RAGFLOW_QUALITY_PASS_VECTOR_WEIGHT` | `0.2` | Vector similarity weight for the quality pass |
+| `RAGFLOW_QUALITY_PASS_NARRATIVE_MAX` | `80` | Narrative chunk cap for the quality pass |
+| `RAGFLOW_QUALITY_PASS_CITATION_MAX` | `80` | Citation chunk cap for the quality pass |
 
 **Example:**
 ```env
@@ -83,6 +93,7 @@ RAGFLOW_RERANK_ID=Cohere-rerank-v4.0-pro___OpenAI-API
 RAGFLOW_USE_KG=false
 RAGFLOW_CITATION_TOP_K=10
 RAGFLOW_HIGHLIGHT=false
+RAGFLOW_NARRATIVE_EXCERPT_MAX_CHARS=1000
 RAGFLOW_QUERY_BOOSTS_ENABLED=true
 RAGFLOW_NON_A_NON_B_BOOST_ENABLED=true
 RAGFLOW_FOCUSED_RECALL_ENABLED=true
@@ -93,11 +104,22 @@ RAGFLOW_NON_A_NON_B_NARRATIVE_MAX=40
 RAGFLOW_NON_A_NON_B_CITATION_MAX=30
 RAGFLOW_NON_A_NON_B_KEYWORD_MODE=false
 RAGFLOW_NON_A_NON_B_VECTOR_WEIGHT=0.5
+RAGFLOW_QUALITY_PASS_ENABLED=false
+RAGFLOW_QUALITY_PASS_MIN_NARRATIVE=0
+RAGFLOW_QUALITY_PASS_MIN_CITATION=0
+RAGFLOW_QUALITY_PASS_SIMILARITY_THRESHOLD=0.2
+RAGFLOW_QUALITY_PASS_TOP_K=1024
+RAGFLOW_QUALITY_PASS_KEYWORD_MODE=true
+RAGFLOW_QUALITY_PASS_VECTOR_WEIGHT=0.2
+RAGFLOW_QUALITY_PASS_NARRATIVE_MAX=80
+RAGFLOW_QUALITY_PASS_CITATION_MAX=80
 ```
 
 **Query boosts:** Small, deterministic phrase additions used only for retrieval (not answer generation). They help with edge cases like non-A non-B aortic dissection without enabling keyword mode. Set either env var to `false` for immediate rollback.
 
-**Focused recall:** Runs a second retrieval pass only when the query contains non-A non-B and the initial evidence set lacks that phrase. This pass uses a lower similarity threshold and larger candidate pool while keeping `keyword=false`. Disable via `RAGFLOW_FOCUSED_RECALL_ENABLED=false` or `RAGFLOW_NON_A_NON_B_RECALL_ENABLED=false` for instant rollback.
+**Focused recall:** Runs a second retrieval pass only when the query contains non-A non-B and the initial evidence set lacks that phrase. This pass uses a lower similarity threshold and larger candidate pool; you can optionally enable hybrid search via `RAGFLOW_NON_A_NON_B_KEYWORD_MODE=true` for higher recall. Disable via `RAGFLOW_FOCUSED_RECALL_ENABLED=false` or `RAGFLOW_NON_A_NON_B_RECALL_ENABLED=false` for instant rollback.
+
+**Quality pass (optional):** When enabled, runs an additional high-recall retrieval pass using RAGFlow UI-like hybrid settings. Use `RAGFLOW_QUALITY_PASS_MIN_NARRATIVE` / `RAGFLOW_QUALITY_PASS_MIN_CITATION` to only trigger when coverage is thin. Keep disabled for low latency; enable selectively during evaluation.
 
 **Note:** TOC (Table of Contents) and Auto Keywords & Meta must be configured in the RAGFlow UI when setting up the dataset, not via API.
 

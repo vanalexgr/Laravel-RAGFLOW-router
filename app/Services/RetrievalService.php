@@ -140,6 +140,17 @@ class RetrievalService
             $guidelineScores
         );
 
+        $dualResult = $this->applyQualityPass(
+            $dualResult,
+            $scrubbedQuestion,
+            $expandedQuery,
+            $citationQuery,
+            $selectedGuidelines,
+            $narrativeMax,
+            $citationMax,
+            $guidelineScores
+        );
+
         $gapReport = null;
         $gapService = new GapDetectionService();
         if ($gapService->enabled() && $gapService->maxPasses() > 0) {
@@ -447,6 +458,97 @@ class RetrievalService
             $pattern,
             ['text', 'content']
         );
+
+        return $dualResult;
+    }
+
+    protected function applyQualityPass(
+        array $dualResult,
+        string $question,
+        string $expandedQuery,
+        string $citationQuery,
+        array $selectedGuidelines,
+        int $narrativeMax,
+        int $citationMax,
+        array $guidelineScores
+    ): array {
+        $qualityConfig = config('ragflow.retrieval.quality_pass', []);
+        if (empty($qualityConfig['enabled'])) {
+            return $dualResult;
+        }
+
+        $minNarrative = (int) ($qualityConfig['min_narrative'] ?? 0);
+        $minCitation = (int) ($qualityConfig['min_citation'] ?? 0);
+        $haveNarrative = count($dualResult['narrative_chunks'] ?? []);
+        $haveCitation = count($dualResult['citation_chunks'] ?? []);
+        $alwaysRun = $minNarrative === 0 && $minCitation === 0;
+        $needsNarrative = $minNarrative > 0 && $haveNarrative < $minNarrative;
+        $needsCitation = $minCitation > 0 && $haveCitation < $minCitation;
+
+        if (!$alwaysRun && !$needsNarrative && !$needsCitation) {
+            return $dualResult;
+        }
+
+        $qualityNarrativeMax = max($narrativeMax, (int) ($qualityConfig['narrative_max'] ?? $narrativeMax));
+        $qualityCitationMax = max($citationMax, (int) ($qualityConfig['citation_max'] ?? $citationMax));
+
+        $overrides = [
+            'similarity_threshold' => $qualityConfig['similarity_threshold'] ?? null,
+            'top_k' => $qualityConfig['top_k'] ?? null,
+            'keyword' => $qualityConfig['keyword_mode'] ?? null,
+            'vector_similarity_weight' => $qualityConfig['vector_similarity_weight'] ?? null,
+        ];
+        if (array_key_exists('use_kg', $qualityConfig)) {
+            $overrides['use_kg'] = $qualityConfig['use_kg'];
+        }
+        if (array_key_exists('citation_top_k', $qualityConfig)) {
+            $overrides['citation_top_k'] = $qualityConfig['citation_top_k'];
+        }
+
+        Log::channel('retrieval')->info('[QUALITY PASS] Running high-recall retrieval pass', [
+            'min_narrative' => $minNarrative,
+            'min_citation' => $minCitation,
+            'have_narrative' => $haveNarrative,
+            'have_citation' => $haveCitation,
+            'narrative_max' => $qualityNarrativeMax,
+            'citation_max' => $qualityCitationMax,
+            'overrides' => array_filter($overrides, fn($v) => $v !== null),
+        ]);
+
+        $quality = $this->retrieveDualChunks(
+            $expandedQuery,
+            $citationQuery,
+            $selectedGuidelines,
+            $qualityNarrativeMax,
+            $qualityCitationMax,
+            $guidelineScores,
+            $overrides
+        );
+
+        $dualResult['narrative_chunks'] = $this->mergeChunks(
+            $dualResult['narrative_chunks'] ?? [],
+            $quality['narrative_chunks'] ?? [],
+            'narrative'
+        );
+        $dualResult['citation_chunks'] = $this->mergeChunks(
+            $dualResult['citation_chunks'] ?? [],
+            $quality['citation_chunks'] ?? [],
+            'citation'
+        );
+
+        if ($this->containsNonANonB($question)) {
+            $pattern = $this->nonANonBPattern();
+            $dualResult['narrative_chunks'] = $this->promotePatternMatches(
+                $dualResult['narrative_chunks'] ?? [],
+                $pattern,
+                ['content']
+            );
+            $dualResult['citation_chunks'] = $this->promotePatternMatches(
+                $dualResult['citation_chunks'] ?? [],
+                $pattern,
+                ['text', 'content']
+            );
+        }
 
         return $dualResult;
     }
@@ -956,7 +1058,12 @@ class RetrievalService
             $citationChunks = $bridgeRerank->rerank($citationQuery, $citationChunks, $citationMax, 'citation');
         }
 
-        $formattedNarrative = $this->formatChunks($narrativeChunks, 'narrative', array_column($narrativeDatasets, 'name'));
+        $formattedNarrative = $this->formatChunks(
+            $narrativeChunks,
+            'narrative',
+            array_column($narrativeDatasets, 'name'),
+            $narrativeQuery
+        );
         $formattedCitation = $this->formatChunks($citationChunks, 'citation');
 
         // Second-pass safety filter on formatted chunks. This catches cases where the
@@ -1034,7 +1141,7 @@ class RetrievalService
         return $q;
     }
 
-    protected function formatChunks(array $rawChunks, string $type, array $guidelineNames = []): array
+    protected function formatChunks(array $rawChunks, string $type, array $guidelineNames = [], ?string $query = null): array
     {
         $formatted = [];
         foreach ($rawChunks as $chunk) {
@@ -1081,7 +1188,12 @@ class RetrievalService
                 $meta['text'] = strlen($text) > 800 ? substr($text, 0, 800) . '...' : $text;
             } else {
                 // Narrative
-                $meta['content'] = strlen($content) > 1000 ? substr($content, 0, 1000) . '...' : $content;
+                $maxChars = (int) (config('ragflow.retrieval.narrative_excerpt_max_chars', 1000));
+                if ($maxChars <= 0) {
+                    $meta['content'] = $content;
+                } else {
+                    $meta['content'] = $this->extractNarrativeSnippet($content, $query, $maxChars);
+                }
                 $meta['source_guideline'] = $chunk['_source_guideline'] ?? ($guidelineNames[0] ?? 'ESVS Guidelines');
             }
 
@@ -1091,6 +1203,89 @@ class RetrievalService
             ], $meta);
         }
         return $formatted;
+    }
+
+    protected function extractNarrativeSnippet(string $content, ?string $query, int $maxChars): string
+    {
+        $content = (string) $content;
+        if ($maxChars <= 0 || mb_strlen($content) <= $maxChars) {
+            return $content;
+        }
+
+        $query = trim((string) $query);
+        $matchPos = null;
+        $matchLen = 0;
+
+        if ($query !== '' && $this->containsNonANonB($query)) {
+            if (preg_match($this->nonANonBPattern(), $content, $m, PREG_OFFSET_CAPTURE)) {
+                $matchPos = $m[0][1];
+                $matchLen = mb_strlen($m[0][0]);
+            }
+        }
+
+        if ($matchPos === null && $query !== '') {
+            $terms = $this->extractQueryTerms($query);
+            foreach ($terms as $term) {
+                $pos = mb_stripos($content, $term);
+                if ($pos !== false) {
+                    $matchPos = $pos;
+                    $matchLen = mb_strlen($term);
+                    break;
+                }
+            }
+        }
+
+        if ($matchPos === null) {
+            return mb_substr($content, 0, $maxChars) . '...';
+        }
+
+        $window = $maxChars;
+        $contentLen = mb_strlen($content);
+        $start = max(0, $matchPos - (int) ($window * 0.25));
+        if ($start + $window > $contentLen) {
+            $start = max(0, $contentLen - $window);
+        }
+
+        $snippet = mb_substr($content, $start, $window);
+        $prefix = $start > 0 ? '...' : '';
+        $suffix = ($start + $window) < $contentLen ? '...' : '';
+        return $prefix . $snippet . $suffix;
+    }
+
+    protected function extractQueryTerms(string $query): array
+    {
+        $q = mb_strtolower($query);
+        $q = preg_replace('/[^\\p{L}\\p{N}\\s]+/u', ' ', $q) ?? $q;
+        $parts = preg_split('/\\s+/u', $q, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        if (empty($parts)) {
+            return [];
+        }
+
+        $stop = [
+            'the', 'and', 'for', 'with', 'without', 'from', 'into', 'over', 'under',
+            'this', 'that', 'these', 'those', 'what', 'when', 'where', 'which', 'while',
+            'about', 'after', 'before', 'since', 'during', 'into', 'onto',
+            'management', 'treatment', 'therapy', 'patient', 'patients', 'disease',
+            'guideline', 'recommendation', 'recommendations', 'clinical', 'evidence',
+            'acute', 'chronic', 'type', 'case', 'cases',
+        ];
+
+        $terms = [];
+        foreach ($parts as $part) {
+            if (mb_strlen($part) < 4) {
+                continue;
+            }
+            if (in_array($part, $stop, true)) {
+                continue;
+            }
+            if (!isset($terms[$part])) {
+                $terms[$part] = true;
+            }
+        }
+
+        $unique = array_keys($terms);
+        usort($unique, fn($a, $b) => mb_strlen($b) <=> mb_strlen($a));
+        return $unique;
     }
 
     protected function filterRawChunksToSelectedGuidelines(array $rawChunks, array $selectedKeys, array $selectedNames, string $type): array
