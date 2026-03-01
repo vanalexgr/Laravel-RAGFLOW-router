@@ -63,6 +63,7 @@ class Tools:
     UI_REC_MAX_CHUNKS = 12
     UI_REC_MAX_CHUNKS_MULTI = 18
     LLM_ASSET_MAX_ITEMS = 3
+    STRICT_TEMPLATE = True
 
     def __init__(self):
         self.valves = self.Valves()
@@ -957,6 +958,15 @@ class Tools:
                 if assets_block:
                     next_rule_num = 6 if (not selected_citation_chunks and selected_narrative_chunks) else 5
                     llm_output += f"{next_rule_num}. If images help, include up to 3 markdown image lines from the FIGURES / TABLES section.\n"
+
+                if self.STRICT_TEMPLATE:
+                    llm_output += "\n=== REQUIRED STRUCTURE (STRICT) ===\n"
+                    llm_output += "Assessment:\n"
+                    llm_output += "Imaging:\n"
+                    llm_output += "Indication for intervention:\n"
+                    llm_output += "Treatment options:\n"
+                    llm_output += "Follow-up:\n"
+                    llm_output += "Evidence used (Rec #, Class, Level):\n"
                 
                 return llm_output
             else:
