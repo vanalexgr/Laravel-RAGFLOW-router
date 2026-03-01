@@ -259,13 +259,16 @@ PROMPT;
             if ($content === '') {
                 return null;
             }
-            if (preg_match('/\{.*\}/s', $content, $matches)) {
-                $content = $matches[0];
+
+            $json = $this->extractJsonObject($content);
+            if ($json === null) {
+                $log->warning('[GRAPHRAG] LLM JSON extraction failed', ['content' => $content]);
+                return null;
             }
 
-            $decoded = json_decode($content, true);
+            $decoded = json_decode($json, true);
             if (!is_array($decoded)) {
-                $log->warning('[GRAPHRAG] LLM JSON parse failed', ['content' => $content]);
+                $log->warning('[GRAPHRAG] LLM JSON parse failed', ['content' => $json]);
                 return null;
             }
 
@@ -275,6 +278,64 @@ PROMPT;
             $log->warning('[GRAPHRAG] LLM exception', ['error' => $e->getMessage()]);
             return null;
         }
+    }
+
+    protected function extractJsonObject(string $content): ?string
+    {
+        $content = trim($content);
+        if ($content === '') {
+            return null;
+        }
+
+        // Strip code fences if present.
+        if (preg_match('/```(?:json)?\\s*(.*?)```/is', $content, $m)) {
+            $content = trim($m[1]);
+        }
+
+        $start = strpos($content, '{');
+        if ($start === false) {
+            return null;
+        }
+
+        $depth = 0;
+        $inString = false;
+        $escape = false;
+        $len = strlen($content);
+
+        for ($i = $start; $i < $len; $i++) {
+            $ch = $content[$i];
+
+            if ($inString) {
+                if ($escape) {
+                    $escape = false;
+                    continue;
+                }
+                if ($ch === '\\\\') {
+                    $escape = true;
+                    continue;
+                }
+                if ($ch === '"') {
+                    $inString = false;
+                }
+                continue;
+            }
+
+            if ($ch === '"') {
+                $inString = true;
+                continue;
+            }
+
+            if ($ch === '{') {
+                $depth++;
+            } elseif ($ch === '}') {
+                $depth--;
+                if ($depth === 0) {
+                    return substr($content, $start, $i - $start + 1);
+                }
+            }
+        }
+
+        return null;
     }
 
     protected function buildRetrievalTerms(array $core, array $related, array $slots, int $maxTerms): array
