@@ -151,6 +151,39 @@ BRIDGE_RERANK_TOP_N=20
 BRIDGE_RERANK_TIMEOUT=20
 ```
 
+#### GraphRAG (Concept Expansion + Targeted Retrieval + Gap Check)
+
+GraphRAG adds a concept expansion step before retrieval and feeds those concepts into both narrative and recommendation retrieval. Missing concepts are then checked during gap detection to trigger a focused second pass.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GRAPHRAG_ENABLED` | `false` | Enable GraphRAG concept expansion |
+| `GRAPHRAG_LLM_ENABLED` | `true` | Use LLM for concept graph expansion (fallback to heuristic if disabled) |
+| `GRAPHRAG_INTENT_ENABLED` | `true` | Extract intent/slots for all queries (even English) |
+| `GRAPHRAG_USE_NORMALIZED_QUERY` | `false` | Use normalized query text for retrieval (advanced; optional) |
+| `GRAPHRAG_MAX_CANDIDATES` | `60` | Max candidate concepts considered from guideline keywords |
+| `GRAPHRAG_MAX_CORE` | `8` | Max core concepts returned |
+| `GRAPHRAG_MAX_RELATED` | `8` | Max related concepts returned |
+| `GRAPHRAG_MAX_QUERY_TERMS` | `12` | Max concept terms appended to retrieval queries |
+| `GRAPHRAG_CONCEPT_GAP_CHECK` | `true` | Include concept gaps in gap detection |
+| `GRAPHRAG_CONCEPT_GAP_MAX` | `6` | Max missing concepts appended to focused second-pass query |
+| `GRAPHRAG_DEBUG` | `false` | Include graph expansion debug in API response |
+
+**Example:**
+```env
+GRAPHRAG_ENABLED=true
+GRAPHRAG_LLM_ENABLED=true
+GRAPHRAG_INTENT_ENABLED=true
+GRAPHRAG_USE_NORMALIZED_QUERY=false
+GRAPHRAG_MAX_CANDIDATES=60
+GRAPHRAG_MAX_CORE=8
+GRAPHRAG_MAX_RELATED=8
+GRAPHRAG_MAX_QUERY_TERMS=12
+GRAPHRAG_CONCEPT_GAP_CHECK=true
+GRAPHRAG_CONCEPT_GAP_MAX=6
+GRAPHRAG_DEBUG=false
+```
+
 #### Understanding Retrieval Settings
 
 **Top-K (RAGFLOW_TOP_K)**

@@ -7,6 +7,7 @@ use App\Services\GuidelineRouterService;
 use App\Services\PHIScrubberService;
 use App\Services\BridgeRerankService;
 use App\Services\GapDetectionService;
+use App\Services\GraphRagService;
 
 class RetrievalService
 {
@@ -31,15 +32,23 @@ class RetrievalService
         $retrievalQuestion = $scrubbedQuestion;
         $normalizationOriginalQuestion = $scrubbedQuestion;
         $normalizationMeta = null;
+        $graphRag = new GraphRagService();
+        $graphEnabled = $graphRag->enabled();
+        $shouldNormalize = $this->containsNonAscii($scrubbedQuestion)
+            || ($graphEnabled && $graphRag->intentEnabled());
 
-        if ($this->containsNonAscii($scrubbedQuestion)) {
+        if ($shouldNormalize) {
             try {
                 $normalizer = new GuidelineRouterService();
                 $normalizationMeta = $normalizer->normalizeForRetrieval($scrubbedQuestion, $requestedKeys);
                 if (is_array($normalizationMeta) && !empty($normalizationMeta['normalized_query'])) {
                     $candidate = trim((string) $normalizationMeta['normalized_query']);
                     if ($candidate !== '') {
-                        $retrievalQuestion = $candidate;
+                        $useNormalized = $this->containsNonAscii($scrubbedQuestion)
+                            || (bool) config('graphrag.use_normalized_query', false);
+                        if ($useNormalized) {
+                            $retrievalQuestion = $candidate;
+                        }
                     }
                     $log->info('[QUERY NORMALIZATION] Applied multilingual retrieval normalization', [
                         'correlation_id' => $correlationId,
@@ -124,6 +133,23 @@ class RetrievalService
         $expandedQuery = $expansionResult['expanded'] ?? $retrievalQuestion; // Use expanded or original
         $expandedQuery = $this->buildCitationQuery($expandedQuery, $normalizationOriginalQuestion, $normalizationMeta, array_keys($selectedGuidelines));
         $citationQuery = $this->buildCitationQuery($retrievalQuestion, $normalizationOriginalQuestion, $normalizationMeta, array_keys($selectedGuidelines));
+
+        $graphExpansion = null;
+        if ($graphEnabled) {
+            $graphExpansion = $graphRag->expand($scrubbedQuestion, array_keys($selectedGuidelines), $normalizationMeta);
+            if (!empty($graphExpansion['retrieval_terms'])) {
+                $expandedQuery = $this->appendUniqueTerms($expandedQuery, $graphExpansion['retrieval_terms']);
+            }
+            if (!empty($graphExpansion['citation_terms'])) {
+                $citationQuery = $this->appendUniqueTerms($citationQuery, $graphExpansion['citation_terms']);
+            }
+            if (!is_array($normalizationMeta)) {
+                $normalizationMeta = [];
+            }
+            $normalizationMeta['graph_terms'] = $graphExpansion['core_concepts'] ?? [];
+            $normalizationMeta['graph_slots'] = $graphExpansion['slots'] ?? [];
+        }
+
         $expandedQuery = $this->applyRetrievalQueryBoosts($expandedQuery, array_keys($selectedGuidelines), 'narrative');
         $citationQuery = $this->applyRetrievalQueryBoosts($citationQuery, array_keys($selectedGuidelines), 'citation');
 
@@ -161,7 +187,8 @@ class RetrievalService
                 $normalizationMeta
             );
 
-            if (!empty($gapReport['missing']) && !empty($gapReport['query_terms'])) {
+            $hasGap = !empty($gapReport['missing']) || !empty($gapReport['missing_concepts']);
+            if ($hasGap && !empty($gapReport['query_terms'])) {
                 $limits = $gapService->secondPassLimits();
                 $focusedNarrativeQuery = trim($expandedQuery . ' ' . implode(' ', $gapReport['query_terms']));
                 $focusedCitationQuery = trim($citationQuery . ' ' . implode(' ', $gapReport['query_terms']));
@@ -221,6 +248,7 @@ class RetrievalService
             'duration_ms' => $duration,
             'system_prompt' => $this->getDualSystemPrompt(),
             'gap_report' => $gapService->enabled() && config('gap_detection.include_debug', false) ? $gapReport : null,
+            'graph_expansion' => $graphEnabled && config('graphrag.include_debug', false) ? $graphExpansion : null,
         ];
     }
 
