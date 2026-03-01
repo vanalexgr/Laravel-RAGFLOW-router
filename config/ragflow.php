@@ -25,6 +25,11 @@ return [
         'citation_top_k' => (int) env('RAGFLOW_CITATION_TOP_K', 10),
         // Highlighting bloats chunk payloads and can degrade downstream prompt quality.
         'highlight' => filter_var(env('RAGFLOW_HIGHLIGHT', false), FILTER_VALIDATE_BOOLEAN),
+        // Lightweight phrase boosts for edge-case recall (kept short to avoid keyword stuffing).
+        'query_boosts' => [
+            'enabled' => filter_var(env('RAGFLOW_QUERY_BOOSTS_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
+            'non_a_non_b_enabled' => filter_var(env('RAGFLOW_NON_A_NON_B_BOOST_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
+        ],
     ],
 
     // Optional bridge-side reranking (Laravel) to avoid RAGFlow rerank latency.
