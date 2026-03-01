@@ -16,7 +16,7 @@ import html
 
 # Match non-A non-B variants (commas/slashes/hyphen variants).
 NON_A_NON_B_PATTERN = re.compile(
-    r"\bnon\s*[-\u2010-\u2015\u2212\u00ad]?\s*a\s*[,\\-/]?\s*non\s*[-\u2010-\u2015\u2212\u00ad]?\s*b\b",
+    r"\bnon\s*[-\u2010-\u2015\u2212\u00ad]?\s*a\s*[,/-]?\s*non\s*[-\u2010-\u2015\u2212\u00ad]?\s*b\b",
     re.IGNORECASE,
 )
 
