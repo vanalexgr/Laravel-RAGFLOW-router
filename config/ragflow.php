@@ -38,6 +38,9 @@ return [
             'top_k' => (int) env('RAGFLOW_NON_A_NON_B_TOP_K', 120),
             'narrative_max' => (int) env('RAGFLOW_NON_A_NON_B_NARRATIVE_MAX', 40),
             'citation_max' => (int) env('RAGFLOW_NON_A_NON_B_CITATION_MAX', 30),
+            // Optional overrides for hybrid retrieval during focused recall.
+            'keyword_mode' => filter_var(env('RAGFLOW_NON_A_NON_B_KEYWORD_MODE', false), FILTER_VALIDATE_BOOLEAN),
+            'vector_similarity_weight' => (float) env('RAGFLOW_NON_A_NON_B_VECTOR_WEIGHT', 0.5),
         ],
     ],
 

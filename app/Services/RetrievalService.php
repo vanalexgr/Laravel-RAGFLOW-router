@@ -400,7 +400,8 @@ class RetrievalService
         $overrides = [
             'similarity_threshold' => $focusConfig['similarity_threshold'] ?? null,
             'top_k' => $focusConfig['top_k'] ?? null,
-            'keyword' => false, // keep keyword search off
+            'keyword' => $focusConfig['keyword_mode'] ?? null,
+            'vector_similarity_weight' => $focusConfig['vector_similarity_weight'] ?? null,
         ];
 
         Log::channel('retrieval')->info('[FOCUSED RECALL] non-A non-B second pass', [
