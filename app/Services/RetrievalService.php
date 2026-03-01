@@ -129,6 +129,17 @@ class RetrievalService
 
         $dualResult = $this->retrieveDualChunks($expandedQuery, $citationQuery, $selectedGuidelines, $narrativeMax, $citationMax, $guidelineScores);
 
+        $dualResult = $this->applyFocusedRecall(
+            $dualResult,
+            $scrubbedQuestion,
+            $expandedQuery,
+            $citationQuery,
+            $selectedGuidelines,
+            $narrativeMax,
+            $citationMax,
+            $guidelineScores
+        );
+
         $gapReport = null;
         $gapService = new GapDetectionService();
         if ($gapService->enabled() && $gapService->maxPasses() > 0) {
@@ -287,6 +298,151 @@ class RetrievalService
         }
 
         return $query;
+    }
+
+    protected function chunksContainPattern(array $chunks, string $pattern, array $fields): bool
+    {
+        foreach ($chunks as $chunk) {
+            if (!is_array($chunk)) {
+                continue;
+            }
+            foreach ($fields as $field) {
+                $text = (string) ($chunk[$field] ?? '');
+                if ($text !== '' && preg_match($pattern, $text)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    protected function promotePatternMatches(array $chunks, string $pattern, array $fields): array
+    {
+        if (empty($chunks)) {
+            return $chunks;
+        }
+        $matches = [];
+        $rest = [];
+        foreach ($chunks as $chunk) {
+            $matched = false;
+            if (is_array($chunk)) {
+                foreach ($fields as $field) {
+                    $text = (string) ($chunk[$field] ?? '');
+                    if ($text !== '' && preg_match($pattern, $text)) {
+                        $matched = true;
+                        break;
+                    }
+                }
+            }
+            if ($matched) {
+                $matches[] = $chunk;
+            } else {
+                $rest[] = $chunk;
+            }
+        }
+        return array_merge($matches, $rest);
+    }
+
+    protected function buildNonANonBFocusTerms(): array
+    {
+        return [
+            'non-A non-B dissection',
+            'arch-involving dissection',
+            'aortic arch dissection',
+            'mediastinal effusion',
+            'cerebral malperfusion',
+            'ascending aortic haematoma',
+        ];
+    }
+
+    protected function applyFocusedRecall(
+        array $dualResult,
+        string $question,
+        string $expandedQuery,
+        string $citationQuery,
+        array $selectedGuidelines,
+        int $narrativeMax,
+        int $citationMax,
+        array $guidelineScores
+    ): array {
+        $focusConfig = config('ragflow.retrieval.focused_recall', []);
+        if (empty($focusConfig['enabled']) || empty($focusConfig['non_a_non_b_enabled'])) {
+            return $dualResult;
+        }
+
+        if (!$this->containsNonANonB($question)) {
+            return $dualResult;
+        }
+
+        $pattern = '/\bnon\s*-?\s*a\s*non\s*-?\s*b\b/i';
+        $hasNarrative = $this->chunksContainPattern($dualResult['narrative_chunks'] ?? [], $pattern, ['content']);
+        $hasCitation = $this->chunksContainPattern($dualResult['citation_chunks'] ?? [], $pattern, ['text', 'content']);
+
+        if ($hasNarrative || $hasCitation) {
+            $dualResult['narrative_chunks'] = $this->promotePatternMatches(
+                $dualResult['narrative_chunks'] ?? [],
+                $pattern,
+                ['content']
+            );
+            $dualResult['citation_chunks'] = $this->promotePatternMatches(
+                $dualResult['citation_chunks'] ?? [],
+                $pattern,
+                ['text', 'content']
+            );
+            return $dualResult;
+        }
+
+        $focusNarrativeMax = max($narrativeMax, (int) ($focusConfig['narrative_max'] ?? $narrativeMax));
+        $focusCitationMax = max($citationMax, (int) ($focusConfig['citation_max'] ?? $citationMax));
+        $focusQuery = $this->appendUniqueTerms($expandedQuery, $this->buildNonANonBFocusTerms());
+        $focusCitationQuery = $this->appendUniqueTerms($citationQuery, $this->buildNonANonBFocusTerms());
+
+        $overrides = [
+            'similarity_threshold' => $focusConfig['similarity_threshold'] ?? null,
+            'top_k' => $focusConfig['top_k'] ?? null,
+            'keyword' => false, // keep keyword search off
+        ];
+
+        Log::channel('retrieval')->info('[FOCUSED RECALL] non-A non-B second pass', [
+            'focus_narrative_max' => $focusNarrativeMax,
+            'focus_citation_max' => $focusCitationMax,
+            'overrides' => array_filter($overrides, fn($v) => $v !== null),
+            'query_preview' => substr($focusQuery, 0, 140),
+        ]);
+
+        $focused = $this->retrieveDualChunks(
+            $focusQuery,
+            $focusCitationQuery,
+            $selectedGuidelines,
+            $focusNarrativeMax,
+            $focusCitationMax,
+            $guidelineScores,
+            $overrides
+        );
+
+        $mergedNarrative = $this->mergeChunks(
+            $dualResult['narrative_chunks'] ?? [],
+            $focused['narrative_chunks'] ?? [],
+            'narrative'
+        );
+        $mergedCitation = $this->mergeChunks(
+            $dualResult['citation_chunks'] ?? [],
+            $focused['citation_chunks'] ?? [],
+            'citation'
+        );
+
+        $dualResult['narrative_chunks'] = $this->promotePatternMatches(
+            $mergedNarrative,
+            $pattern,
+            ['content']
+        );
+        $dualResult['citation_chunks'] = $this->promotePatternMatches(
+            $mergedCitation,
+            $pattern,
+            ['text', 'content']
+        );
+
+        return $dualResult;
     }
 
     // -- Helper Methods Refactored from Controller --
@@ -677,7 +833,15 @@ class RetrievalService
     }
 
 
-    protected function retrieveDualChunks(string $narrativeQuery, string $citationQuery, array $guidelines, int $narrativeMax, int $citationMax, array $scores = []): array
+    protected function retrieveDualChunks(
+        string $narrativeQuery,
+        string $citationQuery,
+        array $guidelines,
+        int $narrativeMax,
+        int $citationMax,
+        array $scores = [],
+        array $overrides = []
+    ): array
     {
         $narrativeDatasets = [];
         $citationDocumentIds = []; // NEW: for hard scoping citations
@@ -734,6 +898,13 @@ class RetrievalService
             'citation_top_k' => (int) ($retrievalConfig['citation_top_k'] ?? 10),
             'highlight' => (bool) ($retrievalConfig['highlight'] ?? false),
         ];
+        if (!empty($overrides)) {
+            foreach (['top_k', 'similarity_threshold', 'keyword', 'vector_similarity_weight', 'use_kg', 'citation_top_k'] as $key) {
+                if (array_key_exists($key, $overrides) && $overrides[$key] !== null) {
+                    $params[$key] = $overrides[$key];
+                }
+            }
+        }
         // Always provide rerank_id if configured; ragflow_service will only forward it
         // upstream if it is non-empty and not "local". If bridge rerank is enabled,
         // do not forward rerank_id to RAGFlow to avoid remote rerank latency.
