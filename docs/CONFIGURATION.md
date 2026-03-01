@@ -66,6 +66,8 @@ Some guideline exports include non-actionable "Good research statement" items. T
 | `RAGFLOW_NON_A_NON_B_TOP_K` | `120` | Candidate pool size for focused recall pass |
 | `RAGFLOW_NON_A_NON_B_NARRATIVE_MAX` | `40` | Narrative chunk cap for focused recall pass |
 | `RAGFLOW_NON_A_NON_B_CITATION_MAX` | `30` | Citation chunk cap for focused recall pass |
+| `RAGFLOW_NON_A_NON_B_KEYWORD_MODE` | `false` | Enable hybrid keyword+vector only for non-A non-B focused recall |
+| `RAGFLOW_NON_A_NON_B_VECTOR_WEIGHT` | `0.5` | Vector similarity weight for non-A non-B focused recall |
 
 **Example:**
 ```env
@@ -89,6 +91,8 @@ RAGFLOW_NON_A_NON_B_SIMILARITY_THRESHOLD=0.18
 RAGFLOW_NON_A_NON_B_TOP_K=120
 RAGFLOW_NON_A_NON_B_NARRATIVE_MAX=40
 RAGFLOW_NON_A_NON_B_CITATION_MAX=30
+RAGFLOW_NON_A_NON_B_KEYWORD_MODE=false
+RAGFLOW_NON_A_NON_B_VECTOR_WEIGHT=0.5
 ```
 
 **Query boosts:** Small, deterministic phrase additions used only for retrieval (not answer generation). They help with edge cases like non-A non-B aortic dissection without enabling keyword mode. Set either env var to `false` for immediate rollback.
