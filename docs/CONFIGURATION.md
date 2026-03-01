@@ -58,6 +58,8 @@ Some guideline exports include non-actionable "Good research statement" items. T
 | `RAGFLOW_USE_KG` | `false` | Enable knowledge graph expansion (disabled by default; often noisy/brittle) |
 | `RAGFLOW_CITATION_TOP_K` | `10` | Candidate pool size for citation-only retrieval |
 | `RAGFLOW_HIGHLIGHT` | `false` | Include highlight snippets in results (disabled by default to reduce payload bloat) |
+| `RAGFLOW_QUERY_BOOSTS_ENABLED` | `true` | Enable short, rule-based phrase boosts for edge-case recall |
+| `RAGFLOW_NON_A_NON_B_BOOST_ENABLED` | `true` | Add arch-focused phrases when query includes non-A non-B dissection |
 
 **Example:**
 ```env
@@ -73,7 +75,11 @@ RAGFLOW_RERANK_ID=Cohere-rerank-v4.0-pro___OpenAI-API
 RAGFLOW_USE_KG=false
 RAGFLOW_CITATION_TOP_K=10
 RAGFLOW_HIGHLIGHT=false
+RAGFLOW_QUERY_BOOSTS_ENABLED=true
+RAGFLOW_NON_A_NON_B_BOOST_ENABLED=true
 ```
+
+**Query boosts:** Small, deterministic phrase additions used only for retrieval (not answer generation). They help with edge cases like non-A non-B aortic dissection without enabling keyword mode. Set either env var to `false` for immediate rollback.
 
 **Note:** TOC (Table of Contents) and Auto Keywords & Meta must be configured in the RAGFlow UI when setting up the dataset, not via API.
 

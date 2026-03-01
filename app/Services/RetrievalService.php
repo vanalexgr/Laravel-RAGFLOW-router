@@ -124,6 +124,8 @@ class RetrievalService
         $expandedQuery = $expansionResult['expanded'] ?? $retrievalQuestion; // Use expanded or original
         $expandedQuery = $this->buildCitationQuery($expandedQuery, $normalizationOriginalQuestion, $normalizationMeta, array_keys($selectedGuidelines));
         $citationQuery = $this->buildCitationQuery($retrievalQuestion, $normalizationOriginalQuestion, $normalizationMeta, array_keys($selectedGuidelines));
+        $expandedQuery = $this->applyRetrievalQueryBoosts($expandedQuery, array_keys($selectedGuidelines), 'narrative');
+        $citationQuery = $this->applyRetrievalQueryBoosts($citationQuery, array_keys($selectedGuidelines), 'citation');
 
         $dualResult = $this->retrieveDualChunks($expandedQuery, $citationQuery, $selectedGuidelines, $narrativeMax, $citationMax, $guidelineScores);
 
@@ -238,6 +240,53 @@ class RetrievalService
     protected function containsNonAscii(string $text): bool
     {
         return preg_match('/[^\x00-\x7F]/', $text) === 1;
+    }
+
+    protected function containsNonANonB(string $text): bool
+    {
+        return preg_match('/\bnon\s*-?\s*a\s*non\s*-?\s*b\b/i', $text) === 1;
+    }
+
+    protected function appendUniqueTerms(string $query, array $terms): string
+    {
+        $lower = mb_strtolower($query);
+        foreach ($terms as $term) {
+            $termLower = mb_strtolower($term);
+            if (!str_contains($lower, $termLower)) {
+                $query .= ' ' . $term;
+                $lower .= ' ' . $termLower;
+            }
+        }
+        return $query;
+    }
+
+    protected function applyRetrievalQueryBoosts(string $query, array $selectedGuidelines, string $channel): string
+    {
+        $config = config('ragflow.retrieval.query_boosts', []);
+        if (empty($config['enabled'])) {
+            return $query;
+        }
+
+        $original = $query;
+
+        if (!empty($config['non_a_non_b_enabled']) && $this->containsNonANonB($query)) {
+            $query = $this->appendUniqueTerms($query, [
+                'aortic arch dissection',
+                'arch-involving dissection',
+                'aortic arch',
+            ]);
+        }
+
+        if ($query !== $original) {
+            Log::channel('retrieval')->info('[QUERY BOOST] Applied retrieval phrase boosts', [
+                'channel' => $channel,
+                'selected_guidelines' => $selectedGuidelines,
+                'original_preview' => substr($original, 0, 80),
+                'boosted_preview' => substr($query, 0, 120),
+            ]);
+        }
+
+        return $query;
     }
 
     // -- Helper Methods Refactored from Controller --
@@ -582,6 +631,15 @@ class RetrievalService
                         break;
                     }
                 }
+            }
+        }
+
+        $boosts = config('ragflow.retrieval.query_boosts', []);
+        if (!empty($boosts['enabled']) && !empty($boosts['non_a_non_b_enabled']) && $this->containsNonANonB($questionLower)) {
+            if (!isset($selectedGuidelines['aortic_arch']) && isset($registry['aortic_arch'])) {
+                $selectedGuidelines['aortic_arch'] = $registry['aortic_arch'];
+                $modified = true;
+                $log->info('[GUARDRAIL] Added aortic_arch (detected: non-A non-B dissection)');
             }
         }
 
