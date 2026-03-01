@@ -30,6 +30,15 @@ return [
             'enabled' => filter_var(env('RAGFLOW_QUERY_BOOSTS_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
             'non_a_non_b_enabled' => filter_var(env('RAGFLOW_NON_A_NON_B_BOOST_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
         ],
+        // Focused recall for hard-to-retrieve edge cases (e.g., non-A non-B dissection).
+        'focused_recall' => [
+            'enabled' => filter_var(env('RAGFLOW_FOCUSED_RECALL_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
+            'non_a_non_b_enabled' => filter_var(env('RAGFLOW_NON_A_NON_B_RECALL_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
+            'similarity_threshold' => (float) env('RAGFLOW_NON_A_NON_B_SIMILARITY_THRESHOLD', 0.18),
+            'top_k' => (int) env('RAGFLOW_NON_A_NON_B_TOP_K', 120),
+            'narrative_max' => (int) env('RAGFLOW_NON_A_NON_B_NARRATIVE_MAX', 40),
+            'citation_max' => (int) env('RAGFLOW_NON_A_NON_B_CITATION_MAX', 30),
+        ],
     ],
 
     // Optional bridge-side reranking (Laravel) to avoid RAGFlow rerank latency.
