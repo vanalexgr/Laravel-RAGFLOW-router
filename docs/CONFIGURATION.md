@@ -78,6 +78,11 @@ Some guideline exports include non-actionable "Good research statement" items. T
 | `RAGFLOW_QUALITY_PASS_VECTOR_WEIGHT` | `0.2` | Vector similarity weight for the quality pass |
 | `RAGFLOW_QUALITY_PASS_NARRATIVE_MAX` | `80` | Narrative chunk cap for the quality pass |
 | `RAGFLOW_QUALITY_PASS_CITATION_MAX` | `80` | Citation chunk cap for the quality pass |
+| `RAGFLOW_QUALITY_PASS_ON_CONCEPT_GAP` | `false` | Trigger a high-recall pass when GraphRAG concept gaps remain |
+| `RAGFLOW_QUALITY_PASS_GAP_SIMILARITY_THRESHOLD` | `0.2` | Similarity threshold for concept-gap quality pass |
+| `RAGFLOW_QUALITY_PASS_GAP_TOP_K` | `256` | Candidate pool size for concept-gap quality pass |
+| `RAGFLOW_QUALITY_PASS_GAP_KEYWORD_MODE` | `false` | Use keyword mode for concept-gap pass (default off to reduce lag) |
+| `RAGFLOW_QUALITY_PASS_GAP_VECTOR_WEIGHT` | `0.5` | Vector similarity weight for concept-gap pass |
 
 **Example:**
 ```env
@@ -113,6 +118,11 @@ RAGFLOW_QUALITY_PASS_KEYWORD_MODE=true
 RAGFLOW_QUALITY_PASS_VECTOR_WEIGHT=0.2
 RAGFLOW_QUALITY_PASS_NARRATIVE_MAX=80
 RAGFLOW_QUALITY_PASS_CITATION_MAX=80
+RAGFLOW_QUALITY_PASS_ON_CONCEPT_GAP=false
+RAGFLOW_QUALITY_PASS_GAP_SIMILARITY_THRESHOLD=0.2
+RAGFLOW_QUALITY_PASS_GAP_TOP_K=256
+RAGFLOW_QUALITY_PASS_GAP_KEYWORD_MODE=false
+RAGFLOW_QUALITY_PASS_GAP_VECTOR_WEIGHT=0.5
 ```
 
 **Query boosts:** Small, deterministic phrase additions used only for retrieval (not answer generation). They help with edge cases like non-A non-B aortic dissection without enabling keyword mode. Set either env var to `false` for immediate rollback.
@@ -120,6 +130,8 @@ RAGFLOW_QUALITY_PASS_CITATION_MAX=80
 **Focused recall:** Runs a second retrieval pass only when the query contains non-A non-B and the initial evidence set lacks that phrase. This pass uses a lower similarity threshold and larger candidate pool; you can optionally enable hybrid search via `RAGFLOW_NON_A_NON_B_KEYWORD_MODE=true` for higher recall. Disable via `RAGFLOW_FOCUSED_RECALL_ENABLED=false` or `RAGFLOW_NON_A_NON_B_RECALL_ENABLED=false` for instant rollback.
 
 **Quality pass (optional):** When enabled, runs an additional high-recall retrieval pass using RAGFlow UI-like hybrid settings. Use `RAGFLOW_QUALITY_PASS_MIN_NARRATIVE` / `RAGFLOW_QUALITY_PASS_MIN_CITATION` to only trigger when coverage is thin. Keep disabled for low latency; enable selectively during evaluation.
+
+**Concept-gap quality pass (optional):** If GraphRAG detects missing concepts in retrieved evidence, you can trigger a targeted high-recall pass. By default keyword mode is **off** to reduce lag; tune `RAGFLOW_QUALITY_PASS_GAP_TOP_K` and thresholds as needed.
 
 **Note:** TOC (Table of Contents) and Auto Keywords & Meta must be configured in the RAGFlow UI when setting up the dataset, not via API.
 

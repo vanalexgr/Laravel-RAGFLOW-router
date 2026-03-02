@@ -187,6 +187,20 @@ class RetrievalService
                 $normalizationMeta
             );
 
+            $gapReport = $this->applyQualityPassOnConceptGap(
+                $dualResult,
+                $gapReport,
+                $scrubbedQuestion,
+                $expandedQuery,
+                $citationQuery,
+                $selectedGuidelines,
+                $narrativeMax,
+                $citationMax,
+                $guidelineScores,
+                $gapService,
+                $normalizationMeta
+            );
+
             $hasGap = !empty($gapReport['missing']) || !empty($gapReport['missing_concepts']);
             if ($hasGap && !empty($gapReport['query_terms'])) {
                 $limits = $gapService->secondPassLimits();
@@ -250,6 +264,77 @@ class RetrievalService
             'gap_report' => $gapService->enabled() && config('gap_detection.include_debug', false) ? $gapReport : null,
             'graph_expansion' => $graphEnabled && config('graphrag.include_debug', false) ? $graphExpansion : null,
         ];
+    }
+
+    protected function applyQualityPassOnConceptGap(
+        array &$dualResult,
+        ?array $gapReport,
+        string $question,
+        string $expandedQuery,
+        string $citationQuery,
+        array $selectedGuidelines,
+        int $narrativeMax,
+        int $citationMax,
+        array $guidelineScores,
+        GapDetectionService $gapService,
+        ?array $normalizationMeta
+    ): ?array {
+        if (empty($gapReport) || empty($gapReport['missing_concepts'])) {
+            return $gapReport;
+        }
+
+        $qualityConfig = config('ragflow.retrieval.quality_pass', []);
+        if (empty($qualityConfig['enabled']) || empty($qualityConfig['trigger_on_concept_gap'])) {
+            return $gapReport;
+        }
+
+        $gapTopK = (int) ($qualityConfig['gap_top_k'] ?? 0);
+        $gapTopK = $gapTopK > 0 ? $gapTopK : (int) ($qualityConfig['top_k'] ?? 0);
+        $gapThreshold = $qualityConfig['gap_similarity_threshold'] ?? $qualityConfig['similarity_threshold'] ?? null;
+        $gapVectorWeight = $qualityConfig['gap_vector_similarity_weight'] ?? $qualityConfig['vector_similarity_weight'] ?? null;
+
+        $overrides = [
+            'top_k' => $gapTopK > 0 ? $gapTopK : null,
+            'similarity_threshold' => $gapThreshold,
+            'keyword' => (bool) ($qualityConfig['gap_keyword_mode'] ?? false),
+            'vector_similarity_weight' => $gapVectorWeight,
+        ];
+
+        Log::channel('retrieval')->info('[QUALITY PASS] Concept gap trigger', [
+            'missing_concepts' => $gapReport['missing_concepts'],
+            'overrides' => array_filter($overrides, fn($v) => $v !== null),
+        ]);
+
+        $gapNarrativeMax = max($narrativeMax, (int) ($qualityConfig['narrative_max'] ?? $narrativeMax));
+        $gapCitationMax = max($citationMax, (int) ($qualityConfig['citation_max'] ?? $citationMax));
+
+        $quality = $this->retrieveDualChunks(
+            $expandedQuery,
+            $citationQuery,
+            $selectedGuidelines,
+            $gapNarrativeMax,
+            $gapCitationMax,
+            $guidelineScores,
+            $overrides
+        );
+
+        $dualResult['narrative_chunks'] = $this->mergeChunks(
+            $dualResult['narrative_chunks'] ?? [],
+            $quality['narrative_chunks'] ?? [],
+            'narrative'
+        );
+        $dualResult['citation_chunks'] = $this->mergeChunks(
+            $dualResult['citation_chunks'] ?? [],
+            $quality['citation_chunks'] ?? [],
+            'citation'
+        );
+
+        return $gapService->detect(
+            $question,
+            $dualResult['narrative_chunks'] ?? [],
+            $dualResult['citation_chunks'] ?? [],
+            $normalizationMeta
+        );
     }
 
     protected function mergeChunks(array $primary, array $secondary, string $type): array
