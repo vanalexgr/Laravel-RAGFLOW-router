@@ -198,6 +198,26 @@ GRAPHRAG_CONCEPT_GAP_MAX=6
 GRAPHRAG_DEBUG=false
 ```
 
+#### Clinical Interpreter (Pre-retrieval Framing)
+
+Adds a lightweight interpretation step **before retrieval** to expand query terms for complex cases.
+It does **not** add recommendations; it only provides a short frame plus retrieval terms.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CLINICAL_INTERPRETER_ENABLED` | `true` | Enable pre-retrieval interpretation |
+| `CLINICAL_INTERPRETER_MAX_TERMS` | `10` | Max terms appended to retrieval queries |
+| `CLINICAL_INTERPRETER_MAX_MUST_TERMS` | `4` | Max critical terms forced into LLM evidence selection |
+| `CLINICAL_INTERPRETER_TIMEOUT` | `6` | Interpreter timeout (seconds) |
+
+**Example:**
+```env
+CLINICAL_INTERPRETER_ENABLED=true
+CLINICAL_INTERPRETER_MAX_TERMS=10
+CLINICAL_INTERPRETER_MAX_MUST_TERMS=4
+CLINICAL_INTERPRETER_TIMEOUT=6
+```
+
 #### Taxonomy Expansion (ESVS Term Index)
 
 The taxonomy expander uses a curated tag/term index extracted from the ESVS guidelines to add **related guideline terms** when a query uses uncommon phrasing. This is designed to improve recall without enabling keyword mode.
@@ -376,6 +396,7 @@ This project integrates with OpenWebUI using a custom tool in `openwebui_tools/v
    - `VASCULAR_API_BASE_URL`: `https://your-domain.com`
    - `VASCULAR_API_KEY`: your `API_SECRET_KEY`
    - `ALLOW_PARTIAL_EVIDENCE_ANSWERS`: `true` to allow best-fit answers with explicit caveats (optional)
+   - `SHOW_CLINICAL_FRAME`: `true` to expose interpretive framing in the LLM context (optional)
 4. Enable the tool for your model and use `consult_vascular_guidelines`.
 
 ### Test the Tool Endpoint
