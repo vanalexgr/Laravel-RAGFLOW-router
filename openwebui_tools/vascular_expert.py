@@ -3,7 +3,7 @@ title: Vascular Expert Tools
 author: open-webui
 author_url: https://github.com/open-webui
 funding_url: https://github.com/open-webui
-version: 2.1.2
+version: 2.1.3
 """
 
 import httpx
@@ -257,17 +257,30 @@ class Tools:
             "management", "treatment", "therapy", "guideline", "recommendation", "patient", "patients",
             "disease", "surgery", "repair", "aorta", "aneurysm"
         }
+        def strip_anatomic_modifiers(term: str) -> str:
+            modifiers = {
+                "thoracic", "abdominal", "ascending", "descending", "arch", "thoracoabdominal",
+                "thoraco-abdominal", "suprarenal", "infrarenal", "juxtarenal", "iliac",
+            }
+            words = [w for w in term.split() if w not in modifiers]
+            return " ".join(words).strip()
+
         filtered = []
+        variants = []
         for t in terms:
             if t in stop:
                 continue
             if len(t) < 4:
                 continue
             filtered.append(t)
+            if " " in t:
+                v = strip_anatomic_modifiers(t)
+                if v and v != t and len(v) >= 4 and v not in stop:
+                    variants.append(v)
         # Prefer multi-word terms; keep order, de-dup
         seen = set()
         ordered = []
-        for t in filtered:
+        for t in filtered + variants:
             if t in seen:
                 continue
             seen.add(t)
