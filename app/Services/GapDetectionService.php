@@ -14,6 +14,11 @@ class GapDetectionService
         return (bool) config('gap_detection.strict_template', false);
     }
 
+    public function allowPartialAnswers(): bool
+    {
+        return (bool) config('gap_detection.allow_partial_answer', true);
+    }
+
     public function maxPasses(): int
     {
         $max = (int) config('gap_detection.max_passes', 0);

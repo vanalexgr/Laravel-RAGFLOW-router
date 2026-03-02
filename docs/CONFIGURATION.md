@@ -264,12 +264,14 @@ These flags control the second-pass retrieval loop and strict output template.
 | `GAP_DETECTION_NARRATIVE_MAX` | `4` | Narrative chunk cap for second pass |
 | `GAP_DETECTION_CITATION_MAX` | `3` | Citation chunk cap for second pass |
 | `STRICT_TEMPLATE_ENABLED` | `true` | Enforce strict output structure hints |
+| `ALLOW_PARTIAL_EVIDENCE_ANSWERS` | `true` | Allow best-fit answers with explicit caveats when evidence is relevant but not exact |
 | `GAP_DETECTION_DEBUG` | `false` | Include gap debug info in API response |
 
 **Quick rollback to previous behavior:**
 ```env
 GAP_DETECTION_ENABLED=false
 STRICT_TEMPLATE_ENABLED=false
+ALLOW_PARTIAL_EVIDENCE_ANSWERS=false
 ```
 
 ---
@@ -373,6 +375,7 @@ This project integrates with OpenWebUI using a custom tool in `openwebui_tools/v
 3. Configure tool valves:
    - `VASCULAR_API_BASE_URL`: `https://your-domain.com`
    - `VASCULAR_API_KEY`: your `API_SECRET_KEY`
+   - `ALLOW_PARTIAL_EVIDENCE_ANSWERS`: `true` to allow best-fit answers with explicit caveats (optional)
 4. Enable the tool for your model and use `consult_vascular_guidelines`.
 
 ### Test the Tool Endpoint

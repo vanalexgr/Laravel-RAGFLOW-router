@@ -211,6 +211,16 @@ class ToolController extends Controller
         }
 
         $gapService = new GapDetectionService();
+        if ($gapService->allowPartialAnswers()) {
+            $output .= "\n=== PARTIAL MATCH GUIDANCE ===\n";
+            $output .= "If the retrieved evidence is relevant but does not exactly match the scenario, provide a best-fit answer based on the closest evidence.\n";
+            $output .= "Clearly state which parts are directly supported vs extrapolated or missing.\n";
+            $output .= "Do not return a blanket \"not explicitly addressed\" response unless there is zero relevant evidence.\n";
+            $output .= "Invite the user to decide what is applicable to their case.\n";
+            if ($gapService->strictTemplateEnabled()) {
+                $output .= "Place the fit/limitations note within Assessment or Evidence used to preserve the required structure.\n";
+            }
+        }
         if ($gapService->strictTemplateEnabled()) {
             $output .= "\n=== REQUIRED STRUCTURE (STRICT) ===\n";
             $output .= "Assessment:\n";
