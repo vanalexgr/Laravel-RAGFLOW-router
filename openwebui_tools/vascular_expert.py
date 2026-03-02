@@ -3,7 +3,7 @@ title: Vascular Expert Tools
 author: open-webui
 author_url: https://github.com/open-webui
 funding_url: https://github.com/open-webui
-version: 2.1.1
+version: 2.1.2
 """
 
 import httpx
@@ -244,6 +244,58 @@ class Tools:
             "general": [],
         }
         return table.get(intent or "general", [])
+
+    def _key_term_candidates(self, intent_profile: dict) -> list[str]:
+        terms = []
+        if isinstance(intent_profile, dict):
+            for t in intent_profile.get("key_terms", []) or []:
+                t = str(t).strip().lower()
+                if not t:
+                    continue
+                terms.append(t)
+        stop = {
+            "management", "treatment", "therapy", "guideline", "recommendation", "patient", "patients",
+            "disease", "surgery", "repair", "aorta", "aneurysm"
+        }
+        filtered = []
+        for t in terms:
+            if t in stop:
+                continue
+            if len(t) < 4:
+                continue
+            filtered.append(t)
+        # Prefer multi-word terms; keep order, de-dup
+        seen = set()
+        ordered = []
+        for t in filtered:
+            if t in seen:
+                continue
+            seen.add(t)
+            ordered.append(t)
+        return ordered[:8]
+
+    def _term_match_score(self, text: str, terms: list[str]) -> int:
+        if not text or not terms:
+            return 0
+        t = text.lower()
+        score = 0
+        for term in terms:
+            if term and term in t:
+                # Prefer multi-word/longer terms
+                score += 3 if " " in term else 1
+                score += min(len(term) // 10, 3)
+        return score
+
+    def _find_must_include_citation(self, chunks: list, terms: list[str]):
+        best = None
+        best_score = 0
+        for chunk in chunks or []:
+            text = self._chunk_text_for_scoring(chunk, "citation")
+            score = self._term_match_score(text, terms)
+            if score > best_score:
+                best = chunk
+                best_score = score
+        return best, best_score
 
     def _chunk_text_for_scoring(self, chunk: dict, kind: str) -> str:
         if not isinstance(chunk, dict):
@@ -760,6 +812,26 @@ class Tools:
             # UI Sources can expose more evidence than the LLM reads.
             ui_citation_chunks = prioritized_citation_chunks[: caps["ui_rec"]]
             ui_narrative_chunks = prioritized_narrative_chunks[: caps["ui_narr"]]
+
+            # Ensure a term-matched citation is visible to the LLM when present.
+            key_terms = self._key_term_candidates(intent_profile)
+            must_include, must_score = self._find_must_include_citation(prioritized_citation_chunks, key_terms)
+            if must_include and caps["ui_rec"] > 0:
+                if must_include not in ui_citation_chunks:
+                    if len(ui_citation_chunks) < caps["ui_rec"]:
+                        ui_citation_chunks.append(must_include)
+                    else:
+                        ui_citation_chunks[-1] = must_include
+                if caps["llm_rec"] > 0:
+                    idx = ui_citation_chunks.index(must_include)
+                    if idx >= caps["llm_rec"]:
+                        swap_idx = caps["llm_rec"] - 1
+                        ui_citation_chunks[idx], ui_citation_chunks[swap_idx] = (
+                            ui_citation_chunks[swap_idx],
+                            ui_citation_chunks[idx],
+                        )
+                if must_score > 0:
+                    print(f"[VascularExpert] Forced citation include by terms {key_terms}: score={must_score}")
 
             # LLM subset stays bounded for speed/cost and remains a prefix of UI-emitted chunks.
             selected_citation_chunks = ui_citation_chunks[: caps["llm_rec"]]
