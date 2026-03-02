@@ -3,7 +3,7 @@ title: Vascular Expert Tools
 author: open-webui
 author_url: https://github.com/open-webui
 funding_url: https://github.com/open-webui
-version: 2.1.3
+version: 2.1.4
 """
 
 import httpx
@@ -199,6 +199,19 @@ class Tools:
         intent = str(norm.get("intent") or "").strip().lower() or None
         question_type = str(norm.get("question_type") or "").strip().lower() or None
         key_terms = [str(t).strip().lower() for t in (norm.get("key_terms") or []) if str(t).strip()]
+        extra_terms = []
+        for t in (norm.get("interpretation_terms") or []):
+            t = str(t).strip().lower()
+            if t:
+                extra_terms.append(t)
+        for t in (norm.get("must_include_terms") or []):
+            t = str(t).strip().lower()
+            if t:
+                extra_terms.append(t)
+        if extra_terms:
+            key_terms.extend(extra_terms)
+            seen = set()
+            key_terms = [t for t in key_terms if not (t in seen or seen.add(t))]
 
         combined = f"{q} {normalized_q}".strip()
         if not intent:
@@ -512,12 +525,22 @@ class Tools:
             default=True,
             description="Allow best-fit answers with explicit caveats when evidence is relevant but not exact",
         )
+        SHOW_CLINICAL_FRAME: bool = Field(
+            default=True,
+            description="Expose interpretive clinical framing if provided by the API",
+        )
 
     def _allow_partial_answers(self) -> bool:
         try:
             return bool(getattr(self.valves, "ALLOW_PARTIAL_EVIDENCE_ANSWERS"))
         except Exception:
             return bool(self.ALLOW_PARTIAL_MATCH_ANSWERS)
+
+    def _show_clinical_frame(self) -> bool:
+        try:
+            return bool(getattr(self.valves, "SHOW_CLINICAL_FRAME"))
+        except Exception:
+            return True
 
     async def _emit_status(self, emitter, description: str, done: bool = False):
         """Emit a status update to OpenWebUI UI (replaces pulsating dot)."""
@@ -1013,7 +1036,16 @@ class Tools:
                     f"Using {llm_total_chunks} evidence sources for answer synthesis "
                     f"(from {backend_total_chunks} retrieved chunks; {ui_total_chunks} shown in Sources).\n\n"
                 )
-                
+
+                if self._show_clinical_frame():
+                    clinical_frame = ""
+                    if isinstance(query_normalization, dict):
+                        clinical_frame = str(query_normalization.get("clinical_frame") or "").strip()
+                    if clinical_frame:
+                        llm_output += "=== CLINICAL FRAME (INTERPRETIVE / NON-GUIDELINE) ===\n"
+                        llm_output += clinical_frame + "\n"
+                        llm_output += "Guidance: You may include a brief interpretive framing note, clearly labeled as non-guideline and without citations.\n\n"
+
                 chunk_num = 1
                 
                 # SECTION 1: RECOMMENDATIONS (Must match System Prompt format)
