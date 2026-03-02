@@ -915,7 +915,7 @@ class RetrievalService
             }
 
             foreach ($triggerTerms as $term) {
-                if (str_contains($questionLower, $term)) {
+                if ($this->guardrailTermMatches($questionLower, $term)) {
                     if (isset($registry[$guidelineKey])) {
                         $selectedGuidelines[$guidelineKey] = $registry[$guidelineKey];
                         $modified = true;
@@ -952,6 +952,27 @@ class RetrievalService
         }
 
         return $selectedGuidelines;
+    }
+
+    protected function guardrailTermMatches(string $questionLower, string $term): bool
+    {
+        $term = strtolower(trim((string) $term));
+        if ($term === '') {
+            return false;
+        }
+
+        // Multi-word or hyphenated phrases can use substring matching.
+        if (preg_match('/[\\s\\-]/', $term)) {
+            return str_contains($questionLower, $term);
+        }
+
+        // For short abbreviations (e.g., ali, evar, dvt), enforce word boundaries
+        // to avoid false positives like "modality" -> "ali".
+        if (preg_match('/^[a-z0-9]+$/', $term) && strlen($term) <= 4) {
+            return preg_match('/\\b' . preg_quote($term, '/') . '\\b/', $questionLower) === 1;
+        }
+
+        return str_contains($questionLower, $term);
     }
 
     /**
