@@ -31,6 +31,7 @@ return [
         'query_boosts' => [
             'enabled' => filter_var(env('RAGFLOW_QUERY_BOOSTS_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
             'non_a_non_b_enabled' => filter_var(env('RAGFLOW_NON_A_NON_B_BOOST_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
+            'blue_toe_enabled' => filter_var(env('RAGFLOW_BLUE_TOE_BOOST_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
         ],
         // Focused recall for hard-to-retrieve edge cases (e.g., non-A non-B dissection).
         'focused_recall' => [

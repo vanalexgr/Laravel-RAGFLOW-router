@@ -61,6 +61,7 @@ Some guideline exports include non-actionable "Good research statement" items. T
 | `RAGFLOW_NARRATIVE_EXCERPT_MAX_CHARS` | `1000` | Max characters for narrative snippets (trimmed around query matches) |
 | `RAGFLOW_QUERY_BOOSTS_ENABLED` | `true` | Enable short, rule-based phrase boosts for edge-case recall |
 | `RAGFLOW_NON_A_NON_B_BOOST_ENABLED` | `true` | Add arch-focused phrases when query includes non-A non-B dissection |
+| `RAGFLOW_BLUE_TOE_BOOST_ENABLED` | `true` | Add embolic/shaggy-aorta phrasing when query includes blue toe or shaggy aorta |
 | `RAGFLOW_FOCUSED_RECALL_ENABLED` | `true` | Enable focused second-pass retrieval for edge cases |
 | `RAGFLOW_NON_A_NON_B_RECALL_ENABLED` | `true` | Trigger focused recall pass for non-A non-B dissection queries |
 | `RAGFLOW_NON_A_NON_B_SIMILARITY_THRESHOLD` | `0.18` | Lower similarity threshold used in focused recall pass |
@@ -101,6 +102,7 @@ RAGFLOW_HIGHLIGHT=false
 RAGFLOW_NARRATIVE_EXCERPT_MAX_CHARS=1000
 RAGFLOW_QUERY_BOOSTS_ENABLED=true
 RAGFLOW_NON_A_NON_B_BOOST_ENABLED=true
+RAGFLOW_BLUE_TOE_BOOST_ENABLED=true
 RAGFLOW_FOCUSED_RECALL_ENABLED=true
 RAGFLOW_NON_A_NON_B_RECALL_ENABLED=true
 RAGFLOW_NON_A_NON_B_SIMILARITY_THRESHOLD=0.18
@@ -194,6 +196,31 @@ GRAPHRAG_MAX_QUERY_TERMS=12
 GRAPHRAG_CONCEPT_GAP_CHECK=true
 GRAPHRAG_CONCEPT_GAP_MAX=6
 GRAPHRAG_DEBUG=false
+```
+
+#### Taxonomy Expansion (ESVS Term Index)
+
+The taxonomy expander uses a curated tag/term index extracted from the ESVS guidelines to add **related guideline terms** when a query uses uncommon phrasing. This is designed to improve recall without enabling keyword mode.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TAXONOMY_EXPANSION_ENABLED` | `false` | Enable taxonomy-driven query expansion |
+| `TAXONOMY_EXPANSION_PATH` | `resources/taxonomy/esvs_master_tags_fixed.csv` | Path to the ESVS taxonomy CSV |
+| `TAXONOMY_EXPANSION_MAX_TAGS` | `3` | Max tags expanded per query |
+| `TAXONOMY_EXPANSION_MAX_TERMS` | `8` | Total terms added across all tags |
+| `TAXONOMY_EXPANSION_MAX_TERMS_PER_TAG` | `4` | Max terms added per tag |
+| `TAXONOMY_EXPANSION_MIN_TERM_LEN` | `5` | Minimum term length for inclusion |
+| `TAXONOMY_EXPANSION_MIN_WORDS` | `2` | Minimum word count for inclusion |
+
+**Example:**
+```env
+TAXONOMY_EXPANSION_ENABLED=true
+TAXONOMY_EXPANSION_PATH=resources/taxonomy/esvs_master_tags_fixed.csv
+TAXONOMY_EXPANSION_MAX_TAGS=3
+TAXONOMY_EXPANSION_MAX_TERMS=8
+TAXONOMY_EXPANSION_MAX_TERMS_PER_TAG=4
+TAXONOMY_EXPANSION_MIN_TERM_LEN=5
+TAXONOMY_EXPANSION_MIN_WORDS=2
 ```
 
 #### Understanding Retrieval Settings

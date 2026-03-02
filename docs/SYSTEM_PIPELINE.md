@@ -21,20 +21,24 @@ This document describes the current retrieval pipeline, the GraphRAG expansion f
      - `related_concepts`
      - `slots` (anatomy/pathology/stage/intervention/imaging/complications)
    - Heuristic fallback if LLM output is invalid.
-5. **Targeted Retrieval**
+5. **Taxonomy Expansion (Optional)**
+   - Uses an ESVS term index (taxonomy CSV) to add related guideline terms.
+   - Controlled by `TAXONOMY_EXPANSION_ENABLED`.
+   - Adds only a small, filtered set of related terms to avoid noise.
+6. **Targeted Retrieval**
    - Narrative query = expanded query + GraphRAG retrieval terms.
    - Citation query = base query + core/slot terms.
-6. **Base Retrieval**
+7. **Base Retrieval**
    - Default params: `top_k=60`, `keyword=false`, `vector_weight=0.5`, `similarity_threshold=0.3`.
-7. **Focused Recall (non‑A/non‑B only)**
+8. **Focused Recall (non‑A/non‑B only)**
    - Runs only if the first pass lacks any non‑A/non‑B chunk.
-8. **Quality Pass (High Recall)**
+9. **Quality Pass (High Recall)**
    - Runs only when evidence is thin (min narrative/citation thresholds).
    - Hybrid search: `top_k=512`, `keyword=true`, `vector_weight=0.2`, `similarity_threshold=0.2`.
-9. **Gap Detection**
+10. **Gap Detection**
    - Missing fields → second pass retrieval.
    - Missing GraphRAG concepts can also trigger second pass.
-10. **Formatting + Evidence Binding**
+11. **Formatting + Evidence Binding**
    - Narrative excerpts are trimmed **around the query match** to surface relevant text.
    - Citation chunks used for verbatim recommendation quotes.
 
@@ -151,4 +155,3 @@ RAGFLOW_QUALITY_PASS_VECTOR_WEIGHT=0.2
 - Quality pass off: `RAGFLOW_QUALITY_PASS_ENABLED=false`
 - Focused recall off: `RAGFLOW_FOCUSED_RECALL_ENABLED=false`
 - Gap detection off: `GAP_DETECTION_ENABLED=false`
-
