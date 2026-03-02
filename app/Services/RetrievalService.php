@@ -8,6 +8,7 @@ use App\Services\PHIScrubberService;
 use App\Services\BridgeRerankService;
 use App\Services\GapDetectionService;
 use App\Services\GraphRagService;
+use App\Services\TaxonomyExpanderService;
 
 class RetrievalService
 {
@@ -148,6 +149,24 @@ class RetrievalService
             }
             $normalizationMeta['graph_terms'] = $graphExpansion['core_concepts'] ?? [];
             $normalizationMeta['graph_slots'] = $graphExpansion['slots'] ?? [];
+        }
+
+        $taxonomyExpander = new TaxonomyExpanderService();
+        if ($taxonomyExpander->enabled()) {
+            $taxonomy = $taxonomyExpander->expand($scrubbedQuestion);
+            if (!empty($taxonomy['terms'])) {
+                $expandedQuery = $this->appendUniqueTerms($expandedQuery, $taxonomy['terms']);
+                $citationQuery = $this->appendUniqueTerms($citationQuery, $taxonomy['terms']);
+                if (!is_array($normalizationMeta)) {
+                    $normalizationMeta = [];
+                }
+                $normalizationMeta['taxonomy_terms'] = $taxonomy['terms'];
+                $normalizationMeta['taxonomy_tags'] = $taxonomy['matched_tags'] ?? [];
+                Log::channel('retrieval')->info('[TAXONOMY BOOST] Added taxonomy expansion terms', [
+                    'terms' => $taxonomy['terms'],
+                    'matched_tags' => $taxonomy['matched_tags'] ?? [],
+                ]);
+            }
         }
 
         $expandedQuery = $this->applyRetrievalQueryBoosts($expandedQuery, array_keys($selectedGuidelines), 'narrative');
@@ -415,6 +434,25 @@ class RetrievalService
                 'arch-involving dissection',
                 'aortic arch',
             ]);
+        }
+
+        if (!empty($config['blue_toe_enabled'])) {
+            $blueToePattern = '/\\bblue\\s*toe\\b|\\btrash\\s*foot\\b|\\bblue[-\\s]*toe\\b/iu';
+            $shaggyPattern = '/\\bshaggy\\b\\s*\\w*\\s*\\baorta\\b/iu';
+            $atheroPattern = '/\\batheroembolic|\\batheroembol|\\bcholesterol\\s*embol/iu';
+
+            if (preg_match($blueToePattern, $query) === 1 || preg_match($shaggyPattern, $query) === 1 || preg_match($atheroPattern, $query) === 1) {
+                $query = $this->appendUniqueTerms($query, [
+                    'cholesterol embolization',
+                    'cholesterol embolism',
+                    'atheroembolism',
+                    'atheroembolic',
+                    'atheroembolic syndrome',
+                    'atheromatous aorta',
+                    'aortic atheroma',
+                    'microembolization',
+                ]);
+            }
         }
 
         if ($query !== $original) {
