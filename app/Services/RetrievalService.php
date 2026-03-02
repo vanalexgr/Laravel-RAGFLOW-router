@@ -928,7 +928,6 @@ class RetrievalService
             'acute_limb_ischaemia' => [
                 'acute limb ischemia',
                 'acute limb ischaemia',
-                'ali',
                 'embolectomy',
                 '6 ps',
                 'pulseless limb',
