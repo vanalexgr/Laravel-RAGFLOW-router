@@ -3,11 +3,12 @@ title: Vascular Expert Tools
 author: open-webui
 author_url: https://github.com/open-webui
 funding_url: https://github.com/open-webui
-version: 2.1.0
+version: 2.1.1
 """
 
 import httpx
 import asyncio
+import os
 from pydantic import BaseModel, Field
 from typing import Literal, Optional, Callable, Awaitable
 import re
@@ -70,6 +71,7 @@ class Tools:
     UI_REC_MAX_CHUNKS_MULTI = 18
     LLM_ASSET_MAX_ITEMS = 3
     STRICT_TEMPLATE = True
+    ALLOW_PARTIAL_MATCH_ANSWERS = str(os.getenv("ALLOW_PARTIAL_EVIDENCE_ANSWERS", "true")).lower() in ("1", "true", "yes", "y")
 
     def __init__(self):
         self.valves = self.Valves()
@@ -441,6 +443,16 @@ class Tools:
             default="your-api-key",
             description="API Key for authentication",
         )
+        ALLOW_PARTIAL_EVIDENCE_ANSWERS: bool = Field(
+            default=True,
+            description="Allow best-fit answers with explicit caveats when evidence is relevant but not exact",
+        )
+
+    def _allow_partial_answers(self) -> bool:
+        try:
+            return bool(getattr(self.valves, "ALLOW_PARTIAL_EVIDENCE_ANSWERS"))
+        except Exception:
+            return bool(self.ALLOW_PARTIAL_MATCH_ANSWERS)
 
     async def _emit_status(self, emitter, description: str, done: bool = False):
         """Emit a status update to OpenWebUI UI (replaces pulsating dot)."""
@@ -967,6 +979,15 @@ class Tools:
                 if assets_block:
                     next_rule_num = 6 if (not selected_citation_chunks and selected_narrative_chunks) else 5
                     llm_output += f"{next_rule_num}. If images help, include up to 3 markdown image lines from the FIGURES / TABLES section.\n"
+
+                if self._allow_partial_answers():
+                    llm_output += "\n=== PARTIAL MATCH GUIDANCE ===\n"
+                    llm_output += "If the evidence is relevant but does not exactly match the user's scenario, you MUST still provide a best-fit answer based on the closest evidence.\n"
+                    llm_output += "Explicitly state which parts are directly supported vs extrapolated or missing.\n"
+                    llm_output += "Do NOT reply with a blanket 'not explicitly addressed' statement unless there is zero relevant evidence.\n"
+                    llm_output += "Invite the user to decide which elements are applicable to their case.\n"
+                    if self.STRICT_TEMPLATE:
+                        llm_output += "Place the fit/limitations note within Assessment or Evidence used to preserve the required structure.\n"
 
                 if self.STRICT_TEMPLATE:
                     llm_output += "\n=== REQUIRED STRUCTURE (STRICT) ===\n"
