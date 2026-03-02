@@ -9,6 +9,7 @@ use App\Services\BridgeRerankService;
 use App\Services\GapDetectionService;
 use App\Services\GraphRagService;
 use App\Services\TaxonomyExpanderService;
+use App\Services\ClinicalInterpreterService;
 
 class RetrievalService
 {
@@ -35,6 +36,10 @@ class RetrievalService
         $normalizationMeta = null;
         $graphRag = new GraphRagService();
         $graphEnabled = $graphRag->enabled();
+        $clinicalInterpreter = new ClinicalInterpreterService();
+        $interpretationTerms = [];
+        $interpretationMustTerms = [];
+        $clinicalFrame = null;
         $shouldNormalize = $this->containsNonAscii($scrubbedQuestion)
             || ($graphEnabled && $graphRag->intentEnabled());
 
@@ -74,6 +79,29 @@ class RetrievalService
             'retrieval_query_preview' => substr($retrievalQuestion, 0, 80),
             'has_history' => !empty($history),
         ]);
+
+        if ($clinicalInterpreter->enabled()) {
+            $interpretation = $clinicalInterpreter->interpret($scrubbedQuestion, $normalizationMeta);
+            if (!empty($interpretation['terms'])) {
+                $interpretationTerms = $interpretation['terms'];
+            }
+            if (!empty($interpretation['must_terms'])) {
+                $interpretationMustTerms = $interpretation['must_terms'];
+            }
+            $clinicalFrame = $interpretation['frame'] ?? null;
+            if (!is_array($normalizationMeta)) {
+                $normalizationMeta = [];
+            }
+            if (!empty($interpretationTerms)) {
+                $normalizationMeta['interpretation_terms'] = $interpretationTerms;
+            }
+            if (!empty($interpretationMustTerms)) {
+                $normalizationMeta['must_include_terms'] = $interpretationMustTerms;
+            }
+            if (!empty($clinicalFrame)) {
+                $normalizationMeta['clinical_frame'] = $clinicalFrame;
+            }
+        }
 
         // 2. Routing
         $guidelineScores = [];
@@ -149,6 +177,15 @@ class RetrievalService
             }
             $normalizationMeta['graph_terms'] = $graphExpansion['core_concepts'] ?? [];
             $normalizationMeta['graph_slots'] = $graphExpansion['slots'] ?? [];
+        }
+
+        if (!empty($interpretationTerms)) {
+            $expandedQuery = $this->appendUniqueTerms($expandedQuery, $interpretationTerms);
+            $citationQuery = $this->appendUniqueTerms($citationQuery, $interpretationTerms);
+            $log->info('[CLINICAL INTERPRETER] Added pre-retrieval terms', [
+                'terms' => $interpretationTerms,
+                'must_terms' => $interpretationMustTerms,
+            ]);
         }
 
         $taxonomyExpander = new TaxonomyExpanderService();
