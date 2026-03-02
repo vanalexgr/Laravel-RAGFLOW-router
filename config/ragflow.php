@@ -55,6 +55,12 @@ return [
             'vector_similarity_weight' => (float) env('RAGFLOW_QUALITY_PASS_VECTOR_WEIGHT', 0.2),
             'narrative_max' => (int) env('RAGFLOW_QUALITY_PASS_NARRATIVE_MAX', 80),
             'citation_max' => (int) env('RAGFLOW_QUALITY_PASS_CITATION_MAX', 80),
+            // Optional: trigger a high-recall pass when GraphRAG concept gaps remain.
+            'trigger_on_concept_gap' => filter_var(env('RAGFLOW_QUALITY_PASS_ON_CONCEPT_GAP', false), FILTER_VALIDATE_BOOLEAN),
+            'gap_similarity_threshold' => (float) env('RAGFLOW_QUALITY_PASS_GAP_SIMILARITY_THRESHOLD', 0.2),
+            'gap_top_k' => (int) env('RAGFLOW_QUALITY_PASS_GAP_TOP_K', 256),
+            'gap_keyword_mode' => filter_var(env('RAGFLOW_QUALITY_PASS_GAP_KEYWORD_MODE', false), FILTER_VALIDATE_BOOLEAN),
+            'gap_vector_similarity_weight' => (float) env('RAGFLOW_QUALITY_PASS_GAP_VECTOR_WEIGHT', 0.5),
         ],
     ],
 
