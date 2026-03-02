@@ -7,6 +7,9 @@ return [
     // Enforce strict structured output hints in tool responses.
     'strict_template' => filter_var(env('STRICT_TEMPLATE_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
 
+    // Allow partial-match answers when evidence is relevant but not exact.
+    'allow_partial_answer' => filter_var(env('ALLOW_PARTIAL_EVIDENCE_ANSWERS', true), FILTER_VALIDATE_BOOLEAN),
+
     // Max additional retrieval passes (0 = no second pass).
     'max_passes' => (int) env('GAP_DETECTION_MAX_PASSES', 1),
 
