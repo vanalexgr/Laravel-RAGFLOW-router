@@ -3,6 +3,7 @@
 .env
 .env.backup
 .env.production
+.env.bak.*
 
 # Python
 __pycache__/
@@ -29,6 +30,10 @@ venv/
 /storage/*.key
 /storage/pail
 /vendor
+ragflow_service/models/
+app/Http/Controllers/ToolController.php.bak_*
+app/Services/RetrievalService.php.bak_*
+resources/guideline_assets/manifest.json.bak_*
 Homestead.json
 Homestead.yaml
 Thumbs.db
