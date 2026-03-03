@@ -77,7 +77,7 @@ if __name__ == "__main__":
     
     # Test 2: Test Asymptomatic PAD Dataset (Known Working for Narrative)
     # ID from config/guidelines.php
-    PAD_ID = "c7c42f76507211f0b6356a892e29a549"
+    PAD_ID = "127ff37d173511f1ab08aa811fe4315f"
     print(f"\n--- CONTROL TEST: Asymptomatic PAD (ID: {PAD_ID}) ---")
     dataset_bkp = DATASET_ID
     DATASET_ID = PAD_ID
