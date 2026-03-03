@@ -17,7 +17,7 @@ return [
                     'id' => '28c643e104de11f1966232d89964721d',
                     'name' => 'Descending Thoracic & Thoracoabdominal Aortic Aneurysms',
                     'recs_doc_id' => 'a6b1efd204dd11f1992e32d89964721d',
-                    'key_concepts' => ['Type B Dissection', 'TBAD', 'Intramural Hematoma', 'IMH', 'TEVAR', 'Spinal Cord Ischemia', 'thoracic aneurysm', 'penetrating ulcer', 'thoracoabdominal aneurysm', 'TAAA', 'Crawford classification'],
+                    'key_concepts' => ['Type B Dissection', 'TBAD', 'Intramural Hematoma', 'IMH', 'TEVAR', 'Spinal Cord Ischemia', 'thoracic aneurysm', 'penetrating ulcer', 'thoracoabdominal aneurysm', 'TAAA', 'Crawford classification', 'FEVAR', 'BEVAR', 'FBEVAR', 'juxtarenal AAA', 'pararenal AAA', 'suprarenal AAA'],
                 ],
                 'abdominal_aortic_aneurysm' => [
                     'id' => '7fb152c6ffbd11f0b2af32d89964721d',
@@ -43,7 +43,7 @@ return [
                     'key_concepts' => ['Stroke', 'TIA', 'CEA', 'CAS', 'TCAR', 'symptomatic stenosis', 'asymptomatic stenosis', 'carotid endarterectomy', 'carotid stenting', 'vertebral artery'],
                 ],
                 'asymptomatic_pad' => [
-                    'id' => 'c7c42f76507211f0b6356a892e29a549',
+                    'id' => '127ff37d173511f1ab08aa811fe4315f',
                     'name' => 'Asymptomatic PAD',
                     'recs_doc_id' => '6e360863f89811f0bb3c32d89964721d',  // Asymptomatic Lower Limb Peripheral Arterial Disease and Intermittent Claudication
                     'key_concepts' => ['peripheral arterial disease', 'PAD', 'LEAD', 'lower extremity arterial disease', 'Supervised Exercise Therapy', 'SET', 'risk factor optimization', 'claudication', 'intermittent claudication', 'walking distance', 'ABI screening', 'ankle brachial index', 'asymptomatic PAD'],
@@ -116,7 +116,7 @@ return [
         '7fb152c6ffbd11f0b2af32d89964721d',
         '681e339bffa311f08abc32d89964721d',
         '87c72055ffbe11f095ef32d89964721d',
-        'c7c42f76507211f0b6356a892e29a549',
+        '127ff37d173511f1ab08aa811fe4315f',
         '650c8742053511f1a14932d89964721d',
         '9eeed489ff9d11f0b82f32d89964721d',
         'b6b02fdaffad11f0885f32d89964721d',
