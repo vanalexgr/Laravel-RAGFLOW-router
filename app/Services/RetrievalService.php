@@ -156,6 +156,25 @@ class RetrievalService
         $narrativeMax = max(1, min($narrativeMax, 200));
         $citationMax = max(1, min($citationMax, 200));
 
+        $definitionIntent = $this->isDefinitionIntent($scrubbedQuestion);
+        $recommendationIntent = $this->isRecommendationIntent($scrubbedQuestion);
+        $definitionFocusConfig = config('ragflow.retrieval.definition_focus', []);
+        if ($definitionIntent && !empty($definitionFocusConfig['enabled'])) {
+            $narrativeMax = max($narrativeMax, (int) ($definitionFocusConfig['narrative_max'] ?? $narrativeMax));
+            $citationMax = min($citationMax, max(0, (int) ($definitionFocusConfig['citation_max'] ?? $citationMax)));
+            $skipCitationWhenNotRequested = !$recommendationIntent
+                && (bool) ($definitionFocusConfig['skip_citation_when_not_requested'] ?? true);
+            if ($skipCitationWhenNotRequested) {
+                $citationMax = 0;
+            }
+            $log->info('[DEFINITION FOCUS] Activated concept-definition retrieval profile', [
+                'narrative_max' => $narrativeMax,
+                'citation_max' => $citationMax,
+                'recommendation_intent' => $recommendationIntent,
+                'question_preview' => substr($scrubbedQuestion, 0, 120),
+            ]);
+        }
+
         // Create an expanded query for retrieval
         $router = new GuidelineRouterService();
         $expansionResult = $router->selectAndExpand($retrievalQuestion, 3, null, null);
@@ -206,101 +225,120 @@ class RetrievalService
             }
         }
 
-        $expandedQuery = $this->applyRetrievalQueryBoosts($expandedQuery, array_keys($selectedGuidelines), 'narrative');
-        $citationQuery = $this->applyRetrievalQueryBoosts($citationQuery, array_keys($selectedGuidelines), 'citation');
+        $expandedQuery = $this->applyRetrievalQueryBoosts($expandedQuery, array_keys($selectedGuidelines), 'narrative', $definitionIntent);
+        $citationQuery = $this->applyRetrievalQueryBoosts($citationQuery, array_keys($selectedGuidelines), 'citation', $definitionIntent);
 
         $dualResult = $this->retrieveDualChunks($expandedQuery, $citationQuery, $selectedGuidelines, $narrativeMax, $citationMax, $guidelineScores);
 
-        $dualResult = $this->applyFocusedRecall(
-            $dualResult,
-            $scrubbedQuestion,
-            $expandedQuery,
-            $citationQuery,
-            $selectedGuidelines,
-            $narrativeMax,
-            $citationMax,
-            $guidelineScores
+        $singleGuideline = count($selectedGuidelines) === 1;
+        $definitionFastPath = $this->shouldUseDefinitionFastPath(
+            $definitionIntent,
+            $singleGuideline,
+            $recommendationIntent,
+            $dualResult
         );
 
-        $dualResult = $this->applyQualityPass(
-            $dualResult,
-            $scrubbedQuestion,
-            $expandedQuery,
-            $citationQuery,
-            $selectedGuidelines,
-            $narrativeMax,
-            $citationMax,
-            $guidelineScores
-        );
-
-        $gapReport = null;
         $gapService = new GapDetectionService();
-        if ($gapService->enabled() && $gapService->maxPasses() > 0) {
-            $gapReport = $gapService->detect(
-                $scrubbedQuestion,
-                $dualResult['narrative_chunks'] ?? [],
-                $dualResult['citation_chunks'] ?? [],
-                $normalizationMeta
-            );
-
-            $gapReport = $this->applyQualityPassOnConceptGap(
+        $gapReport = null;
+        if ($definitionFastPath) {
+            $log->info('[DEFINITION FAST PATH] Single-guideline definitional query satisfied first-pass evidence; skipping secondary retrieval passes', [
+                'selected_guideline' => array_key_first($selectedGuidelines),
+                'narrative_chunks' => count($dualResult['narrative_chunks'] ?? []),
+                'citation_chunks' => count($dualResult['citation_chunks'] ?? []),
+                'recommendation_intent' => $recommendationIntent,
+            ]);
+        } else {
+            $dualResult = $this->applyFocusedRecall(
                 $dualResult,
-                $gapReport,
                 $scrubbedQuestion,
                 $expandedQuery,
                 $citationQuery,
                 $selectedGuidelines,
                 $narrativeMax,
                 $citationMax,
-                $guidelineScores,
-                $gapService,
-                $normalizationMeta
+                $guidelineScores
             );
 
-            $hasGap = !empty($gapReport['missing']) || !empty($gapReport['missing_concepts']);
-            if ($hasGap && !empty($gapReport['query_terms'])) {
-                $limits = $gapService->secondPassLimits();
-                $focusedNarrativeQuery = trim($expandedQuery . ' ' . implode(' ', $gapReport['query_terms']));
-                $focusedCitationQuery = trim($citationQuery . ' ' . implode(' ', $gapReport['query_terms']));
+            $dualResult = $this->applyQualityPass(
+                $dualResult,
+                $scrubbedQuestion,
+                $expandedQuery,
+                $citationQuery,
+                $selectedGuidelines,
+                $narrativeMax,
+                $citationMax,
+                $guidelineScores
+            );
 
-                $log->info('[GAP DETECTION] Missing fields detected; running focused second pass', [
-                    'missing' => $gapReport['missing'],
-                    'query_terms' => $gapReport['query_terms'],
-                    'narrative_max' => $limits['narrative_max'],
-                    'citation_max' => $limits['citation_max'],
-                ]);
-
-                $second = $this->retrieveDualChunks(
-                    $focusedNarrativeQuery,
-                    $focusedCitationQuery,
-                    $selectedGuidelines,
-                    $limits['narrative_max'],
-                    $limits['citation_max'],
-                    $guidelineScores
-                );
-
-                $dualResult = [
-                    'narrative_chunks' => $this->mergeChunks(
-                        $dualResult['narrative_chunks'] ?? [],
-                        $second['narrative_chunks'] ?? [],
-                        'narrative'
-                    ),
-                    'citation_chunks' => $this->mergeChunks(
-                        $dualResult['citation_chunks'] ?? [],
-                        $second['citation_chunks'] ?? [],
-                        'citation'
-                    ),
-                ];
-
-                // Re-evaluate gaps after second pass.
+            if ($gapService->enabled() && $gapService->maxPasses() > 0) {
                 $gapReport = $gapService->detect(
                     $scrubbedQuestion,
                     $dualResult['narrative_chunks'] ?? [],
                     $dualResult['citation_chunks'] ?? [],
                     $normalizationMeta
                 );
+
+                $gapReport = $this->applyQualityPassOnConceptGap(
+                    $dualResult,
+                    $gapReport,
+                    $scrubbedQuestion,
+                    $expandedQuery,
+                    $citationQuery,
+                    $selectedGuidelines,
+                    $narrativeMax,
+                    $citationMax,
+                    $guidelineScores,
+                    $gapService,
+                    $normalizationMeta
+                );
+
+                $hasGap = !empty($gapReport['missing']) || !empty($gapReport['missing_concepts']);
+                if ($hasGap && !empty($gapReport['query_terms'])) {
+                    $limits = $gapService->secondPassLimits();
+                    $focusedNarrativeQuery = trim($expandedQuery . ' ' . implode(' ', $gapReport['query_terms']));
+                    $focusedCitationQuery = trim($citationQuery . ' ' . implode(' ', $gapReport['query_terms']));
+
+                    $log->info('[GAP DETECTION] Missing fields detected; running focused second pass', [
+                        'missing' => $gapReport['missing'],
+                        'query_terms' => $gapReport['query_terms'],
+                        'narrative_max' => $limits['narrative_max'],
+                        'citation_max' => $limits['citation_max'],
+                    ]);
+
+                    $second = $this->retrieveDualChunks(
+                        $focusedNarrativeQuery,
+                        $focusedCitationQuery,
+                        $selectedGuidelines,
+                        $limits['narrative_max'],
+                        $limits['citation_max'],
+                        $guidelineScores
+                    );
+
+                    $dualResult = [
+                        'narrative_chunks' => $this->mergeChunks(
+                            $dualResult['narrative_chunks'] ?? [],
+                            $second['narrative_chunks'] ?? [],
+                            'narrative'
+                        ),
+                        'citation_chunks' => $this->mergeChunks(
+                            $dualResult['citation_chunks'] ?? [],
+                            $second['citation_chunks'] ?? [],
+                            'citation'
+                        ),
+                    ];
+
+                    // Re-evaluate gaps after second pass.
+                    $gapReport = $gapService->detect(
+                        $scrubbedQuestion,
+                        $dualResult['narrative_chunks'] ?? [],
+                        $dualResult['citation_chunks'] ?? [],
+                        $normalizationMeta
+                    );
+                }
             }
         }
+
+        $dualResult = $this->applyFinalEvidenceCaps($dualResult, $selectedGuidelines);
 
         $duration = round((microtime(true) - $startTime) * 1000);
 
@@ -320,6 +358,147 @@ class RetrievalService
             'gap_report' => $gapService->enabled() && config('gap_detection.include_debug', false) ? $gapReport : null,
             'graph_expansion' => $graphEnabled && config('graphrag.include_debug', false) ? $graphExpansion : null,
         ];
+    }
+
+    protected function applyFinalEvidenceCaps(array $dualResult, array $selectedGuidelines): array
+    {
+        $caps = config('ragflow.retrieval.evidence_caps', []);
+        if (empty($caps['enabled'])) {
+            return $dualResult;
+        }
+
+        $narrativePerGuideline = max(1, (int) ($caps['narrative_max_per_guideline'] ?? 8));
+        $narrativeTotal = max(1, (int) ($caps['narrative_max_total'] ?? 16));
+        $citationPerGuideline = max(1, (int) ($caps['citation_max_per_guideline'] ?? 6));
+        $citationTotal = max(1, (int) ($caps['citation_max_total'] ?? 12));
+
+        $narrative = $dualResult['narrative_chunks'] ?? [];
+        $citation = $dualResult['citation_chunks'] ?? [];
+
+        $narrativeBefore = count($narrative);
+        $citationBefore = count($citation);
+
+        $dualResult['narrative_chunks'] = $this->capEvidenceChunks(
+            is_array($narrative) ? $narrative : [],
+            'narrative',
+            $selectedGuidelines,
+            $narrativePerGuideline,
+            $narrativeTotal
+        );
+        $dualResult['citation_chunks'] = $this->capEvidenceChunks(
+            is_array($citation) ? $citation : [],
+            'citation',
+            $selectedGuidelines,
+            $citationPerGuideline,
+            $citationTotal
+        );
+
+        if (count($dualResult['narrative_chunks']) !== $narrativeBefore || count($dualResult['citation_chunks']) !== $citationBefore) {
+            Log::channel('retrieval')->info('[EVIDENCE CAPS] Applied final post-merge caps', [
+                'narrative_before' => $narrativeBefore,
+                'narrative_after' => count($dualResult['narrative_chunks']),
+                'citation_before' => $citationBefore,
+                'citation_after' => count($dualResult['citation_chunks']),
+                'narrative_max_per_guideline' => $narrativePerGuideline,
+                'narrative_max_total' => $narrativeTotal,
+                'citation_max_per_guideline' => $citationPerGuideline,
+                'citation_max_total' => $citationTotal,
+            ]);
+        }
+
+        return $dualResult;
+    }
+
+    protected function capEvidenceChunks(
+        array $chunks,
+        string $type,
+        array $selectedGuidelines,
+        int $maxPerGuideline,
+        int $maxTotal
+    ): array {
+        if (empty($chunks)) {
+            return [];
+        }
+
+        $allowedByKey = [];
+        foreach ($selectedGuidelines as $key => $info) {
+            if (!is_string($key) || $key === '') {
+                continue;
+            }
+            $labels = [];
+            $name = (string) ($info['name'] ?? '');
+            if ($name !== '') {
+                $norm = $this->normalizeGuidelineLabel($name);
+                if ($norm !== '') {
+                    $labels[$norm] = true;
+                }
+            }
+            foreach ($this->recommendationGuidelineAliasesForKey($key) as $alias) {
+                $norm = $this->normalizeGuidelineLabel((string) $alias);
+                if ($norm !== '') {
+                    $labels[$norm] = true;
+                }
+            }
+            $allowedByKey[$key] = $labels;
+        }
+
+        $indexed = [];
+        foreach (array_values($chunks) as $idx => $chunk) {
+            if (!is_array($chunk)) {
+                continue;
+            }
+            $score = (float) ($chunk['similarity'] ?? 0.0);
+            $bucket = null;
+            $label = $type === 'citation'
+                ? (string) ($chunk['guideline'] ?? '')
+                : (string) ($chunk['source_guideline'] ?? '');
+
+            if ($label !== '') {
+                foreach ($allowedByKey as $key => $allowedLabels) {
+                    if ($this->guidelineLabelAllowed($label, $allowedLabels)) {
+                        $bucket = $key;
+                        break;
+                    }
+                }
+            }
+
+            $indexed[] = [
+                'idx' => $idx,
+                'score' => $score,
+                'bucket' => $bucket,
+                'chunk' => $chunk,
+            ];
+        }
+
+        usort($indexed, function (array $a, array $b): int {
+            if ($a['score'] === $b['score']) {
+                return $a['idx'] <=> $b['idx'];
+            }
+            return $b['score'] <=> $a['score'];
+        });
+
+        $perGuidelineCount = [];
+        $kept = [];
+        foreach ($indexed as $row) {
+            $bucket = $row['bucket'];
+            if ($bucket !== null) {
+                $count = $perGuidelineCount[$bucket] ?? 0;
+                if ($count >= $maxPerGuideline) {
+                    continue;
+                }
+                $perGuidelineCount[$bucket] = $count + 1;
+            }
+            $kept[] = $row;
+        }
+
+        if (count($kept) > $maxTotal) {
+            $kept = array_slice($kept, 0, $maxTotal);
+        }
+
+        return array_values(array_map(
+            fn(array $row): array => $row['chunk'],
+            $kept
+        ));
     }
 
     protected function applyQualityPassOnConceptGap(
@@ -371,7 +550,8 @@ class RetrievalService
             $gapNarrativeMax,
             $gapCitationMax,
             $guidelineScores,
-            $overrides
+            $overrides,
+            true
         );
 
         $dualResult['narrative_chunks'] = $this->mergeChunks(
@@ -456,10 +636,12 @@ class RetrievalService
         return $query;
     }
 
-    protected function applyRetrievalQueryBoosts(string $query, array $selectedGuidelines, string $channel): string
+    protected function applyRetrievalQueryBoosts(string $query, array $selectedGuidelines, string $channel, bool $definitionIntent = false): string
     {
         $config = config('ragflow.retrieval.query_boosts', []);
-        if (empty($config['enabled'])) {
+        $definitionFocusConfig = config('ragflow.retrieval.definition_focus', []);
+
+        if (empty($config['enabled']) && !$definitionIntent) {
             return $query;
         }
 
@@ -492,6 +674,39 @@ class RetrievalService
             }
         }
 
+        if ($definitionIntent && !empty($definitionFocusConfig['enabled'])) {
+            $termsKey = $channel === 'citation' ? 'citation_terms' : 'narrative_terms';
+            $definitionTerms = $definitionFocusConfig[$termsKey] ?? [];
+            if (is_array($definitionTerms) && !empty($definitionTerms)) {
+                $query = $this->appendUniqueTerms($query, array_map('strval', $definitionTerms));
+            }
+        }
+
+        // Universal multi-guideline anchor boost: when backend selected >1 guideline,
+        // append a small set of representative terms from each guideline to improve
+        // cross-guideline recall while keeping the query compact.
+        if (count($selectedGuidelines) > 1) {
+            $query = $this->appendUniqueTerms($query, $this->buildMultiGuidelineAnchorTerms($selectedGuidelines));
+        }
+
+        // Complex AAA crossover: when both AAA + descending thoracic are selected,
+        // add thoracoabdominal anchors so shared/adjacent recommendations are retrieved.
+        if (
+            in_array('abdominal_aortic_aneurysm', $selectedGuidelines, true)
+            && in_array('descending_thoracic_aorta', $selectedGuidelines, true)
+        ) {
+            $complexAaaPattern = '/\\b(juxtarenal|pararenal|paravisceral|suprarenal|complex\\s+aaa|fevar|bevar|fbevar|fenestrated|branched)\\b/iu';
+            if (preg_match($complexAaaPattern, $query) === 1) {
+                $query = $this->appendUniqueTerms($query, [
+                    'thoracoabdominal aneurysm',
+                    'TAAA',
+                    'Crawford classification',
+                    'extent IV',
+                    'extent V',
+                ]);
+            }
+        }
+
         if ($query !== $original) {
             Log::channel('retrieval')->info('[QUERY BOOST] Applied retrieval phrase boosts', [
                 'channel' => $channel,
@@ -502,6 +717,168 @@ class RetrievalService
         }
 
         return $query;
+    }
+
+    protected function isDefinitionIntent(string $question): bool
+    {
+        $q = mb_strtolower(trim($question));
+        if ($q === '') {
+            return false;
+        }
+
+        $patterns = [
+            '/\bwhat\s+is\b/u',
+            '/\bwhat\s+does\b/u',
+            '/\bdefine\b/u',
+            '/\bdefinition\s+of\b/u',
+            '/\bmeaning\s+of\b/u',
+            '/\bclinical\s+significance\b/u',
+            '/\bstands?\s+for\b/u',
+            '/\bhow\s+is\s+.+\s+defined\b/u',
+        ];
+
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $q) === 1) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    protected function isRecommendationIntent(string $question): bool
+    {
+        $q = mb_strtolower(trim($question));
+        if ($q === '') {
+            return false;
+        }
+
+        $patterns = [
+            '/\brecommend(?:ation|ations|ed|s)?\b/u',
+            '/\bguideline(?:s)?\s+recommend\b/u',
+            '/\bwhat\s+(?:do|does)\s+.+\s+recommend\b/u',
+            '/\bclass\s*(?:i|ii|iii|iv|[abc])\b/u',
+            '/\blevel\s*[abc]\b/u',
+            '/\brec\s*\d+\b/u',
+        ];
+
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $q) === 1) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    protected function shouldUseDefinitionFastPath(
+        bool $definitionIntent,
+        bool $singleGuideline,
+        bool $recommendationIntent,
+        array $dualResult
+    ): bool {
+        if (!$definitionIntent || !$singleGuideline || $recommendationIntent) {
+            return false;
+        }
+
+        $narrativeChunks = is_array($dualResult['narrative_chunks'] ?? null)
+            ? $dualResult['narrative_chunks']
+            : [];
+        if (count($narrativeChunks) === 0) {
+            return false;
+        }
+
+        return $this->containsDefinitionEvidence($narrativeChunks);
+    }
+
+    protected function containsDefinitionEvidence(array $narrativeChunks): bool
+    {
+        if (empty($narrativeChunks)) {
+            return false;
+        }
+
+        $definitionCfg = config('ragflow.retrieval.definition_focus', []);
+        $definitionTerms = [];
+        foreach ((array) ($definitionCfg['narrative_terms'] ?? []) as $term) {
+            $t = mb_strtolower(trim((string) $term));
+            if ($t !== '') {
+                $definitionTerms[] = $t;
+            }
+        }
+        $definitionTerms = array_values(array_unique($definitionTerms));
+
+        $definitionPatterns = [
+            '/\bdefined\s+as\b/u',
+            '/\bdefinition\b/u',
+            '/\bclinical\s+significance\b/u',
+            '/\bclassification\b/u',
+            '/\bcriteria\b/u',
+        ];
+
+        foreach ($narrativeChunks as $chunk) {
+            if (!is_array($chunk)) {
+                continue;
+            }
+            $content = mb_strtolower((string) ($chunk['content'] ?? ''));
+            if ($content === '') {
+                continue;
+            }
+
+            foreach ($definitionPatterns as $pattern) {
+                if (preg_match($pattern, $content) === 1) {
+                    return true;
+                }
+            }
+
+            foreach ($definitionTerms as $term) {
+                if ($term !== '' && str_contains($content, $term)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    protected function buildMultiGuidelineAnchorTerms(array $selectedGuidelines): array
+    {
+        $anchors = [];
+        $maxPerGuideline = 2;
+        $maxTotal = 8;
+
+        foreach ($selectedGuidelines as $guidelineKey) {
+            if (!is_string($guidelineKey) || $guidelineKey === '') {
+                continue;
+            }
+
+            $countForGuideline = 0;
+            $cfg = $this->getGuidelineConfig($guidelineKey);
+            $concepts = is_array($cfg['key_concepts'] ?? null) ? $cfg['key_concepts'] : [];
+
+            foreach ($concepts as $concept) {
+                $term = trim((string) $concept);
+                if ($term === '' || strlen($term) < 4 || strlen($term) > 48) {
+                    continue;
+                }
+                // Skip very numeric/unit-like tokens.
+                if (preg_match('/^\\d+(?:\\.\\d+)?\\s*(cm|mm)?$/i', $term)) {
+                    continue;
+                }
+                if (!in_array($term, $anchors, true)) {
+                    $anchors[] = $term;
+                    $countForGuideline++;
+                }
+                if ($countForGuideline >= $maxPerGuideline || count($anchors) >= $maxTotal) {
+                    break;
+                }
+            }
+
+            if (count($anchors) >= $maxTotal) {
+                break;
+            }
+        }
+
+        return $anchors;
     }
 
     protected function chunksContainPattern(array $chunks, string $pattern, array $fields): bool
@@ -710,7 +1087,8 @@ class RetrievalService
             $qualityNarrativeMax,
             $qualityCitationMax,
             $guidelineScores,
-            $overrides
+            $overrides,
+            true
         );
 
         $dualResult['narrative_chunks'] = $this->mergeChunks(
@@ -920,12 +1298,29 @@ class RetrievalService
                 'tbad',
                 'tevar',
                 'thoracic aneurysm',
+                'thoracoabdominal aneurysm',
+                'thoraco-abdominal aneurysm',
+                'taaa',
+                'crawford classification',
                 'intramural hematoma',
                 'imh',
                 'descending aorta',
                 'penetrating ulcer',
                 'thoracic aortic',
-                'spinal cord ischemia'
+                'spinal cord ischemia',
+                'fevar',
+                'fenestrated evar',
+                'fenestrated endovascular',
+                'bevar',
+                'branched evar',
+                'branched endovascular',
+                'fbevar',
+                'f-b evar',
+                'juxtarenal aaa',
+                'pararenal aaa',
+                'paravisceral aaa',
+                'suprarenal aaa',
+                'complex aaa'
             ],
 
             // Guardrail E: AAA terms → abdominal_aortic_aneurysm
@@ -1156,7 +1551,8 @@ class RetrievalService
         int $narrativeMax,
         int $citationMax,
         array $scores = [],
-        array $overrides = []
+        array $overrides = [],
+        bool $allowHighRecallTopK = false
     ): array
     {
         $narrativeDatasets = [];
@@ -1196,8 +1592,16 @@ class RetrievalService
 
         // Treat retrieval params as server-owned defaults; clamp anything that could
         // explode cost/latency or swamp reranking with noise.
-        $topK = (int) ($retrievalConfig['top_k'] ?? 256);
-        $topK = max(1, min($topK, 256));
+        $topK = $this->clampTopKParameter(
+            (int) ($retrievalConfig['top_k'] ?? 40),
+            $allowHighRecallTopK,
+            'base_top_k'
+        );
+        $citationTopK = $this->clampTopKParameter(
+            (int) ($retrievalConfig['citation_top_k'] ?? 10),
+            $allowHighRecallTopK,
+            'base_citation_top_k'
+        );
 
         $bridgeRerank = new BridgeRerankService();
         $params = [
@@ -1206,18 +1610,27 @@ class RetrievalService
             'narrative_max' => $narrativeMax,
             'citation_max' => $citationMax,
             'citation_document_ids' => $citationDocumentIds, // NEW: pass to Python
+            'high_recall' => $allowHighRecallTopK,
             'top_k' => $topK,
             'similarity_threshold' => $retrievalConfig['similarity_threshold'] ?? 0.2,
             'keyword' => $retrievalConfig['keyword_mode'] ?? true,
             'vector_similarity_weight' => $retrievalConfig['vector_similarity_weight'] ?? 0.3,
             'use_kg' => $retrievalConfig['use_kg'] ?? false,
-            'citation_top_k' => (int) ($retrievalConfig['citation_top_k'] ?? 10),
+            'citation_top_k' => $citationTopK,
             'highlight' => (bool) ($retrievalConfig['highlight'] ?? false),
         ];
         if (!empty($overrides)) {
             foreach (['top_k', 'similarity_threshold', 'keyword', 'vector_similarity_weight', 'use_kg', 'citation_top_k'] as $key) {
                 if (array_key_exists($key, $overrides) && $overrides[$key] !== null) {
-                    $params[$key] = $overrides[$key];
+                    if ($key === 'top_k' || $key === 'citation_top_k') {
+                        $params[$key] = $this->clampTopKParameter(
+                            (int) $overrides[$key],
+                            $allowHighRecallTopK,
+                            'override_' . $key
+                        );
+                    } else {
+                        $params[$key] = $overrides[$key];
+                    }
                 }
             }
         }
@@ -1273,6 +1686,7 @@ class RetrievalService
             $narrativeQuery
         );
         $formattedCitation = $this->formatChunks($citationChunks, 'citation');
+        $formattedCitation = $this->rebalanceCitationCoverage($formattedCitation, $guidelines);
 
         // Second-pass safety filter on formatted chunks. This catches cases where the
         // raw chunk metadata is sparse/inconsistent but the parsed formatted chunk
@@ -1304,6 +1718,102 @@ class RetrievalService
             'narrative_chunks' => $formattedNarrative,
             'citation_chunks' => $formattedCitation,
         ];
+    }
+
+    protected function clampTopKParameter(int $value, bool $allowHighRecallTopK, string $label): int
+    {
+        $retrievalConfig = config('ragflow.retrieval', []);
+        $standardCeiling = max(1, (int) ($retrievalConfig['top_k_ceiling'] ?? 80));
+        $highRecallCeiling = max($standardCeiling, (int) ($retrievalConfig['high_recall_top_k_ceiling'] ?? 1024));
+        $activeCeiling = $allowHighRecallTopK ? $highRecallCeiling : $standardCeiling;
+
+        $clamped = max(1, min($value, $activeCeiling));
+        if ($clamped !== $value) {
+            Log::channel('retrieval')->warning('[TOP_K CLAMP] top_k exceeded allowed ceiling; clamped', [
+                'label' => $label,
+                'requested' => $value,
+                'clamped' => $clamped,
+                'allow_high_recall' => $allowHighRecallTopK,
+                'standard_ceiling' => $standardCeiling,
+                'high_recall_ceiling' => $highRecallCeiling,
+            ]);
+        }
+
+        return $clamped;
+    }
+
+    /**
+     * Reorder citation chunks so multi-guideline queries expose at least one early chunk
+     * per selected guideline when available, reducing single-guideline dominance in synthesis.
+     */
+    protected function rebalanceCitationCoverage(array $chunks, array $selectedGuidelines): array
+    {
+        if (count($selectedGuidelines) <= 1 || empty($chunks)) {
+            return $chunks;
+        }
+
+        $keyOrder = array_keys($selectedGuidelines);
+        $allowedByKey = [];
+        foreach ($selectedGuidelines as $key => $info) {
+            $labels = [];
+            $name = (string) ($info['name'] ?? '');
+            if ($name !== '') {
+                $norm = $this->normalizeGuidelineLabel($name);
+                if ($norm !== '') {
+                    $labels[$norm] = true;
+                }
+            }
+            foreach ($this->recommendationGuidelineAliasesForKey($key) as $alias) {
+                $norm = $this->normalizeGuidelineLabel((string) $alias);
+                if ($norm !== '') {
+                    $labels[$norm] = true;
+                }
+            }
+            $allowedByKey[$key] = $labels;
+        }
+
+        $buckets = [];
+        foreach ($keyOrder as $key) {
+            $buckets[$key] = [];
+        }
+        $unknown = [];
+
+        foreach ($chunks as $chunk) {
+            $label = (string) ($chunk['guideline'] ?? '');
+            $matched = null;
+            foreach ($keyOrder as $key) {
+                if ($label !== '' && $this->guidelineLabelAllowed($label, $allowedByKey[$key] ?? [])) {
+                    $matched = $key;
+                    break;
+                }
+            }
+            if ($matched === null) {
+                $unknown[] = $chunk;
+            } else {
+                $buckets[$matched][] = $chunk;
+            }
+        }
+
+        $reordered = [];
+        while (count($reordered) < count($chunks)) {
+            $progress = false;
+            foreach ($keyOrder as $key) {
+                if (!empty($buckets[$key])) {
+                    $reordered[] = array_shift($buckets[$key]);
+                    $progress = true;
+                }
+            }
+            if (!$progress) {
+                break;
+            }
+        }
+
+        foreach ($unknown as $chunk) {
+            $reordered[] = $chunk;
+        }
+
+        // Preserve original cardinality.
+        return array_slice($reordered, 0, count($chunks));
     }
 
     protected function buildCitationQuery(string $retrievalQuery, string $originalQuestion, ?array $normalizationMeta, array $selectedGuidelineKeys): string

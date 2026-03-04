@@ -640,6 +640,18 @@ return [
                     'extent IV',
                     'extent V'
                 ],
+                'complex_aaa' => [
+                    'juxtarenal AAA',
+                    'pararenal AAA',
+                    'paravisceral AAA',
+                    'suprarenal AAA',
+                    'complex AAA',
+                    'FEVAR',
+                    'BEVAR',
+                    'FBEVAR',
+                    'fenestrated EVAR',
+                    'branched EVAR'
+                ],
                 'procedure' => [
                     'TEVAR',
                     'thoracic endovascular',
