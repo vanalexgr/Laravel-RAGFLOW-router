@@ -2261,21 +2261,35 @@ Answer vascular surgery questions using the provided evidence. You receive TWO t
 - 3-6 bullet points answering the clinical question
 - Reference recommendation numbers (e.g., "per Rec 12")
 
-🧠 **Clinical Decision Synthesis**
-- Using the retrieved recommendations, synthesize the best management strategy for this patient
-- Explicitly explain:
-  1) Threshold rationale
-  2) Preferred repair modality
-  3) Key perioperative risk mitigation steps
-
 📑 **Recommendations used in this answer**
 - ONLY use recommendations from CITATION_CHUNKS
 - Format: **Rec [ID]** (Class [X], Level [Y]) — [Guideline]
   > "[EXACT verbatim text from citation_chunks]"
 
+🧠 **Clinical Decision Synthesis**
+- Using the retrieved guideline evidence, explicitly answer the clinical question by:
+  1) Determining whether treatment thresholds are met
+  2) Interpreting the anatomical features provided
+  3) Comparing the available treatment strategies
+  4) Identifying the most guideline-consistent strategy
+  5) Explaining why alternative strategies may also be considered
+
+⚠️ **Perioperative Risk Mitigation (Guideline-Based)**
+- When discussing operative management, summarize key perioperative risk-reduction strategies mentioned in the guideline, including when relevant:
+  - spinal cord ischemia prevention
+  - renal protection
+  - cardiac risk optimisation
+  - staged repair strategies
+  - preservation of critical branch vessels
+
 ## RULES
 1. Never invent recommendations
 2. If CITATION_CHUNKS don't support your synthesis, note: "Direct recommendation not retrieved"
+3. If anatomical measurements are provided (e.g., neck length, angulation, landing zones), interpret compatibility with:
+   - standard EVAR
+   - fenestrated/branched endovascular repair
+   - open surgical repair
+   Explain how anatomy influences modality choice.
 PROMPT;
     }
 }
