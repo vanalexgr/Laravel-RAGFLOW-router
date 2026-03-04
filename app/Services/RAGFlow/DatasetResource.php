@@ -50,6 +50,33 @@ class DatasetResource
      */
     public function retrieve(array $datasetIds, array $parameters): array
     {
+        $shouldParallelize = count($datasetIds) > 1
+            && (bool) config('ragflow.use_bridge', false)
+            && (bool) config('ragflow.retrieval.parallel_by_default', true);
+
+        if ($shouldParallelize) {
+            $datasets = [];
+            foreach (array_values($datasetIds) as $idx => $datasetId) {
+                $datasets[] = [
+                    'id' => $datasetId,
+                    'name' => $this->resolveDatasetName($datasetId, $idx),
+                ];
+            }
+
+            $maxPerDataset = (int) ($parameters['max_per_dataset'] ?? ($parameters['size'] ?? 10));
+            $maxPerDataset = max(1, $maxPerDataset);
+
+            $maxTotal = (int) ($parameters['max_total'] ?? ($maxPerDataset * count($datasets)));
+            $maxTotal = max($maxPerDataset, $maxTotal);
+
+            $multiParameters = array_merge($parameters, [
+                'max_per_dataset' => $maxPerDataset,
+                'max_total' => $maxTotal,
+            ]);
+
+            return $this->retrieveMulti($datasets, $multiParameters);
+        }
+
         $payload = array_merge($parameters, [
             'dataset_ids' => $datasetIds,
         ]);
@@ -94,5 +121,26 @@ class DatasetResource
         ]);
 
         return $this->client->post('retrieve_dual', $payload);
+    }
+
+    protected function resolveDatasetName(string $datasetId, int $fallbackIndex): string
+    {
+        static $datasetNameById = null;
+
+        if ($datasetNameById === null) {
+            $datasetNameById = [];
+            $categories = config('guidelines.categories', []);
+            foreach ($categories as $category) {
+                foreach (($category['guidelines'] ?? []) as $guideline) {
+                    $id = (string) ($guideline['id'] ?? '');
+                    $name = (string) ($guideline['name'] ?? '');
+                    if ($id !== '' && $name !== '') {
+                        $datasetNameById[$id] = $name;
+                    }
+                }
+            }
+        }
+
+        return $datasetNameById[$datasetId] ?? ('Dataset ' . ($fallbackIndex + 1));
     }
 }
