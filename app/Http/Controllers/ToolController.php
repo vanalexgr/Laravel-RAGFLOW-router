@@ -245,6 +245,7 @@ class ToolController extends Controller
         $output = mb_convert_encoding($output, 'UTF-8', 'UTF-8');
         $narrativeChunks = json_decode(json_encode($result['narrative_chunks'], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
         $citationChunks = json_decode(json_encode($result['citation_chunks'], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
+        $selectedGuidelines = json_decode(json_encode($result['selected_guidelines'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
         $safeAssets = json_decode(json_encode($assets, JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
         $queryNormalization = json_decode(json_encode($result['query_normalization'] ?? null, JSON_INVALID_UTF8_SUBSTITUTE), true);
 
@@ -253,6 +254,7 @@ class ToolController extends Controller
             'result' => $output,
             'narrative_chunks' => $narrativeChunks,
             'citation_chunks' => $citationChunks,
+            'selected_guidelines' => $selectedGuidelines,
             'assets' => $safeAssets,
             'query_normalization' => $queryNormalization,
         ], 200, [], JSON_INVALID_UTF8_SUBSTITUTE)
