@@ -1253,9 +1253,20 @@ class Tools:
                 llm_output += "=== CLINICAL DECISION SYNTHESIS (REQUIRED) ===\n"
                 llm_output += "Using the retrieved recommendations, synthesize the best management strategy for this patient.\n"
                 llm_output += "Explicitly explain:\n"
-                llm_output += "1. Threshold rationale\n"
-                llm_output += "2. Preferred repair modality\n"
-                llm_output += "3. Key perioperative risk mitigation steps\n\n"
+                llm_output += "1. Whether treatment thresholds are met\n"
+                llm_output += "2. Interpretation of the anatomical features provided\n"
+                llm_output += "3. Comparison of available treatment strategies\n"
+                llm_output += "4. Most guideline-consistent strategy\n"
+                llm_output += "5. Why alternative strategies may also be considered\n"
+                llm_output += "If anatomical measurements are provided (e.g., neck length, angulation, landing zones), interpret whether they are compatible with: standard EVAR, fenestrated/branched endovascular repair, and open surgical repair.\n"
+                llm_output += "Explain how anatomy influences treatment modality choice.\n\n"
+                llm_output += "=== PERIOPERATIVE RISK MITIGATION (GUIDELINE-BASED, REQUIRED) ===\n"
+                llm_output += "When discussing operative management, summarize key perioperative risk-reduction strategies mentioned in the guideline, including when relevant:\n"
+                llm_output += "- spinal cord ischemia prevention\n"
+                llm_output += "- renal protection\n"
+                llm_output += "- cardiac risk optimisation\n"
+                llm_output += "- staged repair strategies\n"
+                llm_output += "- preservation of critical branch vessels\n\n"
 
                 assets_block = self._format_assets_markdown(assets)
                 if assets_block:
@@ -1288,6 +1299,8 @@ class Tools:
                     llm_output += "Imaging:\n"
                     llm_output += "Indication for intervention:\n"
                     llm_output += "Treatment options:\n"
+                    llm_output += "Clinical Decision Synthesis:\n"
+                    llm_output += "Perioperative Risk Mitigation:\n"
                     llm_output += "Follow-up:\n"
                     llm_output += "Evidence used (Rec #, Class, Level):\n"
                 
