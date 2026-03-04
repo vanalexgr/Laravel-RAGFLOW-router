@@ -204,13 +204,20 @@ class ToolController extends Controller
         $output .= "\n\n=== IMPORTANT ===\n";
         $output .= "Present this using the mandatory response format:\n";
         $output .= "1. 🩺 Clinical Synthesis (3-6 bullets with inline citations)\n";
-        $output .= "2. 🧠 Clinical Decision Synthesis\n";
-        $output .= "   Using the retrieved recommendations, synthesize the best management strategy for this patient.\n";
-        $output .= "   Explicitly explain: threshold rationale, preferred repair modality, and key perioperative risk mitigation steps.\n";
-        $output .= "3. 📑 Recommendations used in this answer (verbatim quotes)\n";
-        $output .= "4. 📌 Guideline supporting statements\n";
+        $output .= "2. 📑 Recommendations used in this answer (verbatim quotes)\n";
+        $output .= "3. 🧠 Clinical Decision Synthesis\n";
+        $output .= "   Using the retrieved recommendations, explicitly answer the clinical question by:\n";
+        $output .= "   (1) determining whether treatment thresholds are met,\n";
+        $output .= "   (2) interpreting the anatomical features provided,\n";
+        $output .= "   (3) comparing available treatment strategies,\n";
+        $output .= "   (4) identifying the most guideline-consistent strategy, and\n";
+        $output .= "   (5) explaining why alternative strategies may also be considered.\n";
+        $output .= "   If anatomical measurements are provided (neck length, angulation, landing zones), interpret compatibility with standard EVAR, fenestrated/branched endovascular repair, and open surgical repair.\n";
+        $output .= "4. ⚠️ Perioperative Risk Mitigation (Guideline-Based)\n";
+        $output .= "   For operative management, summarize key risk-reduction strategies when relevant: spinal cord ischemia prevention, renal protection, cardiac risk optimisation, staged repair strategies, and preservation of critical branch vessels.\n";
+        $output .= "5. 📌 Guideline supporting statements\n";
         if (!empty($assets)) {
-            $output .= "5. 🖼️ Figures / Tables (optional; show images if they help)\n";
+            $output .= "6. 🖼️ Figures / Tables (optional; show images if they help)\n";
         }
 
         $gapService = new GapDetectionService();
@@ -230,6 +237,8 @@ class ToolController extends Controller
             $output .= "Imaging:\n";
             $output .= "Indication for intervention:\n";
             $output .= "Treatment options:\n";
+            $output .= "Clinical Decision Synthesis:\n";
+            $output .= "Perioperative Risk Mitigation:\n";
             $output .= "Follow-up:\n";
             $output .= "Evidence used (Rec #, Class, Level):\n";
         }
