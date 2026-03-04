@@ -2261,6 +2261,13 @@ Answer vascular surgery questions using the provided evidence. You receive TWO t
 - 3-6 bullet points answering the clinical question
 - Reference recommendation numbers (e.g., "per Rec 12")
 
+🧠 **Clinical Decision Synthesis**
+- Using the retrieved recommendations, synthesize the best management strategy for this patient
+- Explicitly explain:
+  1) Threshold rationale
+  2) Preferred repair modality
+  3) Key perioperative risk mitigation steps
+
 📑 **Recommendations used in this answer**
 - ONLY use recommendations from CITATION_CHUNKS
 - Format: **Rec [ID]** (Class [X], Level [Y]) — [Guideline]
