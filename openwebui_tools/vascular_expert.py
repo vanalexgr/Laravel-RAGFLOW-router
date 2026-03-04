@@ -1250,6 +1250,13 @@ class Tools:
                         chunk_num += 1
                         narrative_i += 1
 
+                llm_output += "=== CLINICAL DECISION SYNTHESIS (REQUIRED) ===\n"
+                llm_output += "Using the retrieved recommendations, synthesize the best management strategy for this patient.\n"
+                llm_output += "Explicitly explain:\n"
+                llm_output += "1. Threshold rationale\n"
+                llm_output += "2. Preferred repair modality\n"
+                llm_output += "3. Key perioperative risk mitigation steps\n\n"
+
                 assets_block = self._format_assets_markdown(assets)
                 if assets_block:
                     llm_output += assets_block
