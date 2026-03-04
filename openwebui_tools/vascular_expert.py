@@ -374,6 +374,21 @@ class Tools:
             "combined_query": combined,
         }
 
+    def _requires_clinical_decision_summary(self, question: str, intent_profile: Optional[dict]) -> bool:
+        q = (question or "").lower()
+        intent = ""
+        if isinstance(intent_profile, dict):
+            intent = str(intent_profile.get("intent") or "").strip().lower()
+
+        if intent in {"management", "treatment", "comparison", "procedure", "threshold", "indication"}:
+            return True
+
+        return bool(re.search(
+            r"\b(manage(?:ment)?|treat(?:ment)?|strategy|best\s+(?:option|approach)|"
+            r"choice|choose|preferred|versus|vs\.?|open\s+or\s+endovascular)\b",
+            q
+        ))
+
     def _intent_terms(self, intent: str) -> list[str]:
         table = {
             "threshold": ["threshold", "diameter", "size", "mm", "cm", "elective repair", "indication for repair", "operate", "surgery"],
@@ -1204,6 +1219,7 @@ class Tools:
                     f"Using {llm_total_chunks} evidence sources for answer synthesis "
                     f"(from {backend_total_chunks} retrieved chunks; {ui_total_chunks} shown in Sources).\n\n"
                 )
+                requires_decision_summary = self._requires_clinical_decision_summary(question, intent_profile)
 
                 if self._show_clinical_frame():
                     clinical_frame = ""
@@ -1250,23 +1266,24 @@ class Tools:
                         chunk_num += 1
                         narrative_i += 1
 
-                llm_output += "=== CLINICAL DECISION SYNTHESIS (REQUIRED) ===\n"
-                llm_output += "Using the retrieved recommendations, synthesize the best management strategy for this patient.\n"
-                llm_output += "Explicitly explain:\n"
-                llm_output += "1. Whether treatment thresholds are met\n"
-                llm_output += "2. Interpretation of the anatomical features provided\n"
-                llm_output += "3. Comparison of available treatment strategies\n"
-                llm_output += "4. Most guideline-consistent strategy\n"
-                llm_output += "5. Why alternative strategies may also be considered\n"
-                llm_output += "If anatomical measurements are provided (e.g., neck length, angulation, landing zones), interpret whether they are compatible with: standard EVAR, fenestrated/branched endovascular repair, and open surgical repair.\n"
-                llm_output += "Explain how anatomy influences treatment modality choice.\n\n"
-                llm_output += "=== PERIOPERATIVE RISK MITIGATION (GUIDELINE-BASED, REQUIRED) ===\n"
-                llm_output += "When discussing operative management, summarize key perioperative risk-reduction strategies mentioned in the guideline, including when relevant:\n"
-                llm_output += "- spinal cord ischemia prevention\n"
-                llm_output += "- renal protection\n"
-                llm_output += "- cardiac risk optimisation\n"
-                llm_output += "- staged repair strategies\n"
-                llm_output += "- preservation of critical branch vessels\n\n"
+                if requires_decision_summary:
+                    llm_output += "=== CLINICAL DECISION SUMMARY (REQUIRED) ===\n"
+                    llm_output += "For management/treatment/clinical strategy questions, conclude with a section titled exactly: **Clinical Decision Summary**.\n"
+                    llm_output += "Using the retrieved guideline evidence, you must:\n"
+                    llm_output += "1. Determine whether treatment thresholds are met.\n"
+                    llm_output += "2. Interpret the anatomical features provided.\n"
+                    llm_output += "3. Compare available treatment strategies supported by evidence.\n"
+                    llm_output += "4. State the guideline-consistent default/preferred strategy when inferable.\n"
+                    llm_output += "5. Explain why this strategy is preferred and identify the main alternative strategy with when it may be chosen instead.\n"
+                    llm_output += "Do not stop at 'both options may be considered'; provide a reasoned decision.\n"
+                    llm_output += "If anatomical measurements are provided (e.g., neck length, angulation, landing zones), interpret compatibility with standard EVAR, fenestrated/branched endovascular repair, and open surgical repair, and explain how anatomy influences modality choice.\n\n"
+                    llm_output += "=== PERIOPERATIVE RISK MITIGATION (GUIDELINE-BASED, REQUIRED) ===\n"
+                    llm_output += "When discussing operative management, summarize key perioperative risk-reduction strategies mentioned in the guideline, including when relevant:\n"
+                    llm_output += "- spinal cord ischemia prevention\n"
+                    llm_output += "- renal protection\n"
+                    llm_output += "- cardiac risk optimisation\n"
+                    llm_output += "- staged repair strategies\n"
+                    llm_output += "- preservation of critical branch vessels\n\n"
 
                 assets_block = self._format_assets_markdown(assets)
                 if assets_block:
@@ -1299,8 +1316,9 @@ class Tools:
                     llm_output += "Imaging:\n"
                     llm_output += "Indication for intervention:\n"
                     llm_output += "Treatment options:\n"
-                    llm_output += "Clinical Decision Synthesis:\n"
-                    llm_output += "Perioperative Risk Mitigation:\n"
+                    if requires_decision_summary:
+                        llm_output += "Clinical Decision Summary:\n"
+                        llm_output += "Perioperative Risk Mitigation:\n"
                     llm_output += "Follow-up:\n"
                     llm_output += "Evidence used (Rec #, Class, Level):\n"
                 
