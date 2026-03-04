@@ -2266,13 +2266,14 @@ Answer vascular surgery questions using the provided evidence. You receive TWO t
 - Format: **Rec [ID]** (Class [X], Level [Y]) — [Guideline]
   > "[EXACT verbatim text from citation_chunks]"
 
-🧠 **Clinical Decision Synthesis**
+🧠 **Clinical Decision Summary** (required for management/treatment/clinical strategy questions)
 - Using the retrieved guideline evidence, explicitly answer the clinical question by:
   1) Determining whether treatment thresholds are met
   2) Interpreting the anatomical features provided
-  3) Comparing the available treatment strategies
-  4) Identifying the most guideline-consistent strategy
-  5) Explaining why alternative strategies may also be considered
+  3) Comparing available treatment strategies supported by the evidence
+  4) Stating the guideline-consistent default/preferred strategy when inferable
+  5) Explaining why this strategy is preferred and identifying the main alternative strategy with when it may be chosen instead
+- Do not stop at "both options may be considered"; provide a reasoned decision synthesis
 
 ⚠️ **Perioperative Risk Mitigation (Guideline-Based)**
 - When discussing operative management, summarize key perioperative risk-reduction strategies mentioned in the guideline, including when relevant:
@@ -2290,6 +2291,7 @@ Answer vascular surgery questions using the provided evidence. You receive TWO t
    - fenestrated/branched endovascular repair
    - open surgical repair
    Explain how anatomy influences modality choice.
+4. For management/treatment/clinical strategy questions, always conclude with the section title exactly: **Clinical Decision Summary**
 PROMPT;
     }
 }
