@@ -37,6 +37,21 @@ app = FastAPI(title="RAGFlow Bridge Service")
 RAGFLOW_API_KEY = os.getenv("RAGFLOW_API_KEY")
 RAGFLOW_BASE_URL = os.getenv("RAGFLOW_ENDPOINT", "https://ragflow.clinicalguidelines.io/api/v1")
 SHARED_SECRET = os.getenv("RAGFLOW_BRIDGE_SECRET")
+STANDARD_TOP_K_CEILING = max(1, int(os.getenv("RAGFLOW_TOP_K_CEILING", "80")))
+HIGH_RECALL_TOP_K_CEILING = max(
+    STANDARD_TOP_K_CEILING,
+    int(os.getenv("RAGFLOW_HIGH_RECALL_TOP_K_CEILING", "1024")),
+)
+SIZE_CEILING = max(1, int(os.getenv("RAGFLOW_SIZE_CEILING", "12")))
+
+
+def clamp_top_k(value: int, high_recall: bool = False) -> int:
+    ceiling = HIGH_RECALL_TOP_K_CEILING if high_recall else STANDARD_TOP_K_CEILING
+    return max(1, min(int(value), ceiling))
+
+
+def clamp_size(value: int) -> int:
+    return max(1, min(int(value), SIZE_CEILING))
 
 
 @app.get("/health")
@@ -60,7 +75,7 @@ async def status():
 class RetrieveRequest(BaseModel):
     question: str
     dataset_ids: list[str]
-    top_k: int = 1024
+    top_k: int = 60
     size: int = 10
     page: int = 1
     similarity_threshold: float = 0.2
@@ -68,7 +83,8 @@ class RetrieveRequest(BaseModel):
     keyword: bool = True
     rerank_id: Optional[str] = None
     use_kg: bool = False
-    highlight: bool = True
+    high_recall: bool = False
+    highlight: bool = False
 
 class DatasetInfo(BaseModel):
     id: str
@@ -78,7 +94,7 @@ class DatasetInfo(BaseModel):
 class RetrieveMultiRequest(BaseModel):
     question: str
     datasets: list[DatasetInfo]
-    top_k: int = 256
+    top_k: int = 60
     size: int = 10
     max_per_dataset: int = 6
     max_total: int = 12
@@ -88,7 +104,8 @@ class RetrieveMultiRequest(BaseModel):
     keyword: bool = True
     rerank_id: Optional[str] = None
     use_kg: bool = False
-    highlight: bool = True
+    high_recall: bool = False
+    highlight: bool = False
 
 @app.post("/retrieve")
 @app.post("/retrieval")
@@ -104,12 +121,21 @@ async def retrieve(request: Request, body: RetrieveRequest):
 
     logger.info(f"Retrieve request: question='{body.question[:50]}...', kb_ids={body.dataset_ids}")
 
+    effective_top_k = clamp_top_k(body.top_k, body.high_recall)
+    effective_size = clamp_size(body.size)
+    if effective_top_k != body.top_k:
+        logger.warning(
+            f"Retrieve top_k clamped from {body.top_k} to {effective_top_k} (high_recall={body.high_recall})"
+        )
+    if effective_size != body.size:
+        logger.warning(f"Retrieve size clamped from {body.size} to {effective_size}")
+
     payload = {
         "question": body.question,
         "dataset_ids": body.dataset_ids,
-        "top_k": body.top_k,
+        "top_k": effective_top_k,
         "page": body.page,
-        "size": body.size,
+        "size": effective_size,
         "similarity_threshold": body.similarity_threshold,
         "vector_similarity_weight": body.vector_similarity_weight,
         "keyword": body.keyword,
@@ -182,8 +208,9 @@ async def retrieve(request: Request, body: RetrieveRequest):
             "retrieval_info": {
                 "rerank_id": body.rerank_id,
                 "use_kg": body.use_kg,
-                "top_k": body.top_k,
-                "size": body.size,
+                "top_k": effective_top_k,
+                "size": effective_size,
+                "high_recall": body.high_recall,
                 "chunk_count": chunk_count,
                 "top_chunks": top_chunks_summary,
             }
@@ -214,6 +241,15 @@ async def retrieve_multi(request: Request, body: RetrieveMultiRequest):
     for ds in body.datasets:
         logger.info(f"  - {ds.name}: {ds.id}")
 
+    effective_top_k = clamp_top_k(body.top_k, body.high_recall)
+    effective_size = clamp_size(body.size)
+    if effective_top_k != body.top_k:
+        logger.warning(
+            f"Retrieve MULTI top_k clamped from {body.top_k} to {effective_top_k} (high_recall={body.high_recall})"
+        )
+    if effective_size != body.size:
+        logger.warning(f"Retrieve MULTI size clamped from {body.size} to {effective_size}")
+
     start_time = datetime.now()
 
     async def fetch_single_dataset(client: httpx.AsyncClient, dataset: DatasetInfo) -> dict:
@@ -222,9 +258,9 @@ async def retrieve_multi(request: Request, body: RetrieveMultiRequest):
         payload = {
             "question": body.question,
             "dataset_ids": [dataset.id],
-            "top_k": body.top_k,
+            "top_k": effective_top_k,
             "page": body.page,
-            "size": body.size,
+            "size": effective_size,
             "similarity_threshold": body.similarity_threshold,
             "vector_similarity_weight": body.vector_similarity_weight,
             "keyword": body.keyword,
@@ -313,7 +349,9 @@ async def retrieve_multi(request: Request, body: RetrieveMultiRequest):
             "retrieval_info": {
                 "rerank_id": body.rerank_id,
                 "use_kg": body.use_kg,
-                "top_k": body.top_k,
+                "top_k": effective_top_k,
+                "size": effective_size,
+                "high_recall": body.high_recall,
                 "max_per_dataset": body.max_per_dataset,
                 "max_total": body.max_total,
                 "dataset_count": len(body.datasets),
@@ -337,14 +375,15 @@ class RetrieveDualRequest(BaseModel):
     narrative_max: int = 10
     citation_max: int = 4
     citation_min: int = 2
-    top_k: int = 128
+    top_k: int = 60
     similarity_threshold: float = 0.2
     citation_similarity_threshold: Optional[float] = None
     vector_similarity_weight: float = 0.3
     keyword: bool = True
     citation_top_k: Optional[int] = None
     rerank_id: Optional[str] = None
-    highlight: bool = True
+    high_recall: bool = False
+    highlight: bool = False
     use_kg: bool = False  # Whether to enable Knowledge Graph for narrative retrieval
     
     def get_proportional_allocation(self) -> dict[str, int]:
@@ -426,6 +465,18 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
     if body.rerank_id:
         logger.info(f"  Reranking ENABLED for DUAL: rerank_id={body.rerank_id}")
 
+    effective_top_k = clamp_top_k(body.top_k, body.high_recall)
+    requested_citation_top_k = body.citation_top_k if body.citation_top_k is not None else body.top_k
+    effective_citation_top_k = clamp_top_k(requested_citation_top_k, body.high_recall)
+    if effective_top_k != body.top_k:
+        logger.warning(
+            f"Retrieve DUAL narrative top_k clamped from {body.top_k} to {effective_top_k} (high_recall={body.high_recall})"
+        )
+    if effective_citation_top_k != requested_citation_top_k:
+        logger.warning(
+            f"Retrieve DUAL citation top_k clamped from {requested_citation_top_k} to {effective_citation_top_k} (high_recall={body.high_recall})"
+        )
+
     start_time = datetime.now()
 
     async def fetch_narrative_chunks(client: httpx.AsyncClient) -> dict:
@@ -443,7 +494,7 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
             payload = {
                 "question": body.question,
                 "dataset_ids": [ds.id],
-                "top_k": body.top_k,
+                "top_k": effective_top_k,
                 "page": 1,
                 "size": body.narrative_max,
                 "similarity_threshold": body.similarity_threshold,
@@ -575,6 +626,15 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
 
     async def fetch_citation_chunks(client: httpx.AsyncClient) -> dict:
         """Fetch citation chunks WITHOUT KG from recommendations-only dataset."""
+        if body.citation_max <= 0:
+            logger.info("  Citation retrieval skipped: citation_max<=0 (definition-first mode)")
+            return {
+                "chunks": [],
+                "total": 0,
+                "duration_ms": 0,
+                "skipped": True,
+            }
+
         cit_start = datetime.now()
 
         def _chunk_text(c: dict) -> str:
@@ -606,7 +666,7 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
         payload = {
             "question": body.citation_query or body.question,
             "dataset_ids": [body.citation_dataset_id],
-            "top_k": body.citation_top_k or body.top_k,
+            "top_k": effective_citation_top_k,
             "page": 1,
             "size": retrieve_size,
             "similarity_threshold": body.citation_similarity_threshold or body.similarity_threshold,
@@ -717,15 +777,24 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
 
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
-            narrative_task = fetch_narrative_chunks(client)
-            citation_task = fetch_citation_chunks(client)
-            narrative_result, citation_result = await asyncio.gather(narrative_task, citation_task)
+            if body.citation_max <= 0:
+                narrative_result = await fetch_narrative_chunks(client)
+                citation_result = {
+                    "chunks": [],
+                    "total": 0,
+                    "duration_ms": 0,
+                    "skipped": True,
+                }
+            else:
+                narrative_task = fetch_narrative_chunks(client)
+                citation_task = fetch_citation_chunks(client)
+                narrative_result, citation_result = await asyncio.gather(narrative_task, citation_task)
 
         total_duration = (datetime.now() - start_time).total_seconds() * 1000
 
         # Cap sources for UI display (default to requested maxes)
         max_narrative_display = max(1, body.narrative_max)
-        max_citation_display = max(1, body.citation_max)
+        max_citation_display = max(0, body.citation_max)
         
         narrative_for_ui = narrative_result["chunks"][:max_narrative_display]
         citations_for_ui = citation_result["chunks"][:max_citation_display]
@@ -757,8 +826,11 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
                 "citation_document_ids": body.citation_document_ids,  # ← NEW: for debugging
                 "citation_query": body.citation_query or body.question,
                 "citation_similarity_threshold": body.citation_similarity_threshold or body.similarity_threshold,
-                "citation_top_k": body.citation_top_k or body.top_k,
+                "top_k": effective_top_k,
+                "citation_top_k": effective_citation_top_k,
+                "high_recall": body.high_recall,
                 "citation_min": body.citation_min,
+                "citation_skipped": bool(citation_result.get("skipped")),
                 "ui_capped": True,  # ← NEW: flag indicating capping was applied
             }
         }

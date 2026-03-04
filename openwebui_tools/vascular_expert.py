@@ -192,6 +192,141 @@ class Tools:
         diversified.extend(unlabeled)
         return diversified
 
+    def _ensure_multi_guideline_citation_coverage(self, ui_citation_chunks: list, llm_limit: int) -> list:
+        """Ensure LLM citation subset includes at least one chunk per guideline label when possible."""
+        if llm_limit <= 0 or not ui_citation_chunks:
+            return []
+
+        selected = list(ui_citation_chunks[:llm_limit])
+        if len(selected) <= 1:
+            return selected
+
+        def label_of(chunk: dict) -> str:
+            return self._chunk_guideline_label(chunk, "citation")
+
+        ui_labels = []
+        seen = set()
+        for chunk in ui_citation_chunks:
+            label = label_of(chunk)
+            if label and label not in seen:
+                seen.add(label)
+                ui_labels.append(label)
+
+        if len(ui_labels) <= 1:
+            return selected
+
+        def selected_labels(chunks: list) -> set:
+            out = set()
+            for c in chunks:
+                label = label_of(c)
+                if label:
+                    out.add(label)
+            return out
+
+        have = selected_labels(selected)
+        for missing in ui_labels:
+            if missing in have:
+                continue
+
+            candidate = None
+            for c in ui_citation_chunks:
+                if label_of(c) == missing and c not in selected:
+                    candidate = c
+                    break
+            if candidate is None:
+                continue
+
+            replace_idx = len(selected) - 1
+            for idx in range(len(selected) - 1, -1, -1):
+                if not label_of(selected[idx]):
+                    replace_idx = idx
+                    break
+
+            selected[replace_idx] = candidate
+            have = selected_labels(selected)
+            if have == set(ui_labels):
+                break
+
+        return selected
+
+    def _chunk_key(self, chunk: dict, kind: str) -> str:
+        if not isinstance(chunk, dict):
+            return ""
+        if kind == "citation":
+            rec_id = str(chunk.get("recommendation_id") or "").strip()
+            guideline = str(chunk.get("guideline") or "").strip()
+            if rec_id:
+                return f"{guideline}|{rec_id}"
+            text = str(chunk.get("text") or chunk.get("content") or "").strip().lower()
+            return f"{guideline}|{text[:160]}"
+        source = str(chunk.get("source_guideline") or chunk.get("guideline") or "").strip()
+        content = str(chunk.get("content") or "").strip().lower()
+        return f"{source}|{content[:160]}"
+
+    def _select_balanced_llm_chunks(self, chunks: list, kind: str, llm_limit: int, guideline_count: int) -> list:
+        """
+        Smarter selection:
+        - keep highest-ranked chunks first
+        - de-duplicate near-identical items
+        - in multi-guideline mode, seed one item per guideline label when available
+        """
+        if llm_limit <= 0 or not chunks:
+            return []
+
+        # 1) De-duplicate while preserving rank order.
+        deduped = []
+        seen = set()
+        for chunk in chunks:
+            key = self._chunk_key(chunk, kind)
+            if key and key in seen:
+                continue
+            if key:
+                seen.add(key)
+            deduped.append(chunk)
+
+        if not deduped:
+            return []
+
+        if guideline_count <= 1:
+            return deduped[:llm_limit]
+
+        # 2) Seed one chunk per guideline label to keep cross-guideline coverage.
+        selected = []
+        used_keys = set()
+        labels = []
+        for chunk in deduped:
+            label = self._chunk_guideline_label(chunk, kind)
+            if label and label not in labels:
+                labels.append(label)
+
+        for label in labels:
+            if len(selected) >= llm_limit:
+                break
+            for chunk in deduped:
+                if self._chunk_guideline_label(chunk, kind) != label:
+                    continue
+                key = self._chunk_key(chunk, kind)
+                if key and key in used_keys:
+                    continue
+                selected.append(chunk)
+                if key:
+                    used_keys.add(key)
+                break
+
+        # 3) Fill remaining slots by original ranked order.
+        if len(selected) < llm_limit:
+            for chunk in deduped:
+                if len(selected) >= llm_limit:
+                    break
+                key = self._chunk_key(chunk, kind)
+                if key and key in used_keys:
+                    continue
+                selected.append(chunk)
+                if key:
+                    used_keys.add(key)
+
+        return selected[:llm_limit]
+
     def _infer_intent_profile(self, question: str, query_normalization: Optional[dict]) -> dict:
         q = (question or "").lower()
         norm = query_normalization if isinstance(query_normalization, dict) else {}
@@ -774,16 +909,17 @@ class Tools:
             import time
             start_time = time.time()
             
-            await self._emit_status(emitter, f"🔍 Routing query to {len(guidelines)} guideline(s)...")
+            await self._emit_status(emitter, "🔍 Sending query to backend router...")
             await asyncio.sleep(0.1)  # Give UI time to update
             
-            await self._emit_status(emitter, f"📚 Searching {guideline_display}...")
+            await self._emit_status(emitter, "📚 Searching selected guideline set...")
             
             async with httpx.AsyncClient(timeout=90.0) as client:
                 # Start the request
                 response_task = asyncio.create_task(
                     client.post(url, json=payload, headers=headers)
                 )
+                multi_guideline_progress = len(guidelines) > 1
                 
                 # Emit progress updates while waiting
                 elapsed = 0
@@ -791,11 +927,14 @@ class Tools:
                     elapsed = int(time.time() - start_time)
                     
                     if elapsed < 5:
-                        await self._emit_status(emitter, f"📚 Searching {guideline_display}...")
+                        await self._emit_status(emitter, "📚 Searching selected guideline set...")
                     elif elapsed < 10:
                         await self._emit_status(emitter, f"🔎 Retrieving evidence chunks... ({elapsed}s)")
                     elif elapsed < 20:
-                        await self._emit_status(emitter, f"📊 Processing multi-guideline results... ({elapsed}s)")
+                        if multi_guideline_progress:
+                            await self._emit_status(emitter, f"📊 Processing multi-guideline results... ({elapsed}s)")
+                        else:
+                            await self._emit_status(emitter, f"📊 Processing retrieved evidence... ({elapsed}s)")
                     elif elapsed < 40:
                         await self._emit_status(emitter, f"⏳ Complex query - still processing... ({elapsed}s)")
                     else:
@@ -834,6 +973,23 @@ class Tools:
             citation_chunks = data.get("citation_chunks", [])
             assets = data.get("assets", [])
             query_normalization = data.get("query_normalization", {})
+            backend_selected = data.get("selected_guidelines", {})
+            effective_guidelines = guidelines
+            effective_guideline_display = guideline_display
+            if isinstance(backend_selected, dict) and backend_selected:
+                effective_guidelines = list(backend_selected.keys())
+                display_names = []
+                for key in effective_guidelines:
+                    info = backend_selected.get(key) or {}
+                    if isinstance(info, dict) and info.get("name"):
+                        display_names.append(str(info.get("name")))
+                    else:
+                        display_names.append(GUIDELINE_NAMES.get(key, key))
+                effective_guideline_display = ", ".join(display_names)
+                await self._emit_status(
+                    emitter,
+                    f"🧭 Backend selected {len(effective_guidelines)} guideline(s): {effective_guideline_display}",
+                )
             print(f"[VascularExpert] Chunks: narrative={len(narrative_chunks)}, citation={len(citation_chunks)}")
 
             intent_profile = self._infer_intent_profile(question, query_normalization)
@@ -841,9 +997,9 @@ class Tools:
             citation_chunks = self._rank_chunks_by_intent(citation_chunks, "citation", intent_profile)
             narrative_chunks = self._rank_chunks_by_intent(narrative_chunks, "narrative", intent_profile)
 
-            caps = self._select_chunk_caps(len(guidelines))
-            prioritized_citation_chunks = self._diversify_chunks(citation_chunks, "citation", len(guidelines))
-            prioritized_narrative_chunks = self._diversify_chunks(narrative_chunks, "narrative", len(guidelines))
+            caps = self._select_chunk_caps(len(effective_guidelines))
+            prioritized_citation_chunks = self._diversify_chunks(citation_chunks, "citation", len(effective_guidelines))
+            prioritized_narrative_chunks = self._diversify_chunks(narrative_chunks, "narrative", len(effective_guidelines))
 
             # UI Sources can expose more evidence than the LLM reads.
             ui_citation_chunks = prioritized_citation_chunks[: caps["ui_rec"]]
@@ -869,11 +1025,23 @@ class Tools:
                 if must_score > 0:
                     print(f"[VascularExpert] Forced citation include by terms {key_terms}: score={must_score}")
 
-            # LLM subset stays bounded for speed/cost and remains a prefix of UI-emitted chunks.
-            selected_citation_chunks = ui_citation_chunks[: caps["llm_rec"]]
-            selected_narrative_chunks = ui_narrative_chunks[: caps["llm_narr"]]
-            extra_ui_citation_chunks = ui_citation_chunks[len(selected_citation_chunks):]
-            extra_ui_narrative_chunks = ui_narrative_chunks[len(selected_narrative_chunks):]
+            # LLM subset stays bounded but uses smarter balanced selection.
+            selected_citation_chunks = self._select_balanced_llm_chunks(
+                ui_citation_chunks,
+                "citation",
+                caps["llm_rec"],
+                len(effective_guidelines),
+            )
+            selected_narrative_chunks = self._select_balanced_llm_chunks(
+                ui_narrative_chunks,
+                "narrative",
+                caps["llm_narr"],
+                len(effective_guidelines),
+            )
+            selected_citation_keys = {self._chunk_key(c, "citation") for c in selected_citation_chunks}
+            selected_narrative_keys = {self._chunk_key(c, "narrative") for c in selected_narrative_chunks}
+            extra_ui_citation_chunks = [c for c in ui_citation_chunks if self._chunk_key(c, "citation") not in selected_citation_keys]
+            extra_ui_narrative_chunks = [c for c in ui_narrative_chunks if self._chunk_key(c, "narrative") not in selected_narrative_keys]
 
             llm_total_chunks = len(selected_narrative_chunks) + len(selected_citation_chunks)
             ui_total_chunks = len(ui_narrative_chunks) + len(ui_citation_chunks)
@@ -1024,7 +1192,7 @@ class Tools:
             
             if llm_total_chunks > 0:
                 status_msg = (
-                    f"Retrieved {backend_total_chunks} chunks from {guideline_display}; "
+                    f"Retrieved {backend_total_chunks} chunks from {effective_guideline_display}; "
                     f"using {llm_total_chunks} for answer, exposing {ui_total_chunks} in Sources"
                 )
                 await self._emit_status(emitter, status_msg, done=True)
@@ -1091,10 +1259,11 @@ class Tools:
                 llm_output += "2. Cite only sources you actually use; do not force-cite unrelated evidence.\n"
                 llm_output += "3. Do NOT add a separate References section; the UI already shows a Sources list.\n"
                 llm_output += "4. Match the bracketed numbers [n] exactly to the evidence blocks above.\n"
+                llm_output += "5. If evidence spans multiple guidelines, cite at least one recommendation from each guideline used in your synthesis.\n"
                 if not selected_citation_chunks and selected_narrative_chunks:
-                    llm_output += "5. It is valid to answer from narrative context only and explicitly say no direct recommendation chunk was retrieved.\n"
+                    llm_output += "6. It is valid to answer from narrative context only and explicitly say no direct recommendation chunk was retrieved.\n"
                 if assets_block:
-                    next_rule_num = 6 if (not selected_citation_chunks and selected_narrative_chunks) else 5
+                    next_rule_num = 7 if (not selected_citation_chunks and selected_narrative_chunks) else 6
                     llm_output += f"{next_rule_num}. If images help, include up to 3 markdown image lines from the FIGURES / TABLES section.\n"
 
                 if self._allow_partial_answers():
@@ -1119,7 +1288,7 @@ class Tools:
             else:
                 await self._emit_status(
                     emitter, 
-                    f"Consultation complete ({guideline_display})",
+                    f"Consultation complete ({effective_guideline_display})",
                     done=True
                 )
                 return self._capabilities_response(question)
