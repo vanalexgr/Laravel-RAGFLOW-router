@@ -617,10 +617,10 @@ class Tools:
             return ""
 
         lines = [
-            "=== FIGURES / TABLES (RENDER ALL) ===",
-            "In the final answer, include ALL listed items under a section titled exactly: 🖼️ Figures / Tables",
-            "Copy the markdown image line for each item exactly as provided.",
-            "Do not add [n] citations to image lines; those numbers are only for evidence chunks.",
+            "=== FIGURES / TABLES (MANDATORY VERBATIM OUTPUT) ===",
+            "In the final answer, include a section titled exactly: 🖼️ Figures / Tables",
+            "Copy EVERY markdown image line below exactly as written.",
+            "Do not modify URLs, do not remove items, and do not add [n] citations to image lines.",
         ]
         count = 0
 
@@ -661,6 +661,7 @@ class Tools:
         if count == 0:
             return ""
 
+        lines.insert(1, f"ASSET_COUNT_REQUIRED: {count}")
         return "\n".join(lines) + "\n\n"
 
     class Valves(BaseModel):
@@ -1231,6 +1232,11 @@ class Tools:
                         llm_output += clinical_frame + "\n"
                         llm_output += "Guidance: You may include a brief interpretive framing note, clearly labeled as non-guideline and without citations.\n\n"
 
+                # Put assets early so the model consistently sees them even in long contexts.
+                assets_block = self._format_assets_markdown(assets)
+                if assets_block:
+                    llm_output += assets_block
+
                 chunk_num = 1
                 
                 # SECTION 1: RECOMMENDATIONS (Must match System Prompt format)
@@ -1286,10 +1292,6 @@ class Tools:
                     llm_output += "- staged repair strategies\n"
                     llm_output += "- preservation of critical branch vessels\n\n"
 
-                assets_block = self._format_assets_markdown(assets)
-                if assets_block:
-                    llm_output += assets_block
-                
                 llm_output += "=== CITATION RULES ===\n"
                 llm_output += "1. Use simple numbered citations [1], [2], [3] inline after each fact.\n"
                 llm_output += "2. Cite only sources you actually use; do not force-cite unrelated evidence.\n"
@@ -1300,7 +1302,7 @@ class Tools:
                     llm_output += "6. It is valid to answer from narrative context only and explicitly say no direct recommendation chunk was retrieved.\n"
                 if assets_block:
                     next_rule_num = 7 if (not selected_citation_chunks and selected_narrative_chunks) else 6
-                    llm_output += f"{next_rule_num}. Include a final section titled exactly: 🖼️ Figures / Tables and include ALL markdown image lines from the FIGURES / TABLES section.\n"
+                    llm_output += f"{next_rule_num}. Include a final section titled exactly: 🖼️ Figures / Tables and copy ALL markdown image lines exactly from the FIGURES / TABLES block. The number of image lines must equal ASSET_COUNT_REQUIRED.\n"
 
                 if self._allow_partial_answers():
                     llm_output += "\n=== PARTIAL MATCH GUIDANCE ===\n"
