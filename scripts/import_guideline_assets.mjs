@@ -178,7 +178,7 @@ function main() {
   const header = parseCsvLine(rows[0]);
   const idx = Object.fromEntries(header.map((h, i) => [h, i]));
 
-  const required = ["type", "element_id", "file", "llm_title", "llm_description", "llm_tags", "subtype"];
+  const required = ["type", "element_id", "llm_title", "llm_description", "llm_tags", "subtype"];
   for (const r of required) {
     if (!(r in idx)) die(`metadata.csv missing column: ${r}`);
   }
@@ -202,20 +202,27 @@ function main() {
 
     const type = normalizeType(cols[idx.type]);
     const elementId = cols[idx.element_id];
-    const file = cols[idx.file];
+    const rawFile = idx.file !== undefined ? cols[idx.file] : "";
+    const file = (rawFile && String(rawFile).trim()) ? String(rawFile).trim() : `${elementId}.png`;
     const title = cols[idx.llm_title] || "";
     const desc = cols[idx.llm_description] || "";
     const tags = parsePyListString(cols[idx.llm_tags]);
     const subtype = cols[idx.subtype] || "";
 
-    if (!elementId || !file) continue;
+    if (!elementId) continue;
     if (existingIds.has(elementId)) {
       skipped++;
       continue;
     }
 
-    const srcPng = path.join(srcDir, path.basename(file));
-    if (!fs.existsSync(srcPng)) {
+    // Support both old metadata (explicit `file` column) and newer metadata
+    // where filename can be inferred from element_id (e.g. fig_p017_005.png).
+    const candidateFiles = [
+      path.join(srcDir, path.basename(file)),
+      path.join(srcDir, `${elementId}.png`),
+    ];
+    const srcPng = candidateFiles.find((p) => fs.existsSync(p));
+    if (!srcPng) {
       skipped++;
       continue;
     }
