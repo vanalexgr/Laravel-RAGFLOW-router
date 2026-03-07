@@ -127,7 +127,8 @@ class ToolController extends Controller
             $result['question'] ?? $question,
             $result['narrative_chunks'] ?? [],
             $result['citation_chunks'] ?? [],
-            $result['selected_guidelines'] ?? []
+            $result['selected_guidelines'] ?? [],
+            $requestedKeys ?? []
         );
 
         if ($narrativeCount === 0 && $citationCount === 0) {

@@ -23,7 +23,8 @@ class GuidelineAssetService
         string $question,
         array $narrativeChunks,
         array $citationChunks,
-        array $selectedGuidelines
+        array $selectedGuidelines,
+        array $preferredGuidelineKeys = []
     ): array {
         $maxAssets = (int) (config('guideline_assets.max_assets', 3) ?: 3);
         if ($maxAssets <= 0) {
@@ -36,6 +37,13 @@ class GuidelineAssetService
         }
 
         $selectedKeys = array_keys($selectedGuidelines);
+        $preferredGuidelineKeys = array_values(array_unique(array_filter($preferredGuidelineKeys)));
+        $scopedKeys = !empty($preferredGuidelineKeys)
+            ? array_values(array_intersect($selectedKeys, $preferredGuidelineKeys))
+            : $selectedKeys;
+        if (empty($scopedKeys)) {
+            $scopedKeys = $selectedKeys;
+        }
         $nameToKey = $this->buildGuidelineNameToKeyMap();
 
         $results = [];
@@ -49,7 +57,7 @@ class GuidelineAssetService
             }
 
             $sourceName = (string) ($chunk['source_guideline'] ?? '');
-            $sourceKey = $this->mapSourceGuidelineToKey($sourceName, $nameToKey, $selectedKeys);
+            $sourceKey = $this->mapSourceGuidelineToKey($sourceName, $nameToKey, $scopedKeys);
             if ($sourceKey === null) {
                 continue;
             }
@@ -89,7 +97,7 @@ class GuidelineAssetService
             $bag = $this->tokenBag($text);
 
             $scored = [];
-            foreach ($selectedKeys as $key) {
+            foreach ($scopedKeys as $key) {
                 $assets = $manifest[$key] ?? [];
                 foreach ($assets as $asset) {
                     $score = $this->keywordScore($bag, $asset);
@@ -345,4 +353,3 @@ class GuidelineAssetService
         return $score;
     }
 }
-
