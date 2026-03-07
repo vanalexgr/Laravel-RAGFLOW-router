@@ -88,8 +88,10 @@ class GuidelineAssetService
             }
         }
 
-        // 2) Weak fallback: keyword overlap (caption/keywords) scoped to selected guidelines.
-        if (empty($results) && (bool) config('guideline_assets.enable_keyword_fallback', true)) {
+        // 2) Fallback/supplement: keyword overlap (caption/keywords) scoped to selected guidelines.
+        // Run this both when there are no explicit refs and when explicit refs produced fewer
+        // than max assets, so we can fill remaining slots with intent-matching visuals.
+        if (count($results) < $maxAssets && (bool) config('guideline_assets.enable_keyword_fallback', true)) {
             $text = $question . "\n" . implode(
                 "\n",
                 array_map(fn ($c) => (string) ($c['content'] ?? ''), array_slice($narrativeChunks, 0, 6))
