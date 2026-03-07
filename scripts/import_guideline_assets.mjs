@@ -26,6 +26,8 @@ function parseArgs(argv) {
  const out = {
     src: null,
     guidelineKey: null,
+    sourceGuideline: null,
+    metadata: null,
     manifest: "resources/guideline_assets/manifest.json",
     diskSubdir: "guideline_assets",
     overwrite: false,
@@ -35,6 +37,8 @@ function parseArgs(argv) {
     const a = argv[i];
     if (a === "--src") out.src = argv[++i];
     else if (a === "--guideline-key") out.guidelineKey = argv[++i];
+    else if (a === "--source-guideline") out.sourceGuideline = argv[++i];
+    else if (a === "--metadata") out.metadata = argv[++i];
     else if (a === "--manifest") out.manifest = argv[++i];
     else if (a === "--disk-subdir") out.diskSubdir = argv[++i];
     else if (a === "--overwrite") out.overwrite = true;
@@ -163,7 +167,7 @@ function buildAliases(type, label, subtype) {
 function main() {
   const args = parseArgs(process.argv);
   const srcDir = path.resolve(args.src);
-  const metaPath = path.join(srcDir, "metadata.csv");
+  const metaPath = args.metadata ? path.resolve(args.metadata) : path.join(srcDir, "metadata.csv");
   if (!fs.existsSync(metaPath)) die(`metadata.csv not found at ${metaPath}`);
 
   const manifestPath = path.resolve(args.manifest);
@@ -200,6 +204,11 @@ function main() {
       if (cols.length < 5) continue;
     }
 
+    const sourceGuideline = idx.guideline !== undefined ? String(cols[idx.guideline] || "").trim() : "";
+    if (args.sourceGuideline && sourceGuideline !== args.sourceGuideline) {
+      continue;
+    }
+
     const type = normalizeType(cols[idx.type]);
     const elementId = cols[idx.element_id];
     const rawFile = idx.file !== undefined ? cols[idx.file] : "";
@@ -217,10 +226,26 @@ function main() {
 
     // Support both old metadata (explicit `file` column) and newer metadata
     // where filename can be inferred from element_id (e.g. fig_p017_005.png).
-    const candidateFiles = [
-      path.join(srcDir, path.basename(file)),
-      path.join(srcDir, `${elementId}.png`),
-    ];
+    const candidateFiles = [];
+    if (rawFile && fs.existsSync(rawFile)) {
+      candidateFiles.push(rawFile);
+    }
+    // Remap legacy absolute file paths to the provided --src root.
+    // Example:
+    //   /home/vga/work/guideline_crops/ALI_2020_crops/tbl_xxx.png
+    // -><srcDir>/ALI_2020_crops/tbl_xxx.png
+    const marker = "guideline_crops/";
+    const markerPos = file.indexOf(marker);
+    if (markerPos >= 0) {
+      const relAfterMarker = file.slice(markerPos + marker.length);
+      candidateFiles.push(path.join(srcDir, relAfterMarker));
+    }
+    candidateFiles.push(path.join(srcDir, file));
+    candidateFiles.push(path.join(srcDir, path.basename(file)));
+    if (sourceGuideline) {
+      candidateFiles.push(path.join(srcDir, `${sourceGuideline}_crops`, `${elementId}.png`));
+    }
+    candidateFiles.push(path.join(srcDir, `${elementId}.png`));
     const srcPng = candidateFiles.find((p) => fs.existsSync(p));
     if (!srcPng) {
       skipped++;
