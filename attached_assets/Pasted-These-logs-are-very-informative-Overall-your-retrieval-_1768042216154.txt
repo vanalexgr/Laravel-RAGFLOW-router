@@ -67,7 +67,7 @@ arguments:{
 
 It’s being passed as a stringified JSON array, not an actual array.
 
-Worse: the second dataset id is wrong: it’s missing characters vs the correct DVT/PE id you posted earlier (should be 7104532adc4311f09021f2381272676b). In the log it appears as 7104532adc4311f0b3bb3aabfab5e99c (looks like it got “mixed” with the carotid id tail).
+Worse: the second dataset id is wrong: it’s missing characters vs the correct DVT/PE id you posted earlier (should be 7a8a227619b511f183b3aa811fe4315f). In the log it appears as 7104532adc4311f0b3bb3aabfab5e99c (looks like it got “mixed” with the carotid id tail).
 
 That mismatch can absolutely produce “you don’t own this dataset” because that dataset may not exist under your tenant, or belongs to another tenant.
 
