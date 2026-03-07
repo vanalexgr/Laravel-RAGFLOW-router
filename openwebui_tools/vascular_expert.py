@@ -617,8 +617,9 @@ class Tools:
             return ""
 
         lines = [
-            "=== FIGURES / TABLES (OPTIONAL VISUALS) ===",
-            "Use at most 1-3 images if they directly improve the answer.",
+            "=== FIGURES / TABLES (RENDER ALL) ===",
+            "In the final answer, include ALL listed items under a section titled exactly: 🖼️ Figures / Tables",
+            "Copy the markdown image line for each item exactly as provided.",
             "Do not add [n] citations to image lines; those numbers are only for evidence chunks.",
         ]
         count = 0
@@ -1299,7 +1300,7 @@ class Tools:
                     llm_output += "6. It is valid to answer from narrative context only and explicitly say no direct recommendation chunk was retrieved.\n"
                 if assets_block:
                     next_rule_num = 7 if (not selected_citation_chunks and selected_narrative_chunks) else 6
-                    llm_output += f"{next_rule_num}. If images help, include up to 3 markdown image lines from the FIGURES / TABLES section.\n"
+                    llm_output += f"{next_rule_num}. Include a final section titled exactly: 🖼️ Figures / Tables and include ALL markdown image lines from the FIGURES / TABLES section.\n"
 
                 if self._allow_partial_answers():
                     llm_output += "\n=== PARTIAL MATCH GUIDANCE ===\n"
