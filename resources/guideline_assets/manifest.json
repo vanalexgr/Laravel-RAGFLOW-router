@@ -1163,5 +1163,680 @@
       "thumbnail_url": "https://pngsrag.blob.core.windows.net/guideline-assets/thumbnails/tbl_p088_092.png",
       "thumbnail_path": "thumbnails/tbl_p088_092.png"
     }
+  ],
+  "abdominal_aortic_aneurysm": [
+    {
+      "id": "fig_p017_005",
+      "kind": "figure",
+      "subtype": "image",
+      "label": "Figure 5",
+      "caption": "Ultrasound Measurement of Aortic Diameter",
+      "description": "This image illustrates the placement of calipers for measuring the aortic diameter using ultrasound. It shows three measurement methods: inner to inner (ITI), leading edge to leading edge (LELE), and outer to outer (OTO).",
+      "keywords": [
+        "aortic measurement",
+        "ultrasound",
+        "caliper placement",
+        "vascular assessment"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/figures/fig_p017_005.png",
+      "aliases": [
+        "Fig. 5",
+        "figure 5"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p017_005.png"
+    },
+    {
+      "id": "fig_p039_020",
+      "kind": "figure",
+      "subtype": "diagram",
+      "label": "Figure 20",
+      "caption": "EVAR Sizing and Planning Worksheet Diagram",
+      "description": "This diagram is a worksheet for planning endovascular abdominal aortic repair (EVAR). It includes sections for patient information, anatomical measurements, and stent graft details. The diagram provides a visual guide for measuring and recording key dimensions and angles necessary for EVAR device planning.",
+      "keywords": [
+        "EVAR",
+        "abdominal aortic repair",
+        "anatomical measurements",
+        "stent graft planning"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/figures/fig_p039_020.png",
+      "aliases": [
+        "Fig. 20",
+        "figure 20"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p039_020.png"
+    },
+    {
+      "id": "fig_p055_030",
+      "kind": "figure",
+      "subtype": "flowchart",
+      "label": "Figure 30",
+      "caption": "Management Algorithm for Abdominal Compartment Syndrome in AAA Repair",
+      "description": "This flowchart outlines the management of abdominal compartment syndrome (ACS) in patients undergoing open or endovascular repair of ruptured abdominal aortic aneurysms. It details the steps based on intra-abdominal pressure (IAP) levels and the presence of organ failure.",
+      "keywords": [
+        "abdominal compartment syndrome",
+        "intra-abdominal pressure",
+        "aortic aneurysm",
+        "medical management",
+        "surgical intervention"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/figures/fig_p055_030.png",
+      "aliases": [
+        "Fig. 30",
+        "figure 30",
+        "Algorithm 30",
+        "algorithm 30"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p055_030.png"
+    },
+    {
+      "id": "fig_p057_032",
+      "kind": "figure",
+      "subtype": "flowchart",
+      "label": "Figure 32",
+      "caption": "Flowchart for Diagnosing Colonic Ischaemia Post-AAA Repair",
+      "description": "This flowchart outlines the diagnostic process for colonic ischaemia in patients after ruptured abdominal aortic aneurysm repair. It categorizes suspicion levels into no suspicion, moderate suspicion, and high suspicion, guiding subsequent actions such as watchful waiting, sigmoidoscopy, or immediate laparotomy.",
+      "keywords": [
+        "colonic ischaemia",
+        "abdominal aortic aneurysm",
+        "diagnostic process",
+        "post-operative care"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/figures/fig_p057_032.png",
+      "aliases": [
+        "Fig. 32",
+        "figure 32",
+        "Algorithm 32",
+        "algorithm 32"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p057_032.png"
+    },
+    {
+      "id": "fig_p060_034",
+      "kind": "figure",
+      "subtype": "image",
+      "label": "Figure 34",
+      "caption": "Benign Mural Thrombus in Stent Graft Imaging",
+      "description": "This image shows a computed tomography angiography of a stent graft with a benign mural thrombus formation. The thrombus is located inside the main body of the stent graft, attributed to a barrel shape configuration.",
+      "keywords": [
+        "mural thrombus",
+        "stent graft",
+        "CT angiography",
+        "vascular surgery"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/figures/fig_p060_034.png",
+      "aliases": [
+        "Fig. 34",
+        "figure 34"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p060_034.png"
+    },
+    {
+      "id": "fig_p070_039",
+      "kind": "figure",
+      "subtype": "flowchart",
+      "label": "Figure 39",
+      "caption": "Follow-up Algorithm After Standard EVAR",
+      "description": "This flowchart outlines the recommended follow-up procedure after standard endovascular aneurysm repair (EVAR). It guides clinicians through decision points based on post-operative CTA findings, presence of endoleaks, and sac dynamics to determine the need for re-intervention or continued monitoring.",
+      "keywords": [
+        "EVAR",
+        "endoleak",
+        "CTA",
+        "follow-up",
+        "vascular surgery"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/figures/fig_p070_039.png",
+      "aliases": [
+        "Fig. 39",
+        "figure 39",
+        "Algorithm 39",
+        "algorithm 39"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p070_039.png"
+    },
+    {
+      "id": "fig_p072_040",
+      "kind": "figure",
+      "subtype": "flowchart",
+      "label": "Figure 40",
+      "caption": "Diagnostic Steps for Occult Endoleak Detection",
+      "description": "This flowchart outlines a step-by-step diagnostic approach for detecting occult endoleaks following endovascular abdominal aortic aneurysm repair. It progresses from initial imaging techniques to more invasive procedures if necessary.",
+      "keywords": [
+        "occult endoleak",
+        "diagnostic steps",
+        "endovascular repair",
+        "imaging techniques"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/figures/fig_p072_040.png",
+      "aliases": [
+        "Fig. 40",
+        "figure 40",
+        "Algorithm 40",
+        "algorithm 40"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p072_040.png"
+    },
+    {
+      "id": "fig_p073_041",
+      "kind": "figure",
+      "subtype": "diagram",
+      "label": "Figure 41",
+      "caption": "Anatomical Classification of Complex AAAs",
+      "description": "This diagram illustrates the anatomical classification of complex abdominal aortic aneurysms (AAAs) based on their proximal extensions relative to the renal arteries (RAs), superior mesenteric artery (SMA), and coeliac artery (CA). It categorizes AAAs into five types: short neck infrarenal, juxtarenal, pararenal, paravisceral, and type IV thoraco-abdominal aortic aneurysm.",
+      "keywords": [
+        "AAA",
+        "anatomical classification",
+        "renal arteries",
+        "superior mesenteric artery",
+        "coeliac artery"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/figures/fig_p073_041.png",
+      "aliases": [
+        "Fig. 41",
+        "figure 41"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p073_041.png"
+    },
+    {
+      "id": "fig_p074_042",
+      "kind": "figure",
+      "subtype": "diagram",
+      "label": "Figure 42",
+      "caption": "Illustration of EVAR Configurations",
+      "description": "This figure illustrates three different configurations of endovascular aortic repair (EVAR): fenestrated EVAR (fEVAR), branched EVAR (bEVAR), and a combination of both (f/bEVAR). Each configuration is depicted to show how they accommodate different anatomical variations of the aorta.",
+      "keywords": [
+        "EVAR",
+        "aortic repair",
+        "vascular surgery",
+        "fEVAR",
+        "bEVAR"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/figures/fig_p074_042.png",
+      "aliases": [
+        "Fig. 42",
+        "figure 42"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p074_042.png"
+    },
+    {
+      "id": "fig_p075_043",
+      "kind": "figure",
+      "subtype": "diagram",
+      "label": "Figure 43",
+      "caption": "Endoleaks in Failed Bridging Stents for Aortic Repair",
+      "description": "This diagram illustrates various types of endoleaks associated with failed bridging stents in fenestrated and branched endovascular aortic repair. It categorizes the endoleaks based on their location and cause, such as proximal attachment, retrograde flow, and graft porosity.",
+      "keywords": [
+        "endoleaks",
+        "aortic repair",
+        "bridging stents",
+        "vascular surgery"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/figures/fig_p075_043.png",
+      "aliases": [
+        "Fig. 43",
+        "figure 43"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p075_043.png"
+    },
+    {
+      "id": "fig_p082_046",
+      "kind": "figure",
+      "subtype": "diagram",
+      "label": "Figure 46",
+      "caption": "Isolated Iliac Artery Aneurysm Classification Diagram",
+      "description": "This diagram illustrates the classification of isolated iliac artery aneurysms into four types (I-IV) based on their anatomical presentation. Each type shows a different configuration of the aneurysm in relation to the iliac artery branches.",
+      "keywords": [
+        "iliac artery",
+        "aneurysm",
+        "classification",
+        "vascular anatomy"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/figures/fig_p082_046.png",
+      "aliases": [
+        "Fig. 46",
+        "figure 46"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p082_046.png"
+    },
+    {
+      "id": "fig_p089_053",
+      "kind": "figure",
+      "subtype": "diagram",
+      "label": "Figure 53",
+      "caption": "Illustration of Aortic Pathologies and Aneurysms",
+      "description": "This diagram illustrates various aortic pathologies including aortic dissection, intramural hematoma, penetrating aortic ulcer, pseudoaneurysm, saccular aneurysm, and fusiform aneurysm. Each condition is depicted to show differences in the aortic wall structure and potential complications.",
+      "keywords": [
+        "aortic dissection",
+        "intramural hematoma",
+        "penetrating aortic ulcer",
+        "pseudoaneurysm",
+        "saccular aneurysm",
+        "fusiform aneurysm"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/figures/fig_p089_053.png",
+      "aliases": [
+        "Fig. 53",
+        "figure 53"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p089_053.png"
+    },
+    {
+      "id": "fig_p093_054",
+      "kind": "figure",
+      "subtype": "diagram",
+      "label": "Figure 54",
+      "caption": "Shared Decision Making in Patient Care",
+      "description": "This diagram illustrates the concept of shared decision making in patient care, highlighting the integration of evidence-based medicine and patient preferences. It emphasizes the importance of balancing clinical evidence with individual patient values to achieve optimal healthcare outcomes.",
+      "keywords": [
+        "shared decision making",
+        "evidence-based medicine",
+        "patient preferences",
+        "patient care"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/figures/fig_p093_054.png",
+      "aliases": [
+        "Fig. 54",
+        "figure 54"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p093_054.png"
+    },
+    {
+      "id": "fig_p096_056",
+      "kind": "figure",
+      "subtype": "diagram",
+      "label": "Figure 56",
+      "caption": "Abdominal Aortic Aneurysm Repair Methods",
+      "description": "This diagram illustrates three stages of addressing an abdominal aortic aneurysm (AAA). Part A shows the location of a simple AAA. Part B depicts open surgery where the affected aorta segment is replaced with a graft. Part C shows endovascular repair using a stent graft to reinforce the aorta.",
+      "keywords": [
+        "Abdominal Aortic Aneurysm",
+        "Open Surgery",
+        "Endovascular Repair",
+        "Stent Graft"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/figures/fig_p096_056.png",
+      "aliases": [
+        "Fig. 56",
+        "figure 56"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/fig_p096_056.png"
+    },
+    {
+      "id": "tbl_p012_004",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 4",
+      "caption": "ESC Evidence Grading System for Recommendations",
+      "description": "This table outlines the European Society of Cardiology (ESC) evidence grading system for clinical recommendations. It categorizes recommendations into classes based on the level of evidence and consensus regarding the efficacy of treatments or procedures.",
+      "keywords": [
+        "ESC",
+        "evidence grading",
+        "clinical recommendations",
+        "treatment efficacy"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/tables/tbl_p012_004.png",
+      "aliases": [
+        "table 4"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p012_004.png"
+    },
+    {
+      "id": "tbl_p012_005",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 5",
+      "caption": "Levels of Evidence in ESC Grading System",
+      "description": "This table outlines the levels of evidence as adapted from the European Society of Cardiology (ESC) grading system. It categorizes evidence into three levels based on the source and type of data, ranging from multiple randomized trials to expert opinions.",
+      "keywords": [
+        "evidence levels",
+        "ESC grading",
+        "clinical guidelines"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/tables/tbl_p012_005.png",
+      "aliases": [
+        "table 5"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p012_005.png"
+    },
+    {
+      "id": "tbl_p019_013",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 13",
+      "caption": "Summary of Randomised Trials for AAA Screening in Men",
+      "description": "This table summarizes four randomized trials on population-based screening for abdominal aortic aneurysm (AAA) in men. It includes details such as the number of participants, age range, recruitment period, and outcomes like AAA detection and mortality rates.",
+      "keywords": [
+        "AAA screening",
+        "randomized trials",
+        "mortality rates",
+        "population-based"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/tables/tbl_p019_013.png",
+      "aliases": [
+        "table 13"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p019_013.png"
+    },
+    {
+      "id": "tbl_p020_016",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 16",
+      "caption": "Screening Potential for Abdominal Aortic Aneurysm by Risk Group",
+      "description": "This table evaluates the suitability for abdominal aortic aneurysm screening across different risk groups, distinguishing between men and women. It uses a grading system to indicate the level of screening potential.",
+      "keywords": [
+        "abdominal aortic aneurysm",
+        "screening",
+        "risk factors",
+        "gender differences"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/tables/tbl_p020_016.png",
+      "aliases": [
+        "table 16"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p020_016.png"
+    },
+    {
+      "id": "tbl_p024_020",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 20",
+      "caption": "RCTs on Medications for Slowing Aneurysm Growth",
+      "description": "This table summarizes randomized controlled trials evaluating various medications aimed at slowing the growth of small aneurysms. It includes details on the study name, treatment evaluated, number of patients included, and the main findings regarding aneurysm growth rates.",
+      "keywords": [
+        "aneurysm",
+        "medication",
+        "RCT",
+        "growth rates",
+        "doxycycline",
+        "propranolol",
+        "roxithromycin"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/tables/tbl_p024_020.png",
+      "aliases": [
+        "table 20"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p024_020.png"
+    },
+    {
+      "id": "tbl_p027_024",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 24",
+      "caption": "Studies on Rupture Risk of Small Abdominal Aortic Aneurysms",
+      "description": "This table summarizes various studies on the rupture risk of small abdominal aortic aneurysms (AAAs), detailing recruitment periods, measurement modalities, and rupture rates. It highlights the threshold diameters used in each study and the corresponding rupture rates observed.",
+      "keywords": [
+        "AAA",
+        "rupture risk",
+        "measurement",
+        "threshold",
+        "clinical study"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/tables/tbl_p027_024.png",
+      "aliases": [
+        "table 24"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p027_024.png"
+    },
+    {
+      "id": "tbl_p029_030",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 30",
+      "caption": "Risk Factors for Complications Post-AAA Repair",
+      "description": "This table outlines the risk factors for cardiac, respiratory, and renal complications following abdominal aortic aneurysm repair. It categorizes predictors into three groups: cardiac, pulmonary, and renal complications, providing specific clinical conditions and measurements associated with increased risk.",
+      "keywords": [
+        "cardiac complications",
+        "pulmonary complications",
+        "renal complications",
+        "abdominal aortic aneurysm",
+        "risk factors"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/tables/tbl_p029_030.png",
+      "aliases": [
+        "table 30"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p029_030.png"
+    },
+    {
+      "id": "tbl_p030_031",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 31",
+      "caption": "Functional Capacity Estimation Based on Physical Activity Levels",
+      "description": "This table categorizes functional capacity based on physical activity levels, measured in metabolic equivalents (METs). It provides examples of activities corresponding to different MET ranges, from poor to excellent capacity.",
+      "keywords": [
+        "functional capacity",
+        "physical activity",
+        "metabolic equivalent",
+        "exercise intensity"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/tables/tbl_p030_031.png",
+      "aliases": [
+        "table 31"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p030_031.png"
+    },
+    {
+      "id": "tbl_p040_052",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 52",
+      "caption": "Anatomical Requirements for Stent Grafts Usage",
+      "description": "This table outlines the anatomical requirements for the use of stent grafts in vascular procedures. It includes measurements such as diameters, lengths, and angles necessary for proper stent graft application.",
+      "keywords": [
+        "stent grafts",
+        "vascular surgery",
+        "anatomical requirements",
+        "proximal neck",
+        "iliac artery"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/tables/tbl_p040_052.png",
+      "aliases": [
+        "table 52"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p040_052.png"
+    },
+    {
+      "id": "tbl_p044_057",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 57",
+      "caption": "Comparison of EVAR and Open Repair for Abdominal Aortic Aneurysms",
+      "description": "This table summarizes randomized controlled trials comparing elective endovascular aortic repair (EVAR) and open surgical repair for abdominal aortic aneurysms. It includes studies from the UK, Netherlands, Belgium, USA, and France, highlighting peri-operative mortality, survival benefits, and re-intervention rates.",
+      "keywords": [
+        "EVAR",
+        "open repair",
+        "abdominal aortic aneurysm",
+        "randomized controlled trials",
+        "peri-operative mortality"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/tables/tbl_p044_057.png",
+      "aliases": [
+        "table 57"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p044_057.png"
+    },
+    {
+      "id": "tbl_p045_058",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 58",
+      "caption": "Comparison of EVAR and Open Repair for Abdominal Aortic Aneurysms: Meta-Analysis Summary",
+      "description": "This table summarizes findings from various studies comparing elective endovascular aortic repair (EVAR) and open surgical repair for abdominal aortic aneurysms. It includes study types, recruitment periods, patient numbers, and main findings regarding mortality and re-intervention rates.",
+      "keywords": [
+        "EVAR",
+        "open surgical repair",
+        "abdominal aortic aneurysm",
+        "mortality",
+        "re-intervention"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/tables/tbl_p045_058.png",
+      "aliases": [
+        "table 58"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p045_058.png"
+    },
+    {
+      "id": "tbl_p053_069",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 69",
+      "caption": "Comparison of Peri-operative Mortality in EVAR vs OSR",
+      "description": "This table compares peri-operative mortality rates between endovascular aneurysm repair (EVAR) and open surgical repair (OSR) for patients with ruptured abdominal aortic aneurysm. It includes data from various studies published from 2010 onwards, with more than 1,000 patients each.",
+      "keywords": [
+        "EVAR",
+        "OSR",
+        "mortality",
+        "abdominal aortic aneurysm",
+        "clinical outcomes"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/tables/tbl_p053_069.png",
+      "aliases": [
+        "table 69"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p053_069.png"
+    },
+    {
+      "id": "tbl_p054_070",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 70",
+      "caption": "Peri-operative Mortality in RCTs for Ruptured AAA Repair",
+      "description": "This table presents peri-operative mortality rates from four randomized controlled trials comparing endovascular aneurysm repair (EVAR) and open surgical repair (OSR) for ruptured abdominal aortic aneurysm (AAA). It includes data on recruitment periods, patient numbers, and 30-day mortality rates for both EVAR and OSR.",
+      "keywords": [
+        "RCT",
+        "EVAR",
+        "OSR",
+        "ruptured AAA",
+        "mortality rates"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/tables/tbl_p054_070.png",
+      "aliases": [
+        "table 70"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p054_070.png"
+    },
+    {
+      "id": "tbl_p056_072",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 72",
+      "caption": "Medical Treatment Options for Intra-abdominal Hypertension and Abdominal Compartment Syndrome",
+      "description": "This table outlines various medical treatment strategies for managing intra-abdominal hypertension and abdominal compartment syndrome. It categorizes interventions into improving abdominal wall compliance, evacuating abdominal contents, correcting fluid balance, and supporting organ function.",
+      "keywords": [
+        "intra-abdominal hypertension",
+        "abdominal compartment syndrome",
+        "medical treatment",
+        "fluid balance",
+        "organ support"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/tables/tbl_p056_072.png",
+      "aliases": [
+        "table 72"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p056_072.png"
+    },
+    {
+      "id": "tbl_p059_079",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 79",
+      "caption": "Incidence of Complications Post-AAA Repair",
+      "description": "This table outlines the estimated incidence of various complications following abdominal aortic aneurysm (AAA) repair, within five years and between 10 to 15 years post-surgery.",
+      "keywords": [
+        "AAA repair",
+        "complications",
+        "incidence",
+        "vascular surgery"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/tables/tbl_p059_079.png",
+      "aliases": [
+        "table 79"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p059_079.png"
+    },
+    {
+      "id": "tbl_p059_080",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 80",
+      "caption": "Long-term Complications After EVAR of AAA",
+      "description": "This table outlines the long-term complications following endovascular repair of abdominal aortic aneurysm (EVAR). It categorizes complications by type, provides their meanings, estimates their incidence within five years, and assesses rupture risk.",
+      "keywords": [
+        "EVAR",
+        "abdominal aortic aneurysm",
+        "endoleak",
+        "complications",
+        "rupture risk"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/tables/tbl_p059_080.png",
+      "aliases": [
+        "table 80"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p059_080.png"
+    },
+    {
+      "id": "tbl_p068_103",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 103",
+      "caption": "Comparison of Imaging Modalities for EVAR Follow-up",
+      "description": "This table compares the pros and cons of different imaging modalities used for follow-up after endovascular abdominal aortic aneurysm repair (EVAR). It evaluates availability, cost, complication detection, aortic branch assessment, operator dependency, nephrotoxicity, and radiation exposure across CTA, CT, DUS, CEUS, and MRA.",
+      "keywords": [
+        "EVAR",
+        "imaging modalities",
+        "CTA",
+        "CT",
+        "DUS",
+        "CEUS",
+        "MRA",
+        "follow-up"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/tables/tbl_p068_103.png",
+      "aliases": [
+        "table 103"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p068_103.png"
+    },
+    {
+      "id": "tbl_p086_126",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 126",
+      "caption": "Diagnostic Criteria for Mycotic Abdominal Aortic Aneurysms",
+      "description": "This table outlines the suggested diagnostic criteria for identifying mycotic abdominal aortic aneurysms. It includes clinical presentations, laboratory tests, radiological findings, and surgical presentations that are indicative of this condition.",
+      "keywords": [
+        "mycotic aneurysm",
+        "diagnostic criteria",
+        "abdominal aortic aneurysm",
+        "clinical presentation",
+        "laboratory tests",
+        "radiological findings"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/tables/tbl_p086_126.png",
+      "aliases": [
+        "table 126"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p086_126.png"
+    },
+    {
+      "id": "tbl_p097_141",
+      "kind": "table",
+      "subtype": "table",
+      "label": "Table 141",
+      "caption": "Comparison of AAA Surgery Types: Endovascular vs. Open Repair",
+      "description": "This table compares the advantages and disadvantages of two types of abdominal aortic aneurysm (AAA) surgeries: endovascular repair and open surgical repair. It highlights factors such as recovery time, risk of death, and need for further operations.",
+      "keywords": [
+        "AAA surgery",
+        "endovascular repair",
+        "open surgical repair",
+        "advantages",
+        "disadvantages"
+      ],
+      "path": "guideline_assets/abdominal_aortic_aneurysm/tables/tbl_p097_141.png",
+      "aliases": [
+        "table 141"
+      ],
+      "url": "https://pngsrag.blob.core.windows.net/guideline-assets/tbl_p097_141.png"
+    }
   ]
 }
