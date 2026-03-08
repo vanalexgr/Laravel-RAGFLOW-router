@@ -657,6 +657,9 @@ class Tools:
             # Use plain markdown image syntax (no nested linked-image markdown),
             # which is more consistently rendered across mobile clients.
             lines.append(f"  ![{alt_text}]({thumb_url})")
+            # Keep a hidden linked-image mapping so mobile clients that parse
+            # linked-thumbnail patterns can open full-size on image tap.
+            lines.append(f"  <!-- [![{alt_text}]({thumb_url})]({full_url}) -->")
             if full_url and full_url != thumb_url:
                 lines.append(f"  Full-size: {full_url}")
             count += 1
