@@ -647,7 +647,7 @@ class Tools:
             alt_text = caption or label
             alt_text = self._truncate_for_llm(alt_text, 140).replace("[", "(").replace("]", ")")
 
-            headline = f"- {label}"
+            headline = f"{label}"
             if guideline_key:
                 headline += f" ({guideline_key})"
             if caption:
@@ -656,10 +656,11 @@ class Tools:
             lines.append(headline)
             # Use linked thumbnail so click/tap opens full-size image consistently across clients.
             if full_url and full_url != thumb_url:
-                lines.append(f"  [![{alt_text}]({thumb_url})]({full_url})")
-                lines.append(f"  [Full-size]({full_url})")
+                lines.append(f"[![{alt_text}]({thumb_url})]({full_url})")
+                lines.append(f"[Full-size]({full_url})")
             else:
-                lines.append(f"  ![{alt_text}]({thumb_url})")
+                lines.append(f"![{alt_text}]({thumb_url})")
+            lines.append("")
             count += 1
 
         if count == 0:
