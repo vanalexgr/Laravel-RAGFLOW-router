@@ -9,6 +9,7 @@ version: 2.1.4
 import httpx
 import asyncio
 import os
+import time
 from pydantic import BaseModel, Field
 from typing import Literal, Optional, Callable, Awaitable
 import re
@@ -75,6 +76,8 @@ class Tools:
 
     def __init__(self):
         self.valves = self.Valves()
+        self._last_status_text = ""
+        self._last_status_ts = 0.0
 
     def _truncate_for_llm(self, text: str, max_chars: int) -> str:
         if not text:
@@ -686,6 +689,14 @@ class Tools:
             default=True,
             description="Expose interpretive clinical framing if provided by the API",
         )
+        EMIT_STATUS_AS_MESSAGES: bool = Field(
+            default=True,
+            description="Emit retrieval progress as normal assistant messages (always visible, not collapsible).",
+        )
+        EMIT_STATUS_EVENTS: bool = Field(
+            default=False,
+            description="Also emit OpenWebUI status events (can appear in collapsible status UI).",
+        )
 
     def _allow_partial_answers(self) -> bool:
         try:
@@ -703,12 +714,31 @@ class Tools:
         """Emit a status update to OpenWebUI UI (replaces pulsating dot)."""
         if emitter:
             try:
-                await emitter(
-                    {
-                        "type": "status",
-                        "data": {"description": description, "done": done},
-                    }
-                )
+                emit_messages = bool(getattr(self.valves, "EMIT_STATUS_AS_MESSAGES", True))
+                emit_status = bool(getattr(self.valves, "EMIT_STATUS_EVENTS", False))
+
+                # Message-mode: keep progress always visible and avoid rapid duplicate spam.
+                if emit_messages:
+                    now = time.monotonic()
+                    same_text = description == self._last_status_text
+                    if done or (not same_text) or (now - self._last_status_ts >= 8.0):
+                        await emitter(
+                            {
+                                "type": "message",
+                                "data": {"content": f"{description}\n"},
+                            }
+                        )
+                        self._last_status_text = description
+                        self._last_status_ts = now
+
+                # Optional status-mode (collapsed UI component in many clients).
+                if emit_status:
+                    await emitter(
+                        {
+                            "type": "status",
+                            "data": {"description": description, "done": done, "hidden": False},
+                        }
+                    )
             except Exception as e:
                 print(f"[VascularExpert] Status emit error: {e}")
 
