@@ -654,8 +654,11 @@ class Tools:
                 headline += f": {self._truncate_for_llm(caption, 180)}"
 
             lines.append(headline)
-            # Thumbnail in chat + full-size target for custom UI popup handling.
-            lines.append(f"  [![{alt_text}]({thumb_url})]({full_url})")
+            # Use plain markdown image syntax (no nested linked-image markdown),
+            # which is more consistently rendered across mobile clients.
+            lines.append(f"  ![{alt_text}]({thumb_url})")
+            if full_url and full_url != thumb_url:
+                lines.append(f"  Full-size: {full_url}")
             count += 1
 
         if count == 0:
