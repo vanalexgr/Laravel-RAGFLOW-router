@@ -96,5 +96,58 @@ class GuidelineAssetServiceTest extends TestCase
         $this->assertNotEmpty($assets);
         $this->assertSame('algo_1', $assets[0]['id']);
     }
-}
 
+    public function test_it_prioritizes_question_specific_assets_over_generic_context(): void
+    {
+        Storage::fake('public');
+
+        $manifest = [
+            'abdominal_aortic_aneurysm' => [
+                [
+                    'id' => 'fig_followup_generic',
+                    'kind' => 'figure',
+                    'label' => 'Figure 39',
+                    'caption' => 'Follow-up Algorithm After Standard EVAR',
+                    'keywords' => ['EVAR', 'follow-up', 'endoleak', 'CTA'],
+                    'path' => 'guideline_assets/abdominal_aortic_aneurysm/figures/fig_p070_039.png',
+                ],
+                [
+                    'id' => 'fig_iliac_specific',
+                    'kind' => 'figure',
+                    'label' => 'Figure 46',
+                    'caption' => 'Isolated Iliac Artery Aneurysm Classification Diagram',
+                    'keywords' => ['iliac artery', 'aneurysm', 'classification'],
+                    'path' => 'guideline_assets/abdominal_aortic_aneurysm/figures/fig_p082_046.png',
+                ],
+            ],
+        ];
+
+        $tmp = storage_path('app/guideline_assets/_test_manifest_iliac_priority.json');
+        @mkdir(dirname($tmp), 0777, true);
+        file_put_contents($tmp, json_encode($manifest));
+        config()->set('guideline_assets.manifest_path', $tmp);
+        config()->set('guideline_assets.disk', 'public');
+        config()->set('guideline_assets.enable_keyword_fallback', true);
+        config()->set('guideline_assets.max_assets', 3);
+
+        $svc = app(GuidelineAssetService::class);
+
+        $assets = $svc->findRelevantAssets(
+            'What is the treatment and surveillance strategy for isolated iliac artery aneurysm?',
+            [
+                [
+                    'content' => 'Post-EVAR follow-up includes CTA and surveillance for endoleak according to standard algorithm.',
+                    'source_guideline' => 'Abdominal Aortic Aneurysm',
+                ],
+            ],
+            [],
+            [
+                'abdominal_aortic_aneurysm' => ['id' => 'x', 'name' => 'Abdominal Aortic Aneurysm'],
+            ],
+            ['abdominal_aortic_aneurysm']
+        );
+
+        $this->assertNotEmpty($assets);
+        $this->assertSame('fig_iliac_specific', $assets[0]['id']);
+    }
+}
