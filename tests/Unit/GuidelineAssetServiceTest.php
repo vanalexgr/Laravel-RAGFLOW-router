@@ -149,5 +149,6 @@ class GuidelineAssetServiceTest extends TestCase
 
         $this->assertNotEmpty($assets);
         $this->assertSame('fig_iliac_specific', $assets[0]['id']);
+        $this->assertCount(1, $assets);
     }
 }

@@ -173,7 +173,28 @@ class GuidelineAssetService
                 ]);
             }
 
+            $bestQuerySignal = !empty($scored) ? (float) ($scored[0]['query_signal'] ?? 0.0) : 0.0;
+            $minAbsQuerySignal = (float) (config('guideline_assets.min_query_signal', 2.0) ?: 2.0);
+            $minRelativeRatio = (float) (config('guideline_assets.min_query_signal_ratio', 0.45) ?: 0.45);
+            $minRelativeRatio = max(0.0, min(1.0, $minRelativeRatio));
+            $minRelativeSignal = $bestQuerySignal * $minRelativeRatio;
+
+            $hasStrongQueryMatch = false;
             foreach ($scored as $row) {
+                if ((float) ($row['query_signal'] ?? 0.0) >= $minAbsQuerySignal) {
+                    $hasStrongQueryMatch = true;
+                    break;
+                }
+            }
+
+            foreach ($scored as $row) {
+                $querySignal = (float) ($row['query_signal'] ?? 0.0);
+                if ($hasStrongQueryMatch) {
+                    if ($querySignal < $minAbsQuerySignal || $querySignal < $minRelativeSignal) {
+                        continue;
+                    }
+                }
+
                 $asset = $this->hydrateAsset($row['asset'], $row['guideline_key']);
                 $assetId = (string) ($asset['id'] ?? ($asset['url'] ?? ''));
                 if ($assetId === '' || isset($seen[$assetId])) {
