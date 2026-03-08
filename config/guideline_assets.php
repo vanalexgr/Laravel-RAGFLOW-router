@@ -37,4 +37,9 @@ return [
 
     // Optional diagnostics for fallback asset ranking.
     'log_scoring' => (bool) env('GUIDELINE_ASSET_LOG_SCORING', false),
+
+    // Tightness controls for fallback relevance. If at least one candidate has
+    // a strong query match, weaker context-only assets are filtered out.
+    'min_query_signal' => (float) env('GUIDELINE_ASSET_MIN_QUERY_SIGNAL', 2.0),
+    'min_query_signal_ratio' => (float) env('GUIDELINE_ASSET_MIN_QUERY_SIGNAL_RATIO', 0.45),
 ];
