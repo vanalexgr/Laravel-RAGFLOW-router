@@ -34,4 +34,7 @@ return [
     // If a chunk does not explicitly reference "Figure X", allow a weak fallback
     // keyword match against captions/keywords (still scoped to selected guidelines).
     'enable_keyword_fallback' => (bool) env('GUIDELINE_ASSET_KEYWORD_FALLBACK', true),
+
+    // Optional diagnostics for fallback asset ranking.
+    'log_scoring' => (bool) env('GUIDELINE_ASSET_LOG_SCORING', false),
 ];
