@@ -654,10 +654,12 @@ class Tools:
                 headline += f": {self._truncate_for_llm(caption, 180)}"
 
             lines.append(headline)
-            # Plain markdown image keeps rendering consistent across clients.
-            lines.append(f"  ![{alt_text}]({thumb_url})")
+            # Use linked thumbnail so click/tap opens full-size image consistently across clients.
             if full_url and full_url != thumb_url:
+                lines.append(f"  [![{alt_text}]({thumb_url})]({full_url})")
                 lines.append(f"  [Full-size]({full_url})")
+            else:
+                lines.append(f"  ![{alt_text}]({thumb_url})")
             count += 1
 
         if count == 0:
