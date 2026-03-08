@@ -92,25 +92,87 @@ class GuidelineAssetService
         // Run this both when there are no explicit refs and when explicit refs produced fewer
         // than max assets, so we can fill remaining slots with intent-matching visuals.
         if (count($results) < $maxAssets && (bool) config('guideline_assets.enable_keyword_fallback', true)) {
-            $text = $question . "\n" . implode(
+            $contextText = implode(
                 "\n",
                 array_map(fn ($c) => (string) ($c['content'] ?? ''), array_slice($narrativeChunks, 0, 6))
             );
-            $bag = $this->tokenBag($text);
+            $questionBag = $this->tokenBag($question);
+            $contextBag = $this->tokenBag($contextText);
+            $questionRefs = $this->extractAssetReferences($question);
+
+            $idfIndex = $this->buildScopedIdfIndex($manifest, $scopedKeys);
+            $tokenDf = $idfIndex['df'];
+            $tokenDocs = $idfIndex['docs'];
 
             $scored = [];
             foreach ($scopedKeys as $key) {
                 $assets = $manifest[$key] ?? [];
                 foreach ($assets as $asset) {
-                    $score = $this->keywordScore($bag, $asset);
-                    if ($score <= 0) {
+                    $assetBag = $this->tokenBag($this->assetSearchText($asset));
+                    if (empty($assetBag)) {
                         continue;
                     }
-                    $scored[] = ['score' => $score, 'asset' => $asset, 'guideline_key' => $key];
+
+                    $questionKeywordScore = $this->keywordScore($questionBag, $asset);
+                    $contextKeywordScore = $this->keywordScore($contextBag, $asset);
+                    $directRefScore = $this->directReferenceScore($asset, $questionRefs);
+
+                    $questionTokenScore = 0.0;
+                    foreach (array_keys($questionBag) as $token) {
+                        if (!isset($assetBag[$token])) {
+                            continue;
+                        }
+                        $questionTokenScore += $this->idfWeight($token, $tokenDf, $tokenDocs);
+                    }
+
+                    // Prioritize the user question strongly over broad narrative context.
+                    $querySignal = ($questionKeywordScore * 2.0) + $questionTokenScore + $directRefScore;
+                    $totalScore = (int) round($querySignal * 100.0) + $contextKeywordScore;
+                    if ($totalScore <= 0) {
+                        continue;
+                    }
+
+                    $scored[] = [
+                        'score' => $totalScore,
+                        'query_signal' => $querySignal,
+                        'context_score' => $contextKeywordScore,
+                        'asset' => $asset,
+                        'guideline_key' => $key,
+                    ];
                 }
             }
 
-            usort($scored, fn ($a, $b) => $b['score'] <=> $a['score']);
+            usort($scored, function ($a, $b) {
+                $queryCmp = $b['query_signal'] <=> $a['query_signal'];
+                if ($queryCmp !== 0) {
+                    return $queryCmp;
+                }
+
+                $scoreCmp = $b['score'] <=> $a['score'];
+                if ($scoreCmp !== 0) {
+                    return $scoreCmp;
+                }
+
+                return strcmp((string) ($a['asset']['id'] ?? ''), (string) ($b['asset']['id'] ?? ''));
+            });
+
+            if ((bool) config('guideline_assets.log_scoring', false) && !empty($scored)) {
+                Log::info('[GUIDELINE ASSETS] Scored fallback candidates', [
+                    'question' => $question,
+                    'selected_guidelines' => $scopedKeys,
+                    'top' => array_map(function ($row) {
+                        return [
+                            'id' => $row['asset']['id'] ?? null,
+                            'label' => $row['asset']['label'] ?? null,
+                            'guideline_key' => $row['guideline_key'],
+                            'query_signal' => $row['query_signal'],
+                            'context_score' => $row['context_score'],
+                            'total_score' => $row['score'],
+                        ];
+                    }, array_slice($scored, 0, 12)),
+                ]);
+            }
+
             foreach ($scored as $row) {
                 $asset = $this->hydrateAsset($row['asset'], $row['guideline_key']);
                 $assetId = (string) ($asset['id'] ?? ($asset['url'] ?? ''));
@@ -353,5 +415,112 @@ class GuidelineAssetService
         }
 
         return $score;
+    }
+
+    protected function assetSearchText(array $asset): string
+    {
+        $parts = [];
+
+        foreach (['label', 'caption', 'description'] as $field) {
+            $v = trim((string) ($asset[$field] ?? ''));
+            if ($v !== '') {
+                $parts[] = $v;
+            }
+        }
+
+        $aliases = $asset['aliases'] ?? [];
+        if (is_array($aliases)) {
+            foreach ($aliases as $alias) {
+                $a = trim((string) $alias);
+                if ($a !== '') {
+                    $parts[] = $a;
+                }
+            }
+        }
+
+        $keywords = $asset['keywords'] ?? [];
+        if (is_array($keywords)) {
+            foreach ($keywords as $kw) {
+                $k = trim((string) $kw);
+                if ($k !== '') {
+                    $parts[] = $k;
+                }
+            }
+        }
+
+        return implode("\n", $parts);
+    }
+
+    protected function buildScopedIdfIndex(array $manifest, array $scopedKeys): array
+    {
+        $df = [];
+        $docs = 0;
+
+        foreach ($scopedKeys as $key) {
+            $assets = $manifest[$key] ?? [];
+            if (!is_array($assets)) {
+                continue;
+            }
+
+            foreach ($assets as $asset) {
+                if (!is_array($asset)) {
+                    continue;
+                }
+
+                $bag = $this->tokenBag($this->assetSearchText($asset));
+                if (empty($bag)) {
+                    continue;
+                }
+
+                $docs++;
+                foreach (array_keys($bag) as $token) {
+                    $df[$token] = ($df[$token] ?? 0) + 1;
+                }
+            }
+        }
+
+        return ['df' => $df, 'docs' => $docs];
+    }
+
+    protected function idfWeight(string $token, array $df, int $docs): float
+    {
+        $docs = max(1, $docs);
+        $tokenDf = (int) ($df[$token] ?? 0);
+        return log(($docs + 1.0) / ($tokenDf + 1.0)) + 1.0;
+    }
+
+    protected function directReferenceScore(array $asset, array $questionRefs): float
+    {
+        if (empty($questionRefs)) {
+            return 0.0;
+        }
+
+        $labels = [];
+        $label = trim((string) ($asset['label'] ?? ''));
+        if ($label !== '') {
+            $labels[] = $this->normalizeLabel($label);
+        }
+
+        $aliases = $asset['aliases'] ?? [];
+        if (is_array($aliases)) {
+            foreach ($aliases as $alias) {
+                $a = trim((string) $alias);
+                if ($a !== '') {
+                    $labels[] = $this->normalizeLabel($a);
+                }
+            }
+        }
+
+        if (empty($labels)) {
+            return 0.0;
+        }
+
+        foreach ($questionRefs as $ref) {
+            if (in_array($ref, $labels, true)) {
+                return 10.0;
+            }
+        }
+
+        return 0.0;
     }
 }
