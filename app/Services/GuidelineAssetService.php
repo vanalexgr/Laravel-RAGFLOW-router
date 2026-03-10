@@ -15,7 +15,7 @@ class GuidelineAssetService
      *
      * @param string $question
      * @param array $narrativeChunks RetrievalService formatted narrative chunks
-     * @param array $citationChunks RetrievalService formatted citation chunks (unused currently)
+     * @param array $citationChunks RetrievalService formatted citation chunks
      * @param array $selectedGuidelines key => ['id'=>..., 'name'=>...]
      * @return array
      */
@@ -45,6 +45,18 @@ class GuidelineAssetService
             $scopedKeys = $selectedKeys;
         }
         $nameToKey = $this->buildGuidelineNameToKeyMap();
+        $questionTokens = array_values(array_unique($this->tokenizeSearchText($question)));
+        $questionIntent = $this->inferQuestionIntent($question);
+        $questionRefs = $this->extractAssetReferences($question);
+        $fallbackScopeKeys = $this->extractEvidenceScopedKeys(
+            $narrativeChunks,
+            $citationChunks,
+            $nameToKey,
+            $scopedKeys
+        );
+        if (empty($fallbackScopeKeys)) {
+            $fallbackScopeKeys = $scopedKeys;
+        }
 
         $results = [];
         $seen = [];
@@ -72,6 +84,9 @@ class GuidelineAssetService
                 if (!$asset) {
                     continue;
                 }
+                if (!$this->shouldUseExplicitReferenceAsset($asset, $ref, $questionTokens, $questionIntent, $questionRefs)) {
+                    continue;
+                }
 
                 $asset = $this->hydrateAsset($asset, $sourceKey);
                 $assetId = (string) ($asset['id'] ?? ($asset['url'] ?? ''));
@@ -88,58 +103,82 @@ class GuidelineAssetService
             }
         }
 
-        // 2) Fallback/supplement: keyword overlap (caption/keywords) scoped to selected guidelines.
-        // Run this both when there are no explicit refs and when explicit refs produced fewer
-        // than max assets, so we can fill remaining slots with intent-matching visuals.
+        // 2) Fallback/supplement: local BM25-style reranking scoped to the
+        // guidelines that actually contributed evidence to the answer.
         if (count($results) < $maxAssets && (bool) config('guideline_assets.enable_keyword_fallback', true)) {
-            $contextText = implode(
-                "\n",
-                array_map(fn ($c) => (string) ($c['content'] ?? ''), array_slice($narrativeChunks, 0, 6))
+            $contextText = $this->buildFallbackContextText(
+                $narrativeChunks,
+                $nameToKey,
+                $fallbackScopeKeys
             );
-            $questionBag = $this->tokenBag($question);
-            $contextBag = $this->tokenBag($contextText);
-            $questionRefs = $this->extractAssetReferences($question);
-
-            $idfIndex = $this->buildScopedIdfIndex($manifest, $scopedKeys);
-            $tokenDf = $idfIndex['df'];
-            $tokenDocs = $idfIndex['docs'];
+            $contextTokens = array_values(array_unique($this->tokenizeSearchText($contextText)));
+            $contextRefs = $this->extractAssetReferences($contextText);
+            $guidelineUsageWeights = $this->buildGuidelineUsageWeights(
+                $narrativeChunks,
+                $citationChunks,
+                $nameToKey,
+                $fallbackScopeKeys
+            );
+            $bm25Index = $this->buildScopedBm25Index($manifest, $fallbackScopeKeys);
 
             $scored = [];
-            foreach ($scopedKeys as $key) {
-                $assets = $manifest[$key] ?? [];
-                foreach ($assets as $asset) {
-                    $assetBag = $this->tokenBag($this->assetSearchText($asset));
-                    if (empty($assetBag)) {
-                        continue;
-                    }
+            foreach ($bm25Index['docs'] as $doc) {
+                $questionBm25 = $this->bm25Score(
+                    $questionTokens,
+                    $doc['term_freq'],
+                    $doc['length'],
+                    $bm25Index['doc_freq'],
+                    $bm25Index['doc_count'],
+                    $bm25Index['avg_length']
+                );
+                $contextBm25 = $this->bm25Score(
+                    $contextTokens,
+                    $doc['term_freq'],
+                    $doc['length'],
+                    $bm25Index['doc_freq'],
+                    $bm25Index['doc_count'],
+                    $bm25Index['avg_length']
+                );
+                $questionRefScore = $this->directReferenceScore($doc['asset'], $questionRefs);
+                $guidelineBoost = (float) (($guidelineUsageWeights[$doc['guideline_key']] ?? 0.0) * 1.5);
+                $intentFit = $this->scoreQuestionIntentFit(
+                    $doc['asset'],
+                    $questionTokens,
+                    $doc['term_freq'],
+                    $questionIntent
+                );
+                $contextRefScore = $this->scaleContextReferenceScore(
+                    $this->directReferenceScore($doc['asset'], $contextRefs),
+                    $questionIntent,
+                    $intentFit
+                );
 
-                    $questionKeywordScore = $this->keywordScore($questionBag, $asset);
-                    $contextKeywordScore = $this->keywordScore($contextBag, $asset);
-                    $directRefScore = $this->directReferenceScore($asset, $questionRefs);
-
-                    $questionTokenScore = 0.0;
-                    foreach (array_keys($questionBag) as $token) {
-                        if (!isset($assetBag[$token])) {
-                            continue;
-                        }
-                        $questionTokenScore += $this->idfWeight($token, $tokenDf, $tokenDocs);
-                    }
-
-                    // Prioritize the user question strongly over broad narrative context.
-                    $querySignal = ($questionKeywordScore * 2.0) + $questionTokenScore + $directRefScore;
-                    $totalScore = (int) round($querySignal * 100.0) + $contextKeywordScore;
-                    if ($totalScore <= 0) {
-                        continue;
-                    }
-
-                    $scored[] = [
-                        'score' => $totalScore,
-                        'query_signal' => $querySignal,
-                        'context_score' => $contextKeywordScore,
-                        'asset' => $asset,
-                        'guideline_key' => $key,
-                    ];
+                // Prioritize the user question while still letting the answer context
+                // steer the fallback toward visuals that match the retrieved evidence
+                // without letting incidental figure/table mentions dominate the rank.
+                $querySignal = ($questionBm25 * 2.0)
+                    + $questionRefScore
+                    + $contextRefScore
+                    + $guidelineBoost
+                    + $intentFit['boost'];
+                $totalScore = $querySignal + ($contextBm25 * 0.4);
+                if ($totalScore <= 0.0) {
+                    continue;
                 }
+
+                $scored[] = [
+                    'score' => $totalScore,
+                    'query_signal' => $querySignal,
+                    'question_score' => $questionBm25,
+                    'context_score' => $contextBm25,
+                    'question_ref_score' => $questionRefScore,
+                    'context_ref_score' => $contextRefScore,
+                    'guideline_boost' => $guidelineBoost,
+                    'intent_boost' => $intentFit['boost'],
+                    'content_overlap' => $intentFit['content_overlap'],
+                    'asset' => $doc['asset'],
+                    'guideline_key' => $doc['guideline_key'],
+                ];
             }
 
             usort($scored, function ($a, $b) {
@@ -159,14 +198,20 @@ class GuidelineAssetService
             if ((bool) config('guideline_assets.log_scoring', false) && !empty($scored)) {
                 Log::info('[GUIDELINE ASSETS] Scored fallback candidates', [
                     'question' => $question,
-                    'selected_guidelines' => $scopedKeys,
+                    'selected_guidelines' => $fallbackScopeKeys,
                     'top' => array_map(function ($row) {
                         return [
                             'id' => $row['asset']['id'] ?? null,
                             'label' => $row['asset']['label'] ?? null,
                             'guideline_key' => $row['guideline_key'],
                             'query_signal' => $row['query_signal'],
+                            'question_score' => $row['question_score'],
                             'context_score' => $row['context_score'],
+                            'question_ref_score' => $row['question_ref_score'],
+                            'context_ref_score' => $row['context_ref_score'],
+                            'guideline_boost' => $row['guideline_boost'],
+                            'intent_boost' => $row['intent_boost'],
+                            'content_overlap' => $row['content_overlap'],
                             'total_score' => $row['score'],
                         ];
                     }, array_slice($scored, 0, 12)),
@@ -248,6 +293,86 @@ class GuidelineAssetService
         }
 
         return $map;
+    }
+
+    protected function extractEvidenceScopedKeys(
+        array $narrativeChunks,
+        array $citationChunks,
+        array $nameToKey,
+        array $selectedKeys
+    ): array {
+        $seen = [];
+
+        foreach (array_merge($narrativeChunks, $citationChunks) as $chunk) {
+            $sourceName = (string) ($chunk['source_guideline'] ?? '');
+            $sourceKey = $this->mapSourceGuidelineToKey($sourceName, $nameToKey, $selectedKeys);
+            if ($sourceKey === null) {
+                continue;
+            }
+            $seen[$sourceKey] = true;
+        }
+
+        return array_keys($seen);
+    }
+
+    protected function buildGuidelineUsageWeights(
+        array $narrativeChunks,
+        array $citationChunks,
+        array $nameToKey,
+        array $selectedKeys
+    ): array {
+        $counts = [];
+        $total = 0;
+
+        foreach (array_merge($narrativeChunks, $citationChunks) as $chunk) {
+            $sourceName = (string) ($chunk['source_guideline'] ?? '');
+            $sourceKey = $this->mapSourceGuidelineToKey($sourceName, $nameToKey, $selectedKeys);
+            if ($sourceKey === null) {
+                continue;
+            }
+
+            $counts[$sourceKey] = ($counts[$sourceKey] ?? 0) + 1;
+            $total++;
+        }
+
+        if ($total <= 0) {
+            return [];
+        }
+
+        foreach ($counts as $key => $count) {
+            $counts[$key] = $count / $total;
+        }
+
+        return $counts;
+    }
+
+    protected function buildFallbackContextText(
+        array $narrativeChunks,
+        array $nameToKey,
+        array $scopeKeys,
+        int $limit = 6
+    ): string {
+        $parts = [];
+
+        foreach ($narrativeChunks as $chunk) {
+            $sourceName = (string) ($chunk['source_guideline'] ?? '');
+            $sourceKey = $this->mapSourceGuidelineToKey($sourceName, $nameToKey, $scopeKeys);
+            if ($sourceKey === null) {
+                continue;
+            }
+
+            $content = trim((string) ($chunk['content'] ?? ''));
+            if ($content === '') {
+                continue;
+            }
+
+            $parts[] = $content;
+            if (count($parts) >= $limit) {
+                break;
+            }
+        }
+
+        return implode("\n", $parts);
     }
 
     protected function mapSourceGuidelineToKey(string $sourceName, array $nameToKey, array $selectedKeys): ?string
@@ -375,64 +500,429 @@ class GuidelineAssetService
         return $asset;
     }
 
-    protected function tokenBag(string $text): array
-    {
-        $text = strtolower($text);
-        $text = preg_replace('/[^a-z0-9\s]/', ' ', $text) ?? $text;
-        $parts = preg_split('/\s+/', $text, -1, PREG_SPLIT_NO_EMPTY) ?: [];
-
-        $bag = [];
-        foreach ($parts as $w) {
-            if (strlen($w) < 4) {
-                continue;
-            }
-            // very light stemming
-            $w = rtrim($w, 's');
-            $bag[$w] = true;
+    protected function shouldUseExplicitReferenceAsset(
+        array $asset,
+        string $ref,
+        array $questionTokens,
+        array $questionIntent,
+        array $questionRefs
+    ): bool {
+        if (in_array($ref, $questionRefs, true)) {
+            return true;
         }
-        return $bag;
+
+        if ($this->countMeaningfulQuestionTokens($questionTokens) === 0) {
+            return true;
+        }
+
+        $doc = $this->buildAssetDocument($asset);
+        $intentFit = $this->scoreQuestionIntentFit($asset, $questionTokens, $doc['term_freq'] ?? [], $questionIntent);
+        $minimumOverlap = $questionIntent['management'] ? 2 : 1;
+
+        if (($intentFit['content_overlap'] ?? 0) < $minimumOverlap) {
+            return false;
+        }
+
+        if ($questionIntent['management'] && ($intentFit['boost'] ?? 0.0) < 2.0) {
+            return false;
+        }
+
+        return true;
     }
 
-    protected function keywordScore(array $bag, array $asset): int
+    protected function buildScopedBm25Index(array $manifest, array $scopedKeys): array
     {
-        $score = 0;
+        $docs = [];
+        $docFreq = [];
+        $docCount = 0;
+        $totalLength = 0.0;
 
-        $caption = (string) ($asset['caption'] ?? '');
-        if ($caption !== '') {
-            $capBag = $this->tokenBag($caption);
-            foreach ($capBag as $w => $_) {
-                if (isset($bag[$w])) {
-                    $score += 2;
+        foreach ($scopedKeys as $key) {
+            $assets = $manifest[$key] ?? [];
+            if (!is_array($assets)) {
+                continue;
+            }
+
+            foreach ($assets as $asset) {
+                if (!is_array($asset)) {
+                    continue;
                 }
+
+                $doc = $this->buildAssetDocument($asset);
+                if (($doc['length'] ?? 0) <= 0) {
+                    continue;
+                }
+
+                $docs[] = [
+                    'asset' => $asset,
+                    'guideline_key' => $key,
+                    'term_freq' => $doc['term_freq'],
+                    'length' => $doc['length'],
+                ];
+
+                $docCount++;
+                $totalLength += $doc['length'];
+                foreach (array_keys($doc['term_freq']) as $token) {
+                    $docFreq[$token] = ($docFreq[$token] ?? 0) + 1;
+                }
+            }
+        }
+
+        return [
+            'docs' => $docs,
+            'doc_freq' => $docFreq,
+            'doc_count' => $docCount,
+            'avg_length' => $docCount > 0 ? ($totalLength / $docCount) : 1.0,
+        ];
+    }
+
+    protected function buildAssetDocument(array $asset): array
+    {
+        $tokens = [];
+
+        $fieldWeights = [
+            'label' => 4,
+            'caption' => 5,
+            'description' => 2,
+            'kind' => 1,
+            'subtype' => 1,
+        ];
+
+        foreach ($fieldWeights as $field => $weight) {
+            $tokens = array_merge(
+                $tokens,
+                $this->buildWeightedTokenList((string) ($asset[$field] ?? ''), $weight)
+            );
+        }
+
+        $aliases = $asset['aliases'] ?? [];
+        if (is_array($aliases)) {
+            foreach ($aliases as $alias) {
+                $tokens = array_merge($tokens, $this->buildWeightedTokenList((string) $alias, 3));
             }
         }
 
         $keywords = $asset['keywords'] ?? [];
         if (is_array($keywords)) {
             foreach ($keywords as $kw) {
-                $kw = strtolower((string) $kw);
-                $kw = preg_replace('/[^a-z0-9\s]/', ' ', $kw) ?? $kw;
-                $kw = trim($kw);
-                if ($kw === '') {
-                    continue;
-                }
+                $tokens = array_merge($tokens, $this->buildWeightedTokenList((string) $kw, 6));
+            }
+        }
 
-                $kwParts = preg_split('/\s+/', $kw, -1, PREG_SPLIT_NO_EMPTY) ?: [];
-                $all = true;
-                foreach ($kwParts as $p) {
-                    if (strlen($p) < 4) {
-                        continue;
-                    }
-                    $p = rtrim($p, 's');
-                    if (!isset($bag[$p])) {
-                        $all = false;
-                        break;
-                    }
-                }
-                if ($all) {
-                    $score += 4;
+        $termFreq = [];
+        foreach ($tokens as $token) {
+            $termFreq[$token] = ($termFreq[$token] ?? 0) + 1;
+        }
+
+        return [
+            'term_freq' => $termFreq,
+            'length' => count($tokens),
+        ];
+    }
+
+    protected function buildWeightedTokenList(string $text, int $weight): array
+    {
+        $tokens = $this->tokenizeSearchText($text);
+        if ($weight <= 1 || empty($tokens)) {
+            return $tokens;
+        }
+
+        $weighted = [];
+        foreach ($tokens as $token) {
+            for ($i = 0; $i < $weight; $i++) {
+                $weighted[] = $token;
+            }
+        }
+
+        return $weighted;
+    }
+
+    protected function tokenizeSearchText(string $text): array
+    {
+        $text = strtolower($text);
+        $text = preg_replace('/[^a-z0-9\s]/', ' ', $text) ?? $text;
+        $parts = preg_split('/\s+/', $text, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $stopwords = array_flip([
+            'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'how',
+            'if', 'in', 'into', 'is', 'it', 'of', 'on', 'or', 'that', 'the', 'their',
+            'then', 'there', 'these', 'this', 'those', 'to', 'use', 'used', 'using',
+            'what', 'when', 'where', 'which', 'with', 'without', 'your',
+        ]);
+
+        $tokens = [];
+        foreach ($parts as $part) {
+            if (strlen($part) < 2 || ctype_digit($part)) {
+                continue;
+            }
+
+            $token = $part;
+            if ($token === '' || isset($stopwords[$token])) {
+                continue;
+            }
+
+            $tokens[] = $token;
+            if (
+                strlen($token) > 4
+                && str_ends_with($token, 's')
+                && !preg_match('/(ss|us|is|os)$/', $token)
+            ) {
+                $tokens[] = substr($token, 0, -1);
+            }
+
+            foreach ($this->expandClinicalToken($token) as $expandedToken) {
+                if ($expandedToken !== '' && !isset($stopwords[$expandedToken])) {
+                    $tokens[] = $expandedToken;
                 }
             }
+        }
+
+        return $tokens;
+    }
+
+    protected function expandClinicalToken(string $token): array
+    {
+        return match ($token) {
+            'ica' => ['internal', 'carotid', 'artery', 'carotid'],
+            'cea' => ['carotid', 'endarterectomy'],
+            'cas' => ['carotid', 'stenting', 'stent'],
+            'cabg' => ['coronary', 'bypass', 'grafting'],
+            'pad' => ['peripheral', 'arterial', 'disease'],
+            'clti' => ['limb', 'threatening', 'ischaemia', 'ischemia'],
+            'tap' => ['target', 'arterial', 'path'],
+            'glass' => ['global', 'limb', 'anatomic', 'staging', 'system'],
+            'bmt' => ['best', 'medical', 'therapy'],
+            'tia' => ['transient', 'ischaemic', 'ischemic', 'attack'],
+            default => [],
+        };
+    }
+
+    protected function inferQuestionIntent(string $question): array
+    {
+        $normalized = strtolower(trim($question));
+
+        return [
+            'management' => (bool) preg_match('/\b(treat|treatment|manage|management|approach|strategy|algorithm|pathway|recommend|recommended|indication|surveillance|follow\s*up|timing)\b/', $normalized),
+            'risk' => (bool) preg_match('/\b(risk|rupture|outcome|likelihood|predict|prognos|mortality)\b/', $normalized),
+            'definition' => str_starts_with($normalized, 'what is ')
+                || (bool) preg_match('/\b(define|definition|defined|classification|classify|staging|stage|grading|grade|diagram|anatomy|measurement)\b/', $normalized),
+            'procedure' => (bool) preg_match('/\b(procedure|technique|steps|perform|deployment|endarterectomy|stenting|angioplasty)\b/', $normalized),
+        ];
+    }
+
+    protected function scoreQuestionIntentFit(
+        array $asset,
+        array $questionTokens,
+        array $termFreq,
+        array $questionIntent
+    ): array {
+        $assetText = strtolower($this->assetSearchText($asset) . ' ' . ($asset['kind'] ?? '') . ' ' . ($asset['subtype'] ?? ''));
+        $kind = strtolower((string) ($asset['kind'] ?? ''));
+        $subtype = strtolower((string) ($asset['subtype'] ?? ''));
+        $contentOverlap = $this->countMeaningfulTokenOverlap($questionTokens, $termFreq);
+        $boost = $contentOverlap * 0.7;
+
+        if ($questionIntent['management']) {
+            $hasManagementSignal = $this->containsAnyPhrase($assetText, [
+                'management',
+                'algorithm',
+                'flowchart',
+                'pathway',
+                'strategy',
+                'recommend',
+            ]);
+
+            if ($subtype === 'flowchart' && $contentOverlap >= 2) {
+                $boost += 2.5;
+            }
+            if ($kind === 'figure' && $contentOverlap >= 2) {
+                $boost += 0.75;
+            }
+            if ($hasManagementSignal) {
+                $boost += $contentOverlap >= 2 ? 3.0 : ($contentOverlap === 1 ? 1.0 : 0.0);
+            }
+            if ($contentOverlap === 0) {
+                $boost -= 2.0;
+            }
+            if (
+                $kind === 'table'
+                && $this->containsAnyPhrase($assetText, ['outcome', 'trial', 'prevalence', 'predictive', 'feature', 'risk'])
+            ) {
+                $boost -= 1.5;
+            }
+            if (
+                !$hasManagementSignal
+                && $this->containsAnyPhrase($assetText, ['imaging', 'diagnostic', 'diagnosis', 'workup', 'modality', 'sensitivity', 'specificity', 'measurement'])
+            ) {
+                $boost -= 3.0;
+            }
+        }
+
+        if ($questionIntent['risk']) {
+            if ($kind === 'table') {
+                $boost += 1.0;
+            }
+            if ($this->containsAnyPhrase($assetText, ['risk', 'rupture', 'outcome', 'predictive', 'severity', 'mortality'])) {
+                $boost += 2.0;
+            }
+        }
+
+        if ($questionIntent['definition']) {
+            if (in_array($subtype, ['diagram', 'illustration'], true) && $contentOverlap >= 1) {
+                $boost += 2.0;
+            }
+            if ($this->containsAnyPhrase($assetText, ['diagram', 'classification', 'staging', 'measurement', 'anatomy', 'illustrat']) && $contentOverlap >= 1) {
+                $boost += 2.0;
+            }
+        }
+
+        if ($questionIntent['procedure']) {
+            if (in_array($subtype, ['diagram', 'illustration'], true) && $contentOverlap >= 1) {
+                $boost += 1.5;
+            }
+            if ($this->containsAnyPhrase($assetText, ['procedure', 'deployment', 'illustrat', 'technique', 'stent', 'endarterectomy', 'angioplasty']) && $contentOverlap >= 1) {
+                $boost += 2.0;
+            }
+        }
+
+        return [
+            'boost' => $boost,
+            'content_overlap' => $contentOverlap,
+        ];
+    }
+
+    protected function scaleContextReferenceScore(float $rawScore, array $questionIntent, array $intentFit): float
+    {
+        if ($rawScore <= 0.0) {
+            return 0.0;
+        }
+
+        $scaledScore = $rawScore * 0.2;
+
+        if ($questionIntent['management'] && ($intentFit['boost'] ?? 0.0) < 2.0) {
+            $scaledScore *= 0.2;
+        }
+
+        if (
+            ($questionIntent['definition'] || $questionIntent['procedure'] || $questionIntent['risk'])
+            && ($intentFit['content_overlap'] ?? 0) < 1
+        ) {
+            $scaledScore *= 0.2;
+        }
+
+        return $scaledScore;
+    }
+
+    protected function countMeaningfulTokenOverlap(array $questionTokens, array $termFreq): int
+    {
+        $count = 0;
+
+        foreach (array_values(array_unique($questionTokens)) as $token) {
+            if ($this->isIntentOnlyToken($token)) {
+                continue;
+            }
+            if (isset($termFreq[$token])) {
+                $count++;
+            }
+        }
+
+        return $count;
+    }
+
+    protected function countMeaningfulQuestionTokens(array $questionTokens): int
+    {
+        $count = 0;
+
+        foreach (array_values(array_unique($questionTokens)) as $token) {
+            if (!$this->isIntentOnlyToken($token)) {
+                $count++;
+            }
+        }
+
+        return $count;
+    }
+
+    protected function isIntentOnlyToken(string $token): bool
+    {
+        static $intentTokens = [
+            'approach',
+            'algorithm',
+            'anatomy',
+            'classify',
+            'classification',
+            'define',
+            'defined',
+            'definition',
+            'diagram',
+            'grade',
+            'grading',
+            'indication',
+            'likelihood',
+            'manage',
+            'management',
+            'measurement',
+            'mortality',
+            'outcome',
+            'pathway',
+            'predict',
+            'procedure',
+            'prognos',
+            'recommend',
+            'recommended',
+            'risk',
+            'rupture',
+            'stage',
+            'staging',
+            'steps',
+            'strategy',
+            'surveillance',
+            'technique',
+            'timing',
+            'treat',
+            'treatment',
+        ];
+
+        return in_array($token, $intentTokens, true);
+    }
+
+    protected function containsAnyPhrase(string $haystack, array $phrases): bool
+    {
+        foreach ($phrases as $phrase) {
+            if ($phrase !== '' && str_contains($haystack, $phrase)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    protected function bm25Score(
+        array $queryTokens,
+        array $termFreq,
+        int $docLength,
+        array $docFreq,
+        int $docCount,
+        float $avgLength
+    ): float {
+        if (empty($queryTokens) || empty($termFreq) || $docCount <= 0) {
+            return 0.0;
+        }
+
+        $k1 = 1.2;
+        $b = 0.75;
+        $avgLength = max(1.0, $avgLength);
+        $docLength = max(1, $docLength);
+        $score = 0.0;
+
+        foreach (array_values(array_unique($queryTokens)) as $token) {
+            $tf = (float) ($termFreq[$token] ?? 0.0);
+            if ($tf <= 0.0) {
+                continue;
+            }
+
+            $tokenDocFreq = (float) ($docFreq[$token] ?? 0.0);
+            $idf = log((($docCount - $tokenDocFreq + 0.5) / ($tokenDocFreq + 0.5)) + 1.0);
+            $norm = $k1 * (1.0 - $b + $b * ($docLength / $avgLength));
+            $score += $idf * (($tf * ($k1 + 1.0)) / ($tf + $norm));
         }
 
         return $score;
@@ -470,44 +960,6 @@ class GuidelineAssetService
         }
 
         return implode("\n", $parts);
-    }
-
-    protected function buildScopedIdfIndex(array $manifest, array $scopedKeys): array
-    {
-        $df = [];
-        $docs = 0;
-
-        foreach ($scopedKeys as $key) {
-            $assets = $manifest[$key] ?? [];
-            if (!is_array($assets)) {
-                continue;
-            }
-
-            foreach ($assets as $asset) {
-                if (!is_array($asset)) {
-                    continue;
-                }
-
-                $bag = $this->tokenBag($this->assetSearchText($asset));
-                if (empty($bag)) {
-                    continue;
-                }
-
-                $docs++;
-                foreach (array_keys($bag) as $token) {
-                    $df[$token] = ($df[$token] ?? 0) + 1;
-                }
-            }
-        }
-
-        return ['df' => $df, 'docs' => $docs];
-    }
-
-    protected function idfWeight(string $token, array $df, int $docs): float
-    {
-        $docs = max(1, $docs);
-        $tokenDf = (int) ($df[$token] ?? 0);
-        return log(($docs + 1.0) / ($tokenDf + 1.0)) + 1.0;
     }
 
     protected function directReferenceScore(array $asset, array $questionRefs): float

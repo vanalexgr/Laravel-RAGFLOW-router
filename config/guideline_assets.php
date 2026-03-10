@@ -31,8 +31,8 @@ return [
     // Max assets to attach per response (keep small so UIs don't get spammy).
     'max_assets' => (int) env('GUIDELINE_ASSET_MAX', 3),
 
-    // If a chunk does not explicitly reference "Figure X", allow a weak fallback
-    // keyword match against captions/keywords (still scoped to selected guidelines).
+    // If a chunk does not explicitly reference "Figure X", allow a local BM25-style
+    // fallback rank over captions/keywords within the selected/evidenced guidelines.
     'enable_keyword_fallback' => (bool) env('GUIDELINE_ASSET_KEYWORD_FALLBACK', true),
 
     // Optional diagnostics for fallback asset ranking.
