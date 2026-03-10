@@ -9,7 +9,7 @@ This project supports attaching the original figure/table images to tool respons
 - A JSON manifest maps guideline keys (from `config/guidelines.php`) to assets and metadata.
 - During retrieval, the tool response includes an `assets` array when relevant assets are detected.
   - Primary match: narrative chunks mention `Figure X`, `Table Y`, or `Algorithm Z`.
-  - Fallback: keyword overlap against asset `caption/keywords` (scoped to selected guidelines).
+  - Fallback: local BM25-style ranking against asset metadata (scoped to the guideline(s) that contributed evidence to the answer).
 
 Implementation:
 - Config: `config/guideline_assets.php`
