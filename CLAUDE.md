@@ -71,6 +71,10 @@ ssh -i ~/ragflownew.pem azureuser@48.211.217.69 "
 "
 ```
 The `/tmp/push_tool_content.py` script inside the container reads `vascular_expert_new.py` and writes it to the DB.
+OpenWebUI also caches the loaded tool module in memory, so DB updates are not live until the `open-webui` container is restarted:
+```bash
+ssh -i ~/ragflownew.pem azureuser@48.211.217.69 "sudo docker restart open-webui"
+```
 
 ---
 
