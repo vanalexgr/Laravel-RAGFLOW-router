@@ -69,6 +69,9 @@ class Tools:
     ATTACHMENT_PROMPT_MAX_CHARS = 1200
     ATTACHMENT_QUESTION_MAX_CHARS = 5000
     ATTACHMENT_SKIP_GENERIC_GATE_CHARS = 250
+    CASE_STATE_MAX_CONTEXT_ITEMS = 4
+    CASE_STATE_MAX_REFERENCE_ITEMS = 4
+    CASE_STATE_MAX_QUERY_CHARS = 1600
     LLM_NARRATIVE_MAX_CHARS = 1500
     LLM_NARRATIVE_MAX_CHUNKS = 4
     LLM_NARRATIVE_MAX_CHUNKS_MULTI = 8
@@ -95,6 +98,16 @@ class Tools:
         re.IGNORECASE,
     )
 
+    _FRESH_CASE_INTRO_RE = re.compile(
+        r"\b(my\s+patient|patient\s+(?:with|who|has)|pt\s+(?:with|who|has)|"
+        r"case\s+of|"
+        r"\d{1,3}\s*(?:year[- ]old|yo)\b|"
+        r"(?:male|female|man|woman)\s+with|"
+        r"presents?\s+with|presented\s+with|admitted\s+with|referred\s+with|"
+        r"was\s+found|incidentally|ασθεν|ετ[ωώ]ν)\b",
+        re.IGNORECASE,
+    )
+
     # Distinguish raw guideline-knowledge questions from case-specific consultations.
     _RAW_GUIDELINE_KNOWLEDGE_RE = re.compile(
         r"\b(what\s+is|what\s+does|define|definition|how\s+is.{0,40}defined|"
@@ -106,6 +119,52 @@ class Tools:
 
     _GENERIC_PATIENT_POPULATION_RE = re.compile(
         r"\b(in|for|among|which)\s+patients?\b|\bpatients?\s+with\b",
+        re.IGNORECASE,
+    )
+
+    _CASE_GATE_ASSISTANT_RE = re.compile(
+        r"\b(to answer this case accurately,\s*i need a few more details|"
+        r"i need a few more details)\b",
+        re.IGNORECASE,
+    )
+
+    _EXPLICIT_NEW_CASE_RE = re.compile(
+        r"\b(another|different|new|separate|next)\s+(?:patient|case)\b|"
+        r"\bfor\s+a\s+different\s+patient\b",
+        re.IGNORECASE,
+    )
+
+    _NUMBERED_ITEM_RE = re.compile(r"^\s*(\d+)[\.\)]\s+(.*\S)\s*$")
+    _ASSISTANT_GUIDELINE_RE = re.compile(r"Selecting guidelines:\s*(.+)", re.IGNORECASE)
+    _RECOMMENDATION_REF_RE = re.compile(r"\bRec(?:ommendation)?\s*\.?\s*(\d+)\b", re.IGNORECASE)
+    _FOLLOW_UP_CUE_RE = re.compile(
+        r"^(what\s+about|what\s+if|how\s+about|and|but|so|then|if|for\s+this\s+case|"
+        r"in\s+this\s+case|for\s+this\s+patient|in\s+this\s+patient)\b",
+        re.IGNORECASE,
+    )
+
+    _ANTITHROMBOTIC_DECISION_RE = re.compile(
+        r"\b(antithrombotic|anticoag(?:ulation|ulant|ulate)?|antiplatelet|"
+        r"dual\s+antiplatelet|single\s+antiplatelet|dapt|sapt|dual\s+pathway|"
+        r"aspirin|clopidogrel|ticagrelor|prasugrel|warfarin|vka|doac|"
+        r"apixaban|rivaroxaban|dabigatran|edoxaban|heparin|lmwh|fondaparinux|"
+        r"bridge|bridging|bleed(?:ing)?|haemorrhag\w*|hemorrhag\w*)\b",
+        re.IGNORECASE,
+    )
+
+    _THROMBUS_ANTITHROMBOTIC_RE = re.compile(
+        r"\b(aortic\s+mural\s+thrombus|mural\s+thrombus|aortic\s+thrombus|"
+        r"free[-\s]*floating\s+thrombus)\b",
+        re.IGNORECASE,
+    )
+
+    _CAROTID_SEVERE_STROKE_RE = re.compile(
+        r"\b(major\s+(?:ischaemic\s+|ischemic\s+)?stroke|"
+        r"disabling\s+(?:ischaemic\s+|ischemic\s+)?stroke|"
+        r"major\s+disabling\s+stroke|severe\s+stroke|large\s+infarct(?:ion)?|"
+        r"(?:modified\s+)?rankin(?:\s+scale)?|mrs\b|"
+        r"(?:hasn'?t|has\s+not|not)\s+yet\s+mobili[sz]ed|"
+        r"unable\s+to\s+mobili[sz]e|dense\s+neurological\s+deficit)\b",
         re.IGNORECASE,
     )
 
@@ -654,7 +713,8 @@ class Tools:
 
         Returns (scenario_id, [question_strings]) if gaps were found, else ('', []).
         Known scenarios use targeted follow-up questions; all other patient-case
-        consultations fall back to a generic clinical-context bundle.
+        consultations always fall back to a generic clinical-context bundle
+        before retrieval.
         """
         if not self._should_request_case_follow_up(question, history):
             return "", []
@@ -721,6 +781,495 @@ class Tools:
 
         return False
 
+    def _needs_antithrombotic_companion(self, question: str) -> bool:
+        q = (question or "").strip()
+        if not q:
+            return False
+
+        return bool(
+            self._ANTITHROMBOTIC_DECISION_RE.search(q)
+            or self._THROMBUS_ANTITHROMBOTIC_RE.search(q)
+        )
+
+    def _filter_requested_guidelines(self, guidelines: list, question: str) -> list:
+        filtered = [g for g in guidelines if g]
+        if len(filtered) <= 1:
+            return filtered
+
+        if "antithrombotic_therapy" in filtered and not self._needs_antithrombotic_companion(question):
+            filtered = [g for g in filtered if g != "antithrombotic_therapy"]
+
+        return filtered
+
+    def _message_text(self, message: dict) -> str:
+        if not isinstance(message, dict):
+            return ""
+
+        content = message.get("content")
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, str):
+                    parts.append(item.strip())
+                elif isinstance(item, dict):
+                    text = item.get("text")
+                    if isinstance(text, str) and text.strip():
+                        parts.append(text.strip())
+            return "\n".join(part for part in parts if part).strip()
+
+        return ""
+
+    def _normalize_space(self, text: str) -> str:
+        return re.sub(r"\s+", " ", (text or "").strip())
+
+    def _truncate_case_text(self, text: str, max_chars: int = CASE_STATE_MAX_QUERY_CHARS) -> str:
+        s = self._normalize_space(text)
+        if len(s) <= max_chars:
+            return s
+        return s[: max_chars - 3].rstrip() + "..."
+
+    def _message_snapshot(self, message: dict, attachment_limit: int = ATTACHMENT_HISTORY_MAX_CHARS) -> str:
+        if not isinstance(message, dict):
+            return ""
+
+        text = self._message_text(message)
+        attachment = self._extract_message_attachment_context(message, attachment_limit)
+        return self._merge_attachment_into_question(text, attachment)
+
+    def _extract_numbered_items(self, text: str) -> dict:
+        items = {}
+        for line in (text or "").splitlines():
+            match = self._NUMBERED_ITEM_RE.match(line.strip())
+            if not match:
+                continue
+            items[int(match.group(1))] = self._normalize_space(match.group(2))
+        return items
+
+    def _is_answer_only_turn(self, text: str) -> bool:
+        content = self._normalize_space(text)
+        if not content or "?" in content:
+            return False
+
+        numbered = self._extract_numbered_items(text)
+        if numbered:
+            raw_lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+            return len(numbered) >= max(1, len(raw_lines) - 1)
+
+        if len(content) > 120:
+            return False
+
+        return bool(re.fullmatch(
+            r"(yes|no|unknown|n/?a|not sure|symptomatic|asymptomatic|"
+            r"\d+(?:\.\d+)?\s*(?:%|mm|cm)?(?:\s*[a-z0-9/\-]+)?|"
+            r"[a-z0-9 ,;/()=%\-]{1,120})",
+            content,
+            re.IGNORECASE,
+        ))
+
+    def _current_case_start_index(self, messages: Optional[list]) -> int:
+        start_idx = 0
+        for idx, message in enumerate(messages or []):
+            if not isinstance(message, dict) or message.get("role") != "user":
+                continue
+            snapshot = self._message_snapshot(message)
+            if self._EXPLICIT_NEW_CASE_RE.search(snapshot) or self._looks_like_fresh_case_intro(snapshot):
+                start_idx = idx
+        return start_idx
+
+    def _extract_case_guidelines(self, messages: Optional[list], guidelines: Optional[list] = None) -> list:
+        ordered = []
+        seen = set()
+
+        for item in guidelines or []:
+            key = str(item or "").strip()
+            if key and key not in seen:
+                ordered.append(key)
+                seen.add(key)
+
+        for message in messages or []:
+            if not isinstance(message, dict) or message.get("role") != "assistant":
+                continue
+            match = self._ASSISTANT_GUIDELINE_RE.search(self._message_text(message))
+            if not match:
+                continue
+            for label in match.group(1).split(","):
+                label = self._normalize_space(label)
+                if not label:
+                    continue
+                mapped = next(
+                    (key for key, name in GUIDELINE_NAMES.items() if name.lower() == label.lower()),
+                    label,
+                )
+                if mapped not in seen:
+                    ordered.append(mapped)
+                    seen.add(mapped)
+
+        return ordered
+
+    def _extract_answered_clarifications(self, messages: Optional[list]) -> tuple[list, list]:
+        gate_index = self._last_case_gate_index(messages)
+        if gate_index < 0:
+            return [], []
+
+        gate_questions = self._extract_numbered_items(self._message_text((messages or [])[gate_index]))
+        if not gate_questions:
+            return [], []
+
+        answers = {}
+        for message in (messages or [])[gate_index + 1:]:
+            if not isinstance(message, dict) or message.get("role") != "user":
+                continue
+            for number, answer in self._extract_numbered_items(self._message_text(message)).items():
+                if answer and number not in answers:
+                    answers[number] = answer
+
+        clarified = []
+        unanswered = []
+        for number in sorted(gate_questions.keys()):
+            question = self._normalize_space(gate_questions[number].rstrip("?"))
+            answer = answers.get(number, "")
+            if answer:
+                clarified.append(f"{question}: {answer}")
+            else:
+                unanswered.append(question)
+
+        return clarified, unanswered
+
+    def _extract_previous_references(self, messages: Optional[list]) -> tuple[list, list]:
+        recommendation_refs = []
+        citation_refs = []
+        seen_recommendations = set()
+        seen_citations = set()
+
+        for message in messages or []:
+            if not isinstance(message, dict) or message.get("role") != "assistant":
+                continue
+            if self._is_case_gate_assistant_message(message):
+                continue
+
+            text = self._message_text(message)
+            if not text:
+                continue
+
+            for match in self._RECOMMENDATION_REF_RE.finditer(text):
+                ref = f"Rec {match.group(1)}"
+                if ref not in seen_recommendations:
+                    recommendation_refs.append(ref)
+                    seen_recommendations.add(ref)
+                if len(recommendation_refs) >= self.CASE_STATE_MAX_REFERENCE_ITEMS:
+                    break
+
+            for line in text.splitlines():
+                stripped = self._normalize_space(line)
+                if not re.match(r"^\[\d+\]", stripped):
+                    continue
+                if stripped not in seen_citations:
+                    citation_refs.append(self._truncate_case_text(stripped, 180))
+                    seen_citations.add(stripped)
+                if len(citation_refs) >= self.CASE_STATE_MAX_REFERENCE_ITEMS:
+                    break
+
+        return recommendation_refs, citation_refs
+
+    def _topic_from_state(self, combined_text: str, guidelines: Optional[list]) -> str:
+        ordered = self._extract_case_guidelines([], guidelines)
+        if ordered:
+            primary = ordered[0]
+            return GUIDELINE_NAMES.get(primary, primary)
+
+        anchors = sorted(self._case_anchor_terms(combined_text))
+        if anchors:
+            return ", ".join(anchors)
+        return "general vascular"
+
+    def _build_conversation_state(
+        self,
+        question: str,
+        messages: Optional[list],
+        guidelines: Optional[list],
+        attachment_context: str = "",
+    ) -> dict:
+        current_snapshot = self._merge_attachment_into_question(question, attachment_context)
+        current_norm = self._normalize_space(current_snapshot)
+        case_start = self._current_case_start_index(messages)
+        case_messages = list((messages or [])[case_start:])
+
+        user_contexts = []
+        for message in case_messages:
+            if not isinstance(message, dict) or message.get("role") != "user":
+                continue
+            snapshot = self._message_snapshot(message)
+            if snapshot:
+                user_contexts.append(snapshot)
+
+        if user_contexts and current_norm and self._normalize_space(user_contexts[-1]) == current_norm:
+            prior_user_contexts = user_contexts[:-1]
+        else:
+            prior_user_contexts = user_contexts
+
+        clarified_facts, unanswered = self._extract_answered_clarifications(case_messages)
+        recommendation_refs, citation_refs = self._extract_previous_references(case_messages)
+
+        anchor_question = ""
+        for item in prior_user_contexts:
+            if "?" in item:
+                anchor_question = self._truncate_case_text(item, 700)
+                break
+        if not anchor_question and prior_user_contexts:
+            anchor_question = self._truncate_case_text(prior_user_contexts[0], 700)
+
+        context_parts = []
+        if anchor_question:
+            context_parts.append(anchor_question)
+
+        extra_context = []
+        for item in prior_user_contexts[1:]:
+            if clarified_facts and self._is_answer_only_turn(item):
+                continue
+            cleaned = self._truncate_case_text(item, 240)
+            if cleaned and cleaned not in context_parts and cleaned not in extra_context:
+                extra_context.append(cleaned)
+            if len(extra_context) >= self.CASE_STATE_MAX_CONTEXT_ITEMS - 1:
+                break
+
+        for fact in clarified_facts:
+            if fact not in context_parts:
+                context_parts.append(fact)
+
+        for item in extra_context:
+            if item not in context_parts:
+                context_parts.append(item)
+
+        if attachment_context:
+            attachment_line = self._truncate_case_text(
+                f"Attached case document: {attachment_context.replace(chr(10), ' ')}",
+                320,
+            )
+            if attachment_line not in context_parts:
+                context_parts.append(attachment_line)
+
+        context_summary = self._truncate_case_text("; ".join(part for part in context_parts if part), 1000)
+        current_guidelines = self._extract_case_guidelines(case_messages, guidelines)
+        topic = self._topic_from_state(" ".join(prior_user_contexts + [current_snapshot]), current_guidelines)
+
+        return {
+            "current_guidelines": current_guidelines,
+            "current_topic": topic,
+            "patient_problem_context": context_summary,
+            "anchor_question": anchor_question,
+            "clarified_facts": clarified_facts,
+            "previous_recommendations": recommendation_refs[: self.CASE_STATE_MAX_REFERENCE_ITEMS],
+            "previously_cited_chunks": citation_refs[: self.CASE_STATE_MAX_REFERENCE_ITEMS],
+            "unanswered_subquestions": unanswered[: self.CASE_STATE_MAX_REFERENCE_ITEMS],
+            "prior_user_contexts": prior_user_contexts[-self.CASE_STATE_MAX_CONTEXT_ITEMS :],
+        }
+
+    def _expand_retrieval_abbreviations(self, text: str) -> str:
+        expanded = text or ""
+        replacements = [
+            (r"\bCEA\b", "carotid endarterectomy (CEA)"),
+            (r"\bCAS\b", "carotid artery stenting (CAS)"),
+            (r"\bTCAR\b", "transcarotid artery revascularisation (TCAR)"),
+            (r"\bEVAR\b", "endovascular aneurysm repair (EVAR)"),
+            (r"\bTEVAR\b", "thoracic endovascular aortic repair (TEVAR)"),
+            (r"\bDVT\b", "deep vein thrombosis (DVT)"),
+            (r"\bmRS\b", "modified Rankin score (mRS)"),
+        ]
+        for pattern, replacement in replacements:
+            expanded = re.sub(pattern, replacement, expanded)
+        return self._normalize_space(expanded)
+
+    def _rewrite_follow_up_question(self, question: str) -> str:
+        q = self._expand_retrieval_abbreviations(question)
+        if not q:
+            return ""
+
+        lower = q.lower()
+        if self._FOLLOW_UP_CUE_RE.search(q):
+            if lower.startswith("what about "):
+                return "What does ESVS recommend about " + q[11:]
+            if lower.startswith("how about "):
+                return "What does ESVS recommend about " + q[10:]
+            if lower.startswith("what if "):
+                return "If " + q[8:] + ", what does ESVS recommend?"
+
+        q = re.sub(r"\bthis case\b", "this patient", q, flags=re.IGNORECASE)
+        return q
+
+    def _should_rewrite_for_retrieval(self, question: str, state: dict, standalone: bool) -> bool:
+        if standalone:
+            return False
+
+        if self._EXPLICIT_NEW_CASE_RE.search(question or ""):
+            return False
+
+        if self._looks_like_fresh_case_intro(question or ""):
+            return False
+
+        if state.get("prior_user_contexts") or state.get("clarified_facts"):
+            return True
+
+        return False
+
+    def _prepare_retrieval_query(
+        self,
+        question: str,
+        effective_question: str,
+        state: dict,
+        standalone: bool,
+    ) -> tuple[str, list, bool]:
+        if not self._should_rewrite_for_retrieval(question, state, standalone):
+            return effective_question, [], False
+
+        context_parts = []
+        topic = self._normalize_space(state.get("current_topic") or "")
+        if topic:
+            context_parts.append(f"Topic: {topic}.")
+
+        guidelines = [
+            GUIDELINE_NAMES.get(item, item)
+            for item in (state.get("current_guidelines") or [])
+            if str(item or "").strip()
+        ]
+        if guidelines:
+            context_parts.append(f"Current guideline(s): {', '.join(guidelines)}.")
+
+        case_context = self._normalize_space(state.get("patient_problem_context") or "")
+        if case_context:
+            context_parts.append(f"Case context: {case_context}")
+
+        recommendation_refs = state.get("previous_recommendations") or []
+        if recommendation_refs and self._FOLLOW_UP_CUE_RE.search(question or ""):
+            context_parts.append(
+                "Previously discussed recommendation(s): " + ", ".join(recommendation_refs[:2]) + "."
+            )
+
+        follow_up = self._rewrite_follow_up_question(question)
+        if self._is_answer_only_turn(question):
+            clarified_facts = state.get("clarified_facts") or []
+            if clarified_facts:
+                context_parts.append("New case details from the user: " + "; ".join(clarified_facts[:4]) + ".")
+            elif follow_up:
+                context_parts.append(f"New case details from the user: {follow_up}.")
+            follow_up = "What does ESVS recommend for this clarified case?"
+
+        if follow_up:
+            context_parts.append(f"Current question: {follow_up}")
+
+        rewritten = self._truncate_case_text(" ".join(part for part in context_parts if part), self.CASE_STATE_MAX_QUERY_CHARS)
+        return rewritten or effective_question, [], True
+
+    def _is_case_gate_assistant_message(self, message: dict) -> bool:
+        if not isinstance(message, dict) or message.get("role") != "assistant":
+            return False
+
+        return bool(self._CASE_GATE_ASSISTANT_RE.search(self._message_text(message)))
+
+    def _last_case_gate_index(self, messages: Optional[list]) -> int:
+        for idx in range(len(messages or []) - 1, -1, -1):
+            msg = (messages or [])[idx]
+            if self._is_case_gate_assistant_message(msg):
+                return idx
+        return -1
+
+    def _case_anchor_terms(self, text: str) -> set[str]:
+        content = (text or "").lower()
+        if not content:
+            return set()
+
+        anchors = {
+            "carotid": r"\b(carotid|cea|cas|tcar|endarterectomy|carotid\s+stenting)\b",
+            "stroke": r"\b(stroke|tia|rankin|mrs|neurological)\b",
+            "aorta": r"\b(aorta|aortic|aaa|aneurysm|evar|tevar|f/b?evar|dissection|thoracoabdominal)\b",
+            "venous": r"\b(dvt|pe|vte|venous|brachial\s+vein|saphen|iliac\s+vein|ivc)\b",
+            "thrombus": r"\b(thrombus|thrombosis|embol|embolism)\b",
+            "graft": r"\b(graft|endograft|bypass|stump|infection|magic|patent\s+bypass)\b",
+            "limb": r"\b(clti|ali|claudication|wifi|rutherford|rest\s+pain|gangrene|ulcer|amputation)\b",
+            "renal_mesenteric": r"\b(renal|mesenteric|sma|coeliac|celiac|visceral)\b",
+            "access": r"\b(avf|fistula|dialysis|vascular\s+access)\b",
+            "trauma": r"\b(trauma|injury|penetrating|blunt|reboa)\b",
+        }
+
+        matched = set()
+        for label, pattern in anchors.items():
+            if re.search(pattern, content, re.IGNORECASE):
+                matched.add(label)
+        return matched
+
+    def _prior_gate_case_snapshot(self, messages: Optional[list], gate_index: int) -> str:
+        if gate_index < 0:
+            return ""
+
+        parts = []
+        user_count = 0
+        for idx in range(gate_index - 1, -1, -1):
+            msg = (messages or [])[idx]
+            if not isinstance(msg, dict) or msg.get("role") != "user":
+                continue
+            text = self._message_text(msg)
+            if text:
+                parts.append(text)
+            attachment = self._extract_message_attachment_context(msg, self.ATTACHMENT_HISTORY_MAX_CHARS)
+            if attachment:
+                parts.append(attachment)
+            user_count += 1
+            if user_count >= 2:
+                break
+
+        parts.reverse()
+        return "\n".join(part for part in parts if part).strip()
+
+    def _looks_like_fresh_case_intro(self, text: str) -> bool:
+        content = (text or "").strip()
+        if len(content) < 40:
+            return False
+        if not self._FRESH_CASE_INTRO_RE.search(content):
+            return False
+        return bool(self._case_anchor_terms(content))
+
+    def _should_open_case_gate(
+        self,
+        current_question: str,
+        attachment_context: str,
+        messages: Optional[list],
+    ) -> bool:
+        gate_index = self._last_case_gate_index(messages)
+        if gate_index < 0:
+            return True
+
+        current_snapshot = self._merge_attachment_into_question(current_question, attachment_context)
+        if self._EXPLICIT_NEW_CASE_RE.search(current_snapshot):
+            return True
+
+        if not self._looks_like_fresh_case_intro(current_snapshot):
+            return False
+
+        previous_snapshot = self._prior_gate_case_snapshot(messages, gate_index)
+        previous_terms = self._case_anchor_terms(previous_snapshot)
+        current_terms = self._case_anchor_terms(current_snapshot)
+
+        if not current_terms:
+            return False
+        if not previous_terms:
+            return True
+
+        return previous_terms.isdisjoint(current_terms)
+
+    def _needs_stroke_severity_scope(self, question: str, guidelines: Optional[list] = None) -> bool:
+        q = (question or "").strip()
+        if not q:
+            return False
+
+        has_carotid_context = "carotid_vertebral" in (guidelines or []) or bool(
+            re.search(r"\b(carotid|cea|cas|tcar|endarterectomy|carotid\s+stenting)\b", q, re.IGNORECASE)
+        )
+        if not has_carotid_context:
+            return False
+
+        return bool(self._CAROTID_SEVERE_STROKE_RE.search(q))
+
     def _generic_case_follow_up_questions(self, full_text: str) -> list:
         sparse_case = len(full_text.strip()) < 90 and not self._CLINICAL_DETAIL_RE.search(full_text)
 
@@ -762,17 +1311,18 @@ class Tools:
             else:
                 questions.append(prompt)
 
-        if sparse_case:
-            if covered <= 1:
-                questions.insert(
-                    1 if questions else 0,
-                    "Ask for the key case details that would change the recommendation, rather than handling the condition in the abstract.",
-                )
+        if sparse_case and covered <= 1:
+            questions.insert(
+                1 if questions else 0,
+                "Ask for the key case details that would change the recommendation, rather than handling the condition in the abstract.",
+            )
 
-        if covered >= 2:
-            return []
+        if questions:
+            return questions
 
-        return questions
+        return [
+            "Ask the single most important case-specific detail that determines the recommendation here, focusing on the management decision being judged rather than general background facts.",
+        ]
 
     def _normalize_attachment_text(self, text: str, max_chars: int) -> str:
         if not text:
@@ -1738,14 +2288,22 @@ class Tools:
         1. Read the attached document to identify the condition (e.g., AAA, carotid stenosis)
         2. Call this tool with the appropriate guideline(s)
         3. Compare the patient's management against the retrieved ESVS content
+        4. For patient-specific clinical cases, always ask for extra case context before retrieval
+           so the final retrieval query is a complete standalone scenario, even if a case
+           document has already been attached.
         
         SELECTION RULES:
         1. Match anatomical territory first (aorta, limb, cerebral, venous)
         2. Consider acuity (acute vs chronic)
         3. Add companion guidelines if question spans domains
-        4. Add antithrombotic_therapy whenever the case involves anticoagulation/antithrombotic
-           decisions: aortic mural thrombus, post-stroke antithrombotic management, bleeding
-           risk assessment, DOAC/antiplatelet selection, or bridging therapy.
+        4. Add antithrombotic_therapy ONLY when the user is actually asking about
+           anticoagulation/antithrombotic decisions: aortic mural thrombus, peri-procedural
+           antiplatelet or anticoagulant management, bleeding risk assessment,
+           DOAC/antiplatelet selection, or bridging therapy.
+           Do NOT add antithrombotic_therapy just because the case mentions stroke,
+           carotid stenosis, or another vascular condition.
+        5. If the user presents a proposed plan or clinical assertion and asks whether it is
+           correct or guideline-consistent, still call this tool. Do not answer from memory.
 
         GUIDELINE REFERENCE:
         - aortic_arch: Arch aneurysm, Zone 0-2, FET, hybrid arch
@@ -1803,11 +2361,7 @@ class Tools:
             guidelines.append(guideline_2)
         if guideline_3:
             guidelines.append(guideline_3)
-        
-        # Build human-readable guideline display
-        guideline_display = ", ".join(GUIDELINE_NAMES.get(g, g) for g in guidelines)
-        await self._emit_status(emitter, f"Selecting guidelines: {guideline_display}")
-        
+
         effective_question, history, current_attachment_context = self._prepare_consult_inputs(
             question,
             __messages__,
@@ -1815,6 +2369,12 @@ class Tools:
             __files__,
             __metadata__,
         )
+        guidelines = self._filter_requested_guidelines(guidelines, effective_question)
+
+        # Build human-readable guideline display
+        guideline_display = ", ".join(GUIDELINE_NAMES.get(g, g) for g in guidelines)
+        await self._emit_status(emitter, f"Selecting guidelines: {guideline_display}")
+
         message_file_count = sum(
             len(msg.get("files") or [])
             for msg in (__messages__ or [])
@@ -1839,18 +2399,17 @@ class Tools:
                 f"[VascularExpert] Added attachment context to question ({len(current_attachment_context)} chars)"
             )
         if has_uploaded_document:
-            print("[VascularExpert] Skipping follow-up gate because a document is attached in the thread")
+            print("[VascularExpert] Uploaded document detected; including it in the clarification gate context")
         elif has_attachment_context:
-            print("[VascularExpert] Skipping follow-up gate because substantial attachment context is available")
+            print("[VascularExpert] Substantial attachment context detected; still using clarification gate")
         
         # --- AGENTIC CONTEXT CHECK ---
-        # For patient-case consultations, collect clarifying details before hitting the
-        # backend. Raw guideline-knowledge questions skip this and retrieve directly.
+        # For patient-case consultations, always collect clarifying details before hitting
+        # the backend. Raw guideline-knowledge questions skip this and retrieve directly.
         if (
             not standalone
-            and not has_uploaded_document
-            and not has_attachment_context
             and self._should_request_case_follow_up(effective_question, history)
+            and self._should_open_case_gate(question, current_attachment_context, __messages__)
         ):
             gap_id, gap_questions = self._assess_context_gaps(effective_question, history)
             if gap_questions:
@@ -1863,6 +2422,34 @@ class Tools:
                     current_attachment_context,
                 )
 
+        conversation_state = self._build_conversation_state(
+            question,
+            __messages__,
+            guidelines,
+            current_attachment_context,
+        )
+        retrieval_question, retrieval_history, rewritten_follow_up = self._prepare_retrieval_query(
+            question,
+            effective_question,
+            conversation_state,
+            standalone,
+        )
+        guidelines = self._filter_requested_guidelines(guidelines, retrieval_question)
+
+        print(
+            "[VascularExpert] Conversation state: "
+            f"topic={conversation_state.get('current_topic')!r}, "
+            f"guidelines={conversation_state.get('current_guidelines')}, "
+            f"clarified={len(conversation_state.get('clarified_facts') or [])}, "
+            f"previous_recs={conversation_state.get('previous_recommendations')}"
+        )
+        if rewritten_follow_up:
+            await self._emit_status(emitter, "Rewriting same-case follow-up into a standalone retrieval query...")
+            print(
+                "[VascularExpert] Rewritten retrieval query: "
+                f"{self._truncate_case_text(retrieval_question, 320)}"
+            )
+
         await self._emit_status(emitter, f"Consulting {len(guidelines)} ESVS guideline(s)...")
 
         url = f"{self.valves.VASCULAR_API_BASE_URL}/api/v1/vascular-consult"
@@ -1871,8 +2458,8 @@ class Tools:
             "Content-Type": "application/json",
         }
         payload = {
-            "question": effective_question,
-            "history": history,
+            "question": retrieval_question,
+            "history": retrieval_history,
             "guidelines": guidelines  # LLM-selected guidelines (enum-constrained)
         }
 
@@ -2245,6 +2832,12 @@ class Tools:
                     llm_output += "- cardiac risk optimisation\n"
                     llm_output += "- staged repair strategies\n"
                     llm_output += "- preservation of critical branch vessels\n\n"
+
+                if self._needs_stroke_severity_scope(effective_question, effective_guidelines):
+                    llm_output += "=== STROKE SEVERITY SCOPE (CASE-SPECIFIC) ===\n"
+                    llm_output += "This case signals major/disabling stroke or severe neurological deficit.\n"
+                    llm_output += "Prefer evidence that explicitly addresses disabling or major stroke.\n"
+                    llm_output += "Do NOT apply TIA, minor-stroke, or non-disabling-stroke carotid intervention timing recommendations unless the retrieved evidence explicitly says they apply to this severity.\n\n"
 
                 llm_output += "=== CITATION RULES ===\n"
                 llm_output += "1. Use simple numbered citations [1], [2], [3] inline after each fact.\n"

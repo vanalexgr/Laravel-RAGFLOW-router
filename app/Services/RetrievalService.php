@@ -135,6 +135,16 @@ class RetrievalService
             $routingMethod = 'explicit';
         }
 
+        $selectedBeforePrune = array_keys($selectedGuidelines);
+        $selectedGuidelines = $this->pruneSelectedGuidelines($selectedGuidelines, $retrievalQuestion);
+        if (array_keys($selectedGuidelines) !== $selectedBeforePrune) {
+            $log->info('[GUIDELINE PRUNE] Removed low-relevance companion guideline(s)', [
+                'before' => $selectedBeforePrune,
+                'after' => array_keys($selectedGuidelines),
+                'question_preview' => substr($retrievalQuestion, 0, 120),
+            ]);
+        }
+
         // Apply post-routing guardrails (SVT/anticoag)
         $selectedGuidelines = $this->applyGuardrails($selectedGuidelines, $retrievalQuestion);
 
@@ -674,6 +684,22 @@ class RetrievalService
             }
         }
 
+        if (($config['carotid_disabling_stroke_enabled'] ?? true) && $this->isCarotidDisablingStrokeQuery($query, $selectedGuidelines)) {
+            $query = $this->appendUniqueTerms($query, [
+                'disabling stroke',
+                'major stroke',
+                'major disabling stroke',
+                'modified Rankin Scale',
+                'modified Rankin score 3',
+                'mRS',
+                'severe neurological deficit',
+                'defer carotid intervention',
+                'carotid intervention after disabling stroke',
+                'altered consciousness',
+                'post-operative parenchymal haemorrhage',
+            ]);
+        }
+
         if ($definitionIntent && !empty($definitionFocusConfig['enabled'])) {
             $termsKey = $channel === 'citation' ? 'citation_terms' : 'narrative_terms';
             $definitionTerms = $definitionFocusConfig[$termsKey] ?? [];
@@ -717,6 +743,18 @@ class RetrievalService
         }
 
         return $query;
+    }
+
+    protected function isCarotidDisablingStrokeQuery(string $query, array $selectedGuidelines): bool
+    {
+        $hasCarotidContext = in_array('carotid_vertebral', $selectedGuidelines, true)
+            || preg_match('/\b(carotid|cea|cas|tcar|endarterectomy|carotid\s+stenting)\b/iu', $query) === 1;
+
+        if (!$hasCarotidContext) {
+            return false;
+        }
+
+        return preg_match('/\b(major\s+(?:ischaemic\s+|ischemic\s+)?stroke|disabling\s+(?:ischaemic\s+|ischemic\s+)?stroke|major\s+disabling\s+stroke|severe\s+stroke|large\s+infarct(?:ion)?|(?:modified\s+)?rankin(?:\s+scale)?|mrs\b|(?:hasn\'?t|has\s+not|not)\s+yet\s+mobili[sz]ed|unable\s+to\s+mobili[sz]e|dense\s+neurological\s+deficit)\b/iu', $query) === 1;
     }
 
     protected function isDefinitionIntent(string $question): bool
@@ -1192,6 +1230,28 @@ class RetrievalService
             }
         }
         return $validated;
+    }
+
+    protected function pruneSelectedGuidelines(array $selectedGuidelines, string $question): array
+    {
+        if (count($selectedGuidelines) <= 1) {
+            return $selectedGuidelines;
+        }
+
+        if (isset($selectedGuidelines['antithrombotic_therapy']) && !$this->queryNeedsAntithromboticCompanion($question)) {
+            unset($selectedGuidelines['antithrombotic_therapy']);
+        }
+
+        return $selectedGuidelines;
+    }
+
+    protected function queryNeedsAntithromboticCompanion(string $question): bool
+    {
+        $directMedicationPattern = '/\b(antithrombotic|anticoag(?:ulation|ulant|ulate)?|antiplatelet|dual\s+antiplatelet|single\s+antiplatelet|dapt|sapt|dual\s+pathway|aspirin|clopidogrel|ticagrelor|prasugrel|warfarin|vka|doac|apixaban|rivaroxaban|dabigatran|edoxaban|heparin|lmwh|fondaparinux|bridge|bridging|bleed(?:ing)?|haemorrhag\w*|hemorrhag\w*)\b/iu';
+        $thrombusPattern = '/\b(aortic\s+mural\s+thrombus|mural\s+thrombus|aortic\s+thrombus|free[-\s]*floating\s+thrombus)\b/iu';
+
+        return preg_match($directMedicationPattern, $question) === 1
+            || preg_match($thrombusPattern, $question) === 1;
     }
 
     protected function selectGuidelinesByKeywordScore(string $question, int $max = 4): array

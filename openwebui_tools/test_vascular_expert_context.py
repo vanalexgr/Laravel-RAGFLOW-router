@@ -101,7 +101,7 @@ class VascularExpertContextTests(unittest.TestCase):
         scenario_id, questions = self.tools._assess_context_gaps(question, [])
 
         self.assertEqual("generic_case", scenario_id)
-        self.assertGreaterEqual(len(questions), 2)
+        self.assertGreaterEqual(len(questions), 1)
 
     def test_case_follow_up_turn_uses_history(self):
         history = ["My patient with aortic mural thrombus after stroke"]
@@ -120,13 +120,48 @@ class VascularExpertContextTests(unittest.TestCase):
         self.assertEqual("generic_case", scenario_id)
         self.assertGreaterEqual(len(questions), 2)
 
-    def test_no_dvt_does_not_trigger_dvt_follow_up(self):
+    def test_no_dvt_case_falls_back_to_generic_follow_up(self):
         question = (
             "Patient with tumor compressing the brachial vein, acute swelling, "
             "no DVT, currently on LMWH prophylaxis — what does ESVS recommend regarding anticoagulation?"
         )
 
-        self.assertEqual(("", []), self.tools._assess_context_gaps(question, []))
+        scenario_id, questions = self.tools._assess_context_gaps(question, [])
+
+        self.assertEqual("generic_case", scenario_id)
+        self.assertGreaterEqual(len(questions), 1)
+
+    def test_broad_carotid_management_question_prunes_antithrombotic_companion(self):
+        guidelines = self.tools._filter_requested_guidelines(
+            ["carotid_vertebral", "antithrombotic_therapy"],
+            "Patient following major stroke due to carotid stenosis. He hasn't yet mobilised. What is the best management?",
+        )
+
+        self.assertEqual(["carotid_vertebral"], guidelines)
+
+    def test_explicit_anticoagulation_question_keeps_antithrombotic_companion(self):
+        guidelines = self.tools._filter_requested_guidelines(
+            ["carotid_vertebral", "antithrombotic_therapy"],
+            "Stroke patient needs urgent carotid plan but also has acute proximal DVT on ultrasound. How to balance anticoagulation needs with CEA timing?",
+        )
+
+        self.assertEqual(["carotid_vertebral", "antithrombotic_therapy"], guidelines)
+
+    def test_major_stroke_carotid_case_enables_severity_scope(self):
+        self.assertTrue(
+            self.tools._needs_stroke_severity_scope(
+                "Patient following major stroke due to carotid stenosis. He hasn't yet mobilised. What is the best management?",
+                ["carotid_vertebral"],
+            )
+        )
+
+    def test_minor_stroke_carotid_case_does_not_enable_severity_scope(self):
+        self.assertFalse(
+            self.tools._needs_stroke_severity_scope(
+                "63F had TIA yesterday with symptomatic carotid stenosis 70% (NASCET) — recommended timing of CEA vs CAS?",
+                ["carotid_vertebral"],
+            )
+        )
 
     def test_context_request_instructs_model_to_synthesize_complete_case(self):
         rendered = self.tools._format_context_request(
@@ -255,7 +290,7 @@ class VascularExpertContextTests(unittest.TestCase):
         self.assertEqual([], history)
         self.assertIn("pararenal thoracoabdominal aneurysm", attachment)
 
-    def test_substantial_attachment_context_bypasses_gate(self):
+    def test_substantial_attachment_context_still_uses_gate(self):
         attachment = (
             "This patient has a long attached discharge summary with the vascular diagnosis, "
             "operative details, postoperative imaging, medications, and follow-up plan. "
@@ -273,7 +308,14 @@ class VascularExpertContextTests(unittest.TestCase):
         )
         self.assertFalse(self.tools._has_substantial_attachment_context("brief note", []))
 
-    def test_any_uploaded_document_in_thread_disables_follow_up_gate(self):
+        scenario_id, questions = self.tools._assess_context_gaps(
+            "Was this patient managed as per ESVS guidance?",
+            [f"[Attached case document]\n{attachment}"],
+        )
+        self.assertEqual("generic_case", scenario_id)
+        self.assertGreaterEqual(len(questions), 1)
+
+    def test_any_uploaded_document_in_thread_still_triggers_follow_up_gate(self):
         messages = [
             {
                 "role": "user",
@@ -293,12 +335,9 @@ class VascularExpertContextTests(unittest.TestCase):
             standalone=False,
         )
         self.assertTrue(self.tools._should_request_case_follow_up(effective_question, history))
-        self.assertFalse(
-            (not False)
-            and (not self.tools._thread_has_uploaded_document(messages))
-            and (not self.tools._has_substantial_attachment_context(attachment, history))
-            and self.tools._should_request_case_follow_up(effective_question, history)
-        )
+        scenario_id, questions = self.tools._assess_context_gaps(effective_question, history)
+        self.assertEqual("graft_infection", scenario_id)
+        self.assertGreaterEqual(len(questions), 1)
         self.assertTrue(
             self.tools._thread_has_uploaded_document(
                 [],
@@ -306,6 +345,203 @@ class VascularExpertContextTests(unittest.TestCase):
                 metadata={},
             )
         )
+
+    def test_prior_gate_same_case_does_not_reopen_gate(self):
+        messages = [
+            {
+                "role": "user",
+                "content": "Patient following major stroke due to carotid stenosis. He hasn't yet mobilised. What is the best management?",
+            },
+            {
+                "role": "assistant",
+                "content": "To answer this case accurately, I need a few more details:\n1. Was the stroke disabling?\n2. What imaging is available?",
+            },
+            {
+                "role": "user",
+                "content": "Disabling stroke, mRS 4, no CTA yet.",
+            },
+        ]
+
+        self.assertFalse(
+            self.tools._should_open_case_gate(
+                messages[-1]["content"],
+                "",
+                messages,
+            )
+        )
+
+    def test_prior_gate_new_case_reopens_gate(self):
+        messages = [
+            {
+                "role": "user",
+                "content": "Patient following major stroke due to carotid stenosis. He hasn't yet mobilised. What is the best management?",
+            },
+            {
+                "role": "assistant",
+                "content": "To answer this case accurately, I need a few more details:\n1. Was the stroke disabling?\n2. What imaging is available?",
+            },
+            {
+                "role": "user",
+                "content": "Another patient with 6.2 cm infrarenal AAA and iliac aneurysm. What does ESVS recommend?",
+            },
+        ]
+
+        self.assertTrue(
+            self.tools._should_open_case_gate(
+                messages[-1]["content"],
+                "",
+                messages,
+            )
+        )
+
+    def test_conversation_state_tracks_case_context_for_same_case_follow_up(self):
+        messages = [
+            {
+                "role": "user",
+                "content": (
+                    "For a patient who has suffered a major, disabling stroke "
+                    "(such as one preventing mobilisation, corresponding to a modified Rankin score > 3) "
+                    "what is the recommended management? Should we defer any carotid interventions "
+                    "(carotid endarterectomy or stenting) until neurological improvement has occurred?"
+                ),
+            },
+            {
+                "role": "assistant",
+                "content": (
+                    "To answer this case accurately, I need a few more details:\n"
+                    "1. Has the patient's carotid stenosis been classified as symptomatic?\n"
+                    "2. What is the degree of carotid stenosis in this case?"
+                ),
+            },
+            {
+                "role": "user",
+                "content": "1. Yes.\n2. 90%",
+            },
+            {
+                "role": "assistant",
+                "content": (
+                    "🩺 Clinical Synthesis\n"
+                    "[6] Rec 46 (Class I, Level C) — Defer carotid intervention after disabling stroke."
+                ),
+            },
+            {
+                "role": "user",
+                "content": "What is the best intervention for this case? CAS or CEA?",
+            },
+        ]
+
+        state = self.tools._build_conversation_state(
+            messages[-1]["content"],
+            messages,
+            ["carotid_vertebral"],
+        )
+
+        self.assertEqual(["carotid_vertebral"], state["current_guidelines"])
+        self.assertEqual("Carotid/Vertebral", state["current_topic"])
+        self.assertTrue(any("symptomatic" in item.lower() and "yes" in item.lower() for item in state["clarified_facts"]))
+        self.assertTrue(any("90%" in item for item in state["clarified_facts"]))
+        self.assertIn("Rec 46", state["previous_recommendations"])
+        self.assertIn("disabling stroke", state["patient_problem_context"].lower())
+
+    def test_same_case_follow_up_is_rewritten_into_standalone_retrieval_query(self):
+        messages = [
+            {
+                "role": "user",
+                "content": (
+                    "For a patient who has suffered a major, disabling stroke "
+                    "(such as one preventing mobilisation, corresponding to a modified Rankin score > 3) "
+                    "what is the recommended management? Should we defer any carotid interventions "
+                    "(carotid endarterectomy or stenting) until neurological improvement has occurred?"
+                ),
+            },
+            {
+                "role": "assistant",
+                "content": (
+                    "To answer this case accurately, I need a few more details:\n"
+                    "1. Has the patient's carotid stenosis been classified as symptomatic?\n"
+                    "2. What is the degree of carotid stenosis in this case?"
+                ),
+            },
+            {
+                "role": "user",
+                "content": "1. Yes.\n2. 90%",
+            },
+            {
+                "role": "assistant",
+                "content": (
+                    "🩺 Clinical Synthesis\n"
+                    "[6] Rec 46 (Class I, Level C) — Defer carotid intervention after disabling stroke."
+                ),
+            },
+            {
+                "role": "user",
+                "content": "What is the best intervention for this case? CAS or CEA?",
+            },
+        ]
+
+        state = self.tools._build_conversation_state(
+            messages[-1]["content"],
+            messages,
+            ["carotid_vertebral"],
+        )
+        rewritten, history, changed = self.tools._prepare_retrieval_query(
+            messages[-1]["content"],
+            messages[-1]["content"],
+            state,
+            standalone=False,
+        )
+
+        self.assertTrue(changed)
+        self.assertEqual([], history)
+        self.assertIn("Current guideline(s): Carotid/Vertebral.", rewritten)
+        self.assertIn("90%", rewritten)
+        self.assertIn("carotid artery stenting (CAS)", rewritten)
+        self.assertIn("carotid endarterectomy (CEA)", rewritten)
+        self.assertNotEqual(messages[-1]["content"], rewritten)
+
+    def test_clarification_answer_turn_is_rewritten_as_clarified_case_query(self):
+        messages = [
+            {
+                "role": "user",
+                "content": (
+                    "For a patient who has suffered a major, disabling stroke "
+                    "(such as one preventing mobilisation, corresponding to a modified Rankin score > 3) "
+                    "what is the recommended management? Should we defer any carotid interventions "
+                    "(carotid endarterectomy or stenting) until neurological improvement has occurred?"
+                ),
+            },
+            {
+                "role": "assistant",
+                "content": (
+                    "To answer this case accurately, I need a few more details:\n"
+                    "1. Has the patient's carotid stenosis been classified as symptomatic?\n"
+                    "2. What is the degree of carotid stenosis in this case?"
+                ),
+            },
+            {
+                "role": "user",
+                "content": "1. Yes.\n2. 90%",
+            },
+        ]
+
+        state = self.tools._build_conversation_state(
+            messages[-1]["content"],
+            messages,
+            ["carotid_vertebral"],
+        )
+        rewritten, history, changed = self.tools._prepare_retrieval_query(
+            messages[-1]["content"],
+            messages[-1]["content"],
+            state,
+            standalone=False,
+        )
+
+        self.assertTrue(changed)
+        self.assertEqual([], history)
+        self.assertIn("What does ESVS recommend for this clarified case?", rewritten)
+        self.assertIn("symptomatic", rewritten.lower())
+        self.assertIn("90%", rewritten)
+        self.assertNotIn("1. Yes. 2. 90%", rewritten)
 
 
 if __name__ == "__main__":
