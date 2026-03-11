@@ -1,71 +1,97 @@
 # Session Changes - 2026-03-11
 
-This document summarizes the OpenWebUI tool changes made during the March 11, 2026 session.
+This document summarizes the final code and deployment state reached during the March 11, 2026 session.
 
 ## Scope
 
-The work in this session focused on the OpenWebUI tool in
-`/Users/vga/LARAVEL/Laravel-RAGFLOW-router/openwebui_tools/vascular_expert.py`.
+The session ended with changes in both the Laravel backend and the OpenWebUI tool:
 
-Goals:
-- broaden the follow-up gate to patient-case consultations while skipping raw guideline knowledge questions
-- make clarification questions case-specific instead of generic bucket labels
-- stop repeated clarification loops for uploaded patient documents
-- ensure uploaded `.txt` and `.docx` case files are folded into the internal tool question
-
-## Behavioral Changes
-
-### 1. Patient-case gating
-
-- Raw knowledge requests such as definitions, thresholds, and population-level guideline questions now bypass the case follow-up gate.
-- Patient-specific consultations continue to use targeted context-gap rules when needed.
-- Generic case follow-up prompts were rewritten to avoid labels such as `Key severity or imaging details` and instead instruct the model to ask concrete case-specific questions.
-
-### 2. Clarification prompt hardening
-
-- Clarification mode now explicitly forbids answering the clinical question early.
-- The prompt now tells the model to rewrite follow-up questions around the anatomy, pathology, and management decision in the current case.
-- The model is instructed to synthesize a single standalone clinical scenario after the user replies.
-
-### 3. Attachment-aware routing
-
-- The tool now extracts uploaded case content from:
-  - user-message `files`
-  - top-level `__files__`
-  - `__metadata__.files`
-- Supported extraction paths now include:
-  - plain-text style files (`.txt`, `.md`, `.csv`, `.json`, `.xml`, `.html`, `.yml`)
-  - `.docx`
-- Extracted attachment text is appended to the internal question sent to the Laravel backend.
-- Prior uploaded case text is also preserved in history for follow-up turns.
-
-### 4. Uploaded-document bypass
-
-- If any document is attached anywhere in the thread, the OpenWebUI tool now skips the clarification gate and proceeds directly to retrieval.
-- This change was added because OpenWebUI already injects document chunks into the model context, and asking for details that are already in the uploaded file created repeated clarification loops.
-
-## Runtime / Deployment Note
-
-OpenWebUI caches loaded tool modules in memory. Updating the `webui.db` tool content alone is not sufficient.
-
-After pushing new tool content into the SQLite DB, the `open-webui` container must be restarted:
-
-```bash
-scp -i ~/ragflownew.pem openwebui_tools/vascular_expert.py azureuser@48.211.217.69:/tmp/vascular_expert_new.py
-ssh -i ~/ragflownew.pem azureuser@48.211.217.69 "
-  sudo docker cp /tmp/vascular_expert_new.py open-webui:/tmp/vascular_expert_new.py &&
-  sudo docker exec open-webui python3 /tmp/push_tool_content.py &&
-  sudo docker restart open-webui
-"
-```
-
-Without the restart, OpenWebUI can continue running the old in-memory tool even when the DB hash has changed.
-
-## Files Changed
-
+- `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/app/Services/RetrievalService.php`
+- `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/config/ragflow.php`
+- `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/tests/Feature/RetrievalServiceFocusTest.php`
 - `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/openwebui_tools/vascular_expert.py`
 - `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/openwebui_tools/test_vascular_expert_context.py`
 - `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/CLAUDE.md`
+
+Goals covered in this session:
+
+- make patient-case clarification behave once per case, not once per turn
+- ask follow-up questions for clinical cases while skipping raw guideline-knowledge questions
+- make clarification prompts case-specific instead of generic bucket labels
+- keep uploaded case text available to the tool while still treating uploaded clinical cases as cases
+- prevent raw short follow-ups from being sent directly to retrieval
+- improve carotid disabling-stroke retrieval quality and remove low-relevance antithrombotic companions
+
+## Final OpenWebUI Tool Behaviour
+
+### 1. Case-gate logic
+
+- Raw knowledge questions such as definitions, thresholds, and population-level guideline questions bypass the clarification gate.
+- Patient-case consultations trigger the clarification gate.
+- The clarification gate opens once per case.
+- Same-case replies do not reopen the gate.
+- A clearly different patient/case reopens the gate.
+
+### 2. Clarification prompt hardening
+
+- Clarification mode explicitly forbids answering the clinical question early.
+- The tool instructs the model to ask only case-specific questions tied to the anatomy, pathology, and decision being made.
+- The user-facing clarification prompt avoids generic labels such as `Key severity or imaging details` and `Management modifiers`.
+
+### 3. Attachment-aware case context
+
+- Uploaded case text is extracted from:
+  - user-message `files`
+  - top-level `__files__`
+  - `__metadata__.files`
+- Supported extraction paths include text-like files and `.docx`.
+- Extracted case text is merged into the internal case context used by the tool.
+- Uploaded documents no longer bypass case handling. They contribute to the case context, but the case still follows the normal “clarify once, then retrieve” workflow.
+
+### 4. Two-stage conversational retrieval
+
+This session ended with a deterministic same-case follow-up pipeline:
+
+1. Build a compact conversation state from the current case:
+   - current guideline(s)
+   - current topic
+   - patient/problem context
+   - answered clarification facts
+   - previously cited recommendation references
+   - unresolved subquestions
+2. Rewrite the latest same-case follow-up into one standalone retrieval query.
+3. Send the rewritten standalone query to Laravel.
+4. Do not forward the raw short follow-up or the raw user-history blob as retrieval input.
+
+Observed behavior after deployment:
+
+- same-case follow-up turns were sent to Laravel as standalone queries
+- `history_count` dropped to `0` on rewritten same-case follow-up retrieval calls
+- the old raw-query failure mode (`CAS or CEA?` with poor retrieval and long fallback latency) was removed
+
+## Final Laravel Backend Behaviour
+
+### 1. Guideline pruning
+
+- Laravel now prunes `antithrombotic_therapy` when it is only a low-relevance companion to a broader carotid-management question.
+- It keeps `antithrombotic_therapy` when the question explicitly asks about anticoagulation or antithrombotic decisions.
+
+### 2. Carotid disabling-stroke retrieval boost
+
+- Retrieval query boosting now adds explicit disabling-stroke terms for carotid cases that mention:
+  - major/disabling stroke
+  - mRS / modified Rankin
+  - failure to mobilise
+  - severe neurological deficit
+- This was added to improve retrieval of the deferral recommendation for severe post-stroke carotid cases.
+
+### 3. Coverage
+
+- A focused PHP test file was added to lock in:
+  - antithrombotic companion pruning
+  - explicit anticoagulation companion retention
+  - carotid disabling-stroke boost activation
+  - no false boost for TIA / minor-stroke carotid queries
 
 ## Validation
 
@@ -74,6 +100,28 @@ Local validation completed successfully:
 - `python3 -m unittest openwebui_tools.test_vascular_expert_context`
 - `python3 -m py_compile openwebui_tools/vascular_expert.py openwebui_tools/test_vascular_expert_context.py`
 
-The OpenWebUI tool content deployed on `48.211.217.69` ended this session at hash:
+Remote validation completed successfully:
 
-- `b9f53cdb82f23a03b86b6fdc992dcf9163c33756ae690e22095ceaaa5985c267`
+- `PYTHONPATH=/tmp python3 -m unittest discover -s /tmp/openwebui_tools -p "test_vascular_expert_context.py"` on `48.211.217.69`
+- `python3 -m py_compile /tmp/openwebui_tools/vascular_expert.py /tmp/openwebui_tools/test_vascular_expert_context.py` on `48.211.217.69`
+- `php artisan test` had previously passed on `135.237.148.105` after the Laravel retrieval changes were deployed
+
+## Deployment State
+
+At the end of the session, local hashes matched deployed hashes.
+
+Laravel VM (`135.237.148.105`):
+
+- `app/Services/RetrievalService.php`
+  - `cdb1aea8e63b4e7386e36e8d44c25d5214672b762de759061b5fd76581b69418`
+- `config/ragflow.php`
+  - `e3bd567f357cfb12bf5e47ae5e2bd316f7b77ccca16a555cd2255c461f8866a8`
+
+OpenWebUI VM (`48.211.217.69`):
+
+- live `webui.db` tool content (`tool.id='mcp'`)
+  - `982493678d6f45e5f57de4ef763e7999d8b4ce4459ec524013b252b7c2e3c595`
+
+## Operational Note
+
+OpenWebUI caches the loaded tool module in memory. Updating `webui.db` alone is not enough. After writing new tool content to the DB, restart the `open-webui` container so the in-memory module matches the DB-backed tool definition.
