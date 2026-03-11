@@ -10,10 +10,13 @@ import httpx
 import asyncio
 import os
 import time
+import base64
+import io
 from pydantic import BaseModel, Field
 from typing import Literal, Optional, Callable, Awaitable
 import re
 import html
+import zipfile
 
 
 # Match non-A non-B variants (commas/slashes/hyphen variants).
@@ -60,6 +63,12 @@ GUIDELINE_NAMES = {
 
 
 class Tools:
+    ATTACHMENT_MAX_BYTES = 512 * 1024
+    ATTACHMENT_MAX_FILES = 2
+    ATTACHMENT_HISTORY_MAX_CHARS = 1500
+    ATTACHMENT_PROMPT_MAX_CHARS = 1200
+    ATTACHMENT_QUESTION_MAX_CHARS = 5000
+    ATTACHMENT_SKIP_GENERIC_GATE_CHARS = 250
     LLM_NARRATIVE_MAX_CHARS = 1500
     LLM_NARRATIVE_MAX_CHUNKS = 4
     LLM_NARRATIVE_MAX_CHUNKS_MULTI = 8
@@ -74,11 +83,29 @@ class Tools:
     STRICT_TEMPLATE = True
     ALLOW_PARTIAL_MATCH_ANSWERS = str(os.getenv("ALLOW_PARTIAL_EVIDENCE_ANSWERS", "true")).lower() in ("1", "true", "yes", "y")
 
-    # Detects patient-case language (triggers context-gap checks)
-    _PATIENT_PRESENTATION_RE = re.compile(
-        r"\b(patient|case|pt\b|male|female|man|woman|year[- ]old|\byo\b|"
-        r"presents?\s+with|presented|admitted|referred|has\s+a|has\s+an|"
-        r"with\s+a|with\s+an|was\s+found|incidentally|ασθεν|ετ[ωώ]ν)\b",
+    # Detects specific patient-case language (not generic population questions).
+    _PATIENT_CASE_RE = re.compile(
+        r"\b(my\s+patient|this\s+patient|the\s+patient|"
+        r"patient\s+(?:with|who|has)|pt\s+(?:with|who|has)|"
+        r"case\s+of|this\s+case|the\s+case|"
+        r"\d{1,3}\s*(?:year[- ]old|yo)\b|"
+        r"(?:male|female|man|woman)\s+with|"
+        r"presents?\s+with|presented\s+with|admitted\s+with|referred\s+with|"
+        r"was\s+found|incidentally|ασθεν|ετ[ωώ]ν)\b",
+        re.IGNORECASE,
+    )
+
+    # Distinguish raw guideline-knowledge questions from case-specific consultations.
+    _RAW_GUIDELINE_KNOWLEDGE_RE = re.compile(
+        r"\b(what\s+is|what\s+does|define|definition|how\s+is.{0,40}defined|"
+        r"classification|criteria|index|score|staging|stage|"
+        r"threshold|cut[- ]?off|diameter\s+threshold|treatment\s+threshold|"
+        r"surveillance\s+interval|recommendation\s+\d+|rec\s+\d+)\b",
+        re.IGNORECASE,
+    )
+
+    _GENERIC_PATIENT_POPULATION_RE = re.compile(
+        r"\b(in|for|among|which)\s+patients?\b|\bpatients?\s+with\b",
         re.IGNORECASE,
     )
 
@@ -179,6 +206,13 @@ class Tools:
                 r"\bdvt\b", r"deep\s+vein\s+thrombosis",
                 r"\bpe\b.{0,20}(?:pulmonary|lung)",
                 r"\bpulmonary\s+embol", r"\bvte\b", r"venous\s+thromboembol",
+            ],
+            "exclude_if": [
+                r"\bno\s+(?:confirmed\s+)?dvt\b",
+                r"\bwithout\s+dvt\b",
+                r"\bno\s+deep\s+vein\s+thrombosis\b",
+                r"\bno\s+(?:venous\s+thromboembol(?:ism)?|vte)\b",
+                r"\bno\s+(?:pulmonary\s+embol(?:ism)?|pe)\b",
             ],
             "categories": [
                 {
@@ -619,14 +653,18 @@ class Tools:
         """Check if a patient-case question is missing key clinical parameters.
 
         Returns (scenario_id, [question_strings]) if gaps were found, else ('', []).
-        Only triggers for patient-presentation language + known underdetermined scenarios.
-        Falls back to a generic catch-all for very sparse questions (<60 chars) that
-        lack any clinical detail markers.
+        Known scenarios use targeted follow-up questions; all other patient-case
+        consultations fall back to a generic clinical-context bundle.
         """
+        if not self._should_request_case_follow_up(question, history):
+            return "", []
+
         full_text = (question + " " + " ".join(history or [])).lower()
 
         for rule in self._CONTEXT_GAP_RULES:
             if not any(re.search(p, full_text) for p in rule["detect"]):
+                continue
+            if any(re.search(p, full_text) for p in rule.get("exclude_if", [])):
                 continue
 
             absent = []
@@ -638,38 +676,519 @@ class Tools:
             if len(absent) >= rule["min_absent"]:
                 return rule["id"], absent
 
-        # Generic catch-all: patient-case language detected but question is very sparse
-        # (no specific rule matched, question is short, no clinical detail markers present)
-        if len(question.strip()) < 70 and not self._CLINICAL_DETAIL_RE.search(full_text):
-            return "generic", [
-                "**Relevant clinical parameters**: Please provide details that affect the "
-                "guideline recommendation, such as: severity/extent of the condition, "
-                "size or anatomical measurements, symptom status (symptomatic vs asymptomatic), "
-                "relevant risk factors, current anticoagulation/antiplatelet therapy, "
-                "and any prior vascular interventions or comorbidities.",
-            ]
+        # Expand follow-up collection to all patient-specific consultations, even when
+        # a specific scenario rule does not identify enough missing fields on its own.
+        generic_questions = self._generic_case_follow_up_questions(full_text)
+        if generic_questions:
+            return "generic_case", generic_questions
 
         return "", []
 
-    def _format_context_request(self, gap_questions: list) -> str:
-        """Return a tool response that asks the LLM to collect missing clinical context."""
+    def _is_raw_guideline_knowledge_query(self, question: str, history: Optional[list] = None) -> bool:
+        q = (question or "").strip()
+        if not q:
+            return False
+
+        # Specific patient cases should never be downgraded to generic knowledge.
+        if self._PATIENT_CASE_RE.search(q):
+            return False
+
+        combined = f"{q} {' '.join(history or [])}".strip()
+        intent = str(self._infer_intent_profile(question, None).get("intent") or "").strip().lower()
+
+        if self._GENERIC_PATIENT_POPULATION_RE.search(q):
+            return True
+
+        if intent in {"definition", "threshold"}:
+            return True
+
+        return bool(self._RAW_GUIDELINE_KNOWLEDGE_RE.search(combined))
+
+    def _should_request_case_follow_up(self, question: str, history: Optional[list] = None) -> bool:
+        q = (question or "").strip()
+        if not q:
+            return False
+
+        if self._is_raw_guideline_knowledge_query(question, history):
+            return False
+
+        if self._PATIENT_CASE_RE.search(q):
+            return True
+
+        for item in history or []:
+            if isinstance(item, str) and self._PATIENT_CASE_RE.search(item):
+                return True
+
+        return False
+
+    def _generic_case_follow_up_questions(self, full_text: str) -> list:
+        sparse_case = len(full_text.strip()) < 90 and not self._CLINICAL_DETAIL_RE.search(full_text)
+
+        categories = [
+            (
+                [
+                    r"\b(compression|occlusion|stenosis|aneurysm|thrombus|thrombosis|embol|dissection|infection|"
+                    r"ischemi|ischaemi|venous|arterial|aort|carotid|brachial|femoral|iliac|renal|mesenteric)\b",
+                    r"\b(acute|subacute|chronic|symptomatic|asymptomatic|swelling|pain|rest\s+pain|"
+                    r"ulcer|gangrene|stroke|tia|bleeding|fever|functional\s+limitation)\b",
+                ],
+                "Ask for the exact diagnosis or anatomical territory involved, whether this is acute or chronic, and whether the patient is symptomatic.",
+            ),
+            (
+                [
+                    r"\b(\d+\s*%|\d+(?:[\.,]\d+)?\s*(?:cm|mm)|duplex|cta|ct\b|mri|mra|ultrasound|"
+                    r"runoff|wifi|rutherford|classification|grade|extent|diameter|measurement|"
+                    r"confirmed|no\s+(?:confirmed\s+)?dvt)\b",
+                ],
+                "Ask what imaging or objective findings are available in this case, especially whether thrombosis has been confirmed or excluded and how extensive the lesion or compression is.",
+            ),
+            (
+                [
+                    r"\b(on\s+(?:lmwh|heparin|warfarin|doac|anticoagulation|antiplatelet\s+therapy)|"
+                    r"lmwh|heparin|warfarin|doac|apixaban|rivaroxaban|edoxaban|dabigatran|"
+                    r"aspirin|clopidogrel|bleeding|contraindic|"
+                    r"prior\s+(?:vte|dvt|pe|intervention|bypass|stent|surgery)|history\s+of|recurrent|"
+                    r"comorbid|renal\s+(?:failure|function|impair|insuff)|dialysis)\b",
+                ],
+                "Ask about current anticoagulation or antiplatelet therapy, major bleeding risk or contraindications, relevant comorbidities, and prior vascular or oncologic interventions that affect management.",
+            ),
+        ]
+
+        questions = []
+        covered = 0
+        for patterns, prompt in categories:
+            if any(re.search(p, full_text) for p in patterns):
+                covered += 1
+            else:
+                questions.append(prompt)
+
+        if sparse_case:
+            if covered <= 1:
+                questions.insert(
+                    1 if questions else 0,
+                    "Ask for the key case details that would change the recommendation, rather than handling the condition in the abstract.",
+                )
+
+        if covered >= 2:
+            return []
+
+        return questions
+
+    def _normalize_attachment_text(self, text: str, max_chars: int) -> str:
+        if not text:
+            return ""
+
+        cleaned = html.unescape(str(text))
+        cleaned = cleaned.replace("\r\n", "\n").replace("\r", "\n").replace("\x00", " ")
+        cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
+        cleaned = re.sub(r"\n[ \t]+", "\n", cleaned)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+        cleaned = cleaned.strip()
+        if max_chars and len(cleaned) > max_chars:
+            return cleaned[:max_chars]
+        return cleaned
+
+    def _attachment_filename(self, file_info: dict) -> str:
+        if not isinstance(file_info, dict):
+            return ""
+
+        nested = file_info.get("file")
+        if isinstance(nested, dict):
+            nested_name = self._attachment_filename(nested)
+            if nested_name:
+                return nested_name
+
+        for value in (
+            file_info.get("name"),
+            file_info.get("filename"),
+            ((file_info.get("meta") or {}).get("name") if isinstance(file_info.get("meta"), dict) else ""),
+        ):
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+        return ""
+
+    def _attachment_content_type(self, file_info: dict) -> str:
+        if not isinstance(file_info, dict):
+            return ""
+
+        nested = file_info.get("file")
+        if isinstance(nested, dict):
+            nested_type = self._attachment_content_type(nested)
+            if nested_type:
+                return nested_type
+
+        for value in (
+            file_info.get("content_type"),
+            file_info.get("mime_type"),
+            ((file_info.get("meta") or {}).get("content_type") if isinstance(file_info.get("meta"), dict) else ""),
+        ):
+            if isinstance(value, str) and value.strip():
+                return value.strip().lower()
+
+        return ""
+
+    def _extract_preprocessed_attachment_text(self, file_info: dict, max_chars: int) -> str:
+        if not isinstance(file_info, dict):
+            return ""
+
+        for key in ("extracted_content", "text", "summary"):
+            value = file_info.get(key)
+            if isinstance(value, str) and value.strip():
+                return self._normalize_attachment_text(value, max_chars)
+
+        content = file_info.get("content")
+        if isinstance(content, str) and content.strip() and "base64," not in content[:120]:
+            return self._normalize_attachment_text(content, max_chars)
+
+        nested = file_info.get("file")
+        if isinstance(nested, dict):
+            return self._extract_preprocessed_attachment_text(nested, max_chars)
+
+        return ""
+
+    def _read_attachment_bytes(self, file_info: dict) -> tuple[bytes, str, str]:
+        if not isinstance(file_info, dict):
+            return b"", "", ""
+
+        nested = file_info.get("file")
+        if isinstance(nested, dict):
+            data, filename, content_type = self._read_attachment_bytes(nested)
+            return (
+                data,
+                filename or self._attachment_filename(file_info),
+                content_type or self._attachment_content_type(file_info),
+            )
+
+        filename = self._attachment_filename(file_info)
+        content_type = self._attachment_content_type(file_info)
+
+        content = file_info.get("content")
+        if isinstance(content, bytes):
+            return content[: self.ATTACHMENT_MAX_BYTES + 1], filename, content_type
+
+        if isinstance(content, str) and content.strip() and "base64," in content[:120]:
+            try:
+                raw = base64.b64decode(content.split(",", 1)[1], validate=False)
+                return raw[: self.ATTACHMENT_MAX_BYTES + 1], filename, content_type
+            except Exception:
+                pass
+
+        data = file_info.get("data")
+        if isinstance(data, str) and data.strip():
+            try:
+                raw = base64.b64decode(data, validate=False)
+                return raw[: self.ATTACHMENT_MAX_BYTES + 1], filename, content_type
+            except Exception:
+                pass
+
+        path = file_info.get("path")
+        if isinstance(path, str) and path and os.path.exists(path):
+            try:
+                with open(path, "rb") as handle:
+                    return handle.read(self.ATTACHMENT_MAX_BYTES + 1), filename, content_type
+            except Exception:
+                return b"", filename, content_type
+
+        return b"", filename, content_type
+
+    def _decode_text_bytes(self, raw: bytes) -> str:
+        for encoding in ("utf-8", "utf-16", "latin-1"):
+            try:
+                return raw.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+        return raw.decode("utf-8", errors="ignore")
+
+    def _extract_docx_text(self, raw: bytes) -> str:
+        try:
+            with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+                xml_parts = []
+                preferred = [
+                    name
+                    for name in (
+                        "word/document.xml",
+                        "word/header1.xml",
+                        "word/header2.xml",
+                        "word/footer1.xml",
+                        "word/footer2.xml",
+                        "word/footnotes.xml",
+                        "word/endnotes.xml",
+                    )
+                    if name in archive.namelist()
+                ]
+                for name in preferred:
+                    xml = archive.read(name).decode("utf-8", errors="ignore")
+                    xml = re.sub(r"</w:p[^>]*>", "\n", xml)
+                    xml = re.sub(r"</w:tr[^>]*>", "\n", xml)
+                    xml = re.sub(r"<w:tab[^>]*/>", "\t", xml)
+                    xml = re.sub(r"<w:br[^>]*/>", "\n", xml)
+                    xml = re.sub(r"<[^>]+>", "", xml)
+                    xml_parts.append(xml)
+        except Exception:
+            return ""
+
+        return self._normalize_attachment_text("\n".join(xml_parts), self.ATTACHMENT_QUESTION_MAX_CHARS)
+
+    def _extract_attachment_text(self, file_info: dict, max_chars: int) -> str:
+        preprocessed = self._extract_preprocessed_attachment_text(file_info, max_chars)
+        if preprocessed:
+            return preprocessed
+
+        raw, filename, content_type = self._read_attachment_bytes(file_info)
+        if not raw or len(raw) > self.ATTACHMENT_MAX_BYTES:
+            return ""
+
+        ext = ""
+        if filename and "." in filename:
+            ext = filename.rsplit(".", 1)[-1].lower()
+
+        if ext == "docx" or "wordprocessingml.document" in content_type:
+            return self._normalize_attachment_text(self._extract_docx_text(raw), max_chars)
+
+        if ext in {"txt", "md", "csv", "json", "xml", "html", "htm", "yaml", "yml"}:
+            return self._normalize_attachment_text(self._decode_text_bytes(raw), max_chars)
+
+        if content_type.startswith("text/") or any(token in content_type for token in ("json", "xml", "html")):
+            return self._normalize_attachment_text(self._decode_text_bytes(raw), max_chars)
+
+        return ""
+
+    def _extract_message_attachment_context(self, message: dict, max_chars: int) -> str:
+        if not isinstance(message, dict):
+            return ""
+
+        chunks = []
+        remaining = max_chars
+
+        message_context = message.get("context")
+        if isinstance(message_context, str) and len(message_context.strip()) > 40:
+            cleaned = self._normalize_attachment_text(message_context, remaining)
+            if cleaned:
+                chunks.append(cleaned)
+                remaining -= len(cleaned)
+
+        for file_info in (message.get("files") or [])[: self.ATTACHMENT_MAX_FILES]:
+            if remaining <= 0:
+                break
+            text = self._extract_attachment_text(file_info, remaining)
+            if not text:
+                continue
+            chunks.append(text)
+            remaining -= len(text)
+
+        return "\n\n".join(chunk for chunk in chunks if chunk).strip()
+
+    def _extract_top_level_attachment_context(
+        self,
+        files: Optional[list],
+        max_chars: int,
+    ) -> str:
+        chunks = []
+        remaining = max_chars
+
+        for file_info in (files or [])[: self.ATTACHMENT_MAX_FILES]:
+            if remaining <= 0:
+                break
+            text = self._extract_attachment_text(file_info, remaining)
+            if not text:
+                continue
+            chunks.append(text)
+            remaining -= len(text)
+
+        return "\n\n".join(chunk for chunk in chunks if chunk).strip()
+
+    def _merge_attachment_into_question(self, question: str, attachment_text: str) -> str:
+        q = (question or "").strip()
+        attachment = self._normalize_attachment_text(attachment_text, self.ATTACHMENT_QUESTION_MAX_CHARS)
+        if not attachment:
+            return q
+
+        if q:
+            return f"{q}\n\nAttached case document text:\n{attachment}"
+        return f"Attached case document text:\n{attachment}"
+
+    def _prepare_consult_inputs(
+        self,
+        question: str,
+        messages: Optional[list],
+        standalone: bool,
+        files: Optional[list] = None,
+        metadata: Optional[dict] = None,
+    ) -> tuple[str, list[str], str]:
+        q = (question or "").strip()
+        if standalone or not messages:
+            top_level_files = list(files or [])
+            if isinstance(metadata, dict):
+                top_level_files.extend((metadata.get("files") or []))
+            attachment_text = self._extract_top_level_attachment_context(
+                top_level_files,
+                self.ATTACHMENT_QUESTION_MAX_CHARS,
+            )
+            return self._merge_attachment_into_question(q, attachment_text), [], attachment_text
+
+        history = []
+        current_attachment_context = ""
+        user_messages = [msg for msg in messages[-6:] if isinstance(msg, dict) and msg.get("role") == "user"]
+
+        for idx, msg in enumerate(user_messages):
+            content = msg.get("content")
+            if isinstance(content, str) and content.strip():
+                trimmed = content.strip()
+                history.append(trimmed[:500] if len(trimmed) > 500 else trimmed)
+
+            attachment_limit = self.ATTACHMENT_QUESTION_MAX_CHARS if idx == len(user_messages) - 1 else self.ATTACHMENT_HISTORY_MAX_CHARS
+            attachment_text = self._extract_message_attachment_context(msg, attachment_limit)
+            if not attachment_text:
+                continue
+
+            if idx == len(user_messages) - 1:
+                current_attachment_context = attachment_text
+            else:
+                history.append(f"[Attached case document]\n{attachment_text[: self.ATTACHMENT_HISTORY_MAX_CHARS]}")
+
+        if not current_attachment_context:
+            top_level_files = list(files or [])
+            if isinstance(metadata, dict):
+                top_level_files.extend((metadata.get("files") or []))
+            current_attachment_context = self._extract_top_level_attachment_context(
+                top_level_files,
+                self.ATTACHMENT_QUESTION_MAX_CHARS,
+            )
+
+        return self._merge_attachment_into_question(q, current_attachment_context), history, current_attachment_context
+
+    def _has_substantial_attachment_context(
+        self,
+        attachment_context: str = "",
+        history: Optional[list] = None,
+    ) -> bool:
+        attachment = self._normalize_attachment_text(
+            attachment_context,
+            self.ATTACHMENT_QUESTION_MAX_CHARS,
+        )
+        if len(attachment) >= self.ATTACHMENT_SKIP_GENERIC_GATE_CHARS:
+            return True
+
+        for item in history or []:
+            if not isinstance(item, str) or not item.startswith("[Attached case document]"):
+                continue
+            _, _, prior_attachment = item.partition("\n")
+            prior_attachment = self._normalize_attachment_text(
+                prior_attachment,
+                self.ATTACHMENT_HISTORY_MAX_CHARS,
+            )
+            if len(prior_attachment) >= self.ATTACHMENT_SKIP_GENERIC_GATE_CHARS:
+                return True
+
+        return False
+
+    def _thread_has_uploaded_document(
+        self,
+        messages: Optional[list],
+        files: Optional[list] = None,
+        metadata: Optional[dict] = None,
+    ) -> bool:
+        for msg in messages or []:
+            if not isinstance(msg, dict) or msg.get("role") != "user":
+                continue
+            for key in ("files", "attachments"):
+                items = msg.get(key) or []
+                if isinstance(items, list) and items:
+                    return True
+        if isinstance(files, list) and files:
+            return True
+        if isinstance(metadata, dict) and isinstance(metadata.get("files"), list) and metadata.get("files"):
+            return True
+        return False
+
+    def _format_context_request(
+        self,
+        gap_questions: list,
+        question: str,
+        history: Optional[list] = None,
+        scenario_id: str = "",
+        attachment_context: str = "",
+    ) -> str:
+        """Return a tool response that asks the LLM to complete the case before retrieval."""
+        context_lines = []
+        current = (question or "").strip()
+        if current:
+            context_lines.append(f"- Current user message: {current}")
+        attachment_excerpt = self._normalize_attachment_text(attachment_context, self.ATTACHMENT_PROMPT_MAX_CHARS).replace("\n", " ")
+        if attachment_excerpt:
+            context_lines.append(f"- Attached case document excerpt: {attachment_excerpt}")
+
+        history_lines = []
+        for item in reversed(history or []):
+            if not isinstance(item, str):
+                continue
+            text = item.strip()
+            if not text or text == current or text in history_lines:
+                continue
+            history_lines.append(text)
+            if len(history_lines) >= 2:
+                break
+        history_lines.reverse()
+        for item in history_lines:
+            context_lines.append(f"- Earlier case context: {item}")
+
+        reply_lines = [
+            "To answer this case accurately, I need a few more details:",
+            "",
+        ]
+        for i, _ in enumerate(gap_questions, 1):
+            reply_lines.append(f"{i}. [Rewrite topic {i} as a case-specific question tied to the known scenario.]")
+        reply_lines += [
+            "",
+            "Reply with whatever details are known, and I will combine them into one complete case summary before checking the relevant ESVS guidance.",
+        ]
+
         lines = [
             "GUIDELINE_RETRIEVAL_PAUSED — additional clinical parameters needed.",
             "",
-            "INSTRUCTION TO MODEL: Present ONLY the numbered questions below to the user, "
-            "with NO preamble about guidelines, evidence gaps, or what the guidelines do or "
-            "do not address. Do not add introductory or concluding text beyond the questions "
-            "and a brief invitation to reply.",
+            "MANDATORY MODEL BEHAVIOR:",
+            "1. Your next reply must be ONLY a clarification request for missing case details.",
+            "2. Do NOT answer the clinical question yet.",
+            "3. Do NOT say the scenario is or is not addressed by the guidelines.",
+            "4. Do NOT mention evidence gaps, retrieval, tool behavior, or the phrase 'not explicitly addressed'.",
+            "5. Use the reply template below as the user-facing message.",
+            "6. Base each question on the anatomy, pathology, and treatment decision named in the current case.",
+            "7. Rewrite each topic into a question that is specific to the initial query and known case context.",
+            "8. Use short natural questions the user can answer directly.",
+            "9. Do NOT expose generic labels or internal topic names to the user.",
+            "10. Do NOT include irrelevant examples from other vascular conditions.",
+            "11. Ask only the minimum number of questions needed to make retrieval case-specific.",
             "",
-            "Questions to ask the user:",
+        ]
+        if scenario_id:
+            lines.append(f"Detected case pattern: {scenario_id}")
+            lines.append("")
+        if context_lines:
+            lines.append("Known case context:")
+            lines.extend(context_lines)
+            lines.append("")
+        lines += [
+            "AFTER THE USER REPLIES:",
+            "1. Synthesize ONE standalone clinical scenario that merges the known case context with the new answers.",
+            "2. Then call `consult_vascular_guidelines` again using that synthesized standalone scenario, not just the user's short follow-up reply.",
+            "3. If the user answers only partially, ask only the remaining unanswered questions.",
+            "",
+            "QUESTION TOPICS TO COVER:",
             "",
         ]
         for i, q in enumerate(gap_questions, 1):
             lines.append(f"{i}. {q}")
         lines += [
             "",
-            "Once the user answers, call `consult_vascular_guidelines` again with all "
-            "details included in the question.",
+            "REPLY TEMPLATE TO SEND TO THE USER:",
+            "",
+        ]
+        lines.extend(reply_lines)
+        lines += [
+            "",
+            "END OF REQUIRED USER-FACING REPLY",
         ]
         return "\n".join(lines)
 
@@ -1183,6 +1702,8 @@ class Tools:
         standalone: bool = False,
         __user__: dict = {}, 
         __messages__: list = [],
+        __files__: list = [],
+        __metadata__: dict = {},
         __event_emitter__: Callable[[dict], Awaitable[None]] = None
     ) -> str:
         """
@@ -1287,26 +1808,60 @@ class Tools:
         guideline_display = ", ".join(GUIDELINE_NAMES.get(g, g) for g in guidelines)
         await self._emit_status(emitter, f"Selecting guidelines: {guideline_display}")
         
-        # Extract conversation history for context fusion
-        # Only include USER messages, not assistant responses (which are very long)
-        history = []
-        if not standalone and __messages__:
-            for msg in __messages__[-6:]:  # Last 6 messages to get ~3 user turns
-                role = msg.get("role", "")
-                content = msg.get("content", "")
-                if role == "user" and content and isinstance(content, str):
-                    # Truncate very long user messages (attachments, etc.)
-                    truncated = content[:500] if len(content) > 500 else content
-                    history.append(truncated)
+        effective_question, history, current_attachment_context = self._prepare_consult_inputs(
+            question,
+            __messages__,
+            standalone,
+            __files__,
+            __metadata__,
+        )
+        message_file_count = sum(
+            len(msg.get("files") or [])
+            for msg in (__messages__ or [])
+            if isinstance(msg, dict)
+        )
+        top_level_file_count = len(__files__ or [])
+        print(
+            f"[VascularExpert] Input context: messages={len(__messages__ or [])}, "
+            f"message_files={message_file_count}, top_level_files={top_level_file_count}"
+        )
+        has_uploaded_document = self._thread_has_uploaded_document(
+            __messages__,
+            __files__,
+            __metadata__,
+        )
+        has_attachment_context = self._has_substantial_attachment_context(
+            current_attachment_context,
+            history,
+        )
+        if current_attachment_context:
+            print(
+                f"[VascularExpert] Added attachment context to question ({len(current_attachment_context)} chars)"
+            )
+        if has_uploaded_document:
+            print("[VascularExpert] Skipping follow-up gate because a document is attached in the thread")
+        elif has_attachment_context:
+            print("[VascularExpert] Skipping follow-up gate because substantial attachment context is available")
         
         # --- AGENTIC CONTEXT CHECK ---
-        # For patient-case presentations that are missing key decision-making parameters,
-        # ask for clarification BEFORE hitting the backend, to avoid retrieving wrong chunks.
-        if not standalone and self._PATIENT_PRESENTATION_RE.search(question):
-            gap_id, gap_questions = self._assess_context_gaps(question, history)
+        # For patient-case consultations, collect clarifying details before hitting the
+        # backend. Raw guideline-knowledge questions skip this and retrieve directly.
+        if (
+            not standalone
+            and not has_uploaded_document
+            and not has_attachment_context
+            and self._should_request_case_follow_up(effective_question, history)
+        ):
+            gap_id, gap_questions = self._assess_context_gaps(effective_question, history)
             if gap_questions:
                 await self._emit_status(emitter, "Clarifying clinical context before retrieval...", done=True)
-                return self._format_context_request(gap_questions)
+                return self._format_context_request(
+                    gap_questions,
+                    question,
+                    history,
+                    gap_id,
+                    current_attachment_context,
+                )
 
         await self._emit_status(emitter, f"Consulting {len(guidelines)} ESVS guideline(s)...")
 
@@ -1316,7 +1871,7 @@ class Tools:
             "Content-Type": "application/json",
         }
         payload = {
-            "question": question,
+            "question": effective_question,
             "history": history,
             "guidelines": guidelines  # LLM-selected guidelines (enum-constrained)
         }
@@ -1408,7 +1963,7 @@ class Tools:
                 )
             print(f"[VascularExpert] Chunks: narrative={len(narrative_chunks)}, citation={len(citation_chunks)}")
 
-            intent_profile = self._infer_intent_profile(question, query_normalization)
+            intent_profile = self._infer_intent_profile(effective_question, query_normalization)
             print(f"[VascularExpert] Intent profile: {intent_profile}")
             citation_chunks = self._rank_chunks_by_intent(citation_chunks, "citation", intent_profile)
             narrative_chunks = self._rank_chunks_by_intent(narrative_chunks, "narrative", intent_profile)
@@ -1620,7 +2175,7 @@ class Tools:
                     f"Using {llm_total_chunks} evidence sources for answer synthesis "
                     f"(from {backend_total_chunks} retrieved chunks; {ui_total_chunks} shown in Sources).\n\n"
                 )
-                requires_decision_summary = self._requires_clinical_decision_summary(question, intent_profile)
+                requires_decision_summary = self._requires_clinical_decision_summary(effective_question, intent_profile)
 
                 if self._show_clinical_frame():
                     clinical_frame = ""
