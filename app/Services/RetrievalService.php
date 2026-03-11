@@ -302,7 +302,7 @@ class RetrievalService
                     $normalizationMeta
                 );
 
-                $hasGap = !empty($gapReport['missing']) || !empty($gapReport['missing_concepts']);
+                $hasGap = !empty($gapReport['missing']); // missing_concepts handled by applyQualityPassOnConceptGap()
                 if ($hasGap && !empty($gapReport['query_terms'])) {
                     $limits = $gapService->secondPassLimits();
                     $focusedNarrativeQuery = trim($expandedQuery . ' ' . implode(' ', $gapReport['query_terms']));
@@ -700,6 +700,24 @@ class RetrievalService
             ]);
         }
 
+        if (($config['vt_anticoag_duration_enabled'] ?? true) && $this->isAnticoagDurationQuery($query, $selectedGuidelines)) {
+            $query = $this->appendUniqueTerms($query, [
+                'duration of anticoagulation',
+                'stopping anticoagulation',
+                'discontinue anticoagulation',
+                'continue anticoagulation',
+                'anticoagulation after DVT',
+                'treatment duration',
+                'extended anticoagulation',
+                'provoked DVT anticoagulation duration',
+                'cancer-associated VTE duration',
+                'anticoagulation after recanalisation',
+                'upper extremity DVT anticoagulation duration',
+                'secondary prophylaxis',
+            ]);
+        }
+
+
         if ($definitionIntent && !empty($definitionFocusConfig['enabled'])) {
             $termsKey = $channel === 'citation' ? 'citation_terms' : 'narrative_terms';
             $definitionTerms = $definitionFocusConfig[$termsKey] ?? [];
@@ -782,6 +800,36 @@ class RetrievalService
         }
 
         return false;
+    }
+
+    protected function isAnticoagDurationQuery(string $query, array $selectedGuidelines): bool
+    {
+        $hasVenousContext = in_array('venous_thrombosis', $selectedGuidelines, true)
+            || in_array('antithrombotic_therapy', $selectedGuidelines, true);
+
+        if (!$hasVenousContext) {
+            return false;
+        }
+
+        $durationPattern = '/\b(continu|stop|discontinu|how\s+long|duration|how\s+much\s+longer|when\s+to\s+stop|when\s+to\s+discontinu|still\s+on|keep\s+on|maintain)\b.{0,80}\b(anticoag|lmwh|doac|heparin|warfarin|vka|rivaroxaban|apixaban|dabigatran|edoxaban)\b/iu';
+        $reversedPattern = '/\b(anticoag|lmwh|doac|heparin|warfarin|vka|rivaroxaban|apixaban|dabigatran|edoxaban)\b.{0,80}\b(continu|stop|discontinu|how\s+long|duration|when\s+to|still|dose|at\s+what\s+dose)\b/iu';
+        $recanalPattern = '/\b(recanaliz|recanaliz|recanalised|recanalized|reopen|patent|no\s+(?:evidence\s+of\s+)?(?:residual\s+)?thrombus|asymptomatic.{0,40}(?:month|week|later))\b/iu';
+
+        return preg_match($durationPattern, $query) === 1
+            || preg_match($reversedPattern, $query) === 1
+            || preg_match($recanalPattern, $query) === 1;
+    }
+
+    protected function isCarotidDisablingStrokeQuery(string $query, array $selectedGuidelines): bool
+    {
+        $hasCarotidContext = in_array('carotid_vertebral', $selectedGuidelines, true)
+            || preg_match('/\b(carotid|cea|cas|tcar|endarterectomy|carotid\s+stenting)\b/iu', $query) === 1;
+
+        if (!$hasCarotidContext) {
+            return false;
+        }
+
+        return preg_match('/\b(major\s+(?:ischaemic\s+|ischemic\s+)?stroke|disabling\s+(?:ischaemic\s+|ischemic\s+)?stroke|major\s+disabling\s+stroke|severe\s+stroke|large\s+infarct(?:ion)?|(?:modified\s+)?rankin(?:\s+scale)?|mrs\b|(?:hasn\'?t|has\s+not|not)\s+yet\s+mobili[sz]ed|unable\s+to\s+mobili[sz]e|dense\s+neurological\s+deficit)\b/iu', $query) === 1;
     }
 
     protected function isRecommendationIntent(string $question): bool

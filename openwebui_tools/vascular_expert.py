@@ -265,6 +265,9 @@ class Tools:
                 r"\bdvt\b", r"deep\s+vein\s+thrombosis",
                 r"\bpe\b.{0,20}(?:pulmonary|lung)",
                 r"\bpulmonary\s+embol", r"\bvte\b", r"venous\s+thromboembol",
+                r"\buedvt\b", r"upper.{0,20}extremity.{0,20}(?:dvt|thrombosis)",
+                r"\b(brachial|subclavian|axillary|cephalic|basilic|arm).{0,30}(?:vein\s+)?thrombos",
+                r"thrombos.{0,30}\b(brachial|subclavian|axillary)\s+vein",
             ],
             "exclude_if": [
                 r"\bno\s+(?:confirmed\s+)?dvt\b",
@@ -2271,6 +2274,12 @@ class Tools:
            - "What threshold does the guideline use for treatment?"
            - "Can you explain what Rec 32 means?"
            ALWAYS call this tool for such questions -- never answer from memory.
+        5. **Regeneration rule**: If you are regenerating a response for a question where
+           guideline retrieval already succeeded (the previous assistant turn contained a
+           🩺 Clinical Synthesis section), you MUST call this tool again — do not answer
+           from the prior tool result. This rule does NOT apply when the tool previously
+           returned GUIDELINE_RETRIEVAL_PAUSED; in that case, collect the missing clinical
+           parameters from the user before calling again.
 
         **DO NOT CALL THIS TOOL** for general onboarding/capability questions such as:
         - "How can you help me?"
