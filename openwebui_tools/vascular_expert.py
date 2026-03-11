@@ -74,6 +74,291 @@ class Tools:
     STRICT_TEMPLATE = True
     ALLOW_PARTIAL_MATCH_ANSWERS = str(os.getenv("ALLOW_PARTIAL_EVIDENCE_ANSWERS", "true")).lower() in ("1", "true", "yes", "y")
 
+    # Detects patient-case language (triggers context-gap checks)
+    _PATIENT_PRESENTATION_RE = re.compile(
+        r"\b(patient|case|pt\b|male|female|man|woman|year[- ]old|\byo\b|"
+        r"presents?\s+with|presented|admitted|referred|has\s+a|has\s+an|"
+        r"with\s+a|with\s+an|was\s+found|incidentally|ασθεν|ετ[ωώ]ν)\b",
+        re.IGNORECASE,
+    )
+
+    # Scenarios that commonly need extra clinical parameters for a useful guideline answer.
+    # Each category within a scenario has synonyms (any match = parameter present).
+    # If >= min_absent categories are absent from question+history, ask for clarification.
+    _CONTEXT_GAP_RULES = [
+        {
+            "id": "aortic_thrombus",
+            "detect": [
+                r"\bmural\s+thrombus\b", r"\baortic\s+thrombus\b",
+                r"\bthrombus\b.{0,60}\baort", r"\baort.{0,60}\bthrombus\b",
+            ],
+            "categories": [
+                {
+                    "present_if": [
+                        r"\banticoag", r"\bwarfarin\b", r"\bdoac\b", r"\bheparin\b",
+                        r"\bantiplatelet\b", r"\baspirin\b", r"not\s+on\b",
+                        r"no\s+(?:anticoag|treatment|therapy|medication)",
+                        r"contraindic.{0,30}anticoag",
+                    ],
+                    "question": "**Antithrombotic/anticoagulation status**: Is the patient currently on anticoagulation or antiplatelet therapy? Are there contraindications to anticoagulation (e.g., recent haemorrhagic stroke, active bleeding)?",
+                },
+                {
+                    "present_if": [
+                        r"\bmobile\b", r"\bsessile\b", r"\bpedunculated\b",
+                        r"\bprotruding\b", r"\badherent\b", r"\battached\b",
+                        r"\bfloating\b", r"\bfixed\b",
+                    ],
+                    "question": "**Thrombus morphology**: Is the thrombus mobile/pedunculated (higher embolic risk) or sessile/mural (adherent to the wall)?",
+                },
+                {
+                    "present_if": [
+                        r"\bembolic\s+source\b", r"cause\s+of\s+(?:the\s+)?stroke\b",
+                        r"\bincidental\b", r"\b(?:af|atrial\s+fibril)\b",
+                        r"\bcardiac\s+(?:source|echo|workup)\b",
+                        r"\bsource\s+(?:identified|found|excluded)\b",
+                        r"\bworkup\s+complete\b",
+                    ],
+                    "question": "**Stroke aetiology workup**: Is the aortic thrombus the presumed embolic source of the stroke, or has a cardiac source (AF, intracardiac thrombus) been evaluated or excluded?",
+                },
+            ],
+            "min_absent": 2,
+        },
+        {
+            "id": "carotid_stenosis",
+            "detect": [
+                r"\bcarotid\s+(?:artery\s+)?stenosis\b", r"\bcea\b",
+                r"\bcarotid\s+endarterectomy\b", r"\bcarotid\s+stenting\b",
+            ],
+            "categories": [
+                {
+                    "present_if": [
+                        r"\bsymptomatic\b", r"\basymptomatic\b", r"\btia\b",
+                        r"\btransient\s+ischaem\b", r"\bamaurosis\b",
+                        r"recent\s+stroke", r"neurological\s+symptom",
+                    ],
+                    "question": "**Symptomatic status**: Is this symptomatic (recent TIA, stroke, or amaurosis fugax within 6 months) or asymptomatic carotid stenosis?",
+                },
+                {
+                    "present_if": [
+                        r"\d+\s*%", r"\bpercent\b", r"\bsevere\s+stenosis\b",
+                        r"\bmoderate\b", r"\bnascet\b", r"degree\s+of\s+stenosis",
+                    ],
+                    "question": "**Stenosis degree**: What is the degree of stenosis (% by NASCET criteria)?",
+                },
+            ],
+            "min_absent": 2,
+        },
+        {
+            "id": "aaa_treatment",
+            "detect": [
+                r"\baaa\b", r"\babdominal\s+aortic\s+aneurysm\b",
+                r"aortic\s+aneurysm.{0,40}(?:infra|supra|juxta)renal",
+            ],
+            "categories": [
+                {
+                    "present_if": [
+                        r"\d[\.,]\d\s*cm\b", r"\d{2,3}\s*mm\b", r"\bdiameter\b",
+                        r"maximum\s+diameter", r"\bsize\b.{0,20}\bcm\b",
+                    ],
+                    "question": "**Aneurysm size**: What is the maximum transverse diameter (cm or mm)?",
+                },
+                {
+                    "present_if": [
+                        r"\bfit\b", r"\bunfit\b", r"\bcardiac\b", r"\bpulmonary\b",
+                        r"\brenal\s+(?:function|failure|impair)\b", r"\bcomorbid\b",
+                        r"surgical\s+risk", r"\basa\s+class\b", r"\bfitness\b",
+                    ],
+                    "question": "**Patient fitness**: Any significant comorbidities (cardiac, renal, pulmonary) affecting surgical/endovascular risk?",
+                },
+            ],
+            "min_absent": 2,
+        },
+        {
+            "id": "dvt_pe",
+            "detect": [
+                r"\bdvt\b", r"deep\s+vein\s+thrombosis",
+                r"\bpe\b.{0,20}(?:pulmonary|lung)",
+                r"\bpulmonary\s+embol", r"\bvte\b", r"venous\s+thromboembol",
+            ],
+            "categories": [
+                {
+                    "present_if": [
+                        r"\bprovoked\b", r"\bunprovoked\b", r"\bidiopathic\b",
+                        r"\bcancer\b", r"\bmalignancy\b", r"\bimmob\b",
+                        r"\btravel\b", r"surgery.{0,15}related",
+                        r"\bocp\b", r"\bcontraceptive\b",
+                        r"\bthrombophilia\b", r"\bhereditary\b",
+                    ],
+                    "question": "**Provoking factors**: Is this provoked (recent surgery, active malignancy, immobility, OCP) or unprovoked DVT/PE?",
+                },
+                {
+                    "present_if": [
+                        r"prior\s+vte", r"first\s+episode", r"recurrent",
+                        r"second\s+episode", r"history\s+of\s+(?:dvt|pe|vte)",
+                        r"previous\s+(?:dvt|pe|vte|thrombosis)",
+                    ],
+                    "question": "**Prior VTE history**: Is this a first episode or recurrent VTE?",
+                },
+            ],
+            "min_absent": 2,
+        },
+        {
+            "id": "clti",
+            "detect": [
+                r"\bclti\b", r"chronic\s+limb.{0,20}threat", r"critical\s+limb",
+                r"\brest\s+pain\b", r"\btissue\s+loss\b", r"\bgangrene\b",
+            ],
+            "categories": [
+                {
+                    "present_if": [
+                        r"\brutherford\b", r"\bwifi\b", r"\babi\b",
+                        r"ankle.{0,20}brachial", r"\bduplex\b", r"\bcta\b",
+                        r"vascular\s+anatomy", r"runoff",
+                    ],
+                    "question": "**Anatomical workup**: Is vascular anatomy known (duplex/CTA runoff)? Any available ABI or Rutherford/WIfI classification?",
+                },
+                {
+                    "present_if": [
+                        r"\bfit\b", r"\bunfit\b", r"\bdialysis\b", r"\brenal\b",
+                        r"\bcardiac\b", r"\bcomorbid\b", r"surgical\s+risk",
+                        r"life\s+expectancy", r"\bfrail\b",
+                    ],
+                    "question": "**Patient fitness and life expectancy**: Any comorbidities or frailty that influence the choice between revascularisation, minor amputation, or primary major amputation?",
+                },
+            ],
+            "min_absent": 2,
+        },
+        {
+            "id": "svt",
+            "detect": [
+                r"\bsvt\b", r"saphenous.*thrombos", r"thrombos.*saphenous",
+                r"superficial.*vein.*thrombos", r"superficial.*thrombophlebit",
+                r"\bthrombophlebit\b",
+                # Greek
+                r"σαφην.*θρόμβ", r"θρόμβ.*σαφην", r"μείζον.*σαφην",
+            ],
+            "categories": [
+                {
+                    "present_if": [
+                        r"\bcm\b", r"\bmm\b", r"\bsfj\b", r"\bspj\b",
+                        r"junction", r"saphenofemoral", r"saphenopopliteal",
+                        r"distance", r"\d+\s*cm", r"proximal", r"distal",
+                        r"extension\s+to", r"above\s+the", r"below\s+the",
+                        r"from\s+the\s+(?:sfj|spj|junction)",
+                    ],
+                    "question": "**Distance from junction**: How far is the proximal thrombus end from the saphenofemoral (or saphenopopliteal for SSV) junction? This is the primary treatment determinant (e.g., <3 cm, 3–10 cm, >10 cm).",
+                },
+                {
+                    "present_if": [
+                        r"\bcancer\b", r"\bmalignan\b", r"\boncol\b",
+                        r"\bthrombophilia\b", r"\bleiden\b", r"factor\s+v",
+                        r"antiphospholipid", r"prior\s+vte", r"previous\s+dvt",
+                        r"\bimmob\b", r"\bbilateral\b", r"extensive\s+svt",
+                        r"without\s+varicose", r"absent\s+varicose", r"no\s+varicose",
+                        r"\brecurrent\b",
+                    ],
+                    "question": "**Risk stratification**: Are high-risk features present (active cancer, prior DVT/PE, thrombophilia, absence of varicose veins, bilateral or extensive SVT)?",
+                },
+            ],
+            "min_absent": 2,
+        },
+        {
+            "id": "type_b_dissection",
+            "detect": [
+                r"type\s*b\s*(aortic\s*)?dissect",
+                r"\btbad\b",
+                r"dissect.{0,30}type\s+b",
+                r"aortic\s+dissect.{0,40}(?:descending|type\s*b)",
+            ],
+            "categories": [
+                {
+                    "present_if": [
+                        r"complicated", r"uncomplicated", r"malperfusion",
+                        r"rupture", r"expansion", r"refractory",
+                        r"organ\s+isch", r"limb\s+isch", r"visceral\s+isch",
+                        r"true\s+lumen\s+compres", r"false\s+lumen",
+                        r"\btevar\b",
+                    ],
+                    "question": "**Complicated vs uncomplicated**: Is this complicated (malperfusion, impending rupture, refractory hypertension/pain, rapid expansion) or uncomplicated type B dissection?",
+                },
+                {
+                    "present_if": [
+                        r"\bacute\b", r"\bsubacute\b", r"\bchronic\b",
+                        r"\d+\s*days?\b", r"\d+\s*weeks?\b", r"\d+\s*months?\b",
+                        r"within\s+\d+", r"onset",
+                    ],
+                    "question": "**Phase**: Is this acute (<14 days), subacute (14–90 days), or chronic (>90 days) from symptom onset?",
+                },
+            ],
+            "min_absent": 2,
+        },
+        {
+            "id": "ali",
+            "detect": [
+                r"\bali\b", r"acute\s+limb\s+isch",
+                r"acute\s+(?:arterial\s+)?isch.{0,20}(?:limb|leg|arm|extremit)",
+                r"sudden\s+(?:limb|leg|arm).{0,20}(?:pain|pale|puls)",
+            ],
+            "categories": [
+                {
+                    "present_if": [
+                        r"\brutherford\b", r"class\s+[123i]\b", r"grade\s+[123i]\b",
+                        r"\bviable\b", r"\bthreatened\b", r"\birreversible\b",
+                        r"motor\s+defic", r"sensory\s+loss", r"motor\s+loss",
+                        r"\d+\s*hours?\b", r"duration",
+                    ],
+                    "question": "**Severity**: Rutherford class (viable / marginally threatened / immediately threatened / irreversible)? Motor or sensory deficits? Duration of ischaemia (hours)?",
+                },
+                {
+                    "present_if": [
+                        r"\bemboli\b", r"\bthrombos\b", r"embolic", r"in.situ",
+                        r"graft\s+occl", r"native.*thromb", r"prior\s+(?:bypass|graft|stent)",
+                        r"known\s+pad", r"\baf\b", r"atrial\s+fibril", r"cardiac\s+source",
+                    ],
+                    "question": "**Aetiology**: Suspected thrombotic (in-situ, known PAD/prior bypass) or embolic (AF, cardiac source, no prior arterial disease)?",
+                },
+            ],
+            "min_absent": 2,
+        },
+        {
+            "id": "graft_infection",
+            "detect": [
+                r"graft\s+infect", r"endograft\s+infect", r"prosth.{0,10}infect",
+                r"infect.{0,20}(?:graft|bypass|endograft)", r"infected\s+(?:graft|bypass)",
+            ],
+            "categories": [
+                {
+                    "present_if": [
+                        r"fever", r"sepsis", r"\bcrp\b", r"wbc", r"leukocyt",
+                        r"wound\s+break", r"abscess", r"sinus\s+tract",
+                        r"fistul", r"haemorrhag", r"anastomot",
+                        r"ct\s+(?:scan|angio|imaging)", r"fdg", r"pet",
+                    ],
+                    "question": "**Clinical presentation**: Systemic signs (fever, sepsis, raised CRP/WBC)? Local signs (wound breakdown, abscess, sinus tract, anastomotic haemorrhage)? CT/PET findings?",
+                },
+                {
+                    "present_if": [
+                        r"days?", r"weeks?", r"months?", r"years?", r"early", r"late",
+                        r"time\s+(?:since|after|from)", r"post.{0,10}op",
+                        r"dacron", r"ptfe", r"polyest", r"prosth",
+                        r"aortic", r"femoral", r"bypass\s+type",
+                    ],
+                    "question": "**Prosthesis and timing**: Type of graft/bypass (aortic, peripheral, PTFE, Dacron)? Time from original implant to presentation of infection?",
+                },
+            ],
+            "min_absent": 2,
+        },
+    ]
+
+    # Clinical detail markers — presence of any of these suggests sufficient context
+    _CLINICAL_DETAIL_RE = re.compile(
+        r"\b(\d+|symptomatic|asymptomatic|acute|chronic|bilateral|unilateral|"
+        r"anticoag|aspirin|warfarin|doac|cancer|malignancy|prior|previous|"
+        r"risk|recurrent|complicated|uncomplicated|mobile|sessile|"
+        r"cm\b|mm\b|provoked|unprovoked|fit\b|unfit)\b",
+        re.IGNORECASE,
+    )
+
     def __init__(self):
         self.valves = self.Valves()
         self._last_status_text = ""
@@ -329,6 +614,64 @@ class Tools:
                     used_keys.add(key)
 
         return selected[:llm_limit]
+
+    def _assess_context_gaps(self, question: str, history: list) -> tuple:
+        """Check if a patient-case question is missing key clinical parameters.
+
+        Returns (scenario_id, [question_strings]) if gaps were found, else ('', []).
+        Only triggers for patient-presentation language + known underdetermined scenarios.
+        Falls back to a generic catch-all for very sparse questions (<60 chars) that
+        lack any clinical detail markers.
+        """
+        full_text = (question + " " + " ".join(history or [])).lower()
+
+        for rule in self._CONTEXT_GAP_RULES:
+            if not any(re.search(p, full_text) for p in rule["detect"]):
+                continue
+
+            absent = []
+            for cat in rule["categories"]:
+                present = any(re.search(p, full_text) for p in cat["present_if"])
+                if not present:
+                    absent.append(cat["question"])
+
+            if len(absent) >= rule["min_absent"]:
+                return rule["id"], absent
+
+        # Generic catch-all: patient-case language detected but question is very sparse
+        # (no specific rule matched, question is short, no clinical detail markers present)
+        if len(question.strip()) < 70 and not self._CLINICAL_DETAIL_RE.search(full_text):
+            return "generic", [
+                "**Relevant clinical parameters**: Please provide details that affect the "
+                "guideline recommendation, such as: severity/extent of the condition, "
+                "size or anatomical measurements, symptom status (symptomatic vs asymptomatic), "
+                "relevant risk factors, current anticoagulation/antiplatelet therapy, "
+                "and any prior vascular interventions or comorbidities.",
+            ]
+
+        return "", []
+
+    def _format_context_request(self, gap_questions: list) -> str:
+        """Return a tool response that asks the LLM to collect missing clinical context."""
+        lines = [
+            "GUIDELINE_RETRIEVAL_PAUSED — additional clinical parameters needed.",
+            "",
+            "INSTRUCTION TO MODEL: Present ONLY the numbered questions below to the user, "
+            "with NO preamble about guidelines, evidence gaps, or what the guidelines do or "
+            "do not address. Do not add introductory or concluding text beyond the questions "
+            "and a brief invitation to reply.",
+            "",
+            "Questions to ask the user:",
+            "",
+        ]
+        for i, q in enumerate(gap_questions, 1):
+            lines.append(f"{i}. {q}")
+        lines += [
+            "",
+            "Once the user answers, call `consult_vascular_guidelines` again with all "
+            "details included in the question.",
+        ]
+        return "\n".join(lines)
 
     def _infer_intent_profile(self, question: str, query_normalization: Optional[dict]) -> dict:
         q = (question or "").lower()
@@ -849,6 +1192,14 @@ class Tools:
         1. ANY vascular surgery question (direct or follow-up)
         2. When the user attaches a patient case/document and asks about ESVS compliance
         3. When comparing patient management against guidelines
+        4. ANY clarification or definitional follow-up about a guideline concept, threshold,
+           or recommendation -- even if phrased as a definition question, e.g.:
+           - "Can you clarify how the guidelines define asymptomatic?"
+           - "What does ESVS consider symptomatic vs asymptomatic carotid stenosis?"
+           - "Is an 8 mm thrombus treated medically or surgically per guidelines?"
+           - "What threshold does the guideline use for treatment?"
+           - "Can you explain what Rec 32 means?"
+           ALWAYS call this tool for such questions -- never answer from memory.
 
         **DO NOT CALL THIS TOOL** for general onboarding/capability questions such as:
         - "How can you help me?"
@@ -871,10 +1222,13 @@ class Tools:
         1. Match anatomical territory first (aorta, limb, cerebral, venous)
         2. Consider acuity (acute vs chronic)
         3. Add companion guidelines if question spans domains
-        
+        4. Add antithrombotic_therapy whenever the case involves anticoagulation/antithrombotic
+           decisions: aortic mural thrombus, post-stroke antithrombotic management, bleeding
+           risk assessment, DOAC/antiplatelet selection, or bridging therapy.
+
         GUIDELINE REFERENCE:
         - aortic_arch: Arch aneurysm, Zone 0-2, FET, hybrid arch
-        - descending_thoracic_aorta: Type B dissection, TEVAR, thoracic aneurysm
+        - descending_thoracic_aorta: Type B dissection, TEVAR, thoracic aneurysm, aortic mural thrombus
         - abdominal_aortic_aneurysm: AAA, EVAR, rupture, endoleaks, iliac aneurysm
         - mesenteric_renal: Mesenteric ischemia (CMI/AMI), renal artery stenosis
         - asymptomatic_pad: Claudication, PAD screening, exercise therapy
@@ -883,7 +1237,8 @@ class Tools:
         - carotid_vertebral: Stroke, TIA, carotid stenosis, CEA, CAS
         - venous_thrombosis: DVT, PE, VTE, anticoagulation
         - chronic_venous_disease: Varicose veins, venous ulcers, CEAP
-        - antithrombotic_therapy: Aspirin, DOACs, DAPT, bleeding risk
+        - antithrombotic_therapy: Aspirin, DOACs, DAPT, bleeding risk, aortic thrombus
+          anticoagulation, post-stroke antithrombotic therapy, bridging
         - vascular_trauma: Penetrating/blunt injury, REBOA
         - vascular_graft_infections: Graft/endograft infection, post-procedure fever
         - vascular_access: Dialysis AVF, steal syndrome
@@ -944,8 +1299,17 @@ class Tools:
                     truncated = content[:500] if len(content) > 500 else content
                     history.append(truncated)
         
+        # --- AGENTIC CONTEXT CHECK ---
+        # For patient-case presentations that are missing key decision-making parameters,
+        # ask for clarification BEFORE hitting the backend, to avoid retrieving wrong chunks.
+        if not standalone and self._PATIENT_PRESENTATION_RE.search(question):
+            gap_id, gap_questions = self._assess_context_gaps(question, history)
+            if gap_questions:
+                await self._emit_status(emitter, "Clarifying clinical context before retrieval...", done=True)
+                return self._format_context_request(gap_questions)
+
         await self._emit_status(emitter, f"Consulting {len(guidelines)} ESVS guideline(s)...")
-        
+
         url = f"{self.valves.VASCULAR_API_BASE_URL}/api/v1/vascular-consult"
         headers = {
             "Authorization": f"Bearer {self.valves.VASCULAR_API_KEY}",
@@ -966,7 +1330,7 @@ class Tools:
             
             await self._emit_status(emitter, "📚 Searching selected guideline set...")
             
-            async with httpx.AsyncClient(timeout=90.0) as client:
+            async with httpx.AsyncClient(timeout=120.0) as client:
                 # Start the request
                 response_task = asyncio.create_task(
                     client.post(url, json=payload, headers=headers)
@@ -1333,10 +1697,11 @@ class Tools:
                 llm_output += "3. Do NOT add a separate References section; the UI already shows a Sources list.\n"
                 llm_output += "4. Match the bracketed numbers [n] exactly to the evidence blocks above.\n"
                 llm_output += "5. If evidence spans multiple guidelines, cite at least one recommendation from each guideline used in your synthesis.\n"
+                llm_output += "6. SCOPE FILTER: Before citing a recommendation, verify it directly addresses the specific case. Exclude any recommendation that pertains to a different procedure or condition than what was asked (e.g., if the case is aortic mural thrombus, do not cite TEVAR or LSA revascularisation recommendations unless the case explicitly involves TEVAR). When no directly applicable recommendation was retrieved, state this explicitly rather than citing tangential evidence.\n"
                 if not selected_citation_chunks and selected_narrative_chunks:
-                    llm_output += "6. It is valid to answer from narrative context only and explicitly say no direct recommendation chunk was retrieved.\n"
+                    llm_output += "7. It is valid to answer from narrative context only and explicitly say no direct recommendation chunk was retrieved.\n"
                 if assets_block:
-                    next_rule_num = 7 if (not selected_citation_chunks and selected_narrative_chunks) else 6
+                    next_rule_num = 8 if (not selected_citation_chunks and selected_narrative_chunks) else 7
                     llm_output += f"{next_rule_num}. Include a final section titled exactly: 🖼️ Figures / Tables and copy ALL markdown image lines exactly from the FIGURES / TABLES block. The number of image lines must equal ASSET_COUNT_REQUIRED.\n"
 
                 if self._allow_partial_answers():
@@ -1350,6 +1715,7 @@ class Tools:
 
                 if self.STRICT_TEMPLATE:
                     llm_output += "\n=== REQUIRED STRUCTURE (STRICT) ===\n"
+                    llm_output += "IMPORTANT: Restrict every section below to evidence DIRECTLY relevant to the specific case. Do NOT include recommendations about procedures not involved in this case (e.g., if no TEVAR is planned, do not discuss LSA revascularisation during TEVAR). Acknowledge evidence gaps explicitly in 'Evidence used' rather than citing tangential recommendations.\n"
                     llm_output += "Assessment:\n"
                     llm_output += "Imaging:\n"
                     llm_output += "Indication for intervention:\n"
