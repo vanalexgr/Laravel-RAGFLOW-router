@@ -51,7 +51,7 @@ class RAGFlowClient
             'method' => $method,
             'url' => $targetUrl,
             'via_bridge' => $this->useBridge,
-            'payload' => $data,
+            'payload_keys' => array_keys($data),
         ]);
         
         $startTime = microtime(true);
