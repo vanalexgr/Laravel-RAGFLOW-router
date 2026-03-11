@@ -20,8 +20,9 @@ class ToolController extends Controller
     {
         // validate input
         $request->validate([
-            'question' => 'required|string',
-            'history' => 'nullable|array',
+            'question' => 'required|string|max:2000',
+            'history' => 'nullable|array|max:20',
+            'history.*' => 'string|max:2000',
             'guidelines' => 'nullable|array|max:3', // Encouraged but not required
             'guidelines.*' => 'string',
         ]);

@@ -467,7 +467,13 @@ PROMPT;
         if (empty($recentHistory))
             return $question;
 
-        $contextStr = implode("\n", $recentHistory);
+        // Strip control characters and truncate each history entry to prevent prompt injection
+        $sanitized = array_map(function (string $h): string {
+            $h = preg_replace('/[\x00-\x1F\x7F]/u', ' ', $h);
+            return mb_substr(trim($h), 0, 500);
+        }, $recentHistory);
+
+        $contextStr = implode("\n", $sanitized);
 
         $prompt = <<<PROMPT
 Previous User Questions:
