@@ -10,15 +10,21 @@ class ValidateApiKey
 {
     public function handle(Request $request, Closure $next): Response
     {
-        $apiKey = env('API_SECRET_KEY');
-        
+        $apiKey = config('services.api.key');
+
         if (empty($apiKey)) {
-            return $next($request);
+            return response()->json([
+                'error' => [
+                    'message' => 'API authentication is not configured on this server.',
+                    'type' => 'server_error',
+                    'code' => 'api_key_not_configured',
+                ],
+            ], 503);
         }
 
         $providedKey = $request->bearerToken() ?? $request->header('X-API-Key');
 
-        if (empty($providedKey) || $providedKey !== $apiKey) {
+        if (empty($providedKey) || !hash_equals($apiKey, $providedKey)) {
             return response()->json([
                 'error' => [
                     'message' => 'Invalid or missing API key. Use Authorization: Bearer YOUR_KEY header.',
