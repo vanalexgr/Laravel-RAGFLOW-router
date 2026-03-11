@@ -83,7 +83,9 @@ class RAGFlowClient
                 'url' => $targetUrl,
                 'status' => $response->getStatusCode(),
                 'duration_ms' => $duration,
-                'chunk_count' => isset($decoded['data']['chunks']) ? count($decoded['data']['chunks']) : null,
+                'chunk_count' => isset($decoded['data']['chunks'])
+                    ? count($decoded['data']['chunks'])
+                    : ((($decoded['narrative']['count'] ?? 0) + ($decoded['citations']['count'] ?? 0)) ?: null),
                 'code' => $decoded['code'] ?? null,
                 'message' => $decoded['message'] ?? null,
                 'retrieval_info' => $retrievalInfo,
@@ -95,7 +97,9 @@ class RAGFlowClient
                     'use_kg' => $retrievalInfo['use_kg'] ?? false,
                     'top_k' => $retrievalInfo['top_k'] ?? null,
                     'size' => $retrievalInfo['size'] ?? null,
-                    'chunk_count' => $retrievalInfo['chunk_count'] ?? 0,
+                    'chunk_count' => ($retrievalInfo['chunk_count'] ?? (($decoded['narrative']['count'] ?? 0) + ($decoded['citations']['count'] ?? 0))) ?: 0,
+                    'narrative_count' => $decoded['narrative']['count'] ?? null,
+                    'citation_count' => $decoded['citations']['count'] ?? null,
                     'top_chunks' => $retrievalInfo['top_chunks'] ?? [],
                 ]);
             }

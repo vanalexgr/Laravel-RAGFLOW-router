@@ -39,6 +39,7 @@ return [
             'non_a_non_b_enabled' => filter_var(env('RAGFLOW_NON_A_NON_B_BOOST_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
             'blue_toe_enabled' => filter_var(env('RAGFLOW_BLUE_TOE_BOOST_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
             'carotid_disabling_stroke_enabled' => filter_var(env('RAGFLOW_CAROTID_DISABLING_STROKE_BOOST_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
+            'vt_anticoag_duration_enabled' => filter_var(env('RAGFLOW_VT_ANTICOAG_DURATION_BOOST_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
         ],
         // Definition-first mode for concept/meaning questions (e.g., "what is", "define", "clinical significance").
         'definition_focus' => [
