@@ -268,6 +268,12 @@ class Tools:
                 r"\buedvt\b", r"upper.{0,20}extremity.{0,20}(?:dvt|thrombosis)",
                 r"\b(brachial|subclavian|axillary|cephalic|basilic|arm).{0,30}(?:vein\s+)?thrombos",
                 r"thrombos.{0,30}\b(brachial|subclavian|axillary)\s+vein",
+                # UEDVT without explicit thrombosis word: named vein + anticoag/treatment context
+                r"\b(brachial|subclavian|axillary|cephalic|basilic)\s+vein\b.{0,80}\b(anticoag|heparin|lmwh|doac|treat)",
+                r"\b(anticoag|heparin|lmwh|doac)\b.{0,80}\b(brachial|subclavian|axillary|cephalic|basilic)\s+vein\b",
+                # venous compression by tumor/mass
+                r"compress.{0,40}\b(brachial|subclavian|axillary|cephalic|basilic)\s+vein",
+                r"\b(brachial|subclavian|axillary|cephalic|basilic)\s+vein\b.{0,40}compress",
             ],
             "exclude_if": [
                 r"\bno\s+(?:confirmed\s+)?dvt\b",
