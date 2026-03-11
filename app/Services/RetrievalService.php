@@ -820,18 +820,6 @@ class RetrievalService
             || preg_match($recanalPattern, $query) === 1;
     }
 
-    protected function isCarotidDisablingStrokeQuery(string $query, array $selectedGuidelines): bool
-    {
-        $hasCarotidContext = in_array('carotid_vertebral', $selectedGuidelines, true)
-            || preg_match('/\b(carotid|cea|cas|tcar|endarterectomy|carotid\s+stenting)\b/iu', $query) === 1;
-
-        if (!$hasCarotidContext) {
-            return false;
-        }
-
-        return preg_match('/\b(major\s+(?:ischaemic\s+|ischemic\s+)?stroke|disabling\s+(?:ischaemic\s+|ischemic\s+)?stroke|major\s+disabling\s+stroke|severe\s+stroke|large\s+infarct(?:ion)?|(?:modified\s+)?rankin(?:\s+scale)?|mrs\b|(?:hasn\'?t|has\s+not|not)\s+yet\s+mobili[sz]ed|unable\s+to\s+mobili[sz]e|dense\s+neurological\s+deficit)\b/iu', $query) === 1;
-    }
-
     protected function isRecommendationIntent(string $question): bool
     {
         $q = mb_strtolower(trim($question));
