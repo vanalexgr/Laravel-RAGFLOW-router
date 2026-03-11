@@ -84,7 +84,9 @@ ssh -i ~/ragflownew.pem azureuser@48.211.217.69 "sudo docker restart open-webui"
 OpenWebUI (user message)
   → LLM decides to call consult_vascular_guidelines tool
   → vascular_expert.py (mcp tool in OpenWebUI)
-      ├─ [AGENTIC CHECK] _assess_context_gaps() — asks for missing params before retrieval
+      ├─ [CASE GATE] _assess_context_gaps() — asks for missing params once per case before retrieval
+      ├─ [CASE STATE] builds compact same-case state from prior user turns, answered clarifications, attachments, and cited recommendations
+      ├─ [QUERY REWRITE] rewrites same-case follow-ups into a standalone retrieval query
       ├─ POST /api/v1/vascular-consult (Laravel, 135 VM)
       │     ├─ ValidateApiKey middleware
       │     ├─ PHIScrubberService (scrub before external calls)
@@ -119,7 +121,14 @@ RAGFLOW_QUALITY_PASS_MIN_NARRATIVE=8
 ## OpenWebUI Tool: Key Behaviours
 
 ### Agentic Context Check
-Before calling the backend, `_assess_context_gaps()` checks for missing clinical parameters in patient-case presentations. If ≥ 2 key parameters are absent, the tool asks clarifying questions instead of retrieving.
+Before calling the backend, `_assess_context_gaps()` checks for missing clinical parameters in patient-case presentations.
+
+- Raw knowledge questions such as definitions, thresholds, and population-level guideline questions skip the gate.
+- Patient-case consultations trigger the gate.
+- The gate opens once per case, not once per turn.
+- Same-case follow-up replies do not reopen the gate.
+- A clearly different patient/case reopens the gate.
+- Uploaded documents contribute case context, but do not bypass patient-case handling.
 
 **Covered scenarios** (in `_CONTEXT_GAP_RULES`):
 - `aortic_thrombus` — anticoagulation status, thrombus mobility, stroke aetiology
@@ -132,7 +141,24 @@ Before calling the backend, `_assess_context_gaps()` checks for missing clinical
 - `ali` — Rutherford class + duration, thrombotic vs embolic
 - `graft_infection` — clinical signs, prosthesis type + timing
 
-**Generic catch-all**: Any patient-presentation question < 70 chars with no clinical detail markers triggers a generic parameter request.
+**Generic catch-all**: if no specific scenario rule fits, the tool still asks at least one case-specific clarification question before retrieval.
+
+### Same-Case Follow-up Retrieval
+
+Same-case follow-up turns do not go to Laravel as raw short questions.
+
+Instead, the tool:
+
+1. builds a compact conversation state
+2. rewrites the latest follow-up into one standalone retrieval query
+3. sends that rewritten query to Laravel
+4. avoids passing the raw chat-history blob as retrieval evidence
+
+This is the intended pattern for turns such as:
+
+- `What about surveillance?`
+- `What if the patient mobilises after 10 days?`
+- `What is best for this patient? CEA or CAS?`
 
 ### STRICT_TEMPLATE
 Always enabled. When `llm_total_chunks > 0`, injects structured template into `llm_output`:
@@ -143,7 +169,22 @@ Always enabled. When `llm_total_chunks > 0`, injects structured template into `l
 LLM is instructed not to cite recommendations for different procedures than the case (e.g., TEVAR recs for a mural thrombus question).
 
 ### Guideline Selection Rules
-The LLM selects guidelines at tool-call time from the docstring. Key rule: add `antithrombotic_therapy` whenever anticoagulation decisions are involved.
+The LLM selects guidelines at tool-call time from the docstring.
+
+- Add `antithrombotic_therapy` only when the user is actually asking about anticoagulation or antithrombotic decisions.
+- Do not add `antithrombotic_therapy` just because the case mentions stroke or carotid disease.
+- Laravel also prunes low-relevance `antithrombotic_therapy` companions before retrieval when a broader carotid-management question does not actually ask for anticoagulation guidance.
+
+### Carotid Disabling-Stroke Focus
+
+Laravel retrieval boosts now add explicit disabling-stroke terms for carotid cases that mention:
+
+- major/disabling stroke
+- mRS / modified Rankin
+- failure to mobilise
+- severe neurological deficit
+
+This improves retrieval of the defer-intervention recommendation in severe post-stroke carotid cases.
 
 ---
 
