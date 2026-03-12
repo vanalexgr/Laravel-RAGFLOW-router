@@ -3,7 +3,7 @@ title: Vascular Expert Tools
 author: open-webui
 author_url: https://github.com/open-webui
 funding_url: https://github.com/open-webui
-version: 2.1.8
+version: 2.1.9
 """
 
 import httpx
@@ -2353,8 +2353,41 @@ class Tools:
         await self._emit_status(emitter, "Usage guidance ready", done=True)
         return self._capabilities_response(question)
 
+    async def _normalize_query(self, question: str) -> str:
+        """
+        Translate a non-English query to English via the Laravel /normalize endpoint.
+        Returns the original question unchanged if it appears to be English (ASCII-only)
+        or if the endpoint is unavailable.
+        """
+        if not question or not re.search(r"[^\x00-\x7F]", question):
+            return question
+        try:
+            api_base = getattr(self.valves, "VASCULAR_API_BASE_URL", "").rstrip("/")
+            api_key = getattr(self.valves, "VASCULAR_API_KEY", "")
+            if not api_base or not api_key:
+                return question
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                resp = await client.post(
+                    f"{api_base}/api/v1/normalize",
+                    json={"question": question},
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    normalized = (data.get("normalized_query") or "").strip()
+                    if normalized and data.get("changed"):
+                        lang = data.get("language", "?")
+                        print(f"[VascularExpert] Pre-translated query ({lang}→en): {normalized!r}")
+                        return normalized
+        except Exception as exc:
+            print(f"[VascularExpert] Normalize endpoint unavailable (using original): {exc}")
+        return question
+
     async def consult_vascular_guidelines(
-        self, 
+        self,
         question: str,
         guideline_1: GuidelineKey,
         guideline_2: Optional[GuidelineKey] = None,
@@ -2497,7 +2530,15 @@ class Tools:
             __files__,
             __metadata__,
         )
-        guidelines = self._filter_requested_guidelines(guidelines, effective_question)
+
+        # --- PRE-TRANSLATION ---
+        # Translate non-English queries to English before gate pattern-matching and retrieval.
+        # English queries are returned unchanged (fast-path check on non-ASCII).
+        normalized_q = await self._normalize_query(effective_question)
+        if normalized_q != effective_question:
+            await self._emit_status(emitter, "Translating query to English for guideline retrieval...")
+
+        guidelines = self._filter_requested_guidelines(guidelines, normalized_q)
 
         # Build human-readable guideline display
         guideline_display = ", ".join(GUIDELINE_NAMES.get(g, g) for g in guidelines)
@@ -2534,12 +2575,13 @@ class Tools:
         # --- AGENTIC CONTEXT CHECK ---
         # For patient-case consultations, always collect clarifying details before hitting
         # the backend. Raw guideline-knowledge questions skip this and retrieve directly.
+        # Use normalized_q so non-English cases are matched by English-only regex patterns.
         if (
             not standalone
-            and self._should_request_case_follow_up(effective_question, history)
-            and self._should_open_case_gate(question, current_attachment_context, __messages__)
+            and self._should_request_case_follow_up(normalized_q, history)
+            and self._should_open_case_gate(normalized_q, current_attachment_context, __messages__)
         ):
-            gap_id, gap_questions = self._assess_context_gaps(effective_question, history)
+            gap_id, gap_questions = self._assess_context_gaps(normalized_q, history)
             if gap_questions:
                 await self._emit_status(emitter, "Clarifying clinical context before retrieval...", done=True)
                 return self._format_context_request(
@@ -2558,7 +2600,7 @@ class Tools:
         )
         retrieval_question, retrieval_history, rewritten_follow_up = self._prepare_retrieval_query(
             question,
-            effective_question,
+            normalized_q,
             conversation_state,
             standalone,
         )
