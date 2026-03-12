@@ -3,7 +3,7 @@ title: Vascular Expert Tools
 author: open-webui
 author_url: https://github.com/open-webui
 funding_url: https://github.com/open-webui
-version: 2.1.5
+version: 2.1.6
 """
 
 import httpx
@@ -124,7 +124,10 @@ class Tools:
 
     _CASE_GATE_ASSISTANT_RE = re.compile(
         r"\b(to answer this case accurately,\s*i need a few more details|"
-        r"i need a few more details)\b",
+        r"i need a few more details|"
+        r"before i (?:can\s+)?(?:retrieve|search|access|check|look up|pull)(?:\s+the)?\s+(?:relevant\s+)?(?:esvs\s+)?guidelines|"
+        r"before (?:retrieving|searching|accessing|checking)\s+(?:the\s+)?(?:relevant\s+)?(?:esvs\s+)?guidelines|"
+        r"to\s+(?:retrieve|search|access)\s+(?:the\s+)?(?:right|relevant|correct|appropriate)\s+guidelines)\b",
         re.IGNORECASE,
     )
 
@@ -1312,7 +1315,7 @@ class Tools:
                     r"\b(acute|subacute|chronic|symptomatic|asymptomatic|swelling|pain|rest\s+pain|"
                     r"ulcer|gangrene|stroke|tia|bleeding|fever|functional\s+limitation)\b",
                 ],
-                "Ask for the exact diagnosis or anatomical territory involved, whether this is acute or chronic, and whether the patient is symptomatic.",
+                "What is the exact diagnosis and anatomical territory? Is the presentation acute, subacute, or chronic, and is the patient currently symptomatic?",
             ),
             (
                 [
@@ -1320,7 +1323,7 @@ class Tools:
                     r"runoff|wifi|rutherford|classification|grade|extent|diameter|measurement|"
                     r"confirmed|no\s+(?:confirmed\s+)?dvt)\b",
                 ],
-                "Ask what imaging or objective findings are available in this case, especially whether thrombosis has been confirmed or excluded and how extensive the lesion or compression is.",
+                "What imaging has been performed and what are the key findings — lesion extent, severity, and relevant anatomy?",
             ),
             (
                 [
@@ -1330,7 +1333,7 @@ class Tools:
                     r"prior\s+(?:vte|dvt|pe|intervention|bypass|stent|surgery)|history\s+of|recurrent|"
                     r"comorbid|renal\s+(?:failure|function|impair|insuff)|dialysis)\b",
                 ],
-                "Ask about current anticoagulation or antiplatelet therapy, major bleeding risk or contraindications, relevant comorbidities, and prior vascular or oncologic interventions that affect management.",
+                "Is the patient on anticoagulation or antiplatelet therapy? Any relevant comorbidities, bleeding contraindications, or prior vascular interventions that affect the management decision?",
             ),
         ]
 
@@ -1345,14 +1348,14 @@ class Tools:
         if sparse_case and covered <= 1:
             questions.insert(
                 1 if questions else 0,
-                "Ask for the key case details that would change the recommendation, rather than handling the condition in the abstract.",
+                "What are the key case details — clinical presentation, severity, and any prior workup — that would determine the management approach?",
             )
 
         if questions:
             return questions
 
         return [
-            "Ask the single most important case-specific detail that determines the recommendation here, focusing on the management decision being judged rather than general background facts.",
+            "What is the single most important clinical detail that determines the guideline recommendation for this specific case?",
         ]
 
     def _normalize_attachment_text(self, text: str, max_chars: int) -> str:
@@ -1692,14 +1695,14 @@ class Tools:
         scenario_id: str = "",
         attachment_context: str = "",
     ) -> str:
-        """Return a tool response that asks the LLM to complete the case before retrieval."""
+        """Return a tool response that instructs the LLM to ask expert clarification questions."""
         context_lines = []
         current = (question or "").strip()
         if current:
-            context_lines.append(f"- Current user message: {current}")
+            context_lines.append(f"- Case: {current}")
         attachment_excerpt = self._normalize_attachment_text(attachment_context, self.ATTACHMENT_PROMPT_MAX_CHARS).replace("\n", " ")
         if attachment_excerpt:
-            context_lines.append(f"- Attached case document excerpt: {attachment_excerpt}")
+            context_lines.append(f"- Attached document: {attachment_excerpt}")
 
         history_lines = []
         for item in reversed(history or []):
@@ -1713,63 +1716,47 @@ class Tools:
                 break
         history_lines.reverse()
         for item in history_lines:
-            context_lines.append(f"- Earlier case context: {item}")
-
-        reply_lines = [
-            "To answer this case accurately, I need a few more details:",
-            "",
-        ]
-        for i, _ in enumerate(gap_questions, 1):
-            reply_lines.append(f"{i}. [Rewrite topic {i} as a case-specific question tied to the known scenario.]")
-        reply_lines += [
-            "",
-            "Reply with whatever details are known, and I will combine them into one complete case summary before checking the relevant ESVS guidance.",
-        ]
+            context_lines.append(f"- Earlier context: {item}")
 
         lines = [
-            "GUIDELINE_RETRIEVAL_PAUSED — additional clinical parameters needed.",
+            "GUIDELINE_RETRIEVAL_PAUSED — key clinical details missing before ESVS retrieval.",
             "",
-            "MANDATORY MODEL BEHAVIOR:",
-            "1. Your next reply must be ONLY a clarification request for missing case details.",
-            "2. Do NOT answer the clinical question yet.",
-            "3. Do NOT say the scenario is or is not addressed by the guidelines.",
-            "4. Do NOT mention evidence gaps, retrieval, tool behavior, or the phrase 'not explicitly addressed'.",
-            "5. Use the reply template below as the user-facing message.",
-            "6. Base each question on the anatomy, pathology, and treatment decision named in the current case.",
-            "7. Rewrite each topic into a question that is specific to the initial query and known case context.",
-            "8. Use short natural questions the user can answer directly.",
-            "9. Do NOT expose generic labels or internal topic names to the user.",
-            "10. Do NOT include irrelevant examples from other vascular conditions.",
-            "11. Ask only the minimum number of questions needed to make retrieval case-specific.",
+            "MANDATORY BEHAVIOR (no exceptions):",
+            "1. Your entire reply to the user must be a focused clinical clarification — nothing else.",
+            "2. Do NOT answer the question or offer any guideline recommendation yet.",
+            "3. Do NOT say the scenario is or is not addressed by guidelines.",
+            "4. Do NOT mention evidence gaps or tool internals.",
+            "5. Begin with a single-sentence opener stating you need to clarify a couple of details",
+            "   before you can retrieve the ESVS guidelines — for example:",
+            "   'Before I retrieve the relevant ESVS guidelines, I need to clarify a couple of things about this case.'",
+            "   or: 'Before I can search the ESVS guidelines, a few clinical details will help me find the right evidence.'",
+            "6. Then ask the clinical questions. Act as a vascular surgery consultant asking a colleague",
+            "   for the key missing facts — use direct, natural language tailored to this specific case.",
+            "7. Tailor every question to the anatomy, pathology, and management decision presented.",
+            "8. Ask only what genuinely changes the guideline recommendation — typically 2–3 questions.",
+            "9. Use plain conversational phrasing; avoid stiff bullet headers like '**Topic**:'.",
             "",
         ]
-        if scenario_id:
-            lines.append(f"Detected case pattern: {scenario_id}")
-            lines.append("")
         if context_lines:
-            lines.append("Known case context:")
+            lines.append("KNOWN CASE CONTEXT:")
             lines.extend(context_lines)
             lines.append("")
         lines += [
-            "AFTER THE USER REPLIES:",
-            "1. Synthesize ONE standalone clinical scenario that merges the known case context with the new answers.",
-            "2. Then call `consult_vascular_guidelines` again using that synthesized standalone scenario, not just the user's short follow-up reply.",
-            "3. If the user answers only partially, ask only the remaining unanswered questions.",
-            "",
-            "QUESTION TOPICS TO COVER:",
+            "CLINICAL GAPS TO ADDRESS:",
+            "The following expert-identified questions need to be answered before retrieval.",
+            "Adapt the wording to this specific case — do not copy them verbatim as generic questions:",
             "",
         ]
         for i, q in enumerate(gap_questions, 1):
             lines.append(f"{i}. {q}")
         lines += [
             "",
-            "REPLY TEMPLATE TO SEND TO THE USER:",
+            "AFTER THE USER REPLIES:",
+            "1. Merge ALL known context with the new answers into one complete standalone clinical scenario.",
+            "2. Call `consult_vascular_guidelines` with that synthesized scenario — not just the user's short reply.",
+            "3. If the user answers only partially, ask only the remaining unanswered questions first.",
             "",
-        ]
-        lines.extend(reply_lines)
-        lines += [
-            "",
-            "END OF REQUIRED USER-FACING REPLY",
+            "END",
         ]
         return "\n".join(lines)
 
