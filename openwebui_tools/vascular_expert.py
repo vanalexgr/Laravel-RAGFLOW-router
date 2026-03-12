@@ -3,7 +3,7 @@ title: Vascular Expert Tools
 author: open-webui
 author_url: https://github.com/open-webui
 funding_url: https://github.com/open-webui
-version: 2.1.9
+version: 2.1.10
 """
 
 import httpx
@@ -2353,13 +2353,22 @@ class Tools:
         await self._emit_status(emitter, "Usage guidance ready", done=True)
         return self._capabilities_response(question)
 
-    async def _normalize_query(self, question: str) -> str:
+    async def _normalize_query(self, question: str, *, raw_user_text: str = "") -> str:
         """
         Translate a non-English query to English via the Laravel /normalize endpoint.
-        Returns the original question unchanged if it appears to be English (ASCII-only)
-        or if the endpoint is unavailable.
+        Returns the original question unchanged if it appears to be English or if the
+        endpoint is unavailable.
+
+        Non-ASCII detection uses `question` first, then falls back to `raw_user_text`
+        when the LLM reformulation has stripped accented characters (e.g. Italian 'è'→'e').
         """
-        if not question or not re.search(r"[^\x00-\x7F]", question):
+        detect_source = question
+        if raw_user_text and not re.search(r"[^\x00-\x7F]", question) and re.search(r"[^\x00-\x7F]", raw_user_text):
+            # LLM stripped accents in its reformulation; use raw user message for detection.
+            detect_source = raw_user_text
+            print(f"[VascularExpert] Non-ASCII found in raw user message but not in LLM reformulation — using raw message for language detection")
+
+        if not question or not re.search(r"[^\x00-\x7F]", detect_source):
             return question
         try:
             api_base = getattr(self.valves, "VASCULAR_API_BASE_URL", "").rstrip("/")
@@ -2533,8 +2542,14 @@ class Tools:
 
         # --- PRE-TRANSLATION ---
         # Translate non-English queries to English before gate pattern-matching and retrieval.
-        # English queries are returned unchanged (fast-path check on non-ASCII).
-        normalized_q = await self._normalize_query(effective_question)
+        # Pass the raw user message as fallback so that LLM-stripped accents (e.g. è→e) don't
+        # defeat the non-ASCII detection used to decide whether to call the normalize endpoint.
+        _raw_user_text = ""
+        for _msg in reversed(__messages__ or []):
+            if isinstance(_msg, dict) and _msg.get("role") == "user":
+                _raw_user_text = str(_msg.get("content") or "").strip()[:2000]
+                break
+        normalized_q = await self._normalize_query(effective_question, raw_user_text=_raw_user_text)
         if normalized_q != effective_question:
             await self._emit_status(emitter, "Translating query to English for guideline retrieval...")
 
