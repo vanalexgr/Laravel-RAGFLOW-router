@@ -3,7 +3,7 @@ title: Vascular Expert Tools
 author: open-webui
 author_url: https://github.com/open-webui
 funding_url: https://github.com/open-webui
-version: 2.1.4
+version: 2.1.5
 """
 
 import httpx
@@ -427,6 +427,13 @@ class Tools:
             "detect": [
                 r"graft\s+infect", r"endograft\s+infect", r"prosth.{0,10}infect",
                 r"infect.{0,20}(?:graft|bypass|endograft)", r"infected\s+(?:graft|bypass)",
+                # Aorto-enteric / aorto-oesophageal / aortobronchial fistula presentations
+                r"aorto.{0,12}(?:oesophageal|esophageal|enteric|bronchial)\s+fistul",
+                r"(?:oesophageal|esophageal|enteric|bronchial).{0,20}fistul",
+                r"haematemesis.{0,80}(?:tevar|endograft|aort|graft)",
+                r"(?:tevar|endograft|aort|graft).{0,80}haematemesis",
+                # Contaminated surgical field after aortic repair
+                r"(?:tevar|endograft|aort).{0,60}(?:oesophag|esophag|bronch|tracheo).{0,30}fistul",
             ],
             "categories": [
                 {
@@ -1252,12 +1259,27 @@ class Tools:
         if self._EXPLICIT_NEW_CASE_RE.search(current_snapshot):
             return True
 
-        if not self._looks_like_fresh_case_intro(current_snapshot):
+        # Also check the raw user message — the LLM may have reformulated the question
+        # to remove patient-case language, causing _looks_like_fresh_case_intro to miss it.
+        latest_user_snapshot = ""
+        for msg in reversed(messages or []):
+            if isinstance(msg, dict) and msg.get("role") == "user":
+                latest_user_snapshot = self._message_snapshot(msg)
+                break
+        if latest_user_snapshot and self._EXPLICIT_NEW_CASE_RE.search(latest_user_snapshot):
+            return True
+
+        # Use whichever snapshot looks more like a fresh case intro
+        check_snapshot = current_snapshot
+        if not self._looks_like_fresh_case_intro(current_snapshot) and self._looks_like_fresh_case_intro(latest_user_snapshot):
+            check_snapshot = latest_user_snapshot
+
+        if not self._looks_like_fresh_case_intro(check_snapshot):
             return False
 
         previous_snapshot = self._prior_gate_case_snapshot(messages, gate_index)
         previous_terms = self._case_anchor_terms(previous_snapshot)
-        current_terms = self._case_anchor_terms(current_snapshot)
+        current_terms = self._case_anchor_terms(check_snapshot)
 
         if not current_terms:
             return False
@@ -2322,7 +2344,12 @@ class Tools:
            DOAC/antiplatelet selection, or bridging therapy.
            Do NOT add antithrombotic_therapy just because the case mentions stroke,
            carotid stenosis, or another vascular condition.
-        5. If the user presents a proposed plan or clinical assertion and asks whether it is
+        5. Add vascular_graft_infections as a companion whenever the question involves
+           aorto-oesophageal fistula, aortobronchial fistula, haematemesis after TEVAR
+           or aortic repair, or any contaminated/infected field after aortic endovascular
+           or open repair — even if the primary guideline is descending_thoracic_aorta or
+           abdominal_aortic_aneurysm.
+        6. If the user presents a proposed plan or clinical assertion and asks whether it is
            correct or guideline-consistent, still call this tool. Do not answer from memory.
 
         GUIDELINE REFERENCE:
@@ -2339,7 +2366,9 @@ class Tools:
         - antithrombotic_therapy: Aspirin, DOACs, DAPT, bleeding risk, aortic thrombus
           anticoagulation, post-stroke antithrombotic therapy, bridging
         - vascular_trauma: Penetrating/blunt injury, REBOA
-        - vascular_graft_infections: Graft/endograft infection, post-procedure fever
+        - vascular_graft_infections: Graft/endograft infection, post-procedure fever,
+          aorto-oesophageal fistula, aortobronchial fistula, haematemesis after TEVAR,
+          contaminated surgical field after aortic repair
         - vascular_access: Dialysis AVF, steal syndrome
 
         **HISTORY CONTROL**:
