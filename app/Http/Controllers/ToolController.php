@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Services\RetrievalService;
 use App\Services\GuidelineAssetService;
 use App\Services\GapDetectionService;
+use App\Services\GuidelineRouterService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -13,6 +14,7 @@ class ToolController extends Controller
     public function __construct(
         protected RetrievalService $retrievalService,
         protected GuidelineAssetService $guidelineAssetService,
+        protected GuidelineRouterService $guidelineRouter,
     ) {
     }
 
@@ -273,6 +275,23 @@ class ToolController extends Controller
             'assets' => $safeAssets,
             'query_normalization' => $queryNormalization,
         ], 200, [], JSON_INVALID_UTF8_SUBSTITUTE)
+            ->header('Access-Control-Allow-Origin', '*')
+            ->header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+            ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    }
+
+    public function normalize(Request $request)
+    {
+        $request->validate(['question' => 'required|string|max:2000']);
+        $question = $request->input('question');
+
+        $result = $this->guidelineRouter->normalizeForRetrieval($question) ?? [
+            'normalized_query' => $question,
+            'language' => 'en',
+            'changed' => false,
+        ];
+
+        return response()->json($result, 200, [], JSON_INVALID_UTF8_SUBSTITUTE)
             ->header('Access-Control-Allow-Origin', '*')
             ->header('Access-Control-Allow-Methods', 'POST, OPTIONS')
             ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
