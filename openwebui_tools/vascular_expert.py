@@ -3,7 +3,7 @@ title: Vascular Expert Tools
 author: open-webui
 author_url: https://github.com/open-webui
 funding_url: https://github.com/open-webui
-version: 2.1.6
+version: 2.1.7
 """
 
 import httpx
@@ -772,6 +772,12 @@ class Tools:
         if self._PATIENT_CASE_RE.search(q):
             return False
 
+        # If any history item contains patient-case language, this is a case consultation
+        # even if the LLM reformulated the question as "what does ESVS recommend for...".
+        for item in history or []:
+            if isinstance(item, str) and self._PATIENT_CASE_RE.search(item):
+                return False
+
         combined = f"{q} {' '.join(history or [])}".strip()
         intent = str(self._infer_intent_profile(question, None).get("intent") or "").strip().lower()
 
@@ -1025,6 +1031,12 @@ class Tools:
 
         if user_contexts and current_norm and self._normalize_space(user_contexts[-1]) == current_norm:
             prior_user_contexts = user_contexts[:-1]
+        elif len(user_contexts) == 1:
+            # Only one user message in the case — it IS the current turn.
+            # The LLM may have reformulated the question differently, but there is
+            # nothing "prior" yet. Avoid treating the first message as prior context,
+            # which would incorrectly trigger query rewriting on the first turn.
+            prior_user_contexts = []
         else:
             prior_user_contexts = user_contexts
 
