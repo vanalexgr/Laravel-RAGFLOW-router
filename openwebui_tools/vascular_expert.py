@@ -2272,14 +2272,19 @@ class Tools:
         1. ANY vascular surgery question (direct or follow-up)
         2. When the user attaches a patient case/document and asks about ESVS compliance
         3. When comparing patient management against guidelines
-        4. ANY clarification or definitional follow-up about a guideline concept, threshold,
-           or recommendation -- even if phrased as a definition question, e.g.:
+        4. ANY follow-up question in an ongoing case or guideline discussion — including
+           terse dosing/drug/action questions — e.g.:
+           - "So can I give 10mg rivaroxaban OD?"
+           - "Can I use apixaban instead?"
+           - "What dose should I use?"
+           - "Should I switch to a DOAC?"
+           - "Is that the correct dose?"
            - "Can you clarify how the guidelines define asymptomatic?"
-           - "What does ESVS consider symptomatic vs asymptomatic carotid stenosis?"
-           - "Is an 8 mm thrombus treated medically or surgically per guidelines?"
            - "What threshold does the guideline use for treatment?"
            - "Can you explain what Rec 32 means?"
-           ALWAYS call this tool for such questions -- never answer from memory.
+           ALWAYS call this tool — NEVER answer from a prior tool result in history.
+           A prior 🩺 Clinical Synthesis in history is NOT a reason to skip retrieval;
+           each new question requires its own fresh guideline lookup.
         5. **Regeneration rule**: If you are regenerating a response for a question where
            guideline retrieval already succeeded (the previous assistant turn contained a
            🩺 Clinical Synthesis section), you MUST call this tool again — do not answer
