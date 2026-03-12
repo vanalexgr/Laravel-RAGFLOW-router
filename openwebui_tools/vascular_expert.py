@@ -3,7 +3,7 @@ title: Vascular Expert Tools
 author: open-webui
 author_url: https://github.com/open-webui
 funding_url: https://github.com/open-webui
-version: 2.1.7
+version: 2.1.8
 """
 
 import httpx
@@ -1317,58 +1317,138 @@ class Tools:
         return bool(self._CAROTID_SEVERE_STROKE_RE.search(q))
 
     def _generic_case_follow_up_questions(self, full_text: str) -> list:
+        """Return anatomy-aware clarification questions for cases that don't match a specific rule."""
         sparse_case = len(full_text.strip()) < 90 and not self._CLINICAL_DETAIL_RE.search(full_text)
+        if sparse_case:
+            return ["What are the key case details — exact diagnosis, clinical presentation, and the main management question?"]
 
-        categories = [
-            (
-                [
-                    r"\b(compression|occlusion|stenosis|aneurysm|thrombus|thrombosis|embol|dissection|infection|"
-                    r"ischemi|ischaemi|venous|arterial|aort|carotid|brachial|femoral|iliac|renal|mesenteric)\b",
-                    r"\b(acute|subacute|chronic|symptomatic|asymptomatic|swelling|pain|rest\s+pain|"
-                    r"ulcer|gangrene|stroke|tia|bleeding|fever|functional\s+limitation)\b",
-                ],
-                "What is the exact diagnosis and anatomical territory? Is the presentation acute, subacute, or chronic, and is the patient currently symptomatic?",
-            ),
-            (
-                [
-                    r"\b(\d+\s*%|\d+(?:[\.,]\d+)?\s*(?:cm|mm)|duplex|cta|ct\b|mri|mra|ultrasound|"
-                    r"runoff|wifi|rutherford|classification|grade|extent|diameter|measurement|"
-                    r"confirmed|no\s+(?:confirmed\s+)?dvt)\b",
-                ],
-                "What imaging has been performed and what are the key findings — lesion extent, severity, and relevant anatomy?",
-            ),
-            (
-                [
-                    r"\b(on\s+(?:lmwh|heparin|warfarin|doac|anticoagulation|antiplatelet\s+therapy)|"
-                    r"lmwh|heparin|warfarin|doac|apixaban|rivaroxaban|edoxaban|dabigatran|"
-                    r"aspirin|clopidogrel|bleeding|contraindic|"
-                    r"prior\s+(?:vte|dvt|pe|intervention|bypass|stent|surgery)|history\s+of|recurrent|"
-                    r"comorbid|renal\s+(?:failure|function|impair|insuff)|dialysis)\b",
-                ],
-                "Is the patient on anticoagulation or antiplatelet therapy? Any relevant comorbidities, bleeding contraindications, or prior vascular interventions that affect the management decision?",
-            ),
-        ]
-
+        anchor_terms = self._case_anchor_terms(full_text)
         questions = []
-        covered = 0
-        for patterns, prompt in categories:
-            if any(re.search(p, full_text) for p in patterns):
-                covered += 1
+
+        def _has(pattern: str) -> bool:
+            return bool(re.search(pattern, full_text, re.IGNORECASE))
+
+        # ── AORTIC ──────────────────────────────────────────────────────────
+        if "aorta" in anchor_terms:
+            fistula_context = _has(r"haematemesis|haemoptysis|haemorrhag.{0,60}(?:esophag|oesophag|bronch|tracheo)|(?:esophag|oesophag|bronch|tracheo).{0,60}haemorrhag|aorto.{0,15}(?:esophageal|oesophageal|enteric|bronchial)")
+            has_infection_signs = _has(r"fever|sepsis|\bcrp\b|\bwbc\b|leukocyt|white\s+cell|infect|abscess|sinus\s+tract")
+            has_imaging = _has(r"\bcta\b|\bct\s+(?:scan|angio|chest)\b|\bpet\b|endoscopy|upper\s+gi|imaging\s+(?:show|reveal|confirm)")
+            has_stability = _has(r"stabl|unstabl|haemodynamic|shock|pressure|bp\b|systolic|resuscitat")
+            has_complication = _has(r"complicated|uncomplicated|malperfusion|ruptur|symptom|asymptom|expand|enlarg|pain")
+            has_size = _has(r"\d[\.,]\d\s*cm\b|\d{2,3}\s*mm\b|diameter|maximum\s+size")
+            has_fitness = _has(r"fit\b|unfit|comorbid|cardiac|renal|pulmon|surgical\s+risk|asa\s+class|frail")
+            has_prosthesis = _has(r"tevar|evar|endograft|graft|prosth|stent\s*graft|implant|repair\s+(?:was|done|performed)")
+
+            if fistula_context:
+                # Aorto-enteric / aorto-oesophageal / aortobronchial presentation
+                if not has_imaging:
+                    questions.append("Has CT angiography or upper endoscopy confirmed communication between the aorta/endograft and the oesophagus or airway?")
+                if not has_infection_signs:
+                    questions.append("Are there signs of systemic infection — fever, raised CRP/WBC? Is the patient haemodynamically stable?")
+                if not has_prosthesis:
+                    questions.append("What type of aortic repair was performed, when was it done, and what prosthesis was used?")
+            elif _has(r"dissect"):
+                # Dissection-specific
+                if not has_complication:
+                    questions.append("Is this complicated (malperfusion, haemodynamic instability, refractory pain, rapid expansion) or uncomplicated?")
+                if not _has(r"\bacute\b|\bsubacute\b|\bchronic\b|\d+\s*days?\b|\d+\s*weeks?\b"):
+                    questions.append("When did symptoms start — acute (<14 days), subacute (14–90 days), or chronic (>90 days)?")
             else:
-                questions.append(prompt)
+                # Aneurysm / general aortic
+                if not has_size:
+                    questions.append("What is the maximum aortic diameter or lesion extent (cm/mm)?")
+                if not has_complication:
+                    questions.append("Is this symptomatic or complicated (pain, haemodynamic instability, rapid growth), or an elective finding?")
+                if not has_fitness:
+                    questions.append("Any significant comorbidities affecting fitness for open or endovascular repair?")
 
-        if sparse_case and covered <= 1:
-            questions.insert(
-                1 if questions else 0,
-                "What are the key case details — clinical presentation, severity, and any prior workup — that would determine the management approach?",
-            )
+        # ── LIMB ISCHAEMIA ───────────────────────────────────────────────────
+        elif "limb" in anchor_terms:
+            has_severity = _has(r"rutherford|wifi|\babi\b|ankle.{0,15}brachial|tissue\s+loss|gangrene|rest\s+pain|motor|sensory|deficit|puls")
+            has_imaging = _has(r"\bcta\b|\bduplex\b|runoff|angiograph|ct\s+angio|mra|imaging")
+            has_acuity = _has(r"\bacute\b|\bchronic\b|\bsudden\b|\bhours?\b|\bdays?\b|duration|onset")
+            has_aetiology = _has(r"thrombotic|embolic|in.situ|\baf\b|atrial\s+fibril|cardiac\s+source|prior\s+bypass|prior\s+pad|known\s+pad")
 
-        if questions:
-            return questions
+            if not has_acuity:
+                questions.append("Is this acute (sudden onset, hours) or chronic limb ischaemia?")
+            if not has_severity:
+                questions.append("What is the severity — is there motor or sensory deficit, tissue loss, or rest pain? Rutherford class if assessed?")
+            if not has_imaging:
+                questions.append("Has vascular imaging been done — CTA runoff or duplex — and what are the anatomical findings?")
+            if not has_aetiology and _has(r"\bacute\b|\bali\b|acute\s+limb"):
+                questions.append("What is the suspected aetiology — embolic (AF, cardiac source) or in-situ thrombosis (known PAD, prior bypass)?")
 
-        return [
-            "What is the single most important clinical detail that determines the guideline recommendation for this specific case?",
-        ]
+        # ── CAROTID / STROKE ─────────────────────────────────────────────────
+        elif "carotid" in anchor_terms or "stroke" in anchor_terms:
+            has_symptoms = _has(r"symptomat|asymptom|\btia\b|transient\s+ischaem|amaurosis|recent\s+stroke|neurolog")
+            has_degree = _has(r"\d+\s*%|\bpercent\b|nascet|degree|stenosis\s+(?:grade|severe|moderate)")
+            has_timing = _has(r"days?\s+ago|weeks?\s+ago|recent|within\s+\d|hours?\s+ago|months?\s+ago")
+            has_severity = _has(r"rankin|mrs|disabling|severe\s+(?:stroke|deficit)|major\s+stroke|mobili[sz]|motor\s+defic")
+
+            if not has_symptoms:
+                questions.append("Is this symptomatic (recent TIA, stroke, or amaurosis fugax within 6 months) or asymptomatic carotid disease?")
+            if not has_degree:
+                questions.append("What is the degree of stenosis on imaging (% by NASCET criteria)?")
+            if _has(r"stroke") and not has_severity:
+                questions.append("How severe was the stroke — modified Rankin Scale or functional status? Has the patient mobilised?")
+            if _has(r"stroke") and not has_timing:
+                questions.append("When did the neurological event occur (days/weeks ago)?")
+
+        # ── VENOUS THROMBOSIS ────────────────────────────────────────────────
+        elif "venous" in anchor_terms or "thrombus" in anchor_terms:
+            has_provocation = _has(r"provok|unprovok|idiopath|cancer|malignan|surgery|immob|travel|\bocp\b|contraceptive|thrombophilia|hereditary")
+            has_history = _has(r"first\s+episode|recurrent|prior\s+vte|prior\s+dvt|previous\s+(?:dvt|pe|thrombosis)|history\s+of\s+(?:dvt|pe)")
+            has_anticoag = _has(r"anticoag|heparin|lmwh|doac|warfarin|apixaban|rivaroxaban")
+            is_svt = _has(r"\bsvt\b|superficial.*(?:vein|thrombos)|thrombophlebit|saphen")
+            has_junction = _has(r"\bsfj\b|\bspj\b|saphenofemoral|saphenopopliteal|\d+\s*cm.{0,20}(?:junction|sfj)|junction.{0,20}\d+\s*cm")
+
+            if is_svt:
+                if not has_junction:
+                    questions.append("How far is the thrombus from the saphenofemoral (or saphenopopliteal) junction? This determines the treatment threshold.")
+                if not has_provocation:
+                    questions.append("Are there high-risk features — active cancer, prior DVT/PE, thrombophilia, no visible varicose veins, or bilateral SVT?")
+            else:
+                if not has_provocation:
+                    questions.append("Is there a clear provoking factor (recent surgery, active cancer, immobility, OCP), or is this unprovoked?")
+                if not has_history:
+                    questions.append("Is this a first VTE episode or recurrent thromboembolism?")
+                if not has_anticoag:
+                    questions.append("Is the patient currently anticoagulated, and are there any bleeding contraindications or relevant comorbidities (cancer, renal impairment)?")
+
+        # ── GRAFT / INFECTION ────────────────────────────────────────────────
+        elif "graft" in anchor_terms:
+            has_clinical = _has(r"fever|sepsis|\bcrp\b|\bwbc\b|wound|abscess|sinus|haemorrhag|anastomot")
+            has_timing = _has(r"days?\b|weeks?\b|months?\b|years?\b|early|late|when|since|after|post.{0,5}op")
+            has_imaging = _has(r"\bfdg\b|\bpet\b|\bct\b|\bcta\b|imaging|scan")
+
+            if not has_clinical:
+                questions.append("Are there systemic signs (fever, raised CRP/WBC) or local signs (wound breakdown, sinus tract, anastomotic haemorrhage)?")
+            if not has_timing:
+                questions.append("What type of graft or endograft was implanted, and how long ago?")
+            if not has_imaging:
+                questions.append("Has CT or FDG-PET/CT been performed? What are the findings?")
+
+        # ── MESENTERIC / RENAL ───────────────────────────────────────────────
+        elif "renal_mesenteric" in anchor_terms:
+            has_acuity = _has(r"\bacute\b|\bchronic\b|\bsudden\b|hours?|days?|angina|postprandial|weight\s+loss")
+            has_imaging = _has(r"\bcta\b|\bduplex\b|\bmra\b|\bangio\b|imaging|flow|stenosis\s+(?:grade|degree|\d+\s*%)")
+
+            if not has_acuity:
+                questions.append("Is this acute (sudden-onset pain, bowel ischaemia) or chronic mesenteric/renal ischaemia (postprandial angina, weight loss, progressive renal impairment)?")
+            if not has_imaging:
+                questions.append("Has vascular imaging been performed — CTA, MRA, or duplex — and what is the degree of stenosis or occlusion?")
+
+        # ── UNKNOWN ANATOMY FALLBACK ─────────────────────────────────────────
+        else:
+            if not _has(r"\bcta\b|\bct\b|\bduplex\b|\bmri\b|imaging|scan|findings"):
+                questions.append("What imaging has been performed and what are the key findings?")
+            if not _has(r"anticoag|heparin|lmwh|doac|warfarin|comorbid|renal|cardiac|prior\s+(?:intervention|surgery|bypass)"):
+                questions.append("Is the patient on anticoagulation or antiplatelet therapy? Any relevant comorbidities or prior vascular interventions?")
+
+        if not questions:
+            questions.append("What is the single most important clinical detail that determines the guideline recommendation for this specific case?")
+
+        return questions[:3]  # cap at 3 questions
 
     def _normalize_attachment_text(self, text: str, max_chars: int) -> str:
         if not text:
