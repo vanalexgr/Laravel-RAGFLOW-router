@@ -133,3 +133,68 @@ None exceeded 90s. Single-guideline queries: ~25–30s. Multi-guideline (A3): ~2
 
 **7. Codex baseline not established.**
 All tests were OpenWebUI only. Codex testing pending.
+
+---
+
+## Phase 2 Re-test — "Vascular MCP (Agent)" 2-Tool Config
+
+**Commit baseline:** 5a1c63a
+**Date:** 2026-03-14
+**Model:** `vascular-mcp-agent` (base: `gpt-5-chat`, tools: `vascular_consult_guidelines` + `vascular_list_guidelines` only)
+**Change from baseline:** Gate merged into `vascular_consult_guidelines`; system prompt instructs model to never call `vascular_assess_context_gaps`; `_PATIENT_CASE_RE` fixed for hyphenated ages; `aortic aneurysm` added to aaa_treatment detect; `thrombotic`/`embolic` added to ALI aetiology patterns.
+
+Groups A (knowledge) not re-run — passing at baseline, no server changes affect them.
+C1 chat ID invalid (truncated UUID — not found in DB).
+
+### Group B — Sufficient Context (single-tool flow, no gate expected)
+
+| ID | Chat ID | Tool calls made | Gate status | Answer score | Tool score | Notes |
+|----|---------|----------------|-------------|-------------|------------|-------|
+| B1 | 27ad7428 | `vascular_assess_context_gaps` → *text* → `vascular_consult_guidelines` | sufficient_context | 4 | Partial | Model still called gate on turn 1 despite system prompt (3-tool server still visible); output tool call as text; user retried; turn 3 retrieved correctly. CEA for ≥70yo symptomatic 80% stenosis, Class I Level A — clinically correct. |
+| B2 | cad3581b | `vascular_consult_guidelines` | N/A (no gate) | 5 | Pass | Direct retrieval. ≥50mm threshold for women (Class IIb Level C), EVAR vs OSR — correct. |
+| B3 | ea39a5eb | `vascular_consult_guidelines` | N/A (no gate) | 5 | Pass | Direct retrieval. 3-month anticoagulation for provoked DVT — correct. |
+| B4 | cf5fe2aa | `vascular_consult_guidelines` | N/A (no gate) | 5 | Pass | Direct retrieval. Rutherford IIb urgent revascularisation, surgical vs endovascular — correct. |
+
+**B group summary:** 3/4 Pass, 1 Partial. B1 partial because model still reached for `vascular_assess_context_gaps` despite system prompt restriction — gate tool remains visible in the 3-tool MCP server. B2/B3/B4 retrieved correctly in a single call.
+
+### Group C — Missing Context (internal gate expected to ask clarification)
+
+| ID | Chat ID | Tool calls made | Gate status | Answer score | Tool score | Notes |
+|----|---------|----------------|-------------|-------------|------------|-------|
+| C1 | 67706c4* | — | — | — | — | Chat ID not found (UUID truncated — first segment 7 chars, should be 8). Re-run required. |
+| C2 | 962b8c17 | `vascular_consult_guidelines` × 2 | NEEDS_CLAR → retrieved | 5 | Pass | Asked: aneurysm size + patient fitness. User: "50mm, none". Retrieved: 50mm in woman Class IIb Level C, surveillance q6mo. Single-tool gate working correctly. |
+| C3 | 89e1e5b0 | `vascular_consult_guidelines` × 2 | NEEDS_CLAR → retrieved | 5 | Pass | Asked all 3 DVT parameters: provoking factors + prior VTE + **DVT location** (new). User: "orthopedic surgery, yes, iliofemoral". Retrieved: provoked proximal DVT, DOACs Class I Level A, CDT for iliofemoral. DVT location fix (P3-ENH-1) confirmed working. |
+| C4 | 9bd43bf6 | `vascular_consult_guidelines` × 2 | NEEDS_CLAR → retrieved | 5 | Pass | Asked: Rutherford class + duration + aetiology. User: "2b, AF, femoral". Retrieved: IIb urgent revascularisation, embolic from AF, surgical thromboembolectomy at femoral. ALI aetiology fix (P3-ENH-2) confirmed working. |
+
+**C group summary:** 3/4 Pass (C1 untested). Single-tool gate correct in all 3 testable cases. Both new gate parameters (DVT location, ALI occlusion level/aetiology) working.
+
+### Group D — Follow-ups (single conversation thread, gate suppression)
+
+| ID | Chat ID | D0–D4 tool calls | Answer score | Tool score | Notes |
+|----|---------|-----------------|-------------|------------|-------|
+| D0–D4 | 91cb0bac | `vascular_consult_guidelines` × 5 | 5 each | Pass all | All 5 turns retrieved directly. Gate suppression (`has_prior_answer`) worked correctly — no re-firing across follow-ups. |
+
+**D0:** Symptomatic 78% carotid stenosis, TIA 8 days, 62yo. CAS may be considered <70yo (correct, with CEA preferred nuance).
+**D1:** Perioperative antiplatelet — combination therapy recommended post-imaging, Class IIa Level C. Correct.
+**D2:** Major stroke instead of TIA — defer CEA for disabling stroke (mRS ≥3, infarct >1/3 MCA territory), Class I Level C. **Previously failing — now retrieved correctly.**
+**D3:** CAS option with major stroke — defer CAS too, same Class I Level C reasoning. **Previously failing — now retrieved correctly.**
+**D4:** Post-CEA surveillance — no routine surveillance; DUS for high-risk groups (DM, CKD, female, smoker) at 2 years, Class IIa Level B. Correct.
+
+**D group summary:** 5/5 Pass. Same-conversation gate suppression confirmed working. D2/D3 (deferred intervention for disabling stroke) now retrieved correctly — these were the D-group failures at Phase 3 baseline.
+
+### Phase 2 Re-test Summary
+
+| Group | Avg answer score | Tool pass rate | vs Phase 3 baseline |
+|-------|-----------------|----------------|---------------------|
+| B (sufficient context, 4 queries) | 4.75 | 3/4 Pass, 1 Partial | **0/4 → 3/4** ↑ |
+| C (missing context, 3 testable) | 5.0 | 3/3 Pass | **1/4 → 3/3** ↑ |
+| D (follow-ups, single thread) | 5.0 | 5/5 Pass | **2/4 → 5/5** ↑ |
+| **Overall (B+C+D, 11 testable)** | **4.86** | **11/12 Pass** | **3/12 → 11/12** ↑ |
+
+### Residual Issues
+
+| ID | Severity | Description |
+|----|----------|-------------|
+| P3R-BUG-1 | **Bug** | **B1: Model calls gate despite 2-tool system prompt.** The MCP server exposes all 3 tools; system prompt instruction ("do not call vascular_assess_context_gaps") is ignored by the model on the first turn. After failed chaining, user retry succeeded. Root cause: system prompt cannot suppress a visible tool. Only fix: remove `vascular_assess_context_gaps` from the MCP server tool registration for this model, OR create a separate 2-tool MCP server endpoint. |
+| P3R-INFO-1 | **Info** | **C1 chat ID truncated** — UUID invalid (7 chars in first segment). Re-run C1 ("I have a patient with carotid stenosis") to confirm carotid clarification gate fires correctly. |
+| P3R-INFO-2 | **Info** | **Codex baseline not established.** All Phase 3 and Phase 2 re-tests are OpenWebUI only. 3-tool config comparison with Codex pending. |
