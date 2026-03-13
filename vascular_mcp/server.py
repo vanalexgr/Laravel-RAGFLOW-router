@@ -77,7 +77,7 @@ _PATIENT_CASE_RE = re.compile(
     r"\b(my\s+patient|this\s+patient|the\s+patient|"
     r"patient\s+(?:with|who|has)|pt\s+(?:with|who|has)|"
     r"case\s+of|this\s+case|the\s+case|"
-    r"\d{1,3}\s*(?:year[- ]old|yo)\b|"
+    r"\d{1,3}[-\s]*(?:year[- ]old|yo)\b|"
     r"(?:male|female|man|woman)\s+with|"
     r"presents?\s+with|presented\s+with|admitted\s+with|referred\s+with|"
     r"was\s+found|incidentally)\b",
@@ -137,6 +137,7 @@ _CONTEXT_GAP_RULES: list[dict] = [
         "suggested_guidelines": ["abdominal_aortic_aneurysm"],
         "detect": [
             r"\baaa\b",
+            r"\baortic\s+aneurysm\b",
             r"\babdominal\s+aortic\s+aneurysm\b",
             r"aortic\s+aneurysm.{0,40}(?:infra|supra|juxta)renal",
         ],
@@ -225,7 +226,7 @@ _CONTEXT_GAP_RULES: list[dict] = [
             },
             {
                 "present_if": [
-                    r"\bemboli\b", r"\bthrombos\b", r"embolic", r"in.situ",
+                    r"\bemboli\b", r"\bembolic\b", r"\bthrombos\b", r"\bthrombotic\b", r"in.situ",
                     r"graft\s+occl", r"native.*thromb",
                     r"prior\s+(?:bypass|graft|stent)",
                     r"known\s+pad", r"\baf\b", r"atrial\s+fibril", r"cardiac\s+source",
@@ -627,10 +628,12 @@ def _make_server(host: str = "0.0.0.0", port: int = 8080) -> FastMCP:
         instructions=(
             "This server provides access to ESVS (European Society for Vascular Surgery) "
             "clinical guideline evidence via a RAGFlow-backed retrieval system. "
-            "For patient-case questions: call vascular_assess_context_gaps first, then "
-            "vascular_consult_guidelines if status is PROCEED. "
-            "For knowledge questions (definitions, thresholds, classifications): call "
-            "vascular_consult_guidelines directly. "
+            "Call vascular_consult_guidelines for ALL queries — knowledge questions and "
+            "patient cases alike. The tool handles context checking internally: if clinical "
+            "details are missing it will return a clarification request; call it again "
+            "with the complete information once the user responds. "
+            "vascular_assess_context_gaps is available for clients requiring explicit "
+            "two-step gate control but is not required for the standard flow. "
             "Use vascular_list_guidelines to discover available dataset keys."
         ),
     )
@@ -650,10 +653,14 @@ mcp = _make_server(host="0.0.0.0", port=_port)
 @mcp.tool(
     description=(
         "Retrieve ESVS guideline evidence for a vascular surgery query. "
-        "Returns structured clinical evidence including graded recommendations, "
-        "narrative context, and optional figures/tables. "
-        "For patient-case questions call vascular_assess_context_gaps first; "
-        "for knowledge questions call this tool directly."
+        "Use this as the SINGLE tool for all vascular guideline questions — "
+        "both knowledge questions and patient cases. "
+        "For patient cases with missing clinical context (symptomatic status, stenosis degree, "
+        "aneurysm size, Rutherford class, DVT location, etc.) this tool will automatically "
+        "ask the user for the missing details and return before retrieving. "
+        "Call it again with the complete information once the user responds. "
+        "vascular_assess_context_gaps is available for clients that want explicit "
+        "two-step gate control, but is not required."
     ),
     annotations={"readOnlyHint": True},
 )
@@ -672,6 +679,8 @@ async def vascular_consult_guidelines(
                        If omitted, the backend router selects automatically.
                        Use vascular_list_guidelines to see available keys.
         history:       Optional list of prior conversation turns (plain strings).
+                       Include prior turns so the gate knows what context was
+                       already provided and does not re-ask.
         response_mode: 'narrative' returns formatted Markdown for human-readable
                        interfaces (default). 'agent' returns structured JSON with
                        explicit fields for agent reasoning.
@@ -685,6 +694,33 @@ async def vascular_consult_guidelines(
         mode = ResponseMode(response_mode)
     except ValueError:
         mode = ResponseMode.NARRATIVE
+
+    # ── Internal context gate (single-tool flow) ───────────────────────────────
+    # Run the same logic as vascular_assess_context_gaps internally so callers
+    # do not need to chain two tool calls.  Skip the gate when:
+    #   (a) history already contains a long assistant response (gate already fired),
+    #   (b) the query is not a patient case, or
+    #   (c) guidelines were explicitly specified (caller already knows what to retrieve).
+    h = [str(x) for x in (history or []) if x]
+    has_prior_answer = any(len(x) > 300 for x in h)
+    if not has_prior_answer and not guidelines and _is_patient_case(query, h):
+        scenario_id, questions, suggested = _check_context_gaps(query, h)
+        if scenario_id and questions:
+            lines = [
+                "**Additional information needed before retrieving ESVS guidelines**\n",
+                "Before I can retrieve relevant evidence for this patient, "
+                "I need the following clinical details:\n",
+            ]
+            for q_text in questions:
+                lines.append(f"- {q_text}")
+            if suggested:
+                lines.append(f"\n*Relevant guidelines: {', '.join(suggested)}*")
+            lines.append(
+                "\nPlease ask the user for these details. Once provided, call "
+                "vascular_consult_guidelines again with the complete information "
+                "(include prior turns in the history parameter)."
+            )
+            return "\n".join(lines)
 
     payload: dict[str, Any] = {
         "question": query,
@@ -736,14 +772,13 @@ async def vascular_consult_guidelines(
 
 @mcp.tool(
     description=(
-        "Check whether a patient-case question has sufficient clinical context "
-        "for ESVS guideline retrieval. Returns status PROCEED or NEEDS_CLARIFICATION. "
-        "IMPORTANT: Pass the COMPLETE case description including patient demographics "
-        "(age, sex, diagnosis, relevant history) — not just the question clause. "
-        "When status=PROCEED, you MUST immediately call vascular_consult_guidelines "
-        "with the original query. Never answer from memory after PROCEED. "
-        "Knowledge questions (definitions, thresholds, population-level guidelines) "
-        "always return PROCEED and should call vascular_consult_guidelines directly."
+        "Optional explicit context gate for patient-case questions. "
+        "Returns status PROCEED or NEEDS_CLARIFICATION with clarification questions. "
+        "Not required for the standard single-tool flow — vascular_consult_guidelines "
+        "runs this check internally. Use this tool only when you need explicit two-step "
+        "gate control (e.g. Codex agents that inspect gate output before retrieval). "
+        "Pass the COMPLETE case description including patient demographics. "
+        "When status=PROCEED, call vascular_consult_guidelines next."
     ),
     annotations={"readOnlyHint": True},
 )
