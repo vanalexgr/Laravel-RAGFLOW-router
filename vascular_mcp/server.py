@@ -10,6 +10,7 @@ import json
 import os
 import re
 import sys
+from enum import Enum
 from typing import Any
 
 import httpx
@@ -23,6 +24,12 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))  # load .env when r
 LARAVEL_BASE_URL = os.environ.get("LARAVEL_BASE_URL", "http://127.0.0.1:8001")
 LARAVEL_API_KEY  = os.environ.get("LARAVEL_API_KEY", "")
 LARAVEL_TIMEOUT  = 120.0
+
+# ─── Response mode ─────────────────────────────────────────────────────────────
+
+class ResponseMode(str, Enum):
+    NARRATIVE = "narrative"   # current OpenWebUI Markdown output (default)
+    AGENT     = "agent"       # structured JSON output for MCP/Codex clients
 
 # ─── Available guideline datasets ─────────────────────────────────────────────
 
@@ -41,6 +48,27 @@ GUIDELINE_NAMES: dict[str, str] = {
     "vascular_trauma":           "Vascular Trauma",
     "vascular_graft_infections": "Vascular Graft Infections",
     "vascular_access":           "Vascular Access",
+}
+
+_GUIDELINE_DESCRIPTIONS: dict[str, str] = {
+    "aortic_arch":               "Surgical and endovascular management of aortic arch pathology including hybrid and total arch repair",
+    "descending_thoracic_aorta": "Descending thoracic aorta pathology — note: no figures/tables currently configured",
+    "abdominal_aortic_aneurysm": "Management of abdominal and thoracic aortic aneurysms including EVAR and open repair indications",
+    "mesenteric_renal":          "Diagnosis and treatment of mesenteric and renal artery stenosis and aneurysms",
+    "asymptomatic_pad":          "Medical and interventional management of PAD including claudication and ABI thresholds",
+    "clti":                      "Assessment and revascularisation for CLTI including bypass, angioplasty, and amputation decisions",
+    "acute_limb_ischaemia":      "Emergency management of ALI including Rutherford classification and revascularisation timing",
+    "carotid_vertebral":         "Diagnosis and treatment of carotid and vertebral artery stenosis including CEA and CAS",
+    "venous_thrombosis":         "Management of DVT, PE, and superficial vein thrombosis including anticoagulation decisions",
+    "chronic_venous_disease":    "Varicose veins, chronic venous insufficiency, and superficial vein thrombosis management",
+    "antithrombotic_therapy":    "Anticoagulation and antiplatelet decisions in vascular patients — use only when anticoagulation is the question",
+    "vascular_trauma":           "Assessment and management of vascular injuries including endovascular and open repair",
+    "vascular_graft_infections": "Diagnosis and management of prosthetic graft and endograft infections",
+    "vascular_access":           "Arteriovenous fistula, graft, and central venous access creation and maintenance",
+}
+
+_GUIDELINE_HAS_ASSETS: dict[str, bool] = {
+    key: (key != "descending_thoracic_aorta") for key in GUIDELINE_NAMES
 }
 
 # ─── Context-gate regexes ─────────────────────────────────────────────────────
@@ -74,6 +102,7 @@ _GENERIC_PATIENT_POPULATION_RE = re.compile(
 _CONTEXT_GAP_RULES: list[dict] = [
     {
         "id": "carotid_stenosis",
+        "suggested_guidelines": ["carotid_vertebral"],
         "detect": [
             r"\bcarotid\s+(?:artery\s+)?stenosis\b",
             r"\bcea\b",
@@ -105,6 +134,7 @@ _CONTEXT_GAP_RULES: list[dict] = [
     },
     {
         "id": "aaa_treatment",
+        "suggested_guidelines": ["abdominal_aortic_aneurysm"],
         "detect": [
             r"\baaa\b",
             r"\babdominal\s+aortic\s+aneurysm\b",
@@ -134,6 +164,7 @@ _CONTEXT_GAP_RULES: list[dict] = [
     },
     {
         "id": "type_b_dissection",
+        "suggested_guidelines": ["descending_thoracic_aorta", "aortic_arch"],
         "detect": [
             r"type\s*b\s*(aortic\s*)?dissect",
             r"\btbad\b",
@@ -171,6 +202,7 @@ _CONTEXT_GAP_RULES: list[dict] = [
     },
     {
         "id": "ali",
+        "suggested_guidelines": ["acute_limb_ischaemia"],
         "detect": [
             r"\bali\b",
             r"acute\s+limb\s+isch",
@@ -208,6 +240,7 @@ _CONTEXT_GAP_RULES: list[dict] = [
     },
     {
         "id": "dvt_pe",
+        "suggested_guidelines": ["venous_thrombosis"],
         "detect": [
             r"\bdvt\b",
             r"deep\s+vein\s+thrombosis",
@@ -247,6 +280,7 @@ _CONTEXT_GAP_RULES: list[dict] = [
     },
     {
         "id": "clti",
+        "suggested_guidelines": ["clti"],
         "detect": [
             r"\bclti\b",
             r"chronic\s+limb.{0,20}threat",
@@ -284,6 +318,7 @@ _CONTEXT_GAP_RULES: list[dict] = [
     },
     {
         "id": "graft_infection",
+        "suggested_guidelines": ["vascular_graft_infections"],
         "detect": [
             r"graft\s+infect",
             r"endograft\s+infect",
@@ -348,10 +383,13 @@ def _is_patient_case(question: str, history: list[str]) -> bool:
     return any(_PATIENT_CASE_RE.search(item) for item in history)
 
 
-def _check_context_gaps(question: str, history: list[str]) -> tuple[str, list[str]]:
+def _check_context_gaps(
+    question: str, history: list[str]
+) -> tuple[str, list[str], list[str]]:
     """
     Run the clinical context gate against all 7 scenario rules.
-    Returns (scenario_id, [clarification_questions]) if gaps found, else ('', []).
+    Returns (scenario_id, [clarification_questions], [suggested_guidelines]) if gaps found,
+    else ('', [], []).
     """
     full_text = (question + " " + " ".join(history)).lower()
 
@@ -368,9 +406,91 @@ def _check_context_gaps(question: str, history: list[str]) -> tuple[str, list[st
         ]
 
         if len(absent) >= rule["min_absent"]:
-            return rule["id"], absent
+            return rule["id"], absent, rule.get("suggested_guidelines", [])
 
-    return "", []
+    return "", [], []
+
+
+# ─── Agent-mode formatters ─────────────────────────────────────────────────────
+
+def _map_recommendation(chunk: dict) -> dict:
+    return {
+        "rec_id":    chunk.get("rec_id") or chunk.get("recommendation_id"),
+        "statement": chunk.get("recommendation") or chunk.get("content", ""),
+        "class":     chunk.get("class") or chunk.get("recommendation_class", ""),
+        "level":     chunk.get("level") or chunk.get("evidence_level") or chunk.get("grade", ""),
+        "guideline": chunk.get("guideline") or chunk.get("document_name", ""),
+    }
+
+
+def _derive_confidence(retrieval_mode: str, n_recs: int) -> str:
+    if retrieval_mode == "full" and n_recs >= 3:
+        return "high"
+    elif n_recs >= 1:
+        return "medium"
+    else:
+        return "low"
+
+
+def _format_consult_narrative(data: dict, query: str) -> str:
+    """Return the pre-formatted Markdown from Laravel (OpenWebUI narrative mode)."""
+    output_text = data.get("result") or data.get("llm_output") or data.get("output") or ""
+    if output_text:
+        return str(output_text)
+    # Fallback: summarise chunk counts
+    n_narr = len(data.get("narrative_chunks", []))
+    n_cite = len(data.get("citation_chunks", []))
+    guidelines_used = data.get("selected_guidelines", [])
+    return (
+        f"Retrieved {n_narr} narrative and {n_cite} citation chunks "
+        f"from: {', '.join(guidelines_used) or 'auto-selected'}."
+    )
+
+
+def _format_consult_agent(data: dict, query: str, history: list) -> str:
+    """Return structured JSON string for agent/Codex clients."""
+    norm       = data.get("query_normalization") or {}
+    citations  = data.get("citation_chunks") or []
+    narrative  = data.get("narrative_chunks") or []
+    assets     = data.get("assets") or []
+    _gl_raw  = data.get("selected_guidelines") or []
+    guidelines = list(_gl_raw.keys()) if isinstance(_gl_raw, dict) else list(_gl_raw)
+    llm_out    = data.get("result") or data.get("llm_output") or data.get("output") or ""
+
+    recs           = [_map_recommendation(c) for c in citations]
+    retrieval_mode = "lean" if len(recs) <= 3 else "full"
+    question_type  = "patient_case" if history else "knowledge"
+
+    answer = ""
+    if llm_out:
+        answer = llm_out.split("\n")[0].strip()
+    elif narrative:
+        answer = narrative[0].get("content", "").strip()[:300]
+
+    result = {
+        "query_normalized":     norm.get("normalized_query", query),
+        "question_type":        question_type,
+        "guidelines_used":      guidelines,
+        "retrieval_mode":       retrieval_mode,
+        "answer":               answer,
+        "recommendations":      recs,
+        "supporting_narrative": [
+            {"section": c.get("document_name", ""), "text": c.get("content", "")}
+            for c in narrative
+        ],
+        "figures_or_tables": [
+            {
+                "type":    a.get("type", "figure"),
+                "label":   a.get("label", ""),
+                "caption": a.get("caption", ""),
+                "url":     a.get("url"),
+            }
+            for a in assets
+        ],
+        "confidence":              _derive_confidence(retrieval_mode, len(recs)),
+        "needs_clinical_judgment": question_type == "patient_case",
+    }
+    return json.dumps(result, indent=2, ensure_ascii=False)
 
 
 # ─── FastMCP server ────────────────────────────────────────────────────────────
@@ -419,20 +539,30 @@ async def vascular_consult_guidelines(
     query: str,
     guidelines: list[str] | None = None,
     history: list[str] | None = None,
+    response_mode: str = "narrative",
 ) -> str:
     """
     Query ESVS guidelines and return evidence chunks.
 
     Args:
-        query:      The clinical question or case description.
-        guidelines: Optional list of guideline keys to restrict retrieval.
-                    If omitted, the backend router selects automatically.
-                    Use vascular_list_guidelines to see available keys.
-        history:    Optional list of prior conversation turns (plain strings).
+        query:         The clinical question or case description.
+        guidelines:    Optional list of guideline keys to restrict retrieval.
+                       If omitted, the backend router selects automatically.
+                       Use vascular_list_guidelines to see available keys.
+        history:       Optional list of prior conversation turns (plain strings).
+        response_mode: 'narrative' returns formatted Markdown for human-readable
+                       interfaces (default). 'agent' returns structured JSON with
+                       explicit fields for agent reasoning.
     """
     query = (query or "").strip()
     if not query:
         return "Error: query cannot be empty."
+
+    # Normalise and validate response_mode; unknown values fall back to narrative
+    try:
+        mode = ResponseMode(response_mode)
+    except ValueError:
+        mode = ResponseMode.NARRATIVE
 
     payload: dict[str, Any] = {
         "question": query,
@@ -476,21 +606,10 @@ async def vascular_consult_guidelines(
     except Exception:
         return f"Error: Non-JSON response from Laravel API (status {resp.status_code})."
 
-    # Primary path: return the formatted output text
-    # Laravel ToolController returns the field as "result"
-    output_text = data.get("result") or data.get("llm_output") or data.get("output") or ""
-    if output_text:
-        return str(output_text)
+    if mode == ResponseMode.AGENT:
+        return _format_consult_agent(data, query, history or [])
 
-    # Fallback: summarise chunk counts
-    n_narr = len(data.get("narrative_chunks", []))
-    n_cite = len(data.get("citation_chunks", []))
-    # Laravel returns "selected_guidelines" (not "guidelines_selected")
-    guidelines_used = data.get("selected_guidelines", [])
-    return (
-        f"Retrieved {n_narr} narrative and {n_cite} citation chunks "
-        f"from: {', '.join(guidelines_used) or 'auto-selected'}."
-    )
+    return _format_consult_narrative(data, query)
 
 
 @mcp.tool(
@@ -517,38 +636,70 @@ async def vascular_assess_context_gaps(
                   that context was already provided in an earlier turn.
 
     Returns a JSON string with:
-        status: "PROCEED" | "NEEDS_CLARIFICATION"
-        reason: (on PROCEED) why the gate passed
-        scenario: (on NEEDS_CLARIFICATION) matched scenario id
-        clarification_questions: (on NEEDS_CLARIFICATION) list of questions to ask
+        status:                 "PROCEED" | "NEEDS_CLARIFICATION"
+        scenario:               matched scenario id, or null
+        missing_parameters:     list of clarification questions (on NEEDS_CLARIFICATION)
+        clarification_question: combined question string to present to the user, or null
+        suggested_guidelines:   guideline IDs relevant to this scenario
     """
     q = (question or "").strip()
     h = [str(x) for x in (history or []) if x]
 
     # Knowledge questions bypass the gate
     if _is_knowledge_question(q, h):
-        return json.dumps({"status": "PROCEED", "reason": "knowledge_question"})
+        return json.dumps({
+            "status":                 "PROCEED",
+            "reason":                 "knowledge_question",
+            "scenario":               None,
+            "missing_parameters":     [],
+            "clarification_question": None,
+            "suggested_guidelines":   [],
+        })
 
     # No patient-case language detected — proceed
     if not _is_patient_case(q, h):
-        return json.dumps({"status": "PROCEED", "reason": "not_a_patient_case"})
+        return json.dumps({
+            "status":                 "PROCEED",
+            "reason":                 "not_a_patient_case",
+            "scenario":               None,
+            "missing_parameters":     [],
+            "clarification_question": None,
+            "suggested_guidelines":   [],
+        })
 
     # Follow-up heuristic: a prior history item that is a long assistant response
     # indicates the gate already fired and the user replied with more context.
     has_prior_assistant_response = any(len(x) > 300 for x in h)
     if has_prior_assistant_response:
-        return json.dumps({"status": "PROCEED", "reason": "follow_up_turn"})
+        return json.dumps({
+            "status":                 "PROCEED",
+            "reason":                 "follow_up_turn",
+            "scenario":               None,
+            "missing_parameters":     [],
+            "clarification_question": None,
+            "suggested_guidelines":   [],
+        })
 
-    scenario_id, questions = _check_context_gaps(q, h)
+    scenario_id, questions, suggested = _check_context_gaps(q, h)
 
     if scenario_id and questions:
         return json.dumps({
-            "status":                  "NEEDS_CLARIFICATION",
-            "scenario":                scenario_id,
-            "clarification_questions": questions,
+            "status":                 "NEEDS_CLARIFICATION",
+            "scenario":               scenario_id,
+            "missing_parameters":     questions,
+            "clarification_questions": questions,           # backward-compat alias
+            "clarification_question": "\n\n".join(questions),
+            "suggested_guidelines":   suggested,
         })
 
-    return json.dumps({"status": "PROCEED", "reason": "sufficient_context"})
+    return json.dumps({
+        "status":                 "PROCEED",
+        "reason":                 "sufficient_context",
+        "scenario":               None,
+        "missing_parameters":     [],
+        "clarification_question": None,
+        "suggested_guidelines":   [],
+    })
 
 
 @mcp.tool(
@@ -560,11 +711,17 @@ async def vascular_assess_context_gaps(
     annotations={"readOnlyHint": True},
 )
 async def vascular_list_guidelines() -> str:
-    """Return all available ESVS guideline dataset keys and names."""
-    lines = ["Available ESVS guideline datasets:\n"]
-    for key, name in GUIDELINE_NAMES.items():
-        lines.append(f"  {key!r:40s}  {name}")
-    return "\n".join(lines)
+    """Return all available ESVS guideline dataset keys and names as structured JSON."""
+    guidelines = [
+        {
+            "id":          key,
+            "label":       label,
+            "has_assets":  _GUIDELINE_HAS_ASSETS[key],
+            "description": _GUIDELINE_DESCRIPTIONS[key],
+        }
+        for key, label in GUIDELINE_NAMES.items()
+    ]
+    return json.dumps({"guidelines": guidelines}, indent=2, ensure_ascii=False)
 
 
 # ─── Entry point ───────────────────────────────────────────────────────────────
