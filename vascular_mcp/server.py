@@ -525,11 +525,14 @@ def _format_consult_narrative(data: dict, query: str) -> str:
     if gl_ids:
         lines += [f"**Guidelines searched:** {', '.join(gl_ids)}", ""]
 
-    # Structured output from Laravel (STRICT_TEMPLATE) — render first if present
-    if llm_out:
-        lines += ["## Clinical Assessment", "", llm_out, ""]
+    # Guideline recommendations — numbered first so LLM can cite inline as [n]
+    if citations:
+        lines += ["## Guideline Recommendations", ""]
+        for i, c in enumerate(citations, 1):
+            lines.append(_citation_line(c, i))
+        lines.append("")
 
-    # Evidence summary — narrative chunks
+    # Evidence summary — supporting narrative passages
     if narrative:
         lines += ["## Evidence Summary", ""]
         for chunk in narrative:
@@ -540,13 +543,6 @@ def _format_consult_narrative(data: dict, query: str) -> str:
             if text:
                 lines.append(text)
             lines.append("")
-
-    # Guideline recommendations (numbered for inline [n] citation)
-    if citations:
-        lines += ["## Guideline Recommendations", ""]
-        for i, c in enumerate(citations, 1):
-            lines.append(_citation_line(c, i))
-        lines.append("")
 
     # Referenced figures and tables
     if assets:
@@ -566,23 +562,23 @@ def _format_consult_narrative(data: dict, query: str) -> str:
     if not lines:
         return f"No evidence retrieved for: {query}"
 
-    # STRICT_TEMPLATE synthesis instruction — only when Laravel did not pre-format
-    if not llm_out:
-        lines.append("---")
-        lines.append(
-            "**Synthesise a clinical response using ONLY the evidence above.** "
-            "Apply these sections where clinically relevant:\n\n"
-            "**Assessment** — clinical context and key findings\n"
-            "**Imaging** — investigations required or recommended\n"
-            "**Indication for Intervention** — when to treat (cite Class/Level)\n"
-            "**Treatment Options** — procedure choice with evidence grades\n"
-            "**Clinical Decision Summary** — clear recommendation for this patient\n"
-            "**Perioperative Risk Mitigation** — relevant for surgical/endovascular cases\n"
-            "**Follow-up** — surveillance, monitoring, anticoagulation duration\n\n"
-            "Cite graded recommendations inline as **[n]** using the numbers above. "
-            "State Class and Level of evidence for all key recommendations. "
-            "Do not answer from memory — use only the retrieved evidence."
-        )
+    # STRICT_TEMPLATE synthesis instruction — tells OpenWebUI LLM to synthesise
+    # from the numbered evidence above and cite inline as [n]
+    lines.append("---")
+    lines.append(
+        "**Synthesise a clinical response using ONLY the evidence above.** "
+        "Apply these sections where clinically relevant:\n\n"
+        "**Assessment** — clinical context and key findings\n"
+        "**Imaging** — investigations required or recommended\n"
+        "**Indication for Intervention** — when to treat (cite Class/Level)\n"
+        "**Treatment Options** — procedure choice with evidence grades\n"
+        "**Clinical Decision Summary** — clear recommendation for this patient\n"
+        "**Perioperative Risk Mitigation** — relevant for surgical/endovascular cases\n"
+        "**Follow-up** — surveillance, monitoring, anticoagulation duration\n\n"
+        "Cite graded recommendations inline as **[n]** using the numbers above. "
+        "State Class and Level of evidence for all key recommendations. "
+        "Do not answer from memory — use only the retrieved evidence."
+    )
 
     return "\n".join(lines)
 
