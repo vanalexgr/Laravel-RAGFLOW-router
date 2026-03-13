@@ -20,7 +20,6 @@ MCP_HEADERS = {
 }
 EXPECTED_TOOLS = {
     "vascular_consult_guidelines",
-    "vascular_assess_context_gaps",
     "vascular_list_guidelines",
 }
 
@@ -63,8 +62,8 @@ class TestToolsList:
                           headers=MCP_HEADERS, timeout=15.0)
         assert resp.status_code == 200
 
-    def test_tools_list_returns_all_three_tools(self):
-        """tools/list → exactly the 3 expected tool names."""
+    def test_tools_list_returns_all_tools(self):
+        """tools/list → exactly the 2 expected tool names."""
         data = _mcp("tools/list")
         assert "result" in data, f"No 'result' in response: {data}"
         tools = data["result"]["tools"]
@@ -73,10 +72,10 @@ class TestToolsList:
             f"Expected tools {EXPECTED_TOOLS}, got {names}"
 
     def test_tools_list_tool_count(self):
-        """Exactly 3 tools — no extras, no missing."""
+        """Exactly 2 tools — vascular_assess_context_gaps is internal only."""
         data = _mcp("tools/list")
         tools = data["result"]["tools"]
-        assert len(tools) == 3, f"Expected 3 tools, got {len(tools)}: {[t['name'] for t in tools]}"
+        assert len(tools) == 2, f"Expected 2 tools, got {len(tools)}: {[t['name'] for t in tools]}"
 
 
 # ─── Test 2: Tool schemas are valid ──────────────────────────────────────────
@@ -103,12 +102,6 @@ class TestToolSchemas:
         assert "guidelines" not in required, "'guidelines' should be optional"
         assert "history" not in required, "'history' should be optional"
 
-    def test_assess_context_gaps_has_required_question(self, tools_by_name):
-        tool = tools_by_name["vascular_assess_context_gaps"]
-        schema = tool["inputSchema"]
-        assert "question" in schema.get("required", []), \
-            f"'question' should be required. Schema: {schema}"
-
     def test_list_guidelines_has_no_required_fields(self, tools_by_name):
         tool = tools_by_name["vascular_list_guidelines"]
         required = tool["inputSchema"].get("required", [])
@@ -131,11 +124,6 @@ class TestAnnotations:
         ann = tools_by_name["vascular_consult_guidelines"].get("annotations", {})
         assert ann.get("readOnlyHint") is True, \
             f"vascular_consult_guidelines missing readOnlyHint=True. Got: {ann}"
-
-    def test_assess_context_gaps_read_only(self, tools_by_name):
-        ann = tools_by_name["vascular_assess_context_gaps"].get("annotations", {})
-        assert ann.get("readOnlyHint") is True, \
-            f"vascular_assess_context_gaps missing readOnlyHint=True. Got: {ann}"
 
     def test_list_guidelines_read_only(self, tools_by_name):
         ann = tools_by_name["vascular_list_guidelines"].get("annotations", {})
@@ -161,16 +149,6 @@ class TestInputValidation:
             text = str(result)
         assert "error" in text.lower() or "empty" in text.lower(), \
             f"Expected error text for empty query, got: {text[:300]}"
-
-    def test_assess_context_gaps_empty_question(self):
-        """vascular_assess_context_gaps with question='' → returns PROCEED (empty treated as non-case)."""
-        data = _mcp_tool_call("vascular_assess_context_gaps", {"question": ""})
-        result = data.get("result", {})
-        content = result.get("content", [])
-        text = content[0].get("text", "") if content else str(result)
-        parsed = json.loads(text)
-        # Empty question is neither patient-case nor knowledge → PROCEED as knowledge
-        assert parsed["status"] == "PROCEED"
 
     def test_list_guidelines_returns_all_datasets(self):
         """vascular_list_guidelines → JSON with 14 guideline objects, each with required fields."""
