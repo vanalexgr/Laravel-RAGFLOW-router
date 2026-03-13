@@ -6,6 +6,7 @@ Usage:
     python server.py streamable_http 8080   # streamable HTTP transport (production)
 """
 
+import asyncio
 import json
 import os
 import re
@@ -15,7 +16,7 @@ from typing import Any
 
 import httpx
 from dotenv import load_dotenv
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))  # load .env when running outside systemd (e.g. pytest)
 
@@ -563,7 +564,7 @@ def _format_consult_narrative(data: dict, query: str) -> str:
         return f"No evidence retrieved for: {query}"
 
     # STRICT_TEMPLATE synthesis instruction — tells OpenWebUI LLM to synthesise
-    # from the numbered evidence above and cite inline as [n]
+    # from the numbered evidence above with self-contained inline citations
     lines.append("---")
     lines.append(
         "**Synthesise a clinical response using ONLY the evidence above.** "
@@ -657,6 +658,18 @@ def _format_consult_agent(data: dict, query: str, history: list) -> str:
     return json.dumps(result, indent=2, ensure_ascii=False)
 
 
+# ─── Progress emission helper ─────────────────────────────────────────────────
+
+async def _emit_periodic(ctx: Context, messages: list[str], interval: float = 8.0) -> None:
+    """Emit status messages at fixed intervals — runs as a background task during slow HTTP calls."""
+    for msg in messages:
+        await asyncio.sleep(interval)
+        try:
+            await ctx.info(msg)
+        except Exception:
+            break
+
+
 # ─── FastMCP server ────────────────────────────────────────────────────────────
 
 def _make_server(host: str = "0.0.0.0", port: int = 8080) -> FastMCP:
@@ -708,6 +721,7 @@ async def vascular_consult_guidelines(
     guidelines: list[str] | None = None,
     history: list[str] | None = None,
     response_mode: str = "narrative",
+    ctx: Context | None = None,
 ) -> str:
     """
     Query ESVS guidelines and return evidence chunks.
@@ -728,6 +742,9 @@ async def vascular_consult_guidelines(
     if not query:
         return "Error: query cannot be empty."
 
+    if ctx:
+        await ctx.info("Analysing query and selecting ESVS guidelines…")
+
     # Normalise and validate response_mode; unknown values fall back to narrative
     try:
         mode = ResponseMode(response_mode)
@@ -743,6 +760,8 @@ async def vascular_consult_guidelines(
     h = [str(x) for x in (history or []) if x]
     has_prior_answer = any(len(x) > 300 for x in h)
     if not has_prior_answer and not guidelines and _is_patient_case(query, h):
+        if ctx:
+            await ctx.info("Checking clinical context requirements…")
         scenario_id, questions, suggested = _check_context_gaps(query, h)
         if scenario_id and questions:
             lines = [
@@ -761,6 +780,9 @@ async def vascular_consult_guidelines(
             )
             return "\n".join(lines)
 
+    if ctx:
+        await ctx.info("Retrieving evidence from ESVS guideline databases…")
+
     payload: dict[str, Any] = {
         "question": query,
         "history":  [str(h) for h in (history or [])],
@@ -774,6 +796,18 @@ async def vascular_consult_guidelines(
         "Accept":        "application/json",
     }
 
+    # Background ticker — emits progress messages while the HTTP call runs
+    ticker = (
+        asyncio.create_task(_emit_periodic(ctx, [
+            "Searching guideline databases…",
+            "Applying evidence filters and ranking chunks…",
+            "Waiting for retrieval pipeline…",
+            "Processing guideline evidence…",
+            "Almost done — synthesising clinical evidence…",
+        ]))
+        if ctx else None
+    )
+
     try:
         async with httpx.AsyncClient(timeout=LARAVEL_TIMEOUT) as client:
             resp = await client.post(
@@ -782,12 +816,23 @@ async def vascular_consult_guidelines(
                 headers=headers,
             )
     except httpx.TimeoutException:
+        if ticker:
+            ticker.cancel()
         return (
             "Error: Request to Laravel API timed out (>120s). "
             "Try a more specific query or fewer guidelines."
         )
     except httpx.RequestError as exc:
+        if ticker:
+            ticker.cancel()
         return f"Error: Could not reach Laravel API — {exc}"
+    finally:
+        if ticker:
+            ticker.cancel()
+            try:
+                await ticker
+            except asyncio.CancelledError:
+                pass
 
     if resp.status_code == 401:
         return "Error: Invalid API key. Check LARAVEL_API_KEY in .env."
@@ -802,6 +847,9 @@ async def vascular_consult_guidelines(
         data = resp.json()
     except Exception:
         return f"Error: Non-JSON response from Laravel API (status {resp.status_code})."
+
+    if ctx:
+        await ctx.info("Formatting clinical response…")
 
     if mode == ResponseMode.AGENT:
         return _format_consult_agent(data, query, history or [])
