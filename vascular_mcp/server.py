@@ -28,7 +28,7 @@ LARAVEL_TIMEOUT  = 120.0
 # ─── Response mode ─────────────────────────────────────────────────────────────
 
 class ResponseMode(str, Enum):
-    NARRATIVE = "narrative"   # current OpenWebUI Markdown output (default)
+    NARRATIVE = "narrative"   # OpenWebUI Markdown output with STRICT_TEMPLATE (default)
     AGENT     = "agent"       # structured JSON output for MCP/Codex clients
 
 # ─── Available guideline datasets ─────────────────────────────────────────────
@@ -235,6 +235,19 @@ _CONTEXT_GAP_RULES: list[dict] = [
                     "or embolic (AF, cardiac source, no prior arterial disease)?"
                 ),
             },
+            {
+                "present_if": [
+                    r"\baortoiliac\b", r"\bsaddle\b", r"\biliac\b",
+                    r"common\s+femoral", r"\bsfa\b", r"superficial\s+femoral",
+                    r"\bpopliteal\b", r"infrapopliteal", r"\btibial\b", r"\bperoneal\b",
+                    r"level\s+of\s+occl", r"occl.{0,20}(?:iliac|femoral|popliteal|aorta)",
+                ],
+                "question": (
+                    "**Occlusion level**: Where is the occlusion — aortoiliac/saddle embolus, "
+                    "common femoral/SFA, popliteal, or infrapopliteal (tibial/peroneal)? "
+                    "Level determines the approach: thrombectomy, catheter-directed thrombolysis, or bypass."
+                ),
+            },
         ],
         "min_absent": 2,
     },
@@ -274,6 +287,20 @@ _CONTEXT_GAP_RULES: list[dict] = [
                     r"previous\s+(?:dvt|pe|vte|thrombosis)",
                 ],
                 "question": "**Prior VTE history**: Is this a first episode or recurrent VTE?",
+            },
+            {
+                "present_if": [
+                    r"\bproximal\b", r"\biliofemoral\b", r"ilio.femoral",
+                    r"\bpopliteal\b", r"above.{0,10}knee",
+                    r"\bdistal\b", r"\bcalf\b", r"\btibial\b", r"\bperoneal\b",
+                    r"\bsoleal\b", r"\bgastrocnemius\b", r"below.{0,10}knee",
+                    r"thrombus\s+(?:at|in|involving)\s+(?:the\s+)?\w+\s+vein",
+                ],
+                "question": (
+                    "**DVT location**: Is this proximal DVT (popliteal or above: femoral, "
+                    "iliofemoral) or distal DVT (isolated calf/tibial veins below the knee)? "
+                    "Location affects anticoagulation duration and the decision to treat vs observe."
+                ),
             },
         ],
         "min_absent": 2,
@@ -411,7 +438,7 @@ def _check_context_gaps(
     return "", [], []
 
 
-# ─── Agent-mode formatters ─────────────────────────────────────────────────────
+# ─── Agent-mode helpers ────────────────────────────────────────────────────────
 
 def _map_recommendation(chunk: dict) -> dict:
     return {
@@ -432,20 +459,116 @@ def _derive_confidence(retrieval_mode: str, n_recs: int) -> str:
         return "low"
 
 
+def _gl_list(raw: Any) -> list[str]:
+    """Normalise selected_guidelines to a plain list of IDs (handles dict or list)."""
+    if isinstance(raw, dict):
+        return list(raw.keys())
+    return list(raw) if raw else []
+
+
+# ─── Narrative formatter (OpenWebUI mode) ─────────────────────────────────────
+
 def _format_consult_narrative(data: dict, query: str) -> str:
-    """Return the pre-formatted Markdown from Laravel (OpenWebUI narrative mode)."""
-    output_text = data.get("result") or data.get("llm_output") or data.get("output") or ""
-    if output_text:
-        return str(output_text)
-    # Fallback: summarise chunk counts
-    n_narr = len(data.get("narrative_chunks", []))
-    n_cite = len(data.get("citation_chunks", []))
-    guidelines_used = data.get("selected_guidelines", [])
-    return (
-        f"Retrieved {n_narr} narrative and {n_cite} citation chunks "
-        f"from: {', '.join(guidelines_used) or 'auto-selected'}."
+    """
+    Format retrieved evidence for OpenWebUI narrative mode.
+
+    Builds a numbered citation list from citation_chunks, appends supporting
+    narrative passages and figures/tables, then injects a STRICT_TEMPLATE
+    instruction so the synthesising LLM produces a properly sectioned clinical
+    response with chunk-level citations.
+    """
+    citations  = data.get("citation_chunks") or []
+    narrative  = data.get("narrative_chunks") or []
+    assets     = data.get("assets") or []
+    norm       = data.get("query_normalization") or {}
+    gl_ids     = _gl_list(data.get("selected_guidelines"))
+
+    # Fall back to pre-formatted result when Laravel returned no raw chunks
+    if not citations and not narrative:
+        output_text = data.get("result") or data.get("llm_output") or data.get("output") or ""
+        if output_text:
+            return str(output_text)
+        return f"No evidence retrieved from: {', '.join(gl_ids) or 'auto-selected'}."
+
+    lines: list[str] = []
+
+    # Normalised query header (only when the query changed)
+    norm_q = norm.get("normalized_query", "")
+    if norm_q and norm_q.strip().lower() != query.strip().lower():
+        lines.append(f"*Query interpreted as: {norm_q}*\n")
+
+    if gl_ids:
+        lines.append(f"**Guidelines searched:** {', '.join(gl_ids)}\n")
+
+    # ── Graded recommendations (numbered for inline [n] citation) ──────────────
+    if citations:
+        lines.append("### Graded Recommendations\n")
+        for i, c in enumerate(citations, 1):
+            rec_id    = c.get("rec_id") or c.get("recommendation_id") or ""
+            statement = c.get("recommendation") or c.get("content", "")
+            cls       = c.get("class") or c.get("recommendation_class", "")
+            lvl       = c.get("level") or c.get("evidence_level") or c.get("grade", "")
+            guideline = c.get("guideline") or c.get("document_name", "")
+            meta_parts = [p for p in [
+                f"Class {cls}" if cls else "",
+                f"Level {lvl}" if lvl else "",
+                guideline,
+                rec_id,
+            ] if p]
+            lines.append(f"**[{i}]** {statement}")
+            if meta_parts:
+                lines.append(f"*{' | '.join(meta_parts)}*")
+            lines.append("")
+
+    # ── Supporting narrative passages ──────────────────────────────────────────
+    if narrative:
+        lines.append("### Supporting Evidence\n")
+        for c in narrative:
+            section = c.get("document_name", "") or c.get("section", "")
+            text    = c.get("content", "")
+            if section:
+                lines.append(f"**{section}**")
+            if text:
+                lines.append(text)
+            lines.append("")
+
+    # ── Figures and tables ─────────────────────────────────────────────────────
+    if assets:
+        lines.append("### Figures and Tables\n")
+        for a in assets:
+            atype   = a.get("type", "figure").capitalize()
+            label   = a.get("label", "")
+            caption = a.get("caption", "")
+            url     = a.get("url")
+            entry   = f"- **{atype}** {label}"
+            if caption:
+                entry += f": {caption}"
+            if url:
+                entry += f" — [view]({url})"
+            lines.append(entry)
+        lines.append("")
+
+    # ── STRICT_TEMPLATE instruction for the synthesising LLM ──────────────────
+    lines.append("---")
+    lines.append(
+        "**Synthesise a clinical response using ONLY the evidence above.** "
+        "Apply these sections where clinically relevant:\n\n"
+        "**Assessment** — clinical context and key findings\n"
+        "**Imaging** — investigations required or recommended\n"
+        "**Indication for Intervention** — when to treat (cite Class/Level)\n"
+        "**Treatment Options** — procedure choice with evidence grades\n"
+        "**Clinical Decision Summary** — clear recommendation for this patient\n"
+        "**Perioperative Risk Mitigation** — relevant for surgical/endovascular cases\n"
+        "**Follow-up** — surveillance, monitoring, anticoagulation duration\n\n"
+        "Cite graded recommendations inline as **[n]** using the numbers above. "
+        "State Class and Level of evidence for all key recommendations. "
+        "Do not answer from memory — use only the retrieved evidence."
     )
 
+    return "\n".join(lines)
+
+
+# ─── Agent-mode formatter ──────────────────────────────────────────────────────
 
 def _format_consult_agent(data: dict, query: str, history: list) -> str:
     """Return structured JSON string for agent/Codex clients."""
@@ -453,8 +576,7 @@ def _format_consult_agent(data: dict, query: str, history: list) -> str:
     citations  = data.get("citation_chunks") or []
     narrative  = data.get("narrative_chunks") or []
     assets     = data.get("assets") or []
-    _gl_raw  = data.get("selected_guidelines") or []
-    guidelines = list(_gl_raw.keys()) if isinstance(_gl_raw, dict) else list(_gl_raw)
+    guidelines = _gl_list(data.get("selected_guidelines"))
     llm_out    = data.get("result") or data.get("llm_output") or data.get("output") or ""
 
     recs           = [_map_recommendation(c) for c in citations]
@@ -615,10 +737,13 @@ async def vascular_consult_guidelines(
 @mcp.tool(
     description=(
         "Check whether a patient-case question has sufficient clinical context "
-        "for ESVS guideline retrieval. Returns status PROCEED (context adequate) "
-        "or NEEDS_CLARIFICATION with specific questions to ask the user. "
+        "for ESVS guideline retrieval. Returns status PROCEED or NEEDS_CLARIFICATION. "
+        "IMPORTANT: Pass the COMPLETE case description including patient demographics "
+        "(age, sex, diagnosis, relevant history) — not just the question clause. "
+        "When status=PROCEED, you MUST immediately call vascular_consult_guidelines "
+        "with the original query. Never answer from memory after PROCEED. "
         "Knowledge questions (definitions, thresholds, population-level guidelines) "
-        "always return PROCEED without going through the gate."
+        "always return PROCEED and should call vascular_consult_guidelines directly."
     ),
     annotations={"readOnlyHint": True},
 )
@@ -630,13 +755,16 @@ async def vascular_assess_context_gaps(
     Assess whether a clinical question has enough context for guideline retrieval.
 
     Args:
-        question: The user's question or case description.
+        question: The COMPLETE case description including patient demographics and
+                  clinical details — not just the question clause. Pass everything
+                  the user wrote so the gate can detect patient-case language.
         history:  Optional list of prior conversation turns (plain strings).
                   Include prior user + assistant turns so the gate can detect
                   that context was already provided in an earlier turn.
 
     Returns a JSON string with:
         status:                 "PROCEED" | "NEEDS_CLARIFICATION"
+        next_action:            what to do next (always present on PROCEED)
         scenario:               matched scenario id, or null
         missing_parameters:     list of clarification questions (on NEEDS_CLARIFICATION)
         clarification_question: combined question string to present to the user, or null
@@ -649,9 +777,11 @@ async def vascular_assess_context_gaps(
     if _is_knowledge_question(q, h):
         return json.dumps({
             "status":                 "PROCEED",
+            "next_action":            "call vascular_consult_guidelines with the original query",
             "reason":                 "knowledge_question",
             "scenario":               None,
             "missing_parameters":     [],
+            "clarification_questions": [],
             "clarification_question": None,
             "suggested_guidelines":   [],
         })
@@ -660,9 +790,11 @@ async def vascular_assess_context_gaps(
     if not _is_patient_case(q, h):
         return json.dumps({
             "status":                 "PROCEED",
+            "next_action":            "call vascular_consult_guidelines with the original query",
             "reason":                 "not_a_patient_case",
             "scenario":               None,
             "missing_parameters":     [],
+            "clarification_questions": [],
             "clarification_question": None,
             "suggested_guidelines":   [],
         })
@@ -673,9 +805,11 @@ async def vascular_assess_context_gaps(
     if has_prior_assistant_response:
         return json.dumps({
             "status":                 "PROCEED",
+            "next_action":            "call vascular_consult_guidelines with the original query",
             "reason":                 "follow_up_turn",
             "scenario":               None,
             "missing_parameters":     [],
+            "clarification_questions": [],
             "clarification_question": None,
             "suggested_guidelines":   [],
         })
@@ -684,19 +818,21 @@ async def vascular_assess_context_gaps(
 
     if scenario_id and questions:
         return json.dumps({
-            "status":                 "NEEDS_CLARIFICATION",
-            "scenario":               scenario_id,
-            "missing_parameters":     questions,
+            "status":                  "NEEDS_CLARIFICATION",
+            "scenario":                scenario_id,
+            "missing_parameters":      questions,
             "clarification_questions": questions,           # backward-compat alias
-            "clarification_question": "\n\n".join(questions),
-            "suggested_guidelines":   suggested,
+            "clarification_question":  "\n\n".join(questions),
+            "suggested_guidelines":    suggested,
         })
 
     return json.dumps({
         "status":                 "PROCEED",
+        "next_action":            "call vascular_consult_guidelines with the original query",
         "reason":                 "sufficient_context",
         "scenario":               None,
         "missing_parameters":     [],
+        "clarification_questions": [],
         "clarification_question": None,
         "suggested_guidelines":   [],
     })
