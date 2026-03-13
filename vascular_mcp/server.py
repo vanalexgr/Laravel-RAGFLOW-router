@@ -660,12 +660,12 @@ def _format_consult_agent(data: dict, query: str, history: list) -> str:
 
 # ─── Progress emission helper ─────────────────────────────────────────────────
 
-async def _emit_periodic(ctx: Context, messages: list[str], interval: float = 8.0) -> None:
-    """Emit status messages at fixed intervals — runs as a background task during slow HTTP calls."""
-    for msg in messages:
+async def _emit_periodic(ctx: Context, steps: list[tuple[float, str]], interval: float = 8.0) -> None:
+    """Emit progress notifications at fixed intervals — runs as a background task during slow HTTP calls."""
+    for progress, msg in steps:
         await asyncio.sleep(interval)
         try:
-            await ctx.info(msg)
+            await ctx.report_progress(progress=progress, total=100, message=msg)
         except Exception:
             break
 
@@ -743,7 +743,7 @@ async def vascular_consult_guidelines(
         return "Error: query cannot be empty."
 
     if ctx:
-        await ctx.info("Analysing query and selecting ESVS guidelines…")
+        await ctx.report_progress(progress=5, total=100, message="Analysing query and selecting ESVS guidelines…")
 
     # Normalise and validate response_mode; unknown values fall back to narrative
     try:
@@ -761,7 +761,7 @@ async def vascular_consult_guidelines(
     has_prior_answer = any(len(x) > 300 for x in h)
     if not has_prior_answer and not guidelines and _is_patient_case(query, h):
         if ctx:
-            await ctx.info("Checking clinical context requirements…")
+            await ctx.report_progress(progress=10, total=100, message="Checking clinical context requirements…")
         scenario_id, questions, suggested = _check_context_gaps(query, h)
         if scenario_id and questions:
             lines = [
@@ -781,7 +781,7 @@ async def vascular_consult_guidelines(
             return "\n".join(lines)
 
     if ctx:
-        await ctx.info("Retrieving evidence from ESVS guideline databases…")
+        await ctx.report_progress(progress=20, total=100, message="Retrieving evidence from ESVS guideline databases…")
 
     payload: dict[str, Any] = {
         "question": query,
@@ -796,14 +796,14 @@ async def vascular_consult_guidelines(
         "Accept":        "application/json",
     }
 
-    # Background ticker — emits progress messages while the HTTP call runs
+    # Background ticker — emits progress notifications while the HTTP call runs
     ticker = (
         asyncio.create_task(_emit_periodic(ctx, [
-            "Searching guideline databases…",
-            "Applying evidence filters and ranking chunks…",
-            "Waiting for retrieval pipeline…",
-            "Processing guideline evidence…",
-            "Almost done — synthesising clinical evidence…",
+            (30, "Searching guideline databases…"),
+            (45, "Applying evidence filters and ranking chunks…"),
+            (60, "Processing retrieved guideline evidence…"),
+            (75, "Synthesising clinical evidence…"),
+            (88, "Almost done — finalising response…"),
         ]))
         if ctx else None
     )
@@ -849,7 +849,7 @@ async def vascular_consult_guidelines(
         return f"Error: Non-JSON response from Laravel API (status {resp.status_code})."
 
     if ctx:
-        await ctx.info("Formatting clinical response…")
+        await ctx.report_progress(progress=95, total=100, message="Formatting clinical response…")
 
     if mode == ResponseMode.AGENT:
         return _format_consult_agent(data, query, history or [])
