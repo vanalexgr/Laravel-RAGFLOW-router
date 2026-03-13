@@ -173,11 +173,14 @@ class TestInputValidation:
         assert parsed["status"] == "PROCEED"
 
     def test_list_guidelines_returns_all_datasets(self):
-        """vascular_list_guidelines → text contains all 14 expected guideline keys."""
+        """vascular_list_guidelines → JSON with 14 guideline objects, each with required fields."""
         data = _mcp_tool_call("vascular_list_guidelines", {})
         result = data.get("result", {})
         content = result.get("content", [])
         text = content[0].get("text", "") if content else str(result)
+        parsed = json.loads(text)
+        assert "guidelines" in parsed, f"Top-level 'guidelines' key missing: {parsed}"
+        ids = {g["id"] for g in parsed["guidelines"]}
         expected_keys = [
             "aortic_arch", "descending_thoracic_aorta", "abdominal_aortic_aneurysm",
             "mesenteric_renal", "asymptomatic_pad", "clti", "acute_limb_ischaemia",
@@ -186,4 +189,49 @@ class TestInputValidation:
             "vascular_access",
         ]
         for key in expected_keys:
-            assert key in text, f"Expected guideline key '{key}' missing from list_guidelines output"
+            assert key in ids, f"Expected guideline key '{key}' missing from list_guidelines output"
+        for g in parsed["guidelines"]:
+            assert "description" in g, f"Missing 'description' on {g.get('id')}"
+
+
+# ─── Tests 5–6: Agent mode protocol validation ────────────────────────────────
+
+REQUIRED_AGENT_FIELDS = [
+    "query_normalized", "question_type", "guidelines_used",
+    "retrieval_mode", "answer", "recommendations", "supporting_narrative",
+    "figures_or_tables", "confidence", "needs_clinical_judgment",
+]
+
+_AAA_QUERY = "threshold for elective AAA repair in fit patients"
+
+
+class TestAgentModeProtocol:
+    def test_agent_mode_output_is_valid_json(self):
+        """Test 5: agent mode output (via MCP protocol) is valid JSON with all required fields."""
+        data = _mcp_tool_call(
+            "vascular_consult_guidelines",
+            {"query": _AAA_QUERY, "response_mode": "agent"},
+            req_id=20,
+        )
+        result = data.get("result", {})
+        content = result.get("content", [])
+        raw = content[0].get("text", "") if content else str(result)
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            raise AssertionError(f"Agent mode output is not valid JSON: {raw[:300]}")
+        for f in REQUIRED_AGENT_FIELDS:
+            assert f in parsed, f"Missing required field: {f}"
+
+    def test_default_mode_is_narrative_not_json(self):
+        """Test 6: omitting response_mode → narrative Markdown, not a JSON object."""
+        data = _mcp_tool_call(
+            "vascular_consult_guidelines",
+            {"query": _AAA_QUERY},
+            req_id=21,
+        )
+        result = data.get("result", {})
+        content = result.get("content", [])
+        raw = content[0].get("text", "") if content else str(result)
+        assert not raw.strip().startswith("{"), \
+            f"Default mode must be narrative (Markdown), not JSON. Got: {raw[:200]}"
