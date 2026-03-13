@@ -467,81 +467,95 @@ def _gl_list(raw: Any) -> list[str]:
     return list(raw) if raw else []
 
 
+# ─── Shared chunk helpers ──────────────────────────────────────────────────────
+
+def _dedup_chunks(chunks: list) -> list:
+    """Remove duplicate chunks by rec_id, falling back to content hash."""
+    seen: set = set()
+    out: list = []
+    for c in chunks:
+        key = c.get("rec_id") or c.get("recommendation_id") or hash(c.get("content", "")[:120])
+        if key not in seen:
+            seen.add(key)
+            out.append(c)
+    return out
+
+
+def _citation_line(chunk: dict, index: int) -> str:
+    """Render a single recommendation as a numbered citation line."""
+    statement = chunk.get("recommendation") or chunk.get("content", "").strip()
+    cls       = chunk.get("class") or chunk.get("recommendation_class", "")
+    lvl       = chunk.get("level") or chunk.get("evidence_level") or chunk.get("grade", "")
+    grade     = f" [{cls}{(', ' + lvl) if cls and lvl else lvl}]" if (cls or lvl) else ""
+    source    = chunk.get("document_name") or chunk.get("guideline") or chunk.get("source", "")
+    section   = chunk.get("section") or chunk.get("page_number") or ""
+    src_tag   = ""
+    if source:
+        src_tag = f" — *{source}*"
+        if section:
+            src_tag += f", {section}"
+    return f"{index}. {statement}{grade}{src_tag}"
+
+
 # ─── Narrative formatter (OpenWebUI mode) ─────────────────────────────────────
 
 def _format_consult_narrative(data: dict, query: str) -> str:
     """
     Format retrieved evidence for OpenWebUI narrative mode.
 
-    Builds a numbered citation list from citation_chunks, appends supporting
-    narrative passages and figures/tables, then injects a STRICT_TEMPLATE
-    instruction so the synthesising LLM produces a properly sectioned clinical
-    response with chunk-level citations.
+    Renders pre-formatted Laravel STRICT_TEMPLATE output (## Clinical Assessment),
+    then supporting evidence and numbered citations so the synthesising LLM can
+    cite specific recommendations inline.
     """
-    citations  = data.get("citation_chunks") or []
-    narrative  = data.get("narrative_chunks") or []
-    assets     = data.get("assets") or []
     norm       = data.get("query_normalization") or {}
+    narrative  = _dedup_chunks(data.get("narrative_chunks") or [])
+    citations  = _dedup_chunks(data.get("citation_chunks") or [])
+    assets     = data.get("assets") or []
     gl_ids     = _gl_list(data.get("selected_guidelines"))
-
-    # Fall back to pre-formatted result when Laravel returned no raw chunks
-    if not citations and not narrative:
-        output_text = data.get("result") or data.get("llm_output") or data.get("output") or ""
-        if output_text:
-            return str(output_text)
-        return f"No evidence retrieved from: {', '.join(gl_ids) or 'auto-selected'}."
+    llm_out    = (data.get("llm_output") or data.get("result") or data.get("output") or "").strip()
 
     lines: list[str] = []
 
-    # Normalised query header (only when the query changed)
+    # Query normalisation header (only when the query changed)
     norm_q = norm.get("normalized_query", "")
     if norm_q and norm_q.strip().lower() != query.strip().lower():
-        lines.append(f"*Query interpreted as: {norm_q}*\n")
+        lines += [f"**Query interpreted as:** {norm_q}", ""]
 
+    # Guidelines searched
     if gl_ids:
-        lines.append(f"**Guidelines searched:** {', '.join(gl_ids)}\n")
+        lines += [f"**Guidelines searched:** {', '.join(gl_ids)}", ""]
 
-    # ── Graded recommendations (numbered for inline [n] citation) ──────────────
-    if citations:
-        lines.append("### Graded Recommendations\n")
-        for i, c in enumerate(citations, 1):
-            rec_id    = c.get("rec_id") or c.get("recommendation_id") or ""
-            statement = c.get("recommendation") or c.get("content", "")
-            cls       = c.get("class") or c.get("recommendation_class", "")
-            lvl       = c.get("level") or c.get("evidence_level") or c.get("grade", "")
-            guideline = c.get("guideline") or c.get("document_name", "")
-            meta_parts = [p for p in [
-                f"Class {cls}" if cls else "",
-                f"Level {lvl}" if lvl else "",
-                guideline,
-                rec_id,
-            ] if p]
-            lines.append(f"**[{i}]** {statement}")
-            if meta_parts:
-                lines.append(f"*{' | '.join(meta_parts)}*")
-            lines.append("")
+    # Structured output from Laravel (STRICT_TEMPLATE) — render first if present
+    if llm_out:
+        lines += ["## Clinical Assessment", "", llm_out, ""]
 
-    # ── Supporting narrative passages ──────────────────────────────────────────
+    # Evidence summary — narrative chunks
     if narrative:
-        lines.append("### Supporting Evidence\n")
-        for c in narrative:
-            section = c.get("document_name", "") or c.get("section", "")
-            text    = c.get("content", "")
-            if section:
-                lines.append(f"**{section}**")
+        lines += ["## Evidence Summary", ""]
+        for chunk in narrative:
+            src  = chunk.get("document_name") or chunk.get("source", "")
+            text = chunk.get("content", "")
+            if src:
+                lines.append(f"**{src}**")
             if text:
                 lines.append(text)
             lines.append("")
 
-    # ── Figures and tables ─────────────────────────────────────────────────────
+    # Guideline recommendations (numbered for inline [n] citation)
+    if citations:
+        lines += ["## Guideline Recommendations", ""]
+        for i, c in enumerate(citations, 1):
+            lines.append(_citation_line(c, i))
+        lines.append("")
+
+    # Referenced figures and tables
     if assets:
-        lines.append("### Figures and Tables\n")
+        lines += ["## Referenced Figures & Tables", ""]
         for a in assets:
-            atype   = a.get("type", "figure").capitalize()
-            label   = a.get("label", "")
+            label   = a.get("label", "Asset")
             caption = a.get("caption", "")
             url     = a.get("url")
-            entry   = f"- **{atype}** {label}"
+            entry   = f"- **{label}**"
             if caption:
                 entry += f": {caption}"
             if url:
@@ -549,46 +563,77 @@ def _format_consult_narrative(data: dict, query: str) -> str:
             lines.append(entry)
         lines.append("")
 
-    # ── STRICT_TEMPLATE instruction for the synthesising LLM ──────────────────
-    lines.append("---")
-    lines.append(
-        "**Synthesise a clinical response using ONLY the evidence above.** "
-        "Apply these sections where clinically relevant:\n\n"
-        "**Assessment** — clinical context and key findings\n"
-        "**Imaging** — investigations required or recommended\n"
-        "**Indication for Intervention** — when to treat (cite Class/Level)\n"
-        "**Treatment Options** — procedure choice with evidence grades\n"
-        "**Clinical Decision Summary** — clear recommendation for this patient\n"
-        "**Perioperative Risk Mitigation** — relevant for surgical/endovascular cases\n"
-        "**Follow-up** — surveillance, monitoring, anticoagulation duration\n\n"
-        "Cite graded recommendations inline as **[n]** using the numbers above. "
-        "State Class and Level of evidence for all key recommendations. "
-        "Do not answer from memory — use only the retrieved evidence."
-    )
+    if not lines:
+        return f"No evidence retrieved for: {query}"
+
+    # STRICT_TEMPLATE synthesis instruction — only when Laravel did not pre-format
+    if not llm_out:
+        lines.append("---")
+        lines.append(
+            "**Synthesise a clinical response using ONLY the evidence above.** "
+            "Apply these sections where clinically relevant:\n\n"
+            "**Assessment** — clinical context and key findings\n"
+            "**Imaging** — investigations required or recommended\n"
+            "**Indication for Intervention** — when to treat (cite Class/Level)\n"
+            "**Treatment Options** — procedure choice with evidence grades\n"
+            "**Clinical Decision Summary** — clear recommendation for this patient\n"
+            "**Perioperative Risk Mitigation** — relevant for surgical/endovascular cases\n"
+            "**Follow-up** — surveillance, monitoring, anticoagulation duration\n\n"
+            "Cite graded recommendations inline as **[n]** using the numbers above. "
+            "State Class and Level of evidence for all key recommendations. "
+            "Do not answer from memory — use only the retrieved evidence."
+        )
 
     return "\n".join(lines)
 
 
 # ─── Agent-mode formatter ──────────────────────────────────────────────────────
 
+def _synthesise_answer(llm_out: str, citations: list, narrative: list) -> str:
+    """
+    Derive a 1-3 sentence answer in priority order:
+    1. First substantive line of llm_output (STRICT_TEMPLATE already synthesised)
+    2. Top recommendation statement + grade if no llm_output
+    3. First narrative chunk excerpt as last resort
+    """
+    if llm_out:
+        for line in llm_out.split("\n"):
+            line = line.strip().lstrip("#").strip()
+            if len(line) > 40:
+                return line[:400]
+    if citations:
+        top   = citations[0]
+        stmt  = top.get("recommendation") or top.get("content", "")[:200]
+        cls   = top.get("class", "")
+        lvl   = top.get("level") or top.get("grade", "")
+        grade = f" ({cls}{(', ' + lvl) if cls and lvl else lvl})" if (cls or lvl) else ""
+        return f"{stmt.strip()}{grade}"[:400]
+    if narrative:
+        return narrative[0].get("content", "")[:300].strip()
+    return ""
+
+
 def _format_consult_agent(data: dict, query: str, history: list) -> str:
     """Return structured JSON string for agent/Codex clients."""
     norm       = data.get("query_normalization") or {}
-    citations  = data.get("citation_chunks") or []
-    narrative  = data.get("narrative_chunks") or []
+    citations  = _dedup_chunks(data.get("citation_chunks") or [])
+    narrative  = _dedup_chunks(data.get("narrative_chunks") or [])
     assets     = data.get("assets") or []
     guidelines = _gl_list(data.get("selected_guidelines"))
-    llm_out    = data.get("result") or data.get("llm_output") or data.get("output") or ""
+    llm_out    = (data.get("result") or data.get("llm_output") or data.get("output") or "").strip()
 
     recs           = [_map_recommendation(c) for c in citations]
     retrieval_mode = "lean" if len(recs) <= 3 else "full"
-    question_type  = "patient_case" if history else "knowledge"
 
-    answer = ""
-    if llm_out:
-        answer = llm_out.split("\n")[0].strip()
-    elif narrative:
-        answer = narrative[0].get("content", "").strip()[:300]
+    # Prefer query_type from Laravel (Phase 2+); fall back to history heuristic
+    raw_type      = data.get("query_type", "")
+    question_type = (
+        ("knowledge" if raw_type == "knowledge" else "patient_case")
+        if raw_type
+        else ("patient_case" if history else "knowledge")
+    )
+
+    answer = _synthesise_answer(llm_out, citations, narrative)
 
     result = {
         "query_normalized":     norm.get("normalized_query", query),
