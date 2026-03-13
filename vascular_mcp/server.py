@@ -632,8 +632,6 @@ def _make_server(host: str = "0.0.0.0", port: int = 8080) -> FastMCP:
             "patient cases alike. The tool handles context checking internally: if clinical "
             "details are missing it will return a clarification request; call it again "
             "with the complete information once the user responds. "
-            "vascular_assess_context_gaps is available for clients requiring explicit "
-            "two-step gate control but is not required for the standard flow. "
             "Use vascular_list_guidelines to discover available dataset keys."
         ),
     )
@@ -770,18 +768,6 @@ async def vascular_consult_guidelines(
     return _format_consult_narrative(data, query)
 
 
-@mcp.tool(
-    description=(
-        "Optional explicit context gate for patient-case questions. "
-        "Returns status PROCEED or NEEDS_CLARIFICATION with clarification questions. "
-        "Not required for the standard single-tool flow — vascular_consult_guidelines "
-        "runs this check internally. Use this tool only when you need explicit two-step "
-        "gate control (e.g. Codex agents that inspect gate output before retrieval). "
-        "Pass the COMPLETE case description including patient demographics. "
-        "When status=PROCEED, call vascular_consult_guidelines next."
-    ),
-    annotations={"readOnlyHint": True},
-)
 async def vascular_assess_context_gaps(
     question: str,
     history: list[str] | None = None,

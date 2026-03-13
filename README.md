@@ -36,7 +36,8 @@ Located at `/home/azureuser/vascular-mcp/` on the 135 VM. Served at port 8080 vi
 |---|---|
 | `vascular_consult_guidelines` | **Primary tool.** Retrieves ESVS evidence. Includes a built-in context gate — for patient cases with missing clinical details it returns clarification questions instead of retrieving; call again with complete info. |
 | `vascular_list_guidelines` | Lists all 14 available guideline datasets with keys, labels, and descriptions. |
-| `vascular_assess_context_gaps` | **Optional explicit gate.** Returns PROCEED or NEEDS_CLARIFICATION as JSON. For clients that need to inspect gate output before retrieval (e.g. Codex agents). Not required for the standard single-tool flow. |
+
+`vascular_assess_context_gaps` is an internal Python function that powers the gate inside `vascular_consult_guidelines`. It is **not registered as an MCP tool** and is not visible to clients.
 
 ---
 
@@ -48,39 +49,30 @@ This is the most important thing to get right when setting up a new client.
 
 `vascular_assess_context_gaps` (gate) → `vascular_consult_guidelines` (retrieval) is a two-step sequence. In practice, many LLM clients (including OpenWebUI with GPT-class models) call the gate, receive PROCEED, and then **output the second tool call as plain text** rather than making a real function call. The turn closes with no retrieval and no answer.
 
-### Single-tool clients (recommended for most setups)
+### All clients: use `vascular_consult_guidelines` directly
 
-Use **only** `vascular_consult_guidelines` + `vascular_list_guidelines`. The gate runs internally inside `vascular_consult_guidelines` — if context is missing it returns a clarification request directly; the client presents it to the user and calls the tool again with the full information.
+The server exposes **2 tools**. The context gate is built into `vascular_consult_guidelines` — there is no separate gate tool to call first. For every query type:
 
-**Use this for:** OpenWebUI, any chat interface, any client where you cannot guarantee the model will reliably make a second function call after receiving a tool result.
+- **Knowledge questions** (definitions, thresholds, classifications): tool retrieves immediately.
+- **Patient cases with sufficient context**: tool retrieves immediately.
+- **Patient cases with missing context**: tool returns a clarification request (Markdown string beginning with `**Additional information needed**`). Present the questions to the user, then call the tool again with the complete information. Pass all prior turns in the `history` parameter so the gate knows what was already collected.
 
-OpenWebUI model: **"Vascular MCP (Agent)"** (`vascular-mcp-agent` in DB)
-- System prompt: instructs model to call `vascular_consult_guidelines` for all queries, never call the gate
-- Handles B/C/D case groups correctly in single turns
+**Background — why there is no separate gate tool:**
+An earlier design exposed `vascular_assess_context_gaps` as a third MCP tool for explicit two-step gate control. In practice, LLM clients (including GPT-class models in OpenWebUI) called the gate, received a PROCEED response, and then output the next tool call as **plain text** instead of making an actual function call — leaving the turn with no retrieval and no answer. Merging the gate into `vascular_consult_guidelines` eliminates the chaining requirement entirely.
 
-### Two-step agentic clients (explicit gate control)
-
-Use all three tools. The gate returns a structured JSON payload that the agent inspects before deciding whether to retrieve. The agent is responsible for making the second tool call when status=PROCEED.
-
-**Use this for:** Codex, programmatic agents, any client that reliably handles sequential tool calls across turns and needs to inspect the gate's JSON output (scenario ID, suggested_guidelines, missing_parameters) before retrieval.
-
-OpenWebUI model: **"Vascular MCP Validation"** (`vascular-mcp-validation` in DB)
-- System prompt: instructs model to call gate first, then consult on PROCEED
-- Only reliable when the underlying model supports multi-step tool chaining
+OpenWebUI model: **"Vascular MCP (Agent)"** (`vascular-mcp-agent` in DB, base: `gpt-5-chat`)
 
 ### Decision guide
 
 ```
-Is your client a chat interface or simple LLM tool call?
-  └─ Yes → 2-tool config (vascular_consult_guidelines + vascular_list_guidelines)
-
-Does your client run a programmatic agent loop that:
-  - Inspects tool results before the next step?
-  - Reliably makes a second function call after receiving a PROCEED result?
-  └─ Yes → 3-tool config (all three tools)
-
-Not sure?
-  └─ Default to 2-tool. The built-in gate covers all the same clinical scenarios.
+Any client (chat interface, agent, API, Codex):
+  └─ Call vascular_consult_guidelines with the full query.
+     If the response starts with "**Additional information needed**":
+       └─ Present the questions to the user.
+          Call vascular_consult_guidelines again with the complete information.
+          Include prior turns in the history parameter.
+     Otherwise:
+       └─ Synthesise the returned evidence into a clinical response.
 ```
 
 ---
