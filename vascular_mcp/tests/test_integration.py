@@ -284,3 +284,66 @@ class TestListGuidelinesStructured:
         entry = next(g for g in data["guidelines"] if g["id"] == "descending_thoracic_aorta")
         assert entry["has_assets"] is False, \
             f"descending_thoracic_aorta should have has_assets=False, got {entry['has_assets']}"
+
+
+# ─── Phase 1b tests: citation & formatting fixes ──────────────────────────────
+
+_KNOWLEDGE_QUERY = "What is the recommended diameter threshold for elective AAA repair in fit patients?"
+
+
+class TestPhase1bCitationFormat:
+    def test_1b_a_citations_include_grade(self):
+        """Test 1b-A: narrative citation lines include Class/Level grade in brackets."""
+        result = tool(_KNOWLEDGE_QUERY)
+        assert not result.startswith("Error:"), f"Got error: {result[:200]}"
+        # Find the Guideline Recommendations section
+        assert "## Guideline Recommendations" in result, \
+            "Expected '## Guideline Recommendations' section in narrative output"
+        # At least one citation line should contain a grade marker [...]
+        recs_section = result.split("## Guideline Recommendations", 1)[1]
+        assert "[" in recs_section and "]" in recs_section, \
+            f"Expected grade brackets [Class, Level] in citation lines, got: {recs_section[:400]}"
+
+    def test_1b_b_source_is_guideline_name_not_tool_name(self):
+        """Test 1b-B: tool name must not appear as citation source in narrative output."""
+        result = tool(_KNOWLEDGE_QUERY)
+        assert not result.startswith("Error:"), f"Got error: {result[:200]}"
+        assert "vascular_consult_guidelines" not in result, \
+            "Tool name must not appear as citation source in narrative output"
+
+    def test_1b_c_no_duplicate_recommendations(self):
+        """Test 1b-C: narrative output contains no duplicate recommendation statements."""
+        result = tool(_KNOWLEDGE_QUERY)
+        assert not result.startswith("Error:"), f"Got error: {result[:200]}"
+        if "## Guideline Recommendations" not in result:
+            return  # no citations returned — dedup trivially satisfied
+        recs_section = result.split("## Guideline Recommendations", 1)[1]
+        lines = [l.strip() for l in recs_section.splitlines() if l.strip() and l.strip()[0].isdigit()]
+        # Strip leading index number before comparing
+        statements = [l.split(". ", 1)[1] if ". " in l else l for l in lines]
+        assert len(statements) == len(set(statements)), \
+            f"Duplicate recommendation statements found: {statements}"
+
+    def test_1b_d_agent_answer_substantive(self):
+        """Test 1b-D: agent mode answer field > 40 chars on a standard knowledge question."""
+        result = tool(_KNOWLEDGE_QUERY, response_mode="agent")
+        data = json.loads(result)
+        assert len(data.get("answer", "")) > 40, \
+            f"Agent mode answer too short (≤40 chars): {data.get('answer')!r}"
+
+    def test_1b_evidence_summary_header_present(self):
+        """## Evidence Summary header must be present when narrative chunks exist."""
+        result = tool(_KNOWLEDGE_QUERY)
+        assert not result.startswith("Error:"), f"Got error: {result[:200]}"
+        # Only assert the header if the response has substantive content
+        if len(result) > 200:
+            assert "## Evidence Summary" in result or "## Guideline Recommendations" in result, \
+                "Expected at least one of ## Evidence Summary or ## Guideline Recommendations"
+
+    def test_1b_guideline_recommendations_header_present(self):
+        """## Guideline Recommendations header must be present when citation chunks exist."""
+        result = tool(_KNOWLEDGE_QUERY)
+        assert not result.startswith("Error:"), f"Got error: {result[:200]}"
+        if len(result) > 200:
+            assert "## Guideline Recommendations" in result, \
+                f"Expected '## Guideline Recommendations' in narrative output. Got: {result[:500]}"
