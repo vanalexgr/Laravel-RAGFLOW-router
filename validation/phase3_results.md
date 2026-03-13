@@ -99,6 +99,7 @@ All queries within 90s. MCP path noticeably faster than `vascular_expert.py` (wh
 | P3-ENH-1 | **Enhancement** | **C3 gate gap — DVT location missing**: Gate asks for provoked/unprovoked and episode history but not DVT anatomical location (proximal iliofemoral vs distal popliteal/calf). Location determines anticoagulation duration and intensity. |
 | P3-ENH-2 | **Enhancement** | **C4 gate gap — ALI location and aetiology missing**: Gate asks for Rutherford class and duration but not occlusion level (aortoiliac / femoral / infrapopliteal) or thrombotic vs embolic distinction. Both are required for treatment decision (thrombectomy vs thrombolysis vs bypass). |
 | P3-ENH-3 | **Enhancement** | **Narrative template gap**: MCP `_format_consult_narrative()` returns Laravel `result` field as-is. STRICT_TEMPLATE sections (Assessment / Imaging / Indication / Treatment / Clinical Decision Summary / Perioperative Risk / Follow-up) and figures/tables appending are not applied. These are implemented in `vascular_expert.py`, not the MCP server. Answer structure quality: 3/5 vs 4–5/5 for `vascular_expert.py`. |
+| P3-ENH-4 | **Enhancement** | **Citations reference tool calls, not retrieved chunks**: MCP narrative output cites `[1] ESVS Guideline List: ...` or `[1] RETRIEVED GUIDELINES for: ...` — i.e., the tool invocation itself. `vascular_expert.py` maps citations to specific retrieved chunks with document name, section, and recommendation ID (e.g., `[1] Carotid and Vertebral Artery Guidelines, Rec 4.2, Class I, Level A`). Clinicians cannot trace MCP answers back to source text. The `citation_chunks` field returned by Laravel already contains per-chunk metadata (`document_name`, `rec_id`, `class`, `level`) — these need to be surfaced as inline citations in `_format_consult_narrative()`. |
 | P3-INFO-1 | **Info** | **A3 tool call discrepancy**: DB shows `vascular_consult_guidelines` called for chat ae2d26fb; user observed no tool called in UI. May be OpenWebUI tool-call render issue or different chat run. |
 | P3-INFO-2 | **Info** | **D group run as separate conversations**: D1–D4 each started with D0 re-established, not in one thread. Same-conversation gate suppression behaviour not tested as designed. Recommend re-running as single thread. |
 
@@ -118,7 +119,10 @@ Answer quality scored 3 across patient cases. The structural sections (Assessmen
 - `dvt_pe` rule: add `location` category — proximal (iliofemoral / popliteal) vs distal (calf vein) — determines 3 vs 6 months and intensity of anticoagulation
 - `ali` rule: add `occlusion_level` category (aortoiliac / femoropopliteal / infrapopliteal) — determines intervention type and urgency
 
-**4. Investigate gate argument-passing (P3-BUG-2)**
+**4. Add chunk-level citations to narrative output (P3-ENH-4)**
+MCP output cites the tool call (`[1] RETRIEVED GUIDELINES for: ...`) rather than the specific retrieved chunk. `vascular_expert.py` produces per-statement citations tied to chunk metadata (`document_name`, `rec_id`, `class`, `level`). The data is already in `citation_chunks` from Laravel — `_format_consult_narrative()` needs to build a numbered reference list from it and inject inline citation markers into the narrative text.
+
+**5. Investigate gate argument-passing (P3-BUG-2)**
 Model passes paraphrased question to gate, losing patient case context → misclassified as knowledge question. Mitigations: (a) system prompt instruction to pass full case text to gate; (b) gate `question` param description emphasising full context required.
 
 **5. Investigate `mcp/consult_vascular_guidelines` source label (P3-BUG-3)**
