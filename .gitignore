@@ -1,3 +1,13 @@
+# Local / session files
+.claude/
+mcp_server_status.md
+
+# Binary design docs and presentations (keep locally, not in git)
+*.docx
+*.pptx
+*.pdf
+*.png
+
 *.log
 .DS_Store
 .env

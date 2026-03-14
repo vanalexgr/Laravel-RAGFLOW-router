@@ -132,7 +132,7 @@ Determine whether C2/C3/C4 actually used old `vascular_expert.py` or whether thi
 None exceeded 90s. Single-guideline queries: ~25–30s. Multi-guideline (A3): ~25s. No Phase 2 lean-retrieval urgency based on this data alone — but B/D latency not measurable due to memory-answer failures.
 
 **7. Codex baseline not established.**
-All tests were OpenWebUI only. Codex testing pending.
+All tests were OpenWebUI only. Codex comparison deferred — see Phase 3 closure note.
 
 ---
 
@@ -197,4 +197,28 @@ C1 chat ID invalid (truncated UUID — not found in DB).
 |----|----------|-------------|
 | P3R-BUG-1 | **Bug** | **B1: Model calls gate despite 2-tool system prompt.** The MCP server exposes all 3 tools; system prompt instruction ("do not call vascular_assess_context_gaps") is ignored by the model on the first turn. After failed chaining, user retry succeeded. Root cause: system prompt cannot suppress a visible tool. Only fix: remove `vascular_assess_context_gaps` from the MCP server tool registration for this model, OR create a separate 2-tool MCP server endpoint. |
 | P3R-INFO-1 | **Info** | **C1 chat ID truncated** — UUID invalid (7 chars in first segment). Re-run C1 ("I have a patient with carotid stenosis") to confirm carotid clarification gate fires correctly. |
-| P3R-INFO-2 | **Info** | **Codex baseline not established.** All Phase 3 and Phase 2 re-tests are OpenWebUI only. 3-tool config comparison with Codex pending. |
+| P3R-INFO-2 | **Deferred** | **Codex baseline not established.** All Phase 3 and Phase 2 re-tests are OpenWebUI only. Codex comparison deferred — see Phase 3 closure note below. |
+
+---
+
+## Phase 3 Closure
+
+**Closed:** 2026-03-14
+**Baseline:** OpenWebUI only (2-tool "Vascular MCP Agent" config, commit `5a1c63a`)
+
+Phase 3 is closed on the OpenWebUI-only results. The Phase 2 re-test (11/12 Pass, avg 4.86/5) is the accepted performance baseline for the MCP server.
+
+**Codex comparison — outstanding / deferred**
+A Codex-environment baseline was planned but not run this cycle. This comparison remains an open item for a future validation cycle. Until then, all benchmark claims refer to OpenWebUI + gpt-5-chat only.
+
+**What Phase 3 established:**
+- Gate-merge fix resolves the post-PROCEED retrieval gap (P3-BUG-1) — primary workflow now reliable
+- Single-tool gate (NEEDS_CLAR → retrieval) works correctly for all tested C-group cases
+- Same-conversation gate suppression confirmed in D-group single-thread run
+- D2/D3 disabling-stroke defer-intervention retrieval confirmed working
+- Residual: B1 gate-call on first turn when 3-tool server is visible (P3R-BUG-1); C1 re-run outstanding (P3R-INFO-1)
+
+**Outstanding before cutover (disable old `mcp` tool in OpenWebUI DB):**
+1. P3R-BUG-1 — deploy 2-tool server endpoint or remove `vascular_assess_context_gaps` registration
+2. P3R-INFO-1 — re-run C1 to confirm carotid gate
+3. Codex baseline (deferred, not blocking cutover)
