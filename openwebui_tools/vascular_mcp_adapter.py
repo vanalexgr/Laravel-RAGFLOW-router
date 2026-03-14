@@ -1389,8 +1389,8 @@ class Tools:
         anticoagulation or antithrombotic decisions.
 
         GUIDELINE REFERENCE:
-        - aortic_arch: Arch aneurysm, Zone 0-2, FET, hybrid arch
-        - descending_thoracic_aorta: Type B dissection, TEVAR, thoracic aneurysm, mural thrombus
+        - aortic_arch: Arch aneurysm, Zone 0-2, FET, hybrid arch repair (NOT dissection management)
+        - descending_thoracic_aorta: Type B dissection, non-A non-B dissection, zone 2 arch dissection, TEVAR, thoracic aneurysm, mural thrombus — USE THIS for ANY aortic dissection not involving the ascending aorta
         - abdominal_aortic_aneurysm: AAA, EVAR, rupture, endoleaks, iliac aneurysm
         - mesenteric_renal: Mesenteric ischemia, renal artery stenosis
         - asymptomatic_pad: Claudication, PAD screening, exercise therapy
@@ -1444,6 +1444,25 @@ class Tools:
         retrieval_question, was_rewritten = self._prepare_retrieval_query(question, state)
         if not was_rewritten:
             retrieval_question = self._enrich_dissection_query(retrieval_question)
+
+        # If non-A non-B dissection was detected in the enriched query but the LLM
+        # omitted descending_thoracic_aorta (the primary non-A non-B guideline), inject it.
+        if (
+            re.search(r"non.?a.?non.?b", retrieval_question, re.IGNORECASE)
+            and 'descending_thoracic_aorta' not in guidelines
+        ):
+            if len(guidelines) < 3:
+                guidelines = guidelines + ['descending_thoracic_aorta']
+            else:
+                # Replace aortic_arch if present (dissection mgmt is in thoracic, not arch)
+                if 'aortic_arch' in guidelines:
+                    guidelines = [
+                        'descending_thoracic_aorta' if g == 'aortic_arch' else g
+                        for g in guidelines
+                    ]
+                else:
+                    guidelines = ['descending_thoracic_aorta'] + guidelines[:2]
+            gdisplay = ', '.join(GUIDELINE_NAMES.get(g, g) for g in guidelines)
 
         retrieval_history = []
         for m in (__messages__ or []):
