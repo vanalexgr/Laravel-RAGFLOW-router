@@ -158,6 +158,25 @@ class RetrievalService
             }
         }
 
+        // 3b. Query type classification — drives lean vs. full retrieval path
+        $classifier = new GuidelineRouterService();
+        $queryType  = $classifier->classifyQueryType($scrubbedQuestion);
+        $leanEnabled = (bool) config('ragflow.lean.enabled', true);
+
+        // Cap to 1 guideline on lean path (only when guidelines were auto-selected)
+        if ($queryType === 'knowledge' && $leanEnabled && empty($requestedKeys)) {
+            $maxLeanGuidelines = (int) config('ragflow.lean.max_guidelines', 1);
+            if (count($selectedGuidelines) > $maxLeanGuidelines) {
+                $selectedGuidelines = array_slice($selectedGuidelines, 0, $maxLeanGuidelines, true);
+            }
+        }
+
+        $log->info('[QUERY CLASSIFIER] Query type determined', [
+            'query_type'      => $queryType,
+            'lean_enabled'    => $leanEnabled,
+            'question_preview' => substr($scrubbedQuestion, 0, 80),
+        ]);
+
         // 4. Dual Retrieval
         $retrievalConfig = config('ragflow.retrieval', []);
         $narrativeMax = (int) ($retrievalConfig['narrative_max'] ?? 10);
@@ -238,7 +257,15 @@ class RetrievalService
         $expandedQuery = $this->applyRetrievalQueryBoosts($expandedQuery, array_keys($selectedGuidelines), 'narrative', $definitionIntent);
         $citationQuery = $this->applyRetrievalQueryBoosts($citationQuery, array_keys($selectedGuidelines), 'citation', $definitionIntent);
 
-        $dualResult = $this->retrieveDualChunks($expandedQuery, $citationQuery, $selectedGuidelines, $narrativeMax, $citationMax, $guidelineScores);
+        // Build retrieval overrides from query type
+        $retrievalOverrides = [];
+        if ($queryType === 'knowledge' && $leanEnabled) {
+            $retrievalOverrides['top_k'] = (int) config('ragflow.lean.top_k', 20);
+        } elseif ($queryType === 'single_case') {
+            $retrievalOverrides['top_k'] = (int) config('ragflow.single_case.top_k', 40);
+        }
+
+        $dualResult = $this->retrieveDualChunks($expandedQuery, $citationQuery, $selectedGuidelines, $narrativeMax, $citationMax, $guidelineScores, $retrievalOverrides);
 
         $singleGuideline = count($selectedGuidelines) === 1;
         $definitionFastPath = $this->shouldUseDefinitionFastPath(
@@ -258,6 +285,9 @@ class RetrievalService
                 'recommendation_intent' => $recommendationIntent,
             ]);
         } else {
+            $skipQualityPass = ($queryType === 'knowledge' && $leanEnabled
+                && !config('ragflow.lean.quality_pass', false));
+
             $dualResult = $this->applyFocusedRecall(
                 $dualResult,
                 $scrubbedQuestion,
@@ -269,7 +299,7 @@ class RetrievalService
                 $guidelineScores
             );
 
-            $dualResult = $this->applyQualityPass(
+            if (!$skipQualityPass) $dualResult = $this->applyQualityPass(
                 $dualResult,
                 $scrubbedQuestion,
                 $expandedQuery,
@@ -280,7 +310,7 @@ class RetrievalService
                 $guidelineScores
             );
 
-            if ($gapService->enabled() && $gapService->maxPasses() > 0) {
+            if (!$skipQualityPass && $gapService->enabled() && $gapService->maxPasses() > 0) {
                 $gapReport = $gapService->detect(
                     $scrubbedQuestion,
                     $dualResult['narrative_chunks'] ?? [],
@@ -361,6 +391,7 @@ class RetrievalService
             'phi_scrubbed' => $scrubResult['was_modified'],
             'selected_guidelines' => $selectedGuidelines,
             'routing_method' => $routingMethod,
+            'query_type' => $queryType,
             'narrative_chunks' => $dualResult['narrative_chunks'],
             'citation_chunks' => $dualResult['citation_chunks'],
             'duration_ms' => $duration,
