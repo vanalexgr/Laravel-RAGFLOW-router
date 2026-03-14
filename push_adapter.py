@@ -58,6 +58,17 @@ conn.execute(
         '{}',
     )
 )
+# Set valves to match production mcp tool
+valves = json.dumps({
+    'VASCULAR_API_BASE_URL': 'https://lavarel.eastus2.cloudapp.azure.com',
+    'VASCULAR_API_KEY': 'gukUXd551qIobQVHVQLedUMmA4E8Cx4s',
+    'EMIT_STATUS_AS_MESSAGES': True,
+    'EMIT_STATUS_EVENTS': False,
+})
+conn.execute(
+    "UPDATE tool SET valves=? WHERE id='vascular_mcp_adapter'",
+    (valves,)
+)
 conn.commit()
 
 # Verify both tools are present
