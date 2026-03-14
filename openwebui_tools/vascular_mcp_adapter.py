@@ -48,6 +48,9 @@ GUIDELINE_NAMES = {
 
 class Tools:
     LLM_ASSET_MAX_ITEMS = 3
+    CASE_STATE_MAX_CONTEXT_ITEMS   = 4
+    CASE_STATE_MAX_REFERENCE_ITEMS = 4
+    CASE_STATE_MAX_QUERY_CHARS     = 1600
 
     # ------------------------------------------------------------------ #
     # Gate: class-level regexes (verbatim from vascular_expert.py)        #
@@ -91,6 +94,42 @@ class Tools:
         r"before i (?:can\s+)?(?:retrieve|search|access|check|look up|pull)(?:\s+the)?\s+(?:relevant\s+)?(?:esvs\s+)?guidelines|"
         r"before (?:retrieving|searching|accessing|checking)\s+(?:the\s+)?(?:relevant\s+)?(?:esvs\s+)?guidelines|"
         r"to\s+(?:retrieve|search|access)\s+(?:the\s+)?(?:right|relevant|correct|appropriate)\s+guidelines)\b",
+        re.IGNORECASE,
+    )
+
+    _FRESH_CASE_INTRO_RE = re.compile(
+        r"\b(my\s+patient|patient\s+(?:with|who|has)|pt\s+(?:with|who|has)|"
+        r"case\s+of|"
+        r"\d{1,3}\s*(?:year[- ]old|yo)\b|"
+        r"(?:male|female|man|woman)\s+with|"
+        r"presents?\s+with|presented\s+with|admitted\s+with|referred\s+with|"
+        r"was\s+found|incidentally|ασθεν|ετ[ωώ]ν)\b",
+        re.IGNORECASE,
+    )
+
+    _EXPLICIT_NEW_CASE_RE = re.compile(
+        r"\b(another|different|new|separate|next)\s+(?:patient|case)\b|"
+        r"\bfor\s+a\s+different\s+patient\b",
+        re.IGNORECASE,
+    )
+
+    _FOLLOW_UP_CUE_RE = re.compile(
+        r"^(what\s+about|what\s+if|how\s+about|and|but|so|then|if|for\s+this\s+case|"
+        r"in\s+this\s+case|for\s+this\s+patient|in\s+this\s+patient)\b",
+        re.IGNORECASE,
+    )
+
+    _NUMBERED_ITEM_RE    = re.compile(r"^\s*(\d+)[\.\)]\s+(.*\S)\s*$")
+    _ASSISTANT_GUIDELINE_RE = re.compile(r"Selecting guidelines:\s*(.+)", re.IGNORECASE)
+    _RECOMMENDATION_REF_RE  = re.compile(r"\bRec(?:ommendation)?\s*\.?\s*(\d+)\b", re.IGNORECASE)
+
+    _CAROTID_SEVERE_STROKE_RE = re.compile(
+        r"\b(major\s+(?:ischaemic\s+|ischemic\s+)?stroke|"
+        r"disabling\s+(?:ischaemic\s+|ischemic\s+)?stroke|"
+        r"major\s+disabling\s+stroke|severe\s+stroke|large\s+infarct(?:ion)?|"
+        r"(?:modified\s+)?rankin(?:\s+scale)?|mrs\b|"
+        r"(?:hasn'?t|has\s+not|not)\s+yet\s+mobili[sz]ed|"
+        r"unable\s+to\s+mobili[sz]e|dense\s+neurological\s+deficit)\b",
         re.IGNORECASE,
     )
 
@@ -621,6 +660,76 @@ class Tools:
                 print(f"[Adapter] Status emit error: {e}")
 
     # ------------------------------------------------------------------ #
+    # Helpers: message / state utilities (from vascular_expert.py)        #
+    # ------------------------------------------------------------------ #
+
+    def _normalize_space(self, text: str) -> str:
+        return re.sub(r"\s+", " ", (text or "").strip())
+
+    def _message_text(self, message: dict) -> str:
+        if not isinstance(message, dict):
+            return ""
+        content = message.get("content")
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, str):
+                    parts.append(item.strip())
+                elif isinstance(item, dict):
+                    text = item.get("text")
+                    if isinstance(text, str) and text.strip():
+                        parts.append(text.strip())
+            return "\n".join(part for part in parts if part).strip()
+        return ""
+
+    def _message_snapshot(self, message: dict) -> str:
+        """Simplified: no attachment extraction (adapter is stateless)."""
+        return self._message_text(message)
+
+    def _truncate_case_text(self, text: str, max_chars: int = 1600) -> str:
+        s = self._normalize_space(text)
+        if len(s) <= max_chars:
+            return s
+        return s[: max_chars - 3].rstrip() + "..."
+
+    def _extract_numbered_items(self, text: str) -> dict:
+        items = {}
+        for line in (text or "").splitlines():
+            match = self._NUMBERED_ITEM_RE.match(line.strip())
+            if not match:
+                continue
+            items[int(match.group(1))] = self._normalize_space(match.group(2))
+        return items
+
+    def _is_answer_only_turn(self, text: str) -> bool:
+        content = self._normalize_space(text)
+        if not content or "?" in content:
+            return False
+        numbered = self._extract_numbered_items(text)
+        if numbered:
+            raw_lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+            return len(numbered) >= max(1, len(raw_lines) - 1)
+        if len(content) > 120:
+            return False
+        return bool(re.fullmatch(
+            r"(yes|no|unknown|n/?a|not sure|symptomatic|asymptomatic|"
+            r"\d+(?:\.\d+)?\s*(?:%|mm|cm)?(?:\s*[a-z0-9/\-]+)?|"
+            r"[a-z0-9 ,;/()=%\-]{1,120})",
+            content,
+            re.IGNORECASE,
+        ))
+
+    def _looks_like_fresh_case_intro(self, text: str) -> bool:
+        content = (text or "").strip()
+        if len(content) < 40:
+            return False
+        if not self._FRESH_CASE_INTRO_RE.search(content):
+            return False
+        return bool(self._case_anchor_terms(content))
+
+    # ------------------------------------------------------------------ #
     # Gate: context gap detection (verbatim from vascular_expert.py)      #
     # ------------------------------------------------------------------ #
 
@@ -908,6 +1017,302 @@ class Tools:
         return "\n".join(lines)
 
     # ------------------------------------------------------------------ #
+    # Same-case follow-up rewrite (from vascular_expert.py)               #
+    # ------------------------------------------------------------------ #
+
+    def _expand_retrieval_abbreviations(self, text: str) -> str:
+        expanded = text or ""
+        for pattern, replacement in [
+            (r"\bCEA\b",   "carotid endarterectomy (CEA)"),
+            (r"\bCAS\b",   "carotid artery stenting (CAS)"),
+            (r"\bTCAR\b",  "transcarotid artery revascularisation (TCAR)"),
+            (r"\bEVAR\b",  "endovascular aneurysm repair (EVAR)"),
+            (r"\bTEVAR\b", "thoracic endovascular aortic repair (TEVAR)"),
+            (r"\bDVT\b",   "deep vein thrombosis (DVT)"),
+            (r"\bmRS\b",   "modified Rankin score (mRS)"),
+        ]:
+            expanded = re.sub(pattern, replacement, expanded)
+        return self._normalize_space(expanded)
+
+    def _last_case_gate_index(self, messages: Optional[list]) -> int:
+        for idx in range(len(messages or []) - 1, -1, -1):
+            msg = (messages or [])[idx]
+            if isinstance(msg, dict) and msg.get("role") == "assistant":
+                if self._CASE_GATE_ASSISTANT_RE.search(self._message_text(msg)):
+                    return idx
+        return -1
+
+    def _current_case_start_index(self, messages: Optional[list]) -> int:
+        start_idx = 0
+        for idx, message in enumerate(messages or []):
+            if not isinstance(message, dict) or message.get("role") != "user":
+                continue
+            snapshot = self._message_snapshot(message)
+            if self._EXPLICIT_NEW_CASE_RE.search(snapshot) or self._looks_like_fresh_case_intro(snapshot):
+                start_idx = idx
+        return start_idx
+
+    def _extract_case_guidelines(self, messages: Optional[list], guidelines: Optional[list] = None) -> list:
+        ordered = []
+        seen = set()
+        for item in guidelines or []:
+            key = str(item or "").strip()
+            if key and key not in seen:
+                ordered.append(key)
+                seen.add(key)
+        for message in messages or []:
+            if not isinstance(message, dict) or message.get("role") != "assistant":
+                continue
+            match = self._ASSISTANT_GUIDELINE_RE.search(self._message_text(message))
+            if not match:
+                continue
+            for label in match.group(1).split(","):
+                label = self._normalize_space(label)
+                if not label:
+                    continue
+                mapped = next(
+                    (key for key, name in GUIDELINE_NAMES.items() if name.lower() == label.lower()),
+                    label,
+                )
+                if mapped not in seen:
+                    ordered.append(mapped)
+                    seen.add(mapped)
+        return ordered
+
+    def _extract_answered_clarifications(self, messages: Optional[list]) -> tuple:
+        gate_index = self._last_case_gate_index(messages)
+        if gate_index < 0:
+            return [], []
+        gate_questions = self._extract_numbered_items(self._message_text((messages or [])[gate_index]))
+        if not gate_questions:
+            return [], []
+        answers = {}
+        for message in (messages or [])[gate_index + 1:]:
+            if not isinstance(message, dict) or message.get("role") != "user":
+                continue
+            for number, answer in self._extract_numbered_items(self._message_text(message)).items():
+                if answer and number not in answers:
+                    answers[number] = answer
+        clarified = []
+        unanswered = []
+        for number in sorted(gate_questions.keys()):
+            question = self._normalize_space(gate_questions[number].rstrip("?"))
+            answer = answers.get(number, "")
+            if answer:
+                clarified.append(f"{question}: {answer}")
+            else:
+                unanswered.append(question)
+        return clarified, unanswered
+
+    def _extract_previous_references(self, messages: Optional[list]) -> tuple:
+        recommendation_refs = []
+        citation_refs = []
+        seen_recommendations = set()
+        seen_citations = set()
+        for message in messages or []:
+            if not isinstance(message, dict) or message.get("role") != "assistant":
+                continue
+            if self._CASE_GATE_ASSISTANT_RE.search(self._message_text(message)):
+                continue
+            text = self._message_text(message)
+            if not text:
+                continue
+            for match in self._RECOMMENDATION_REF_RE.finditer(text):
+                ref = f"Rec {match.group(1)}"
+                if ref not in seen_recommendations:
+                    recommendation_refs.append(ref)
+                    seen_recommendations.add(ref)
+                if len(recommendation_refs) >= self.CASE_STATE_MAX_REFERENCE_ITEMS:
+                    break
+            for line in text.splitlines():
+                stripped = self._normalize_space(line)
+                if not re.match(r"^\[\d+\]", stripped):
+                    continue
+                if stripped not in seen_citations:
+                    citation_refs.append(self._truncate_case_text(stripped, 180))
+                    seen_citations.add(stripped)
+                if len(citation_refs) >= self.CASE_STATE_MAX_REFERENCE_ITEMS:
+                    break
+        return recommendation_refs, citation_refs
+
+    def _topic_from_state(self, combined_text: str, guidelines: Optional[list]) -> str:
+        ordered = self._extract_case_guidelines([], guidelines)
+        if ordered:
+            return GUIDELINE_NAMES.get(ordered[0], ordered[0])
+        anchors = sorted(self._case_anchor_terms(combined_text))
+        if anchors:
+            return ", ".join(anchors)
+        return "general vascular"
+
+    def _build_conversation_state(
+        self,
+        question: str,
+        messages: Optional[list],
+        guidelines: Optional[list],
+    ) -> dict:
+        current_norm = self._normalize_space(question)
+        case_start = self._current_case_start_index(messages)
+        case_messages = list((messages or [])[case_start:])
+
+        user_contexts = []
+        for message in case_messages:
+            if not isinstance(message, dict) or message.get("role") != "user":
+                continue
+            snapshot = self._message_snapshot(message)
+            if snapshot:
+                user_contexts.append(snapshot)
+
+        if user_contexts and current_norm and self._normalize_space(user_contexts[-1]) == current_norm:
+            prior_user_contexts = user_contexts[:-1]
+        elif len(user_contexts) == 1:
+            prior_user_contexts = []
+        else:
+            prior_user_contexts = user_contexts
+
+        clarified_facts, unanswered = self._extract_answered_clarifications(case_messages)
+        recommendation_refs, citation_refs = self._extract_previous_references(case_messages)
+
+        anchor_question = ""
+        for item in prior_user_contexts:
+            if "?" in item:
+                anchor_question = self._truncate_case_text(item, 700)
+                break
+        if not anchor_question and prior_user_contexts:
+            anchor_question = self._truncate_case_text(prior_user_contexts[0], 700)
+
+        context_parts = []
+        if anchor_question:
+            context_parts.append(anchor_question)
+
+        extra_context = []
+        for item in prior_user_contexts[1:]:
+            if clarified_facts and self._is_answer_only_turn(item):
+                continue
+            cleaned = self._truncate_case_text(item, 240)
+            if cleaned and cleaned not in context_parts and cleaned not in extra_context:
+                extra_context.append(cleaned)
+            if len(extra_context) >= self.CASE_STATE_MAX_CONTEXT_ITEMS - 1:
+                break
+
+        for fact in clarified_facts:
+            if fact not in context_parts:
+                context_parts.append(fact)
+        for item in extra_context:
+            if item not in context_parts:
+                context_parts.append(item)
+
+        context_summary = self._truncate_case_text("; ".join(p for p in context_parts if p), 1000)
+        current_guidelines = self._extract_case_guidelines(case_messages, guidelines)
+        topic = self._topic_from_state(
+            " ".join(prior_user_contexts + [current_norm]), current_guidelines
+        )
+        return {
+            "current_guidelines":        current_guidelines,
+            "current_topic":             topic,
+            "patient_problem_context":   context_summary,
+            "anchor_question":           anchor_question,
+            "clarified_facts":           clarified_facts,
+            "previous_recommendations":  recommendation_refs[: self.CASE_STATE_MAX_REFERENCE_ITEMS],
+            "previously_cited_chunks":   citation_refs[: self.CASE_STATE_MAX_REFERENCE_ITEMS],
+            "unanswered_subquestions":   unanswered[: self.CASE_STATE_MAX_REFERENCE_ITEMS],
+            "prior_user_contexts":       prior_user_contexts[-self.CASE_STATE_MAX_CONTEXT_ITEMS:],
+        }
+
+    def _rewrite_follow_up_question(self, question: str) -> str:
+        q = self._expand_retrieval_abbreviations(question)
+        if not q:
+            return ""
+        lower = q.lower()
+        if self._FOLLOW_UP_CUE_RE.search(q):
+            if lower.startswith("what about "):
+                return "What does ESVS recommend about " + q[11:]
+            if lower.startswith("how about "):
+                return "What does ESVS recommend about " + q[10:]
+            if lower.startswith("what if "):
+                return "If " + q[8:] + ", what does ESVS recommend?"
+        q = re.sub(r"\bthis case\b", "this patient", q, flags=re.IGNORECASE)
+        return q
+
+    def _should_rewrite_for_retrieval(self, question: str, state: dict) -> bool:
+        if self._EXPLICIT_NEW_CASE_RE.search(question or ""):
+            return False
+        if self._looks_like_fresh_case_intro(question or ""):
+            return False
+        return bool(state.get("prior_user_contexts") or state.get("clarified_facts"))
+
+    def _prepare_retrieval_query(self, question: str, state: dict) -> tuple:
+        if not self._should_rewrite_for_retrieval(question, state):
+            return self._expand_retrieval_abbreviations(question), False
+
+        context_parts = []
+        topic = self._normalize_space(state.get("current_topic") or "")
+        if topic:
+            context_parts.append(f"Topic: {topic}.")
+
+        guidelines = [
+            GUIDELINE_NAMES.get(item, item)
+            for item in (state.get("current_guidelines") or [])
+            if str(item or "").strip()
+        ]
+        if guidelines:
+            context_parts.append(f"Current guideline(s): {', '.join(guidelines)}.")
+
+        case_context = self._normalize_space(state.get("patient_problem_context") or "")
+        if case_context:
+            context_parts.append(f"Case context: {case_context}")
+
+        recommendation_refs = state.get("previous_recommendations") or []
+        if recommendation_refs and self._FOLLOW_UP_CUE_RE.search(question or ""):
+            context_parts.append(
+                "Previously discussed recommendation(s): " + ", ".join(recommendation_refs[:2]) + "."
+            )
+
+        follow_up = self._rewrite_follow_up_question(question)
+        if self._is_answer_only_turn(question):
+            clarified_facts = state.get("clarified_facts") or []
+            if clarified_facts:
+                context_parts.append("New case details from the user: " + "; ".join(clarified_facts[:4]) + ".")
+            elif follow_up:
+                context_parts.append(f"New case details from the user: {follow_up}.")
+            follow_up = "What does ESVS recommend for this clarified case?"
+        if follow_up:
+            context_parts.append(f"Current question: {follow_up}")
+
+        rewritten = self._truncate_case_text(
+            " ".join(p for p in context_parts if p),
+            self.CASE_STATE_MAX_QUERY_CHARS,
+        )
+        return rewritten or self._expand_retrieval_abbreviations(question), True
+
+    # ------------------------------------------------------------------ #
+    # Output enhancement                                                   #
+    # ------------------------------------------------------------------ #
+
+    def _requires_clinical_decision_summary(self, question: str, intent_profile: Optional[dict]) -> bool:
+        q = (question or "").lower()
+        intent = ""
+        if isinstance(intent_profile, dict):
+            intent = str(intent_profile.get("intent") or "").strip().lower()
+        if intent in {"management", "treatment", "comparison", "procedure", "threshold", "indication"}:
+            return True
+        return bool(re.search(
+            r"\b(manage(?:ment)?|treat(?:ment)?|strategy|best\s+(?:option|approach)|"
+            r"choice|choose|preferred|versus|vs\.?|open\s+or\s+endovascular)\b",
+            q,
+        ))
+
+    def _needs_stroke_severity_scope(self, question: str, guidelines: Optional[list] = None) -> bool:
+        q = (question or "").strip()
+        if not q:
+            return False
+        has_carotid = "carotid_vertebral" in (guidelines or []) or bool(
+            re.search(r"\b(carotid|cea|cas|tcar|endarterectomy|carotid\s+stenting)\b", q, re.IGNORECASE)
+        )
+        if not has_carotid:
+            return False
+        return bool(self._CAROTID_SEVERE_STROKE_RE.search(q))
+
+    # ------------------------------------------------------------------ #
     # Main tool                                                            #
     # ------------------------------------------------------------------ #
 
@@ -980,7 +1385,16 @@ class Tools:
                 await self._emit_status(emitter, 'Clarifying clinical context before retrieval...')
                 return self._format_context_request(gap_questions, question, history_texts, scenario_id)
 
-        # ---- 9.1 Setup and HTTP call ---------------------------------- #
+        # ---- 9.1 Conversation state + query rewrite ------------------- #
+        state = self._build_conversation_state(question, __messages__, guidelines)
+        retrieval_question, was_rewritten = self._prepare_retrieval_query(question, state)
+
+        retrieval_history = []
+        for m in (__messages__ or []):
+            txt = self._message_text(m) if isinstance(m, dict) else str(m)
+            if txt.strip():
+                retrieval_history.append(txt.strip())
+
         await self._emit_status(emitter, f'Selecting guidelines: {gdisplay}')
 
         url = f'{self.valves.VASCULAR_API_BASE_URL}/api/v1/vascular-consult'
@@ -989,7 +1403,8 @@ class Tools:
             'Content-Type': 'application/json',
         }
         payload = {
-            'question': question,
+            'question': retrieval_question,
+            'history':  retrieval_history[-20:],
             'guidelines': guidelines,
         }
 
@@ -1017,6 +1432,11 @@ class Tools:
                 response = await task
                 response.raise_for_status()
                 data = response.json()
+
+            requires_decision_summary = self._requires_clinical_decision_summary(
+                retrieval_question, data.get('intent_profile')
+            )
+            needs_stroke_scope = self._needs_stroke_severity_scope(retrieval_question, guidelines)
 
             elapsed = int(time.time() - start)
             await self._emit_status(emitter, f'✅ Retrieved in {elapsed}s — parsing results...')
@@ -1182,25 +1602,59 @@ class Tools:
                     chunk_num += 1
                     nar_i += 1
 
+            if requires_decision_summary:
+                llm_out += '=== CLINICAL DECISION SUMMARY (REQUIRED) ===\n'
+                llm_out += 'For management/treatment/clinical strategy questions, conclude with a section titled exactly: **Clinical Decision Summary**.\n'
+                llm_out += 'Using the retrieved guideline evidence, you must:\n'
+                llm_out += '1. Determine whether treatment thresholds are met.\n'
+                llm_out += '2. Interpret the anatomical features provided.\n'
+                llm_out += '3. Compare available treatment strategies supported by evidence.\n'
+                llm_out += '4. State the guideline-consistent default/preferred strategy when inferable.\n'
+                llm_out += '5. Explain why this strategy is preferred and identify the main alternative with when it may be chosen instead.\n'
+                llm_out += "Do not stop at 'both options may be considered'; provide a reasoned decision.\n"
+                llm_out += 'If anatomical measurements are provided (e.g., neck length, angulation, landing zones), interpret compatibility with standard EVAR, fenestrated/branched repair, and open repair.\n\n'
+                llm_out += '=== PERIOPERATIVE RISK MITIGATION (GUIDELINE-BASED, REQUIRED) ===\n'
+                llm_out += 'When discussing operative management, summarize key perioperative risk-reduction strategies, including when relevant:\n'
+                llm_out += '- spinal cord ischemia prevention\n'
+                llm_out += '- renal protection\n'
+                llm_out += '- cardiac risk optimisation\n'
+                llm_out += '- staged repair strategies\n'
+                llm_out += '- preservation of critical branch vessels\n\n'
+
+            if needs_stroke_scope:
+                llm_out += '=== STROKE SEVERITY SCOPE (CASE-SPECIFIC) ===\n'
+                llm_out += 'This case signals major/disabling stroke or severe neurological deficit.\n'
+                llm_out += 'Prefer evidence that explicitly addresses disabling or major stroke.\n'
+                llm_out += 'Do NOT apply TIA, minor-stroke, or non-disabling-stroke carotid intervention timing recommendations unless the retrieved evidence explicitly says they apply to this severity.\n\n'
+
             llm_out += '=== CITATION RULES ===\n'
             llm_out += '1. Use inline citations [1],[2] after each fact.\n'
             llm_out += '2. Cite only sources you actually use.\n'
             llm_out += '3. Do NOT add a References section — UI shows Sources list.\n'
             llm_out += '4. Match [n] numbers exactly to the evidence blocks above.\n'
+            llm_out += '5. If evidence spans multiple guidelines, cite at least one recommendation from each used.\n'
             llm_out += (
-                '5. SCOPE FILTER: only cite recommendations that directly address '
-                'this specific case.\n'
+                '6. SCOPE FILTER: before citing a recommendation, verify it directly addresses '
+                'this specific case. Exclude recommendations for a different procedure or condition. '
+                'When no directly applicable recommendation was retrieved, state this explicitly.\n'
             )
             if assets_block:
                 llm_out += (
-                    '6. Include a section titled exactly: 🖼️ Figures / Tables '
+                    '7. Include a section titled exactly: 🖼️ Figures / Tables '
                     'and copy ALL markdown image lines from the FIGURES block verbatim.\n'
                 )
 
             llm_out += '\n=== REQUIRED STRUCTURE (STRICT) ===\n'
-            llm_out += 'Restrict every section to evidence directly relevant to this case.\n'
-            llm_out += 'Assessment:\nImaging:\nIndication for intervention:\n'
-            llm_out += 'Treatment options:\nFollow-up:\nEvidence used (Rec #, Class, Level):\n'
+            llm_out += 'IMPORTANT: Restrict every section to evidence DIRECTLY relevant to this case. Acknowledge evidence gaps in \'Evidence used\' rather than citing tangential recommendations.\n'
+            llm_out += 'Assessment:\n'
+            llm_out += 'Imaging:\n'
+            llm_out += 'Indication for intervention:\n'
+            llm_out += 'Treatment options:\n'
+            if requires_decision_summary:
+                llm_out += 'Clinical Decision Summary:\n'
+                llm_out += 'Perioperative Risk Mitigation:\n'
+            llm_out += 'Follow-up:\n'
+            llm_out += 'Evidence used (Rec #, Class, Level):\n'
 
             return llm_out
 
