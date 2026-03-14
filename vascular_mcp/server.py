@@ -700,8 +700,8 @@ def _synthesise_answer(llm_out: str, citations: list, narrative: list) -> str:
 def _format_consult_agent(data: dict, query: str, history: list) -> str:
     """Return structured JSON string for agent/Codex clients."""
     norm       = data.get("query_normalization") or {}
-    citations  = _dedup_chunks(data.get("citation_chunks") or [])
-    narrative  = _dedup_chunks(data.get("narrative_chunks") or [])
+    citations  = _dedup_chunks(data.get("llm_citation_chunks") or data.get("citation_chunks") or [])
+    narrative  = _dedup_chunks(data.get("llm_narrative_chunks") or data.get("narrative_chunks") or [])
     assets     = data.get("assets") or []
     guidelines = _gl_list(data.get("selected_guidelines"))
     llm_out    = (data.get("result") or data.get("llm_output") or data.get("output") or "").strip()
