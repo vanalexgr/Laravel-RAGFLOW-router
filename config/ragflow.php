@@ -105,6 +105,21 @@ return [
         ],
     ],
 
+    // Query-type-aware lean retrieval — lower top_k for simple knowledge questions.
+    'lean' => [
+        'enabled'        => filter_var(env('RAGFLOW_LEAN_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
+        'top_k'          => (int) env('RAGFLOW_LEAN_TOP_K', 20),
+        'quality_pass'   => filter_var(env('RAGFLOW_LEAN_QUALITY_PASS_ENABLED', false), FILTER_VALIDATE_BOOLEAN),
+        'max_guidelines' => 1,   // lean path always single-guideline
+    ],
+
+    // Single-case retrieval for patient-specific single-domain queries.
+    'single_case' => [
+        'top_k'        => (int) env('RAGFLOW_SINGLE_CASE_TOP_K', 40),
+        'quality_pass' => filter_var(env('RAGFLOW_SINGLE_CASE_QUALITY_PASS_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
+        'min_citation' => (int) env('RAGFLOW_SINGLE_CASE_MIN_CITATION', 2),
+    ],
+
     // Optional bridge-side reranking (Laravel) to avoid RAGFlow rerank latency.
     // When enabled, the bridge will rerank locally and *not* send rerank_id to RAGFlow.
     'bridge_rerank' => [
