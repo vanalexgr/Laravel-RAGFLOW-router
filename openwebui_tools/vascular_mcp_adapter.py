@@ -975,21 +975,30 @@ class Tools:
             context_lines.append(f"- Earlier context: {item}")
 
         lines = [
-            "GUIDELINE_RETRIEVAL_PAUSED — key clinical details missing before ESVS retrieval.",
+            "GUIDELINE_RETRIEVAL_PAUSED — one or two clinical details are needed before ESVS retrieval.",
             "",
             "MANDATORY BEHAVIOR (no exceptions):",
             "1. Your entire reply to the user must be a focused clinical clarification — nothing else.",
             "2. Do NOT answer the question or offer any guideline recommendation yet.",
             "3. Do NOT say the scenario is or is not addressed by guidelines.",
             "4. Do NOT mention evidence gaps or tool internals.",
-            "5. Begin with a single-sentence opener stating you need to clarify a couple of details",
-            "   before you can retrieve the ESVS guidelines — for example:",
-            "   'Before I retrieve the relevant ESVS guidelines, I need to clarify a couple of things about this case.'",
-            "   or: 'Before I can search the ESVS guidelines, a few clinical details will help me find the right evidence.'",
-            "6. Then ask the clinical questions. Act as a vascular surgery consultant asking a colleague",
-            "   for the key missing facts — use direct, natural language tailored to this specific case.",
-            "7. Tailor every question to the anatomy, pathology, and management decision presented.",
-            "8. Ask only what genuinely changes the guideline recommendation — typically 2–3 questions.",
+            "5. OPEN with 1-2 sentences that show your clinical understanding of the case:",
+            "   (a) Name the exact diagnosis, anatomy, and any complications ALREADY described.",
+            "       If stroke, carotid involvement, malperfusion, rupture, haemodynamic instability,",
+            "       thrombus, or other complications are in the description — state them as FACTS",
+            "       you have understood, not as open questions.",
+            "   (b) Then state you need one or two additional details before retrieving guidelines.",
+            "   EXAMPLE: 'From your description, I understand this is an acute aortic dissection with",
+            "   arch involvement, complicated by carotid dissection and ischaemic stroke — this is",
+            "   already a complicated presentation. Before I search the ESVS guidelines, I need to",
+            "   clarify two things...'",
+            "6. CRITICAL — Do NOT re-ask about features already present in the description.",
+            "   If the case already mentions stroke, malperfusion, carotid involvement, rupture, or",
+            "   haemodynamic instability — these are KNOWN. Only ask for parameters that are",
+            "   genuinely absent and would materially change which evidence is retrieved.",
+            "7. Act as a vascular surgery consultant asking a colleague for the key missing facts.",
+            "   Use direct, natural language tailored to this specific case.",
+            "8. Ask only what genuinely changes the guideline recommendation — typically 1–2 questions.",
             "9. Use plain conversational phrasing; avoid stiff bullet headers like '**Topic**:'.",
             "",
         ]
@@ -999,8 +1008,8 @@ class Tools:
             lines.append("")
         lines += [
             "CLINICAL GAPS TO ADDRESS:",
-            "The following expert-identified questions need to be answered before retrieval.",
-            "Adapt the wording to this specific case — do not copy them verbatim as generic questions:",
+            "The following are the MISSING parameters — skip any already answered in the case description.",
+            "Adapt the wording to this specific case; do not copy them verbatim:",
             "",
         ]
         for i, q in enumerate(gap_questions, 1):
@@ -1033,6 +1042,50 @@ class Tools:
         ]:
             expanded = re.sub(pattern, replacement, expanded)
         return self._normalize_space(expanded)
+
+    def _enrich_dissection_query(self, text: str) -> str:
+        """Append clinically precise terminology for arch/zone dissections and complications.
+
+        Detects non-A non-B dissection language (origin in Zone 2, just above/proximal to
+        the left subclavian) and appends the correct ESVS terminology so retrieval surfaces
+        non-A non-B recommendations rather than generic type B recommendations.
+        Also enriches malperfusion/complicated language.
+        """
+        if not text or not re.search(r"\bdissect", text, re.IGNORECASE):
+            return text
+
+        additions = []
+
+        # Zone 2 / arch-origin dissection → non-A non-B
+        arch_origin = re.search(
+            r"\b(just\s+above|proximal\s+to|above\s+the|at\s+the|near\s+the)"
+            r".{0,30}\bleft\s+subclavian\b"
+            r"|\bzone\s*2\b"
+            r"|\barch.{0,20}dissect"
+            r"|\bdissect.{0,20}arch\b",
+            text,
+            re.IGNORECASE,
+        )
+        if arch_origin and not re.search(r"\btype\s*a\b|\bascending\b", text, re.IGNORECASE):
+            if not re.search(r"non.?a.?non.?b", text, re.IGNORECASE):
+                additions.append(
+                    "non-A non-B aortic dissection zone 2 arch involvement"
+                )
+
+        # Carotid dissection or involvement in aortic context → malperfusion
+        if re.search(r"\bcarotid.{0,30}dissect|dissect.{0,30}carotid", text, re.IGNORECASE):
+            if not re.search(r"\bmalperfusion\b", text, re.IGNORECASE):
+                additions.append("malperfusion carotid")
+
+        # Stroke in aortic dissection context = cerebral malperfusion
+        if re.search(r"\bstroke\b|\bcerebral\s+isch", text, re.IGNORECASE):
+            if not re.search(r"\bcerebral\s+malperfusion\b", text, re.IGNORECASE):
+                additions.append("cerebral malperfusion complicated")
+
+        if not additions:
+            return text
+
+        return self._normalize_space(text + " " + " ".join(additions))
 
     def _last_case_gate_index(self, messages: Optional[list]) -> int:
         for idx in range(len(messages or []) - 1, -1, -1):
@@ -1282,7 +1335,8 @@ class Tools:
             " ".join(p for p in context_parts if p),
             self.CASE_STATE_MAX_QUERY_CHARS,
         )
-        return rewritten or self._expand_retrieval_abbreviations(question), True
+        result = rewritten or self._expand_retrieval_abbreviations(question)
+        return self._enrich_dissection_query(result), True
 
     # ------------------------------------------------------------------ #
     # Output enhancement                                                   #
@@ -1388,6 +1442,8 @@ class Tools:
         # ---- 9.1 Conversation state + query rewrite ------------------- #
         state = self._build_conversation_state(question, __messages__, guidelines)
         retrieval_question, was_rewritten = self._prepare_retrieval_query(question, state)
+        if not was_rewritten:
+            retrieval_question = self._enrich_dissection_query(retrieval_question)
 
         retrieval_history = []
         for m in (__messages__ or []):
