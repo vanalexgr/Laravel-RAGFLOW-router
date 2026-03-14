@@ -8,14 +8,15 @@ what it does at each layer (OpenWebUI, Laravel, RAGFlow), how it differs from th
 
 ## Overview
 
-The system has two parallel OpenWebUI tools:
+The system has two OpenWebUI tools:
 
-| Tool ID | File | Model | Purpose |
+| Tool ID | File | Model | Status |
 |---|---|---|---|
-| `mcp` | `openwebui_tools/vascular_expert.py` | `gpt-5-chat` | Production tool — full stateful pipeline |
-| `vascular_mcp_adapter` | `openwebui_tools/vascular_mcp_adapter.py` | `gpt-5-chat-clone` | New adapter — stateless, consumes pre-tiered chunks |
+| `vascular_mcp_adapter` | `openwebui_tools/vascular_mcp_adapter.py` | `gpt-5-chat` | **Production** — all new development here |
+| `mcp` | `openwebui_tools/vascular_expert.py` | *(disabled)* | Fallback only — do not modify |
 
-**`vascular_expert.py` is never modified.** All new development goes into the adapter.
+**`vascular_expert.py` is never modified.** All development goes into the adapter.
+Laravel orchestration (ChunkSelectionService, retrieval pipeline) is the source of truth for chunk selection, scoring, and intent — the adapter is a thin consumer of that output.
 
 ---
 
@@ -314,9 +315,8 @@ ssh -i ~/LAVAREL.pem azureuser@135.237.148.105 "
 
 ## Pending / Known Gaps
 
-- **Cutover not done**: `mcp` (vascular_expert.py) tool is still active in the OpenWebUI DB.
-  The adapter runs in parallel on `gpt-5-chat-clone` for validation. To cut over: disable
-  the `mcp` tool row in `webui.db` and point `gpt-5-chat` at the adapter.
+- **Cutover complete**: `vascular_mcp_adapter` is now the production tool on `gpt-5-chat`.
+  `mcp` (vascular_expert.py) is kept disabled as a fallback — do not delete.
 - **No same-case follow-up rewrite**: The adapter sends follow-up questions as-is. Production
   `vascular_expert.py` rewrites them into standalone retrieval queries.
 - **No attachment handling**: Uploaded documents are not included in the adapter's gate context.
