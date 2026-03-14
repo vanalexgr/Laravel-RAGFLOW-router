@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.1.0
+version: 1.3.2
 """
 import html
 import httpx
@@ -916,6 +916,31 @@ class Tools:
 
         return questions[:3]
 
+    async def _call_clinical_gate(self, question: str, history: list) -> dict:
+        """Call Laravel /api/v1/clinical-gate to get a structured case interpretation.
+
+        Returns dict with: diagnosis, anatomy, classification, complications_present[],
+        missing_parameters[], summary — or {} on any failure.
+        """
+        url = f'{self.valves.VASCULAR_API_BASE_URL}/api/v1/clinical-gate'
+        headers = {
+            'Authorization': f'Bearer {self.valves.VASCULAR_API_KEY}',
+            'Content-Type': 'application/json',
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(url, json={
+                    'question': question,
+                    'history': (history or [])[-3:],
+                }, headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, dict):
+                    return data
+        except Exception:
+            pass
+        return {}
+
     def _assess_context_gaps(self, question: str, history: list) -> tuple:
         """Check if a patient-case question is missing key clinical parameters.
 
@@ -953,12 +978,30 @@ class Tools:
         question: str,
         history: Optional[list] = None,
         scenario_id: str = "",
+        interpretation: Optional[dict] = None,
     ) -> str:
         """Return a tool response that instructs the LLM to ask expert clarification questions."""
         context_lines = []
         current = (question or "").strip()
         if current:
             context_lines.append(f"- Case: {current}")
+
+        # Inject structured clinical interpretation from ClinicalGateService
+        if interpretation:
+            if interpretation.get("summary"):
+                context_lines.append(f"- Clinical interpretation: {interpretation['summary']}")
+            if interpretation.get("diagnosis"):
+                context_lines.append(f"- Diagnosis: {interpretation['diagnosis']}")
+            if interpretation.get("anatomy"):
+                context_lines.append(f"- Anatomy: {interpretation['anatomy']}")
+            if interpretation.get("classification"):
+                context_lines.append(f"- Classification: {interpretation['classification']}")
+            complications = interpretation.get("complications_present") or []
+            if complications:
+                context_lines.append(f"- Complications already described: {', '.join(complications)}")
+            missing = interpretation.get("missing_parameters") or []
+            if missing:
+                context_lines.append(f"- Parameters identified as missing: {', '.join(missing)}")
 
         history_lines = []
         for item in reversed(history or []):
@@ -1434,10 +1477,11 @@ class Tools:
             self._CASE_GATE_ASSISTANT_RE.search(t) for t in history_texts
         )
         if not gate_already_fired:
+            interpretation = await self._call_clinical_gate(question, history_texts)
             scenario_id, gap_questions = self._assess_context_gaps(question, history_texts)
             if gap_questions:
                 await self._emit_status(emitter, 'Clarifying clinical context before retrieval...')
-                return self._format_context_request(gap_questions, question, history_texts, scenario_id)
+                return self._format_context_request(gap_questions, question, history_texts, scenario_id, interpretation)
 
         # ---- 9.1 Conversation state + query rewrite ------------------- #
         state = self._build_conversation_state(question, __messages__, guidelines)

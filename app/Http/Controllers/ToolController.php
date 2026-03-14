@@ -6,6 +6,7 @@ use App\Services\RetrievalService;
 use App\Services\GuidelineAssetService;
 use App\Services\GapDetectionService;
 use App\Services\GuidelineRouterService;
+use App\Services\ClinicalGateService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -286,6 +287,26 @@ class ToolController extends Controller
             'query_normalization' => $queryNormalization,
             'query_type' => $result['query_type'] ?? 'complex_case',
         ], 200, [], JSON_INVALID_UTF8_SUBSTITUTE)
+            ->header('Access-Control-Allow-Origin', '*')
+            ->header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+            ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    }
+
+    public function clinicalGate(Request $request)
+    {
+        $request->validate([
+            'question' => 'required|string|max:2000',
+            'history'  => 'nullable|array|max:20',
+            'history.*' => 'string|max:2000',
+        ]);
+
+        $question = $request->input('question');
+        $history  = $request->input('history', []);
+
+        $service = new ClinicalGateService();
+        $result  = $service->interpret($question, $history);
+
+        return response()->json($result, 200, [], JSON_INVALID_UTF8_SUBSTITUTE)
             ->header('Access-Control-Allow-Origin', '*')
             ->header('Access-Control-Allow-Methods', 'POST, OPTIONS')
             ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
