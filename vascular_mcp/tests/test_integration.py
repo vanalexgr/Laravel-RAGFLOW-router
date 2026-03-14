@@ -293,16 +293,15 @@ _KNOWLEDGE_QUERY = "What is the recommended diameter threshold for elective AAA 
 
 class TestPhase1bCitationFormat:
     def test_1b_a_citations_include_grade(self):
-        """Test 1b-A: narrative citation lines include Class/Level grade in brackets."""
+        """Test 1b-A: narrative citation blocks include Class/Level grade."""
         result = tool(_KNOWLEDGE_QUERY)
         assert not result.startswith("Error:"), f"Got error: {result[:200]}"
-        # Find the Guideline Recommendations section
-        assert "## Guideline Recommendations" in result, \
-            "Expected '## Guideline Recommendations' section in narrative output"
-        # At least one citation line should contain a grade marker [...]
-        recs_section = result.split("## Guideline Recommendations", 1)[1]
-        assert "[" in recs_section and "]" in recs_section, \
-            f"Expected grade brackets [Class, Level] in citation lines, got: {recs_section[:400]}"
+        assert "=== RECOMMENDATIONS ===" in result, \
+            "Expected '=== RECOMMENDATIONS ===' section in narrative output"
+        recs_section = result.split("=== RECOMMENDATIONS ===", 1)[1]
+        # Each citation block header is [n] Rec ... (Class X, Level Y) — Guideline
+        assert "(Class" in recs_section or "Level" in recs_section, \
+            f"Expected Class/Level grade in citation blocks, got: {recs_section[:400]}"
 
     def test_1b_b_source_is_guideline_name_not_tool_name(self):
         """Test 1b-B: tool name must not appear as citation source in narrative output."""
@@ -312,17 +311,20 @@ class TestPhase1bCitationFormat:
             "Tool name must not appear as citation source in narrative output"
 
     def test_1b_c_no_duplicate_recommendations(self):
-        """Test 1b-C: narrative output contains no duplicate recommendation statements."""
+        """Test 1b-C: narrative output contains no duplicate recommendation blockquotes."""
         result = tool(_KNOWLEDGE_QUERY)
         assert not result.startswith("Error:"), f"Got error: {result[:200]}"
-        if "## Guideline Recommendations" not in result:
+        if "=== RECOMMENDATIONS ===" not in result:
             return  # no citations returned — dedup trivially satisfied
-        recs_section = result.split("## Guideline Recommendations", 1)[1]
-        lines = [l.strip() for l in recs_section.splitlines() if l.strip() and l.strip()[0].isdigit()]
-        # Strip leading index number before comparing
-        statements = [l.split(". ", 1)[1] if ". " in l else l for l in lines]
-        assert len(statements) == len(set(statements)), \
-            f"Duplicate recommendation statements found: {statements}"
+        recs_section = result.split("=== RECOMMENDATIONS ===", 1)[1]
+        # Blockquote lines "> text" are the deduplicated recommendation statements.
+        # Ignore bare ">" lines (empty content chunks are not real duplicates).
+        bq_lines = [
+            l.strip() for l in recs_section.splitlines()
+            if l.strip().startswith(">") and len(l.strip()) > 1
+        ]
+        assert len(bq_lines) == len(set(bq_lines)), \
+            f"Duplicate recommendation blockquotes found: {bq_lines}"
 
     def test_1b_d_agent_answer_substantive(self):
         """Test 1b-D: agent mode answer field > 40 chars on a standard knowledge question."""
@@ -332,18 +334,17 @@ class TestPhase1bCitationFormat:
             f"Agent mode answer too short (≤40 chars): {data.get('answer')!r}"
 
     def test_1b_evidence_summary_header_present(self):
-        """## Evidence Summary header must be present when narrative chunks exist."""
+        """=== NARRATIVE CONTEXT === or === RECOMMENDATIONS === must be present."""
         result = tool(_KNOWLEDGE_QUERY)
         assert not result.startswith("Error:"), f"Got error: {result[:200]}"
-        # Only assert the header if the response has substantive content
         if len(result) > 200:
-            assert "## Evidence Summary" in result or "## Guideline Recommendations" in result, \
-                "Expected at least one of ## Evidence Summary or ## Guideline Recommendations"
+            assert "=== NARRATIVE CONTEXT ===" in result or "=== RECOMMENDATIONS ===" in result, \
+                "Expected at least one of === NARRATIVE CONTEXT === or === RECOMMENDATIONS ==="
 
     def test_1b_guideline_recommendations_header_present(self):
-        """## Guideline Recommendations header must be present when citation chunks exist."""
+        """=== RECOMMENDATIONS === header must be present when evidence is retrieved."""
         result = tool(_KNOWLEDGE_QUERY)
         assert not result.startswith("Error:"), f"Got error: {result[:200]}"
         if len(result) > 200:
-            assert "## Guideline Recommendations" in result, \
-                f"Expected '## Guideline Recommendations' in narrative output. Got: {result[:500]}"
+            assert "=== RECOMMENDATIONS ===" in result, \
+                f"Expected '=== RECOMMENDATIONS ===' in narrative output. Got: {result[:500]}"
