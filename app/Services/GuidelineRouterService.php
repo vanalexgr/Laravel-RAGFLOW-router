@@ -631,4 +631,135 @@ PROMPT;
             return null;
         }
     }
+
+    // ── Query type classifier ─────────────────────────────────────────────────
+
+    /**
+     * Classify a query into: 'knowledge', 'single_case', or 'complex_case'.
+     *
+     * Uses keyword heuristics first (no LLM call); falls back to LLM only for
+     * ambiguous queries where heuristics produce no clear signal.
+     */
+    public function classifyQueryType(string $query): string
+    {
+        $lower = strtolower($query);
+
+        // ── Step 1: keyword heuristics ────────────────────────────────────────
+        $knowledgeSignals = [
+            'what is', 'what are', 'define ', 'definition of', 'definition:',
+            'classification', 'classify', 'rutherford', 'criteria for',
+            'threshold', 'diameter threshold', 'recommended diameter',
+            'maximum diameter', 'cut-off', 'cutoff', 'staging',
+            'how is ', 'how are ', 'describe ', 'explain ',
+        ];
+        // Strong signals unambiguously describe a specific patient (override knowledge).
+        $strongPatientSignals = [
+            'year-old', 'year old', 'presenting with', 'complains of', 'admitted with',
+            'fit for surgery', 'unfit for surgery', 'fit for repair',
+            'fit for open', 'fit for endovascular',
+        ];
+        // Weak signals may appear in population-level knowledge questions ("in patients").
+        $weakPatientSignals = [
+            'patient', 'this patient', 'my patient',
+        ];
+        $complexSignals = [
+            'anticoagulation', 'antithrombotic', 'antiplatelet',
+            'complicated', 'anticoagulation decision', 'multiple',
+            'bilateral', 'atrial fibrillation', 'cardiac source',
+            'multimorbid',
+        ];
+
+        $isKnowledge = false;
+        foreach ($knowledgeSignals as $signal) {
+            if (str_contains($lower, $signal)) {
+                $isKnowledge = true;
+                break;
+            }
+        }
+        $isStrongPatient = false;
+        foreach ($strongPatientSignals as $signal) {
+            if (str_contains($lower, $signal)) {
+                $isStrongPatient = true;
+                break;
+            }
+        }
+        $isWeakPatient = false;
+        foreach ($weakPatientSignals as $signal) {
+            if (str_contains($lower, $signal)) {
+                $isWeakPatient = true;
+                break;
+            }
+        }
+        $isPatient = $isStrongPatient || $isWeakPatient;
+        $isComplex = false;
+        foreach ($complexSignals as $signal) {
+            if (str_contains($lower, $signal)) {
+                $isComplex = true;
+                break;
+            }
+        }
+
+        // Knowledge wins unless there is an unambiguous patient-case signal.
+        if ($isKnowledge && !$isStrongPatient) {
+            return 'knowledge';
+        }
+        // Complex signals always get full retrieval
+        if ($isComplex) {
+            return 'complex_case';
+        }
+        // Patient case without complex signals
+        if ($isPatient) {
+            return 'single_case';
+        }
+
+        // ── Step 2: LLM fallback for ambiguous queries ─────────────────────────
+        return $this->classifyWithLlm($query);
+    }
+
+    private function classifyWithLlm(string $query): string
+    {
+        $prompt = <<<PROMPT
+Classify this clinical query into exactly one of these three types:
+- knowledge: definition, threshold, classification, or population-level guideline question
+- single_case: patient-specific question about one clinical domain
+- complex_case: patient-specific question spanning multiple domains or requiring
+  anticoagulation, antithrombotic, or multi-specialty decisions
+
+Query: {$query}
+Reply with one word only: knowledge, single_case, or complex_case
+PROMPT;
+
+        $result = $this->callAzureOpenAI($prompt, 5);
+        $type   = strtolower(trim($result));
+        return in_array($type, ['knowledge', 'single_case', 'complex_case'])
+            ? $type : 'single_case'; // safe default
+    }
+
+    private function callAzureOpenAI(string $prompt, int $maxTokens = 150): string
+    {
+        if (!$this->isConfigured) {
+            return '';
+        }
+        try {
+            $url = rtrim($this->endpoint, '/') . "/openai/deployments/{$this->deployment}/chat/completions?api-version={$this->apiVersion}";
+            $response = Http::timeout(8)
+                ->withHeaders([
+                    'api-key'      => $this->apiKey,
+                    'Content-Type' => 'application/json',
+                ])
+                ->post($url, [
+                    'messages'    => [
+                        ['role' => 'user', 'content' => $prompt],
+                    ],
+                    'max_tokens'  => $maxTokens,
+                    'temperature' => 0,
+                ]);
+            if (!$response->successful()) {
+                return '';
+            }
+            return (string) $response->json('choices.0.message.content', '');
+        } catch (\Exception $e) {
+            return '';
+        }
+    }
 }

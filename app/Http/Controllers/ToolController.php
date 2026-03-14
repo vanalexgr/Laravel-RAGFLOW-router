@@ -274,6 +274,7 @@ class ToolController extends Controller
             'selected_guidelines' => $selectedGuidelines,
             'assets' => $safeAssets,
             'query_normalization' => $queryNormalization,
+            'query_type' => $result['query_type'] ?? 'complex_case',
         ], 200, [], JSON_INVALID_UTF8_SUBSTITUTE)
             ->header('Access-Control-Allow-Origin', '*')
             ->header('Access-Control-Allow-Methods', 'POST, OPTIONS')
