@@ -378,168 +378,43 @@ class RetrievalService
             }
         }
 
-        $dualResult = $this->applyFinalEvidenceCaps($dualResult, $selectedGuidelines);
+        // Intent-aware ranking, diversification, and LLM/UI tier split.
+        $chunkSelector  = new \App\Services\ChunkSelectionService();
+        $guidelineCount = count($selectedGuidelines);
+        $selection      = $chunkSelector->select(
+            $dualResult['citation_chunks']  ?? [],
+            $dualResult['narrative_chunks'] ?? [],
+            $normalizationMeta              ?? [],
+            $guidelineCount
+        );
 
         $duration = round((microtime(true) - $startTime) * 1000);
 
         return [
-            'success' => true,
-            'question' => $scrubbedQuestion,
-            'retrieval_query' => $retrievalQuestion,
-            'query_normalization' => $normalizationMeta,
-            'expanded_query' => $expandedQuery, // Return for debug
-            'phi_scrubbed' => $scrubResult['was_modified'],
-            'selected_guidelines' => $selectedGuidelines,
-            'routing_method' => $routingMethod,
-            'query_type' => $queryType,
-            'narrative_chunks' => $dualResult['narrative_chunks'],
-            'citation_chunks' => $dualResult['citation_chunks'],
-            'duration_ms' => $duration,
-            'system_prompt' => $this->getDualSystemPrompt(),
-            'gap_report' => $gapService->enabled() && config('gap_detection.include_debug', false) ? $gapReport : null,
-            'graph_expansion' => $graphEnabled && config('graphrag.include_debug', false) ? $graphExpansion : null,
+            'success'              => true,
+            'question'             => $scrubbedQuestion,
+            'retrieval_query'      => $retrievalQuestion,
+            'query_normalization'  => $normalizationMeta,
+            'expanded_query'       => $expandedQuery,
+            'phi_scrubbed'         => $scrubResult['was_modified'],
+            'selected_guidelines'  => $selectedGuidelines,
+            'routing_method'       => $routingMethod,
+            'query_type'           => $queryType,
+            // Tiered chunk arrays
+            'llm_citation_chunks'  => $selection['llm_citation_chunks'],
+            'llm_narrative_chunks' => $selection['llm_narrative_chunks'],
+            'ui_citation_chunks'   => $selection['ui_citation_chunks'],
+            'ui_narrative_chunks'  => $selection['ui_narrative_chunks'],
+            'must_include_chunk'   => $selection['must_include_chunk'],
+            'intent_profile'       => $selection['intent_profile'],
+            // Backward-compatible aliases (point to UI tier)
+            'citation_chunks'      => $selection['ui_citation_chunks'],
+            'narrative_chunks'     => $selection['ui_narrative_chunks'],
+            'duration_ms'          => $duration,
+            'system_prompt'        => $this->getDualSystemPrompt(),
+            'gap_report'           => $gapService->enabled() && config('gap_detection.include_debug', false) ? $gapReport : null,
+            'graph_expansion'      => $graphEnabled && config('graphrag.include_debug', false) ? $graphExpansion : null,
         ];
-    }
-
-    protected function applyFinalEvidenceCaps(array $dualResult, array $selectedGuidelines): array
-    {
-        $caps = config('ragflow.retrieval.evidence_caps', []);
-        if (empty($caps['enabled'])) {
-            return $dualResult;
-        }
-
-        $narrativePerGuideline = max(1, (int) ($caps['narrative_max_per_guideline'] ?? 8));
-        $narrativeTotal = max(1, (int) ($caps['narrative_max_total'] ?? 16));
-        $citationPerGuideline = max(1, (int) ($caps['citation_max_per_guideline'] ?? 6));
-        $citationTotal = max(1, (int) ($caps['citation_max_total'] ?? 12));
-
-        $narrative = $dualResult['narrative_chunks'] ?? [];
-        $citation = $dualResult['citation_chunks'] ?? [];
-
-        $narrativeBefore = count($narrative);
-        $citationBefore = count($citation);
-
-        $dualResult['narrative_chunks'] = $this->capEvidenceChunks(
-            is_array($narrative) ? $narrative : [],
-            'narrative',
-            $selectedGuidelines,
-            $narrativePerGuideline,
-            $narrativeTotal
-        );
-        $dualResult['citation_chunks'] = $this->capEvidenceChunks(
-            is_array($citation) ? $citation : [],
-            'citation',
-            $selectedGuidelines,
-            $citationPerGuideline,
-            $citationTotal
-        );
-
-        if (count($dualResult['narrative_chunks']) !== $narrativeBefore || count($dualResult['citation_chunks']) !== $citationBefore) {
-            Log::channel('retrieval')->info('[EVIDENCE CAPS] Applied final post-merge caps', [
-                'narrative_before' => $narrativeBefore,
-                'narrative_after' => count($dualResult['narrative_chunks']),
-                'citation_before' => $citationBefore,
-                'citation_after' => count($dualResult['citation_chunks']),
-                'narrative_max_per_guideline' => $narrativePerGuideline,
-                'narrative_max_total' => $narrativeTotal,
-                'citation_max_per_guideline' => $citationPerGuideline,
-                'citation_max_total' => $citationTotal,
-            ]);
-        }
-
-        return $dualResult;
-    }
-
-    protected function capEvidenceChunks(
-        array $chunks,
-        string $type,
-        array $selectedGuidelines,
-        int $maxPerGuideline,
-        int $maxTotal
-    ): array {
-        if (empty($chunks)) {
-            return [];
-        }
-
-        $allowedByKey = [];
-        foreach ($selectedGuidelines as $key => $info) {
-            if (!is_string($key) || $key === '') {
-                continue;
-            }
-            $labels = [];
-            $name = (string) ($info['name'] ?? '');
-            if ($name !== '') {
-                $norm = $this->normalizeGuidelineLabel($name);
-                if ($norm !== '') {
-                    $labels[$norm] = true;
-                }
-            }
-            foreach ($this->recommendationGuidelineAliasesForKey($key) as $alias) {
-                $norm = $this->normalizeGuidelineLabel((string) $alias);
-                if ($norm !== '') {
-                    $labels[$norm] = true;
-                }
-            }
-            $allowedByKey[$key] = $labels;
-        }
-
-        $indexed = [];
-        foreach (array_values($chunks) as $idx => $chunk) {
-            if (!is_array($chunk)) {
-                continue;
-            }
-            $score = (float) ($chunk['similarity'] ?? 0.0);
-            $bucket = null;
-            $label = $type === 'citation'
-                ? (string) ($chunk['guideline'] ?? '')
-                : (string) ($chunk['source_guideline'] ?? '');
-
-            if ($label !== '') {
-                foreach ($allowedByKey as $key => $allowedLabels) {
-                    if ($this->guidelineLabelAllowed($label, $allowedLabels)) {
-                        $bucket = $key;
-                        break;
-                    }
-                }
-            }
-
-            $indexed[] = [
-                'idx' => $idx,
-                'score' => $score,
-                'bucket' => $bucket,
-                'chunk' => $chunk,
-            ];
-        }
-
-        usort($indexed, function (array $a, array $b): int {
-            if ($a['score'] === $b['score']) {
-                return $a['idx'] <=> $b['idx'];
-            }
-            return $b['score'] <=> $a['score'];
-        });
-
-        $perGuidelineCount = [];
-        $kept = [];
-        foreach ($indexed as $row) {
-            $bucket = $row['bucket'];
-            if ($bucket !== null) {
-                $count = $perGuidelineCount[$bucket] ?? 0;
-                if ($count >= $maxPerGuideline) {
-                    continue;
-                }
-                $perGuidelineCount[$bucket] = $count + 1;
-            }
-            $kept[] = $row;
-        }
-
-        if (count($kept) > $maxTotal) {
-            $kept = array_slice($kept, 0, $maxTotal);
-        }
-
-        return array_values(array_map(
-            fn(array $row): array => $row['chunk'],
-            $kept
-        ));
     }
 
     protected function applyQualityPassOnConceptGap(
@@ -1813,7 +1688,6 @@ class RetrievalService
             $narrativeQuery
         );
         $formattedCitation = $this->formatChunks($citationChunks, 'citation');
-        $formattedCitation = $this->rebalanceCitationCoverage($formattedCitation, $guidelines);
 
         // Second-pass safety filter on formatted chunks. This catches cases where the
         // raw chunk metadata is sparse/inconsistent but the parsed formatted chunk
@@ -1867,80 +1741,6 @@ class RetrievalService
         }
 
         return $clamped;
-    }
-
-    /**
-     * Reorder citation chunks so multi-guideline queries expose at least one early chunk
-     * per selected guideline when available, reducing single-guideline dominance in synthesis.
-     */
-    protected function rebalanceCitationCoverage(array $chunks, array $selectedGuidelines): array
-    {
-        if (count($selectedGuidelines) <= 1 || empty($chunks)) {
-            return $chunks;
-        }
-
-        $keyOrder = array_keys($selectedGuidelines);
-        $allowedByKey = [];
-        foreach ($selectedGuidelines as $key => $info) {
-            $labels = [];
-            $name = (string) ($info['name'] ?? '');
-            if ($name !== '') {
-                $norm = $this->normalizeGuidelineLabel($name);
-                if ($norm !== '') {
-                    $labels[$norm] = true;
-                }
-            }
-            foreach ($this->recommendationGuidelineAliasesForKey($key) as $alias) {
-                $norm = $this->normalizeGuidelineLabel((string) $alias);
-                if ($norm !== '') {
-                    $labels[$norm] = true;
-                }
-            }
-            $allowedByKey[$key] = $labels;
-        }
-
-        $buckets = [];
-        foreach ($keyOrder as $key) {
-            $buckets[$key] = [];
-        }
-        $unknown = [];
-
-        foreach ($chunks as $chunk) {
-            $label = (string) ($chunk['guideline'] ?? '');
-            $matched = null;
-            foreach ($keyOrder as $key) {
-                if ($label !== '' && $this->guidelineLabelAllowed($label, $allowedByKey[$key] ?? [])) {
-                    $matched = $key;
-                    break;
-                }
-            }
-            if ($matched === null) {
-                $unknown[] = $chunk;
-            } else {
-                $buckets[$matched][] = $chunk;
-            }
-        }
-
-        $reordered = [];
-        while (count($reordered) < count($chunks)) {
-            $progress = false;
-            foreach ($keyOrder as $key) {
-                if (!empty($buckets[$key])) {
-                    $reordered[] = array_shift($buckets[$key]);
-                    $progress = true;
-                }
-            }
-            if (!$progress) {
-                break;
-            }
-        }
-
-        foreach ($unknown as $chunk) {
-            $reordered[] = $chunk;
-        }
-
-        // Preserve original cardinality.
-        return array_slice($reordered, 0, count($chunks));
     }
 
     protected function buildCitationQuery(string $retrievalQuery, string $originalQuestion, ?array $normalizationMeta, array $selectedGuidelineKeys): string

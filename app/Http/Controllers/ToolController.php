@@ -265,12 +265,22 @@ class ToolController extends Controller
         $selectedGuidelines = json_decode(json_encode($result['selected_guidelines'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
         $safeAssets = json_decode(json_encode($assets, JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
         $queryNormalization = json_decode(json_encode($result['query_normalization'] ?? null, JSON_INVALID_UTF8_SUBSTITUTE), true);
+        $llmCitationChunks = json_decode(json_encode($result['llm_citation_chunks'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
+        $llmNarrativeChunks = json_decode(json_encode($result['llm_narrative_chunks'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
+        $uiCitationChunks = json_decode(json_encode($result['ui_citation_chunks'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
+        $uiNarrativeChunks = json_decode(json_encode($result['ui_narrative_chunks'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
 
         // Return JSON with structured data for citation emission
         return response()->json([
             'result' => $output,
             'narrative_chunks' => $narrativeChunks,
             'citation_chunks' => $citationChunks,
+            'llm_citation_chunks' => $llmCitationChunks,
+            'llm_narrative_chunks' => $llmNarrativeChunks,
+            'ui_citation_chunks' => $uiCitationChunks,
+            'ui_narrative_chunks' => $uiNarrativeChunks,
+            'must_include_chunk' => $result['must_include_chunk'] ?? null,
+            'intent_profile' => $result['intent_profile'] ?? null,
             'selected_guidelines' => $selectedGuidelines,
             'assets' => $safeAssets,
             'query_normalization' => $queryNormalization,
