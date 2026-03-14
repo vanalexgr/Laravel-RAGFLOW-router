@@ -498,26 +498,77 @@ def _citation_line(chunk: dict, index: int) -> str:
     return f"{index}. {statement}{grade}{src_tag}"
 
 
+# ─── Asset block formatter ────────────────────────────────────────────────────
+
+def _format_assets_block(assets: list) -> tuple[str, int]:
+    """
+    Build a MANDATORY VERBATIM OUTPUT block for figures/tables.
+    Returns (text_block, count). Matches old tool's format so the LLM copies
+    image lines verbatim into the answer.
+    """
+    if not assets:
+        return "", 0
+
+    items: list[str] = []
+    for asset in assets[:3]:
+        if not isinstance(asset, dict):
+            continue
+        thumb_url = str(asset.get("thumbnail_url") or "").strip()
+        full_url  = str(asset.get("url") or "").strip()
+        if not full_url.startswith(("http://", "https://")) and \
+           not thumb_url.startswith(("http://", "https://")):
+            continue
+        if not thumb_url:
+            thumb_url = full_url
+        if not full_url:
+            full_url = thumb_url
+        label   = str(asset.get("label", "")).strip() or f"Figure {len(items) + 1}"
+        caption = str(asset.get("caption", "")).strip()
+        alt     = (caption or label).replace("[", "(").replace("]", ")")[:140]
+        headline = label
+        if caption:
+            headline += f": {caption[:180]}"
+        block = [headline]
+        if full_url != thumb_url:
+            block.append(f"[![{alt}]({thumb_url})]({full_url})")
+            block.append(f"[Full-size]({full_url})")
+        else:
+            block.append(f"![{alt}]({full_url})")
+        items.append("\n".join(block))
+
+    if not items:
+        return "", 0
+
+    count = len(items)
+    header = [
+        "=== FIGURES / TABLES (MANDATORY VERBATIM OUTPUT) ===",
+        f"ASSET_COUNT_REQUIRED: {count}",
+        "In the final answer, include a section titled exactly: 🖼️ Figures / Tables",
+        "Copy EVERY markdown image line below exactly as written. Do not modify URLs.",
+        "",
+    ]
+    return "\n".join(header + items) + "\n", count
+
+
 # ─── Narrative formatter (OpenWebUI mode) ─────────────────────────────────────
 
 def _format_consult_narrative(data: dict, query: str) -> str:
     """
     Format retrieved evidence for OpenWebUI narrative mode.
 
-    Renders pre-formatted Laravel STRICT_TEMPLATE output (## Clinical Assessment),
-    then supporting evidence and numbered citations so the synthesising LLM can
-    cite specific recommendations inline.
+    Uses [n] block headers matching the old tool's citation style so the
+    synthesising LLM cites inline as [1], [2], etc.
     """
-    norm       = data.get("query_normalization") or {}
-    narrative  = _dedup_chunks(data.get("narrative_chunks") or [])
-    citations  = _dedup_chunks(data.get("citation_chunks") or [])
-    assets     = data.get("assets") or []
-    gl_ids     = _gl_list(data.get("selected_guidelines"))
-    llm_out    = (data.get("llm_output") or data.get("result") or data.get("output") or "").strip()
+    norm      = data.get("query_normalization") or {}
+    narrative = _dedup_chunks(data.get("narrative_chunks") or [])
+    citations = _dedup_chunks(data.get("citation_chunks") or [])
+    assets    = data.get("assets") or []
+    gl_ids    = _gl_list(data.get("selected_guidelines"))
 
-    lines: list[str] = []
+    lines:    list[str] = []
+    chunk_num = 1  # global counter shared across citations and narrative
 
-    # Query normalisation header (only when the query changed)
+    # Query normalisation header (only when the query was rewritten)
     norm_q = norm.get("normalized_query", "")
     if norm_q and norm_q.strip().lower() != query.strip().lower():
         lines += [f"**Query interpreted as:** {norm_q}", ""]
@@ -526,60 +577,96 @@ def _format_consult_narrative(data: dict, query: str) -> str:
     if gl_ids:
         lines += [f"**Guidelines searched:** {', '.join(gl_ids)}", ""]
 
-    # Guideline recommendations — numbered first so LLM can cite inline as [n]
+    # Assets — early in context so LLM sees them even on long outputs
+    assets_text, asset_count = _format_assets_block(assets)
+    if assets_text:
+        lines.append(assets_text)
+
+    # === RECOMMENDATIONS — [n] block format ===
     if citations:
-        lines += ["## Guideline Recommendations", ""]
-        for i, c in enumerate(citations, 1):
-            lines.append(_citation_line(c, i))
-        lines.append("")
-
-    # Evidence summary — supporting narrative passages
-    if narrative:
-        lines += ["## Evidence Summary", ""]
-        for chunk in narrative:
-            src  = chunk.get("document_name") or chunk.get("source", "")
-            text = chunk.get("content", "")
-            if src:
-                lines.append(f"**{src}**")
-            if text:
-                lines.append(text)
+        lines.append("=== RECOMMENDATIONS ===")
+        for c in citations:
+            rec_id    = c.get("recommendation_id") or c.get("rec_id", "")
+            cls       = c.get("class") or c.get("recommendation_class", "")
+            lvl       = c.get("level") or c.get("evidence_level") or c.get("grade", "")
+            guideline = c.get("guideline") or c.get("document_name", "ESVS")
+            text      = (c.get("recommendation") or c.get("content", "")).strip()
+            if not text:
+                continue  # skip empty chunks
+            header    = f"[{chunk_num}]"
+            if rec_id:
+                header += f" Rec {rec_id}"
+            if cls or lvl:
+                header += f" (Class {cls}, Level {lvl})"
+            header += f" — {guideline}"
+            lines.append(header)
+            lines.append(f"> {text}")
             lines.append("")
+            chunk_num += 1
+    elif narrative:
+        lines.append("=== RECOMMENDATIONS ===")
+        lines.append(
+            "No direct recommendation chunks retrieved for this query. "
+            "Answer from the narrative context below and state this explicitly.\n"
+        )
 
-    # Referenced figures and tables
-    if assets:
-        lines += ["## Referenced Figures & Tables", ""]
-        for a in assets:
-            label   = a.get("label", "Asset")
-            caption = a.get("caption", "")
-            url     = a.get("url")
-            entry   = f"- **{label}**"
-            if caption:
-                entry += f": {caption}"
-            if url:
-                entry += f" — [view]({url})"
-            lines.append(entry)
-        lines.append("")
+    # === NARRATIVE CONTEXT ===
+    if narrative:
+        lines.append("=== NARRATIVE CONTEXT ===")
+        narrative_i = 1
+        for c in narrative:
+            src   = c.get("document_name") or c.get("source_guideline") or c.get("source", "ESVS")
+            text  = c.get("content", "")
+            label = (text[:60].replace("\n", " ") + ("..." if len(text) > 60 else "")).strip()
+            lines.append(f"[{chunk_num}] {src} — Narrative {narrative_i}: {label}")
+            lines.append(text)
+            lines.append("")
+            chunk_num += 1
+            narrative_i += 1
 
-    if not lines:
+    if not citations and not narrative:
         return f"No evidence retrieved for: {query}"
 
-    # STRICT_TEMPLATE synthesis instruction — tells OpenWebUI LLM to synthesise
-    # from the numbered evidence above with self-contained inline citations
-    lines.append("---")
+    total = chunk_num - 1
+
+    # === CITATION RULES ===
+    lines.append("=== CITATION RULES ===")
+    lines.append("1. Use simple numbered citations [1], [2], [3] inline after each fact.")
+    lines.append("2. Cite only sources you actually use; do not force-cite unrelated evidence.")
+    lines.append("3. Do NOT add a separate References section; the UI shows a Sources list.")
+    lines.append(f"4. Match the bracketed numbers [n] exactly to the evidence blocks above (1–{total}).")
+    lines.append("5. If evidence spans multiple guidelines, cite at least one from each used.")
     lines.append(
-        "**Synthesise a clinical response using ONLY the evidence above.** "
-        "Apply these sections where clinically relevant:\n\n"
-        "**Assessment** — clinical context and key findings\n"
-        "**Imaging** — investigations required or recommended\n"
-        "**Indication for Intervention** — when to treat (cite Class/Level)\n"
-        "**Treatment Options** — procedure choice with evidence grades\n"
-        "**Clinical Decision Summary** — clear recommendation for this patient\n"
-        "**Perioperative Risk Mitigation** — relevant for surgical/endovascular cases\n"
-        "**Follow-up** — surveillance, monitoring, anticoagulation duration\n\n"
-        "Cite graded recommendations inline as **[n]** using the numbers above. "
-        "State Class and Level of evidence for all key recommendations. "
-        "Do not answer from memory — use only the retrieved evidence."
+        "6. SCOPE FILTER: Only cite recommendations directly addressing this case. "
+        "Exclude recommendations about different procedures or conditions."
     )
+    rule_n = 7
+    if not citations and narrative:
+        lines.append(
+            f"{rule_n}. It is valid to answer from narrative context only; "
+            "state that no direct recommendation chunk was retrieved."
+        )
+        rule_n += 1
+    if asset_count > 0:
+        lines.append(
+            f"{rule_n}. Include a final section titled exactly: 🖼️ Figures / Tables — "
+            f"copy ALL markdown image lines exactly from the FIGURES / TABLES block above. "
+            f"The number of image lines must equal {asset_count}."
+        )
+    lines.append("")
+
+    # === REQUIRED STRUCTURE (STRICT) ===
+    lines.append("=== REQUIRED STRUCTURE (STRICT) ===")
+    lines.append(
+        "IMPORTANT: Restrict every section to evidence directly relevant to this case. "
+        "Do NOT include recommendations about procedures not involved in this case."
+    )
+    lines.append("Assessment:")
+    lines.append("Imaging:")
+    lines.append("Indication for intervention:")
+    lines.append("Treatment options:")
+    lines.append("Follow-up:")
+    lines.append("Evidence used (Rec #, Class, Level):")
 
     return "\n".join(lines)
 
