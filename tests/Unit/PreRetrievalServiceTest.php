@@ -181,6 +181,35 @@ class PreRetrievalServiceTest extends TestCase
         $this->assertContains('antithrombotic_therapy', $result->guidelines);
     }
 
+    public function test_complex_juxtarenal_aneurysm_adds_thoracic_companion_guideline(): void
+    {
+        $service = $this->makeServiceWithResponse(json_encode([
+            'proceed' => true,
+            'soft_warn' => true,
+            'clarification_questions' => [
+                'What is the aneurysm diameter?',
+                'Is there evidence of rupture or impending rupture?',
+                'What is the patient\'s haemodynamic stability?',
+            ],
+            'provisional_diagnosis' => 'Symptomatic juxtarenal abdominal aortic aneurysm requiring urgent management decision.',
+            'guidelines' => ['abdominal_aortic_aneurysm'],
+            'retrieval_query' => 'symptomatic juxtarenal abdominal aortic aneurysm urgent management open repair versus endovascular repair',
+            'scope' => 'single_guideline',
+            'confirmation_message' => 'placeholder',
+        ]));
+
+        $result = $service->analyse('patient with juxtarenal aneyrysm symptomatic. What is the best management?');
+
+        $this->assertSame(
+            ['abdominal_aortic_aneurysm', 'descending_thoracic_aorta'],
+            $result->guidelines
+        );
+        $this->assertStringContainsString(
+            "📚 Searching\nAbdominal Aortic Aneurysm, Thoracic Aorta",
+            $result->confirmationMessage
+        );
+    }
+
     public function test_non_a_non_b_dissection_is_normalized_for_understanding_guidelines_and_query_terms(): void
     {
         $service = $this->makeServiceWithResponse(json_encode([
@@ -242,6 +271,33 @@ class PreRetrievalServiceTest extends TestCase
             "📚 Searching\nThoracic Aorta, Aortic Arch, Carotid & Vertebral",
             $result->confirmationMessage
         );
+    }
+
+    public function test_aorto_oesophageal_fistula_presentation_adds_missing_aortic_clarification_questions(): void
+    {
+        $service = $this->makeServiceWithResponse(json_encode([
+            'proceed' => true,
+            'soft_warn' => false,
+            'clarification_questions' => [],
+            'provisional_diagnosis' => 'Acute descending thoracic aortic aneurysm with aorto-esophageal fistula causing major haemorrhage managed by thoracic endovascular aortic repair.',
+            'guidelines' => ['vascular_graft_infections', 'descending_thoracic_aorta'],
+            'retrieval_query' => 'thoracic aorta',
+            'scope' => 'multi_guideline',
+            'confirmation_message' => 'placeholder',
+        ]));
+
+        $result = $service->analyse(
+            'Thoracic aortic aneurysm in connection with the esophagous. The patient has haemorrhage and haematemesis. We treating the patient with tevar.'
+        );
+
+        $this->assertTrue($result->softWarn);
+        $this->assertSame([
+            'Is the aneurysm or repair distal to the left subclavian artery or involving the arch?',
+            'Is there confirmed aorto-oesophageal fistula or graft/endograft infection on CT, endoscopy, or PET, or is this suspected clinically?',
+            'Is the patient haemodynamically stable, or is there ongoing active bleeding or shock?',
+        ], $result->clarificationQuestions);
+        $this->assertStringContainsString("\n\n❓ To Sharpen\n- Is the aneurysm or repair distal to the left subclavian artery or involving the arch?", $result->confirmationMessage);
+        $this->assertMatchesRegularExpression('/aorto-.*esophag.*fistula/i', $result->provisionalDiagnosis);
     }
 
     public function test_llm_failure_returns_safe_defaults(): void

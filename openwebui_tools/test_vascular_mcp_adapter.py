@@ -159,6 +159,7 @@ class VascularMcpAdapterHeuristicTests(unittest.TestCase):
         doc = Tools.explain_app_capabilities.__doc__ or ""
         self.assertIn("general onboarding", doc)
         self.assertIn("Answer from your own knowledge", doc)
+        self.assertIn("Provide class and level of recommendations", doc)
 
     def test_tool_description_forces_fresh_tool_calls_for_follow_ups(self):
         doc = Tools.consult_vascular_guidelines.__doc__ or ""
@@ -166,6 +167,8 @@ class VascularMcpAdapterHeuristicTests(unittest.TestCase):
         self.assertIn("NEVER answer from a prior tool result in history", doc)
         self.assertIn("Each new question may require fresh retrieval or change detection by the backend", doc)
         self.assertIn("Would you consider stenting given that this is a child?", doc)
+        self.assertIn("Provide class and level of recommendations", doc)
+        self.assertIn("Give me the recommendation numbers", doc)
 
     def test_tool_description_tells_model_to_use_history_for_terse_follow_ups(self):
         doc = Tools.consult_vascular_guidelines.__doc__ or ""
@@ -284,6 +287,65 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("</user_message>", result)
         self.assertNotIn("\nEND", result)
 
+    async def test_explain_app_capabilities_delegates_pending_gate_clarification_back_to_consult(self):
+        class DelegatingTools(Tools):
+            def __init__(self):
+                super().__init__()
+                self.calls = []
+
+            async def consult_vascular_guidelines(self, question: str, guideline_1, guideline_2=None, guideline_3=None, **kwargs):
+                self.calls.append(("consult", question, guideline_1, guideline_2, guideline_3))
+                return "delegated consult"
+
+        tool = DelegatingTools()
+        tool._store_session(
+            "chat:clarification-chat",
+            payload=None,
+            pre_result={
+                "guidelines": ["antithrombotic_therapy", "asymptomatic_pad", "clti"],
+                "retrieval_query": "antithrombotic therapy lower limb revascularization peripheral arterial disease",
+            },
+            task=None,
+        )
+        messages = [
+            {
+                "role": "user",
+                "content": "What is the recommended antithrombotic therapy after lower limb revascularization for peripheral arterial disease?",
+            },
+            {
+                "role": "assistant",
+                "content": (
+                    "Clinical Query Checkpoint\n\n"
+                    "🩺 Understanding\n"
+                    "Post lower limb revascularization in peripheral arterial disease requiring guidance on optimal antithrombotic therapy.\n\n"
+                    "📚 Searching\n"
+                    "Antithrombotic Therapy, Asymptomatic PAD, Chronic Limb-Threatening Ischemia\n\n"
+                    "🏷️ Query Terms\n"
+                    "antithrombotic therapy after lower limb revascularization peripheral arterial disease surgical bypass endovascular intervention\n\n"
+                    "❓ To Sharpen\n"
+                    "- Was the revascularization surgical bypass or endovascular?\n"
+                    "- Is the patient now asymptomatic, claudicant, or limb threatening?\n"
+                    "- Any contraindication to antithrombotic therapy?\n\n"
+                    "✅ Reply to confirm, or add details to refine the search."
+                ),
+            },
+            {"role": "user", "content": "Bypass with saphenous vein. Improved - no rest pain. None"},
+        ]
+
+        result = await tool.explain_app_capabilities(
+            question="Bypass with saphenous vein. Improved - no rest pain. None",
+            __messages__=messages,
+            __user__={"id": "clarification-user"},
+            __metadata__={"chat_id": "clarification-chat"},
+            __event_emitter__=None,
+        )
+
+        self.assertEqual("delegated consult", result)
+        self.assertEqual(
+            [("consult", "Bypass with saphenous vein. Improved - no rest pain. None", "antithrombotic_therapy", "asymptomatic_pad", "clti")],
+            tool.calls,
+        )
+
     async def test_consult_short_circuits_out_of_scope_question_to_guidance(self):
         class GuardrailTools(Tools):
             async def _call_pre_retrieval(self, question: str, history: list, guidelines: list) -> dict:
@@ -315,6 +377,104 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("APP_CAPABILITIES_GUIDANCE_ONLY", result)
         self.assertIn("cannot switch into general-chat mode", result)
+
+    async def test_consult_bypasses_guardrail_for_answer_only_clarification_with_pending_session(self):
+        class GuardrailAwareTools(Tools):
+            def __init__(self):
+                super().__init__()
+                self.calls = []
+
+            def _guardrail_type(self, question: str, messages=None):
+                self.calls.append(("guardrail", question))
+                return "out_of_scope"
+
+            async def _emit_status(self, emitter, description: str, done: bool = False):
+                self.calls.append(("status", description, done))
+
+            async def _call_confirmation_phase(self, question: str, history: list, pre_result: dict) -> dict:
+                self.calls.append(("confirm", question, tuple(history), pre_result["retrieval_query"]))
+                return {"phase": "complete", "reused": True}
+
+            async def _await_session_payload(self, user_id: str, session: dict, emitter) -> dict:
+                self.calls.append(("await", user_id))
+                return {
+                    "result": "retrieved",
+                    "llm_citation_chunks": [{"text": "x", "recommendation_id": "1", "class": "I", "level": "A", "guideline": "ESVS"}],
+                    "llm_narrative_chunks": [],
+                    "ui_citation_chunks": [{"text": "x", "recommendation_id": "1", "class": "I", "level": "A", "guideline": "ESVS"}],
+                    "ui_narrative_chunks": [],
+                    "citation_chunks": [{"text": "x"}],
+                    "narrative_chunks": [],
+                    "selected_guidelines": [
+                        {"key": "antithrombotic_therapy", "name": "Antithrombotic Therapy"},
+                        {"key": "asymptomatic_pad", "name": "Asymptomatic PAD"},
+                    ],
+                    "query_normalization": {},
+                    "intent_profile": {},
+                    "assets": [],
+                }
+
+            async def _build_response_from_payload(self, data, emitter, analysis_question: str, guidelines=None) -> str:
+                self.calls.append(("build", analysis_question, tuple(guidelines or [])))
+                return "final answer"
+
+        tool = GuardrailAwareTools()
+        tool._store_session(
+            "chat:pending-gate-chat",
+            payload=None,
+            pre_result={
+                "proceed": True,
+                "soft_warn": True,
+                "clarification_questions": [
+                    "Was the revascularization surgical bypass or endovascular?",
+                    "Is the patient now asymptomatic, claudicant, or limb threatening?",
+                    "Any contraindication to antithrombotic therapy?",
+                ],
+                "provisional_diagnosis": "Post lower limb revascularization in peripheral arterial disease requiring guidance on optimal antithrombotic therapy.",
+                "guidelines": ["antithrombotic_therapy", "asymptomatic_pad", "clti"],
+                "retrieval_query": "antithrombotic therapy lower limb revascularization peripheral arterial disease",
+                "scope": "multi_guideline",
+                "confirmation_message": "gate message",
+            },
+            task=None,
+        )
+        messages = [
+            {"role": "user", "content": "What is the recommended antithrombotic therapy after lower limb revascularization for peripheral arterial disease?"},
+            {
+                "role": "assistant",
+                "content": (
+                    "Clinical Query Checkpoint\n\n"
+                    "🩺 Understanding\n"
+                    "Post lower limb revascularization in peripheral arterial disease requiring guidance on optimal antithrombotic therapy.\n\n"
+                    "📚 Searching\n"
+                    "Antithrombotic Therapy, Asymptomatic PAD, Chronic Limb-Threatening Ischemia\n\n"
+                    "🏷️ Query Terms\n"
+                    "antithrombotic therapy after lower limb revascularization peripheral arterial disease surgical bypass endovascular intervention\n\n"
+                    "❓ To Sharpen\n"
+                    "- Was the revascularization surgical bypass or endovascular?\n"
+                    "- Is the patient now asymptomatic, claudicant, or limb threatening?\n"
+                    "- Any contraindication to antithrombotic therapy?\n\n"
+                    "✅ Reply to confirm, or add details to refine the search."
+                ),
+            },
+            {"role": "user", "content": "Bypass with saphenous vein. Improved - no rest pain. None"},
+        ]
+
+        result = await tool.consult_vascular_guidelines(
+            question="Bypass with saphenous vein. Improved - no rest pain. None",
+            guideline_1="antithrombotic_therapy",
+            guideline_2="asymptomatic_pad",
+            guideline_3="clti",
+            __user__={"id": "clarification-user"},
+            __metadata__={"chat_id": "pending-gate-chat"},
+            __messages__=messages,
+            __event_emitter__=None,
+        )
+
+        self.assertEqual("final answer", result)
+        self.assertFalse(any(call[0] == "guardrail" for call in tool.calls))
+        self.assertTrue(any(call[0] == "confirm" for call in tool.calls))
+        self.assertTrue(any(call[0] == "await" for call in tool.calls))
 
     async def test_missing_session_recovers_prior_gate_from_history(self):
         class RecoveryTools(Tools):

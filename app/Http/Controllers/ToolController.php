@@ -81,7 +81,12 @@ class ToolController extends Controller
             }
 
             $requery = $changeResult->enrichedQuery ?: $original->retrievalQuery;
-            $effectiveKeys = !empty($original->guidelines) ? $original->guidelines : $requestedKeys;
+            $effectiveKeys = $this->resolveConfirmationGuidelineKeys(
+                $question,
+                $original,
+                $changeResult,
+                $requestedKeys
+            );
             $retrieval = $this->executeRetrieval($requery, $history, $effectiveKeys);
 
             if (isset($retrieval['guardrail'])) {
@@ -212,6 +217,88 @@ class ToolController extends Controller
         }
 
         return [$requestedKeys, $invalidGuidelines];
+    }
+
+    protected function resolveConfirmationGuidelineKeys(
+        string $question,
+        PreRetrievalResult $original,
+        \App\ValueObjects\ChangeDetectionResult $changeResult,
+        ?array $requestedKeys
+    ): ?array {
+        $keys = !empty($changeResult->updatedGuidelines)
+            ? $changeResult->updatedGuidelines
+            : (!empty($original->guidelines) ? $original->guidelines : ($requestedKeys ?? []));
+
+        $keys = $this->sanitizeGuidelineKeys($keys);
+
+        $combined = implode(' ', array_filter([
+            $question,
+            $changeResult->enrichedQuery,
+            $original->provisionalDiagnosis,
+            $original->retrievalQuery,
+        ]));
+
+        $hasCltiContext = (bool) preg_match(
+            '/\b(clti|chronic limb threatening ischa?emia|rest pain|tissue loss|gangrene|ulcer|wifi|limb threatening)\b/i',
+            $combined
+        );
+
+        if ($hasCltiContext) {
+            $keys = array_values(array_filter($keys, fn(string $key): bool => $key !== 'asymptomatic_pad'));
+            $keys = $this->ensureGuidelineKey($keys, 'clti', after: 'antithrombotic_therapy');
+        }
+
+        $needsAntithromboticCompanion = (bool) preg_match(
+            '/\b(antithrombotic|antiplatelet|anticoag|aspirin|clopidogrel|rivaroxaban|doac|warfarin)\b/i',
+            $combined
+        );
+
+        if ($needsAntithromboticCompanion) {
+            $keys = $this->ensureGuidelineKey($keys, 'antithrombotic_therapy');
+        }
+
+        return !empty($keys) ? array_slice($keys, 0, 3) : $requestedKeys;
+    }
+
+    protected function sanitizeGuidelineKeys(?array $keys): array
+    {
+        $sanitized = [];
+        foreach ($keys ?? [] as $key) {
+            if (!is_string($key) || trim($key) === '') {
+                continue;
+            }
+
+            $validated = $this->validateGuideline($key);
+            if ($validated !== null && !in_array($validated, $sanitized, true)) {
+                $sanitized[] = $validated;
+            }
+        }
+
+        return $sanitized;
+    }
+
+    protected function ensureGuidelineKey(array $keys, string $guideline, ?string $after = null): array
+    {
+        $validated = $this->validateGuideline($guideline);
+        if ($validated === null) {
+            return $keys;
+        }
+
+        $keys = array_values(array_filter($keys, fn(string $key): bool => $key !== $validated));
+
+        if ($after === null) {
+            array_unshift($keys, $validated);
+            return $keys;
+        }
+
+        $afterIndex = array_search($after, $keys, true);
+        if ($afterIndex === false) {
+            $keys[] = $validated;
+            return $keys;
+        }
+
+        array_splice($keys, $afterIndex + 1, 0, [$validated]);
+        return $keys;
     }
 
     protected function executeRetrieval(string $question, array $history, ?array $requestedKeys): array
