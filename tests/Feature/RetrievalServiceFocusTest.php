@@ -25,6 +25,11 @@ class RetrievalServiceFocusTest extends TestCase
             {
                 return $this->applyRetrievalQueryBoosts($query, $selectedGuidelines, $channel, $definitionIntent);
             }
+
+            public function definitionIntentForTest(string $question): bool
+            {
+                return $this->isDefinitionIntent($question);
+            }
         };
     }
 
@@ -94,5 +99,45 @@ class RetrievalServiceFocusTest extends TestCase
         $boosted = $service->boostForTest($query, ['carotid_vertebral'], 'narrative', false);
 
         $this->assertSame($query, $boosted);
+    }
+
+    public function test_it_adds_vgei_definitive_treatment_boost_terms_for_citation_queries(): void
+    {
+        config([
+            'ragflow.retrieval.query_boosts.enabled' => true,
+            'ragflow.retrieval.query_boosts.vgei_definitive_treatment_enabled' => true,
+        ]);
+
+        $service = $this->makeService();
+        $query = 'What is the definitive treatment after TEVAR for aorto-oesophageal fistula with infected thoracic endograft?';
+
+        $boosted = $service->boostForTest(
+            $query,
+            ['vascular_graft_infections', 'descending_thoracic_aorta'],
+            'citation',
+            false
+        );
+
+        $this->assertStringContainsString('graft explantation', $boosted);
+        $this->assertStringContainsString('repair of the oesophagus', $boosted);
+        $this->assertStringContainsString('coverage with viable tissue', $boosted);
+    }
+
+    public function test_it_does_not_treat_definitive_treatment_questions_as_definition_intent(): void
+    {
+        $service = $this->makeService();
+
+        $this->assertFalse(
+            $service->definitionIntentForTest(
+                'What is the definitive treatment after TEVAR for aorto-oesophageal fistula with infected thoracic endograft?'
+            )
+        );
+    }
+
+    public function test_it_still_treats_plain_concept_questions_as_definition_intent(): void
+    {
+        $service = $this->makeService();
+
+        $this->assertTrue($service->definitionIntentForTest('What is TAP?'));
     }
 }

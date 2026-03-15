@@ -40,6 +40,29 @@ return [
             'blue_toe_enabled' => filter_var(env('RAGFLOW_BLUE_TOE_BOOST_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
             'carotid_disabling_stroke_enabled' => filter_var(env('RAGFLOW_CAROTID_DISABLING_STROKE_BOOST_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
             'vt_anticoag_duration_enabled' => filter_var(env('RAGFLOW_VT_ANTICOAG_DURATION_BOOST_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
+            'vgei_definitive_treatment_enabled' => filter_var(env('RAGFLOW_VGEI_DEFINITIVE_TREATMENT_BOOST_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
+            'vgei_definitive_treatment_terms' => [
+                'narrative' => [
+                    'definitive treatment',
+                    'graft explantation',
+                    'explantation of infected material',
+                    'aortic reconstruction',
+                    'oesophageal repair',
+                    'repair of the oesophagus',
+                    'coverage with viable tissue',
+                ],
+                'citation' => [
+                    'definitive treatment',
+                    'graft explantation',
+                    'infected endograft explantation',
+                    'explantation of infected material',
+                    'graft excision',
+                    'repair of the oesophagus',
+                    'oesophageal repair',
+                    'coverage with viable tissue',
+                    'aortic reconstruction',
+                ],
+            ],
         ],
         // Definition-first mode for concept/meaning questions (e.g., "what is", "define", "clinical significance").
         'definition_focus' => [
