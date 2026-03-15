@@ -432,6 +432,13 @@ PROMPT;
         $questions = $this->normalizeClarificationQuestions($questions, $question, $provisionalDiagnosis, $retrievalQuery);
 
         $softWarn = (bool) ($data['soft_warn'] ?? false);
+        [$softWarn, $questions] = $this->enforceDeterministicClarificationRules(
+            $softWarn,
+            $questions,
+            $question,
+            $provisionalDiagnosis,
+            $retrievalQuery
+        );
         if (!$softWarn) {
             $questions = [];
         }
@@ -509,6 +516,11 @@ PROMPT;
             $merged = $this->prependGuideline('descending_thoracic_aorta', $merged);
         }
 
+        if ($this->isComplexAaaContext($combined)) {
+            $merged = $this->prependGuideline('abdominal_aortic_aneurysm', $merged);
+            $merged = $this->insertGuideline('descending_thoracic_aorta', $merged, 'abdominal_aortic_aneurysm');
+        }
+
         if ($this->isNonANonBDissectionContext($combined) || $this->hasArchLandingZoneContext($combined)) {
             $merged = $this->insertGuideline('aortic_arch', $merged, 'descending_thoracic_aorta');
         }
@@ -518,6 +530,26 @@ PROMPT;
         }
 
         return array_slice($merged, 0, 3);
+    }
+
+    protected function enforceDeterministicClarificationRules(
+        bool $softWarn,
+        array $questions,
+        string $question,
+        string $provisionalDiagnosis,
+        string $retrievalQuery
+    ): array {
+        $supplemental = $this->aorticFistulaClarificationQuestions($question, $provisionalDiagnosis, $retrievalQuery);
+        if (!empty($supplemental)) {
+            foreach ($supplemental as $item) {
+                if (!in_array($item, $questions, true)) {
+                    $questions[] = $item;
+                }
+            }
+            $softWarn = true;
+        }
+
+        return [$softWarn, array_slice(array_values(array_unique($questions)), 0, 3)];
     }
 
     protected function normalizeClarificationQuestions(
@@ -533,6 +565,37 @@ PROMPT;
 
         if ($this->isSaphenousThrombosisContext($question, $provisionalDiagnosis, $retrievalQuery)) {
             $questions = $this->normalizeSaphenousClarificationQuestions($questions);
+        }
+
+        return array_slice($questions, 0, 3);
+    }
+
+    protected function aorticFistulaClarificationQuestions(
+        string $question,
+        string $provisionalDiagnosis,
+        string $retrievalQuery
+    ): array {
+        $combined = implode(' ', array_filter([$question, $provisionalDiagnosis, $retrievalQuery]));
+        if (
+            !preg_match('/\b(aort|thoracic\s+aorta|thoracic\s+aneurysm|tevar|endograft|graft)\b/i', $combined)
+            || !preg_match('/\b(haematemesis|hematemesis|haemorrhag|hemorrhag|oesophag|esophag|fistul)\b/i', $combined)
+        ) {
+            return [];
+        }
+
+        $source = $question !== '' ? $question : $combined;
+        $questions = [];
+
+        if (!preg_match('/\b(left\s+subclavian|distal\s+to\s+(?:the\s+)?left\s+subclavian|arch|zone\s*[0-2])\b/i', $source)) {
+            $questions[] = 'Is the aneurysm or repair distal to the left subclavian artery or involving the arch?';
+        }
+
+        if (!preg_match('/\b(cta|ct\s+(?:scan|angiography|angio)|pet|endoscopy|confirmed|confirm|infection|infected|fever|sepsis|crp|wbc|white\s+cell)\b/i', $source)) {
+            $questions[] = 'Is there confirmed aorto-oesophageal fistula or graft/endograft infection on CT, endoscopy, or PET, or is this suspected clinically?';
+        }
+
+        if (!preg_match('/\b(stable|unstable|haemodynamic|hemodynamic|shock|resuscitat|active\s+bleeding|ongoing\s+bleeding|hypotension|blood\s+pressure|bp\b)\b/i', $source)) {
+            $questions[] = 'Is the patient haemodynamically stable, or is there ongoing active bleeding or shock?';
         }
 
         return array_slice($questions, 0, 3);
@@ -715,6 +778,17 @@ PROMPT;
         }
 
         return $query;
+    }
+
+    protected function isComplexAaaContext(string $text): bool
+    {
+        return (bool) preg_match(
+            '/\b(juxtarenal|pararenal|paravisceral|suprarenal|complex\s+aaa|fenestrated|branched|fevar|bevar|fbevar)\b/i',
+            $text
+        ) && (bool) preg_match(
+            '/\b(aneurysm|aaa|abdominal\s+aortic)\b/i',
+            $text
+        );
     }
 
     protected function isThoracicDissectionContext(string $text): bool

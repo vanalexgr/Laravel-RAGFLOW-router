@@ -241,6 +241,62 @@ class ChunkSelectionServiceTest extends TestCase
         $this->assertSame(['29', '30', '64'], $ids);
     }
 
+    public function test_rank_by_intent_prefers_urgent_complex_aaa_recommendations_over_generic_or_mismatched_chunks(): void
+    {
+        $mismatched = [
+            'recommendation_id' => '152',
+            'guideline' => 'Abdominal Aortic Aneurysm',
+            'text' => 'In patients with abdominal aortic aneurysm and concomitant malignancy, a staged approach with endovascular aneurysm repair first may be considered.',
+            'class' => 'IIb',
+            'level' => 'C',
+        ];
+        $genericElective = [
+            'recommendation_id' => '65',
+            'guideline' => 'Abdominal Aortic Aneurysm',
+            'text' => 'Endovascular repair is recommended as the preferred treatment modality in patients with suitable anatomy undergoing elective abdominal aortic aneurysm repair.',
+            'class' => 'I',
+            'level' => 'A',
+        ];
+        $urgentComplexAaa = [
+            'recommendation_id' => '129',
+            'guideline' => 'Abdominal Aortic Aneurysm',
+            'text' => 'For patients with ruptured complex abdominal aortic aneurysm or urgent repair for any other reason, open surgical repair or endovascular repair with off the shelf branched stent grafts physician modified endografts or in situ fenestration may be considered.',
+            'class' => 'IIb',
+            'level' => 'C',
+        ];
+        $thoracicCompanion = [
+            'recommendation_id' => '83',
+            'guideline' => 'Management of Descending Thoracic and Thoraco-Abdominal Aortic Diseases',
+            'text' => 'For patients with ruptured thoraco-abdominal aortic aneurysm, endovascular repair with off the shelf branched stent grafts physician modified endografts or in situ fenestration should be considered when feasible.',
+            'class' => 'IIa',
+            'level' => 'C',
+        ];
+
+        $profile = $this->svc->buildIntentProfile([
+            'intent' => 'management',
+            'question_type' => 'treatment_decision',
+            'key_terms' => [
+                'juxtarenal aneurysm',
+                'symptomatic',
+                'impending rupture',
+                'open repair',
+                'endovascular repair',
+            ],
+            'normalized_query' => 'symptomatic juxtarenal aneurysm 6 cm impending rupture stable urgent management open repair versus endovascular repair',
+        ]);
+
+        $ranked = $this->svc->rankByIntent(
+            [$mismatched, $genericElective, $thoracicCompanion, $urgentComplexAaa],
+            'citation',
+            $profile
+        );
+        $ids = array_column($ranked, 'recommendation_id');
+
+        $this->assertSame('129', $ids[0]);
+        $this->assertSame('83', $ids[1]);
+        $this->assertSame(['129', '83', '65', '152'], $ids);
+    }
+
     // ── diversify ─────────────────────────────────────────────────────────
 
     /**
@@ -517,6 +573,62 @@ class ChunkSelectionServiceTest extends TestCase
         $this->assertNotEmpty($result['llm_citation_chunks']);
         $this->assertSame('29', $result['llm_citation_chunks'][0]['recommendation_id']);
         $this->assertSame('29', $result['must_include_chunk']['recommendation_id']);
+    }
+
+    public function test_select_prioritizes_urgent_complex_aaa_recommendation_and_must_include_chunk(): void
+    {
+        $citations = [
+            [
+                'recommendation_id' => '152',
+                'guideline' => 'Abdominal Aortic Aneurysm',
+                'text' => 'In patients with abdominal aortic aneurysm and concomitant malignancy, a staged approach with endovascular aneurysm repair first may be considered.',
+                'class' => 'IIb',
+                'level' => 'C',
+            ],
+            [
+                'recommendation_id' => '65',
+                'guideline' => 'Abdominal Aortic Aneurysm',
+                'text' => 'Endovascular repair is recommended as the preferred treatment modality in patients with suitable anatomy undergoing elective abdominal aortic aneurysm repair.',
+                'class' => 'I',
+                'level' => 'A',
+            ],
+            [
+                'recommendation_id' => '83',
+                'guideline' => 'Management of Descending Thoracic and Thoraco-Abdominal Aortic Diseases',
+                'text' => 'For patients with ruptured thoraco-abdominal aortic aneurysm, endovascular repair with off the shelf branched stent grafts physician modified endografts or in situ fenestration should be considered when feasible.',
+                'class' => 'IIa',
+                'level' => 'C',
+            ],
+            [
+                'recommendation_id' => '129',
+                'guideline' => 'Abdominal Aortic Aneurysm',
+                'text' => 'For patients with ruptured complex abdominal aortic aneurysm or urgent repair for any other reason, open surgical repair or endovascular repair with off the shelf branched stent grafts physician modified endografts or in situ fenestration may be considered.',
+                'class' => 'IIb',
+                'level' => 'C',
+            ],
+        ];
+
+        $norm = [
+            'intent' => 'management',
+            'question_type' => 'treatment_decision',
+            'key_terms' => [
+                'juxtarenal aneurysm',
+                'symptomatic',
+                'impending rupture',
+                'open repair',
+                'endovascular repair',
+            ],
+            'normalized_query' => 'symptomatic juxtarenal aneurysm 6 cm impending rupture stable urgent management open repair versus endovascular repair',
+        ];
+
+        $result = $this->svc->select($citations, [], $norm, 2);
+        $ids = array_column($result['llm_citation_chunks'], 'recommendation_id');
+
+        $this->assertNotEmpty($ids);
+        $this->assertSame('129', $ids[0]);
+        $this->assertContains('83', $ids);
+        $this->assertSame('129', $result['must_include_chunk']['recommendation_id']);
+        $this->assertLessThan(array_search('152', $ids, true), array_search('129', $ids, true));
     }
 
     public function test_select_llm_subset_not_larger_than_ui_subset(): void

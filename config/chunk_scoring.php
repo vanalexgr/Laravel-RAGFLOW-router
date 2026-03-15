@@ -78,6 +78,10 @@ return [
         'definitive_treatment_direct_match'  => 10,
         'definitive_treatment_context_match' => 5,
         'definitive_treatment_bridge_penalty'=> -4,
+        'complex_aaa_direct_match'           => 9,
+        'complex_aaa_context_match'          => 4,
+        'complex_aaa_mismatch_penalty'       => -6,
+        'complex_aaa_primary_anatomy_match' => 6,
         'recommendation_type_boost'          => 2,
         'narrative_frontmatter_penalty'      => -2,
         'narrative_editors_choice_penalty'   => -1,
@@ -157,6 +161,62 @@ return [
         'initial treatment with an aortic endograft',
         'initial treatment with thoracic endovascular aortic repair',
         'initial treatment with tevar',
+    ],
+
+    'complex_aaa_focus_terms' => [
+        'juxtarenal',
+        'pararenal',
+        'paravisceral',
+        'suprarenal',
+        'complex aaa',
+        'fenestrated',
+        'branched',
+        'fevar',
+        'bevar',
+        'fbevar',
+    ],
+
+    'complex_aaa_direct_terms' => [
+        'ruptured complex abdominal aortic aneurysm',
+        'urgent for any other reason',
+        'complex abdominal aortic aneurysm',
+        'off the shelf branched stent graft',
+        'off the shelf branched stent grafts',
+        'physician modified endografts',
+        'in situ fenestration',
+        'open surgical repair or endovascular repair',
+        'juxtarenal aneurysm',
+        'juxtarenal aaa',
+        'pararenal aaa',
+    ],
+
+    'complex_aaa_context_terms' => [
+        'ruptured thoraco abdominal aortic aneurysm',
+        'ruptured thoracoabdominal aortic aneurysm',
+        'urgent repair',
+        'symptomatic aneurysm',
+        'endovascular repair should be considered the preferred treatment modality',
+        'open surgical repair may be considered',
+    ],
+
+    'complex_aaa_primary_anatomy_terms' => [
+        'juxtarenal',
+        'pararenal',
+        'paravisceral',
+        'suprarenal',
+        'abdominal aortic aneurysm',
+        'complex abdominal aortic aneurysm',
+    ],
+
+    'complex_aaa_mismatch_terms' => [
+        'concomitant malignancy',
+        'elective repair',
+        'suitable anatomy',
+        'inflammatory abdominal aortic aneurysm',
+        'inflammatory aneurysm',
+        'penetrating aortic ulcer',
+        'saccular abdominal aortic aneurysm',
+        'standard fusiform abdominal aortic aneurysm',
     ],
 
 ];
