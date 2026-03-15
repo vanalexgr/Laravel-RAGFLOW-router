@@ -15,7 +15,10 @@ specs = json.dumps([{
     'name': 'consult_vascular_guidelines',
     'description': (
         'Consult ESVS Vascular Guidelines. Select 1-3 guidelines based on the clinical '
-        'question. Call this tool for any vascular surgery clinical or guideline question.'
+        'question. Call this tool for any vascular surgery clinical or guideline question, '
+        'including any follow-up in an ongoing vascular case. NEVER answer from a prior tool '
+        'result in history alone; each new follow-up may require fresh retrieval or backend '
+        'change detection.'
     ),
     'parameters': {
         'type': 'object',
