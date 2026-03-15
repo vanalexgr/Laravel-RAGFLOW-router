@@ -42,4 +42,18 @@ return [
     // a strong query match, weaker context-only assets are filtered out.
     'min_query_signal' => (float) env('GUIDELINE_ASSET_MIN_QUERY_SIGNAL', 2.0),
     'min_query_signal_ratio' => (float) env('GUIDELINE_ASSET_MIN_QUERY_SIGNAL_RATIO', 0.45),
+
+    // Optional model-based rerank over the heuristic shortlist. This is applied
+    // only after scope and lexical filtering, so explicit figure/table matches
+    // still win deterministically and the reranker only chooses among plausible
+    // candidates.
+    'rerank' => [
+        'enabled' => filter_var(env('GUIDELINE_ASSET_RERANK_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
+        'provider' => env('GUIDELINE_ASSET_RERANK_PROVIDER', env('BRIDGE_RERANK_PROVIDER', 'cohere')),
+        'endpoint' => env('GUIDELINE_ASSET_RERANK_ENDPOINT', env('BRIDGE_RERANK_ENDPOINT', 'https://api.cohere.com/v1/rerank')),
+        'api_key' => env('GUIDELINE_ASSET_RERANK_API_KEY', env('BRIDGE_RERANK_API_KEY')),
+        'model' => env('GUIDELINE_ASSET_RERANK_MODEL', env('BRIDGE_RERANK_MODEL', 'rerank-english-v3.0')),
+        'timeout' => (int) env('GUIDELINE_ASSET_RERANK_TIMEOUT', env('BRIDGE_RERANK_TIMEOUT', 20)),
+        'candidate_pool' => (int) env('GUIDELINE_ASSET_RERANK_CANDIDATE_POOL', 12),
+    ],
 ];
