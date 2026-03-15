@@ -128,6 +128,32 @@ class VascularMcpAdapterHeuristicTests(unittest.TestCase):
     def test_answer_only_turn_accepts_brief_multi_clause_clarification_reply(self):
         self.assertTrue(self.tools._is_answer_only_turn("10 days ago. minor stroke. no"))
 
+    def test_backend_headers_request_json_responses(self):
+        headers = self.tools._backend_headers()
+        self.assertEqual("application/json", headers["Accept"])
+        self.assertEqual("application/json", headers["Content-Type"])
+
+    def test_extract_history_trims_long_assistant_answers_for_backend_validation(self):
+        long_answer = (
+            "Checking whether the new detail changes the stored retrieval...\n"
+            + ("Important clinical summary sentence. " * 90)
+            + "\n\n🖼️ Figures / Tables\n"
+            + ("[![Example](https://example.com/x.png)](https://example.com/x.png)\n[Full-size](https://example.com/x.png)\n" * 20)
+        )
+        messages = [
+            {"role": "user", "content": "What surveillance imaging is needed after CEA?"},
+            {"role": "assistant", "content": long_answer},
+            {"role": "user", "content": "What about asymptomatic?"},
+        ]
+
+        history = self.tools._extract_history(messages, "What about asymptomatic?")
+
+        self.assertEqual(2, len(history))
+        self.assertEqual("What surveillance imaging is needed after CEA?", history[0])
+        self.assertLessEqual(len(history[1]), self.tools.BACKEND_HISTORY_MAX_CHARS)
+        self.assertNotIn("🖼️ Figures / Tables", history[1])
+        self.assertNotIn("[![Example]", history[1])
+
     def test_pending_gate_can_be_reused_for_rewritten_follow_up_after_brief_answers(self):
         messages = [
             {"role": "user", "content": "My patient has a dissection just above the left subclavian and also dissected the carotid with thrombus and stroke."},
