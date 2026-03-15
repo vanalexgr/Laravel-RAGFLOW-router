@@ -267,11 +267,23 @@ Main changes:
 - explicit figure / table references still win first, but irrelevant explicit hits are now rejected
 - fallback scoring now understands vascular territory and narrower anatomy anchors
 - definitive-treatment questions now prefer management algorithms over diagnostic imaging workflows
+- fallback candidate selection now has a hybrid rerank stage:
+  - the heuristic selector still generates a scoped shortlist
+  - the shortlist is converted into rerank documents from asset labels, captions, descriptions, aliases, and keywords
+  - the bridge reranker then re-orders those candidates before final asset selection
 
 Files involved:
 
+- `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/app/Services/BridgeRerankService.php`
 - `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/app/Services/GuidelineAssetService.php`
+- `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/config/guideline_assets.php`
 - `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/tests/Unit/GuidelineAssetServiceTest.php`
+
+Validation notes:
+
+- `php artisan test tests/Unit/GuidelineAssetServiceTest.php` passed on the Laravel VM with `10` tests and `34` assertions
+- live replay for the urgent juxtarenal AAA case no longer selected the clearly irrelevant compartment-syndrome PNG
+- the current hybrid selector still trends toward AAA comparison tables over the ideal anatomy-specific complex-AAA figure, so future tuning is most likely needed in metadata and anatomy-anchor weighting rather than reranker enablement
 
 ### 4. OpenWebUI prompt and guardrail hardening
 

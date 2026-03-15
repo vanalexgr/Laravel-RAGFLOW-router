@@ -2,12 +2,20 @@
 
 namespace Tests\Unit;
 
+use App\Services\BridgeRerankService;
 use App\Services\GuidelineAssetService;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class GuidelineAssetServiceTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config()->set('guideline_assets.rerank.enabled', false);
+    }
+
     public function test_it_matches_explicit_figure_reference_by_label(): void
     {
         Storage::fake('public');
@@ -583,5 +591,103 @@ class GuidelineAssetServiceTest extends TestCase
         $this->assertSame('fig_thoracic_management', $assetIds[0]);
         $this->assertSame(['fig_thoracic_management', 'fig_aortic_management'], $assetIds);
         $this->assertNotContains('fig_imaging_workflow', $assetIds);
+    }
+
+    public function test_it_can_use_reranker_to_promote_complex_aaa_assets_from_the_shortlist(): void
+    {
+        Storage::fake('public');
+
+        $manifest = [
+            'abdominal_aortic_aneurysm' => [
+                [
+                    'id' => 'fig_compartment',
+                    'kind' => 'figure',
+                    'subtype' => 'flowchart',
+                    'label' => 'Figure 30',
+                    'caption' => 'Management Algorithm for Abdominal Compartment Syndrome in AAA Repair',
+                    'keywords' => ['aaa repair', 'abdominal compartment syndrome', 'management algorithm'],
+                    'path' => 'guideline_assets/abdominal_aortic_aneurysm/figures/fig_p055_030.png',
+                ],
+                [
+                    'id' => 'fig_repair_methods',
+                    'kind' => 'figure',
+                    'subtype' => 'diagram',
+                    'label' => 'Figure 56',
+                    'caption' => 'Abdominal Aortic Aneurysm Repair Methods',
+                    'keywords' => ['aaa repair', 'open repair', 'endovascular repair'],
+                    'path' => 'guideline_assets/abdominal_aortic_aneurysm/figures/fig_p096_056.png',
+                ],
+                [
+                    'id' => 'fig_complex_aaa',
+                    'kind' => 'figure',
+                    'subtype' => 'diagram',
+                    'label' => 'Figure 41',
+                    'caption' => 'Anatomical Classification of Complex AAAs',
+                    'keywords' => ['juxtarenal aneurysm', 'pararenal aneurysm', 'complex aaa', 'classification'],
+                    'path' => 'guideline_assets/abdominal_aortic_aneurysm/figures/fig_p074_041.png',
+                ],
+            ],
+        ];
+
+        $tmp = storage_path('app/guideline_assets/_test_manifest_asset_rerank.json');
+        @mkdir(dirname($tmp), 0777, true);
+        file_put_contents($tmp, json_encode($manifest));
+        config()->set('guideline_assets.manifest_path', $tmp);
+        config()->set('guideline_assets.disk', 'public');
+        config()->set('guideline_assets.enable_keyword_fallback', true);
+        config()->set('guideline_assets.max_assets', 3);
+        config()->set('guideline_assets.rerank.enabled', true);
+        config()->set('guideline_assets.rerank.candidate_pool', 3);
+
+        $fakeReranker = new class extends BridgeRerankService
+        {
+            public bool $called = false;
+
+            public function __construct()
+            {
+            }
+
+            public function rerankDocuments(
+                string $query,
+                array $documents,
+                int $topN,
+                string $label,
+                ?array $configOverride = null
+            ): array {
+                $this->called = true;
+
+                return [
+                    ['index' => 2, 'score' => 0.99],
+                    ['index' => 1, 'score' => 0.71],
+                    ['index' => 0, 'score' => 0.35],
+                ];
+            }
+        };
+
+        $this->app->instance(BridgeRerankService::class, $fakeReranker);
+        $svc = app(GuidelineAssetService::class);
+
+        $assets = $svc->findRelevantAssets(
+            'Symptomatic juxtarenal abdominal aortic aneurysm 6 cm impending rupture stable urgent management open repair versus endovascular repair',
+            [
+                [
+                    'content' => 'For patients with a ruptured complex abdominal aortic aneurysm or who are urgent for any other reason, open repair or endovascular repair should be considered.',
+                    'source_guideline' => 'Abdominal Aortic Aneurysm',
+                ],
+                [
+                    'content' => 'Juxtarenal and pararenal anatomy defines complex AAA repair planning.',
+                    'source_guideline' => 'Abdominal Aortic Aneurysm',
+                ],
+            ],
+            [],
+            [
+                'abdominal_aortic_aneurysm' => ['id' => 'x', 'name' => 'Abdominal Aortic Aneurysm'],
+            ],
+            ['abdominal_aortic_aneurysm']
+        );
+
+        $this->assertTrue($fakeReranker->called);
+        $this->assertCount(3, $assets);
+        $this->assertSame('fig_complex_aaa', $assets[0]['id']);
     }
 }
