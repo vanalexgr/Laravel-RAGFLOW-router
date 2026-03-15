@@ -75,6 +75,9 @@ return [
         'key_term_length_bonus_max'          => 3,  // cap on length bonus
         'non_a_non_b_match'                  => 12,
         'cue_match'                          => 2,
+        'definitive_treatment_direct_match'  => 10,
+        'definitive_treatment_context_match' => 5,
+        'definitive_treatment_bridge_penalty'=> -4,
         'recommendation_type_boost'          => 2,
         'narrative_frontmatter_penalty'      => -2,
         'narrative_editors_choice_penalty'   => -1,
@@ -99,6 +102,61 @@ return [
     */
     'recommendation_question_types' => [
         'recommendation', 'treatment_decision', 'perioperative',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Definitive-treatment prioritization cues
+    |--------------------------------------------------------------------------
+    | Used when a query is asking for curative/definitive treatment in the
+    | setting of graft infection or fistula complications.
+    */
+    'definitive_treatment_focus_terms' => [
+        'definitive treatment',
+        'definite treatment',
+        'definitive management',
+        'curative treatment',
+        'explant',
+        'explantation',
+        'graft excision',
+        'reconstruction',
+        'reconstructive',
+        'oesophageal repair',
+        'esophageal repair',
+    ],
+
+    'definitive_treatment_direct_terms' => [
+        'definitive treatment',
+        'explant',
+        'explantation',
+        'graft excision',
+        'infected material',
+        'repair of the oesophagus',
+        'repair of the esophagus',
+        'oesophageal repair',
+        'esophageal repair',
+        'coverage with viable tissue',
+        'viable tissue',
+        'aortic reconstruction',
+        'reconstruction',
+    ],
+
+    'definitive_treatment_context_terms' => [
+        'aorto oesophageal fistula',
+        'aortobronchial fistula',
+        'infected graft',
+        'graft infection',
+        'endograft infection',
+        'infected endograft',
+        'vascular graft endograft infection',
+        'vascular graft infection',
+    ],
+
+    'definitive_treatment_bridge_terms' => [
+        'bridge to definitive treatment',
+        'initial treatment with an aortic endograft',
+        'initial treatment with thoracic endovascular aortic repair',
+        'initial treatment with tevar',
     ],
 
 ];

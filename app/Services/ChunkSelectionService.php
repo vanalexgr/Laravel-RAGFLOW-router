@@ -258,6 +258,23 @@ class ChunkSelectionService
             }
         }
 
+        if ($kind === 'citation' && $this->isDefinitiveTreatmentFocus($profile)) {
+            $normalizedText = $this->normalizePhraseText($text);
+            $directMatch = $this->matchesConfiguredTerms($normalizedText, 'chunk_scoring.definitive_treatment_direct_terms');
+            $contextMatch = $this->matchesConfiguredTerms($normalizedText, 'chunk_scoring.definitive_treatment_context_terms');
+            $bridgeMatch = $this->matchesConfiguredTerms($normalizedText, 'chunk_scoring.definitive_treatment_bridge_terms');
+
+            if ($directMatch) {
+                $score += (int) ($w['definitive_treatment_direct_match'] ?? 10);
+            }
+            if ($contextMatch) {
+                $score += (int) ($w['definitive_treatment_context_match'] ?? 5);
+            }
+            if ($bridgeMatch && !$directMatch) {
+                $score += (int) ($w['definitive_treatment_bridge_penalty'] ?? -4);
+            }
+        }
+
         // Recommendation-type boost for citation chunks (+2)
         if ($kind === 'citation') {
             $qType = (string) ($profile['question_type'] ?? '');
@@ -682,6 +699,41 @@ class ChunkSelectionService
             '/\bnon\s*[-\x{2010}-\x{2015}\x{2212}\x{00ad}]?\s*a\s*[,\/\-]?\s*non\s*[-\x{2010}-\x{2015}\x{2212}\x{00ad}]?\s*b\b/iu',
             $text
         );
+    }
+
+    private function isDefinitiveTreatmentFocus(array $profile): bool
+    {
+        $query = (string) ($profile['combined_query'] ?? '');
+        $keyTerms = implode(' ', array_map('strval', (array) ($profile['key_terms'] ?? [])));
+        $normalized = $this->normalizePhraseText(trim($query . ' ' . $keyTerms));
+
+        if ($normalized === '') {
+            return false;
+        }
+
+        return $this->matchesConfiguredTerms($normalized, 'chunk_scoring.definitive_treatment_focus_terms')
+            && $this->matchesConfiguredTerms($normalized, 'chunk_scoring.definitive_treatment_context_terms');
+    }
+
+    private function matchesConfiguredTerms(string $text, string $configKey): bool
+    {
+        foreach ((array) config($configKey, []) as $term) {
+            $normalizedTerm = $this->normalizePhraseText((string) $term);
+            if ($normalizedTerm !== '' && str_contains($text, $normalizedTerm)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function normalizePhraseText(string $text): string
+    {
+        $normalized = mb_strtolower($text);
+        $normalized = preg_replace('/[^\p{L}\p{N}]+/u', ' ', $normalized) ?? $normalized;
+        $normalized = preg_replace('/\s+/u', ' ', trim($normalized)) ?? trim($normalized);
+
+        return $normalized;
     }
 
     private function parseSemicolonKv(string $s): array

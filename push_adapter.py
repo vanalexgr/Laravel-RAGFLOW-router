@@ -11,41 +11,61 @@ GUIDELINE_ENUM = [
     'vascular_access',
 ]
 
-specs = json.dumps([{
-    'name': 'consult_vascular_guidelines',
-    'description': (
-        'Consult ESVS Vascular Guidelines. Select 1-3 guidelines based on the clinical '
-        'question. Call this tool for any vascular surgery clinical or guideline question, '
-        'including any follow-up in an ongoing vascular case. NEVER answer from a prior tool '
-        'result in history alone; each new follow-up may require fresh retrieval or backend '
-        'change detection.'
-    ),
-    'parameters': {
-        'type': 'object',
-        'properties': {
-            'question': {
-                'type': 'string',
-                'description': 'The clinical question',
+specs = json.dumps([
+    {
+        'name': 'consult_vascular_guidelines',
+        'description': (
+            'Consult ESVS Vascular Guidelines. Select 1-3 guidelines based on the clinical '
+            'question. Call this tool for any vascular surgery clinical or guideline question, '
+            'including any follow-up in an ongoing vascular case. NEVER answer from a prior tool '
+            'result in history alone; each new follow-up may require fresh retrieval or backend '
+            'change detection.'
+        ),
+        'parameters': {
+            'type': 'object',
+            'properties': {
+                'question': {
+                    'type': 'string',
+                    'description': 'The clinical question',
+                },
+                'guideline_1': {
+                    'type': 'string',
+                    'enum': GUIDELINE_ENUM,
+                    'description': 'Primary guideline (required)',
+                },
+                'guideline_2': {
+                    'type': 'string',
+                    'enum': GUIDELINE_ENUM,
+                    'description': 'Secondary guideline (optional)',
+                },
+                'guideline_3': {
+                    'type': 'string',
+                    'enum': GUIDELINE_ENUM,
+                    'description': 'Tertiary guideline (optional)',
+                },
             },
-            'guideline_1': {
-                'type': 'string',
-                'enum': GUIDELINE_ENUM,
-                'description': 'Primary guideline (required)',
-            },
-            'guideline_2': {
-                'type': 'string',
-                'enum': GUIDELINE_ENUM,
-                'description': 'Secondary guideline (optional)',
-            },
-            'guideline_3': {
-                'type': 'string',
-                'enum': GUIDELINE_ENUM,
-                'description': 'Tertiary guideline (optional)',
-            },
+            'required': ['question', 'guideline_1'],
         },
-        'required': ['question', 'guideline_1'],
     },
-}])
+    {
+        'name': 'explain_app_capabilities',
+        'description': (
+            'Explain what this app can do and how to use it. Use this tool for onboarding, '
+            'out-of-scope questions, model-meta questions, or requests to ignore scope and '
+            'answer from general knowledge.'
+        ),
+        'parameters': {
+            'type': 'object',
+            'properties': {
+                'question': {
+                    'type': 'string',
+                    'description': 'The user question or request that needs scope/app guidance',
+                },
+            },
+            'required': ['question'],
+        },
+    },
+])
 
 conn = sqlite3.connect('/app/backend/data/webui.db')
 conn.execute(
