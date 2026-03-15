@@ -2,11 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\ChangeDetectionService;
 use App\Services\RetrievalService;
 use App\Services\GuidelineAssetService;
 use App\Services\GapDetectionService;
 use App\Services\GuidelineRouterService;
 use App\Services\ClinicalGateService;
+use App\Services\PreRetrievalService;
+use App\ValueObjects\PreRetrievalResult;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -16,6 +19,8 @@ class ToolController extends Controller
         protected RetrievalService $retrievalService,
         protected GuidelineAssetService $guidelineAssetService,
         protected GuidelineRouterService $guidelineRouter,
+        protected PreRetrievalService $preRetrievalService,
+        protected ChangeDetectionService $changeDetectionService,
     ) {
     }
 
@@ -28,37 +33,22 @@ class ToolController extends Controller
             'history.*' => 'string|max:2000',
             'guidelines' => 'nullable|array|max:3', // Encouraged but not required
             'guidelines.*' => 'string',
+            'pre_retrieval_mode' => 'nullable|boolean',
+            'confirmation_mode' => 'nullable|boolean',
+            'pre_retrieval_result' => 'nullable|array',
         ]);
 
         $question = $request->input('question');
         $history = $request->input('history', []);
         $guidelinesInput = $request->input('guidelines', null);
+        $preRetrievalMode = (bool) $request->boolean('pre_retrieval_mode', false);
+        $confirmationMode = (bool) $request->boolean('confirmation_mode', false);
 
-        // Validate and convert guideline names to keys
-        $requestedKeys = null; // null = auto-routing
-
-        if (!empty($guidelinesInput) && is_array($guidelinesInput)) {
-            $validKeys = [];
-            $invalidGuidelines = [];
-
-            foreach ($guidelinesInput as $guideline) {
-                $guidelineKey = $this->validateGuideline($guideline);
-                if ($guidelineKey) {
-                    $validKeys[] = $guidelineKey;
-                } else {
-                    $invalidGuidelines[] = $guideline;
-                }
-            }
-
-            if (!empty($invalidGuidelines)) {
-                return response()->json([
-                    'error' => "Invalid guideline(s): " . implode(', ', $invalidGuidelines) . ". Check tool documentation for valid options."
-                ], 400);
-            }
-
-            if (!empty($validKeys)) {
-                $requestedKeys = $validKeys;
-            }
+        [$requestedKeys, $invalidGuidelines] = $this->resolveRequestedGuidelineKeys($guidelinesInput);
+        if (!empty($invalidGuidelines)) {
+            return $this->jsonApiResponse([
+                'error' => "Invalid guideline(s): " . implode(', ', $invalidGuidelines) . ". Check tool documentation for valid options."
+            ], 400);
         }
 
         // Debug logging
@@ -66,8 +56,48 @@ class ToolController extends Controller
             'question' => $question,
             'history_count' => count($history),
             'guidelines_selected' => $requestedKeys ?? 'auto',
-            'selection_mode' => $requestedKeys ? 'explicit' : 'auto-routing'
+            'selection_mode' => $requestedKeys ? 'explicit' : 'auto-routing',
+            'pre_retrieval_mode' => $preRetrievalMode,
+            'confirmation_mode' => $confirmationMode,
         ]);
+
+        if ($confirmationMode) {
+            $preRetrievalData = $request->input('pre_retrieval_result');
+            if (!is_array($preRetrievalData)) {
+                return $this->jsonApiResponse([
+                    'error' => 'confirmation_mode requires pre_retrieval_result.',
+                ], 422);
+            }
+
+            $original = PreRetrievalResult::fromArray($preRetrievalData);
+            $changeResult = $this->changeDetectionService->detect($question, $original);
+
+            if ($changeResult->decision === 'reuse') {
+                return $this->jsonApiResponse([
+                    'phase' => 'complete',
+                    'reused' => true,
+                    'decision_reason' => $changeResult->reason,
+                ]);
+            }
+
+            $requery = $changeResult->enrichedQuery ?: $original->retrievalQuery;
+            $effectiveKeys = !empty($original->guidelines) ? $original->guidelines : $requestedKeys;
+            $retrieval = $this->executeRetrieval($requery, $history, $effectiveKeys);
+
+            if (isset($retrieval['guardrail'])) {
+                return $this->guardrailResponse($retrieval['guardrail']['message'], $retrieval['guardrail']['type']);
+            }
+
+            return $this->jsonApiResponse([
+                'phase' => 'complete',
+                'reused' => false,
+                'decision_reason' => $changeResult->reason,
+                'retrieval_payload' => $this->buildConsultPayload(
+                    $retrieval['result'],
+                    $retrieval['assets']
+                ),
+            ]);
+        }
 
         $guardrailType = $this->preRetrievalGuardrailType($question);
         if ($guardrailType !== null) {
@@ -79,22 +109,113 @@ class ToolController extends Controller
 
             $message = $this->buildOutOfScopeGuidance($question, $guardrailType);
 
-            return response()->json([
-                'result' => $message,
-                'narrative_chunks' => [],
-                'citation_chunks' => [],
-                'assets' => [],
-                'guardrail' => [
-                    'type' => $guardrailType,
-                    'short_circuited' => true,
-                ],
-            ], 200)
-                ->header('Access-Control-Allow-Origin', '*')
-                ->header('Access-Control-Allow-Methods', 'POST, OPTIONS')
-                ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+            return $this->guardrailResponse($message, $guardrailType);
         }
 
-        // Call retrieval service with optional guideline override
+        if ($preRetrievalMode) {
+            $preResult = $this->preRetrievalService->analyse($question, $history);
+            $preResult = $this->preRetrievalService->applyRequestedGuidelines($preResult, $requestedKeys);
+            $effectiveKeys = !empty($preResult->guidelines) ? $preResult->guidelines : $requestedKeys;
+            $retrieval = $this->executeRetrieval($preResult->retrievalQuery ?: $question, $history, $effectiveKeys);
+
+            if (isset($retrieval['guardrail'])) {
+                return $this->guardrailResponse($retrieval['guardrail']['message'], $retrieval['guardrail']['type']);
+            }
+
+            $retrieval['result']['question'] = $question;
+
+            return $this->jsonApiResponse([
+                'phase' => 'awaiting_confirmation',
+                'confirmation_message' => $preResult->confirmationMessage,
+                'soft_warn' => $preResult->softWarn,
+                'clarification_questions' => $preResult->clarificationQuestions,
+                'provisional_diagnosis' => $preResult->provisionalDiagnosis,
+                'pre_retrieval_result' => $preResult->toArray(),
+                'retrieval_payload' => $this->buildConsultPayload(
+                    $retrieval['result'],
+                    $retrieval['assets']
+                ),
+            ]);
+        }
+
+        $retrieval = $this->executeRetrieval($question, $history, $requestedKeys);
+
+        if (isset($retrieval['guardrail'])) {
+            return $this->guardrailResponse($retrieval['guardrail']['message'], $retrieval['guardrail']['type']);
+        }
+
+        return $this->jsonApiResponse(
+            $this->buildConsultPayload($retrieval['result'], $retrieval['assets'])
+        );
+    }
+
+    public function preRetrieve(Request $request)
+    {
+        $request->validate([
+            'question' => 'required|string|max:2000',
+            'history' => 'nullable|array|max:20',
+            'history.*' => 'string|max:2000',
+            'guidelines' => 'nullable|array|max:3',
+            'guidelines.*' => 'string',
+        ]);
+
+        $question = $request->input('question');
+        $history = $request->input('history', []);
+        $guidelinesInput = $request->input('guidelines', null);
+
+        [$requestedKeys, $invalidGuidelines] = $this->resolveRequestedGuidelineKeys($guidelinesInput);
+        if (!empty($invalidGuidelines)) {
+            return $this->jsonApiResponse([
+                'error' => "Invalid guideline(s): " . implode(', ', $invalidGuidelines) . ". Check tool documentation for valid options."
+            ], 400);
+        }
+
+        $guardrailType = $this->preRetrievalGuardrailType($question);
+        if ($guardrailType !== null) {
+            $message = $this->buildOutOfScopeGuidance($question, $guardrailType);
+            return $this->guardrailResponse($message, $guardrailType);
+        }
+
+        $preResult = $this->preRetrievalService->analyse($question, $history);
+        $preResult = $this->preRetrievalService->applyRequestedGuidelines($preResult, $requestedKeys);
+
+        return $this->jsonApiResponse([
+            'phase' => 'pre_retrieval',
+            'confirmation_message' => $preResult->confirmationMessage,
+            'soft_warn' => $preResult->softWarn,
+            'clarification_questions' => $preResult->clarificationQuestions,
+            'provisional_diagnosis' => $preResult->provisionalDiagnosis,
+            'pre_retrieval_result' => $preResult->toArray(),
+        ]);
+    }
+
+    protected function resolveRequestedGuidelineKeys($guidelinesInput): array
+    {
+        $requestedKeys = null;
+        $invalidGuidelines = [];
+
+        if (!empty($guidelinesInput) && is_array($guidelinesInput)) {
+            $validKeys = [];
+
+            foreach ($guidelinesInput as $guideline) {
+                $guidelineKey = $this->validateGuideline($guideline);
+                if ($guidelineKey) {
+                    $validKeys[] = $guidelineKey;
+                } else {
+                    $invalidGuidelines[] = $guideline;
+                }
+            }
+
+            if (!empty($validKeys)) {
+                $requestedKeys = $validKeys;
+            }
+        }
+
+        return [$requestedKeys, $invalidGuidelines];
+    }
+
+    protected function executeRetrieval(string $question, array $history, ?array $requestedKeys): array
+    {
         $result = $this->retrievalService->retrieve($question, $history, $requestedKeys);
 
         $narrativeCount = count($result['narrative_chunks'] ?? []);
@@ -119,14 +240,13 @@ class ToolController extends Controller
                         'citation_count' => $retryCitationCount,
                     ]);
                     $result = $retryResult;
-                    $result['question'] = $question; // Preserve original user query in outward response text.
+                    $result['question'] = $question;
                     $narrativeCount = $retryNarrativeCount;
                     $citationCount = $retryCitationCount;
                 }
             }
         }
 
-        // Attach relevant figures/tables for user display (not for verbatim quoting).
         $assets = $this->guidelineAssetService->findRelevantAssets(
             $result['question'] ?? $question,
             $result['narrative_chunks'] ?? [],
@@ -145,67 +265,110 @@ class ToolController extends Controller
                 ? 'no_relevant_esvs_context_non_english'
                 : 'no_relevant_esvs_context';
 
-            return response()->json([
-                'result' => $this->buildOutOfScopeGuidance($question, $guardrailType),
-                'narrative_chunks' => [],
-                'citation_chunks' => [],
-                'assets' => [],
+            return [
                 'guardrail' => [
                     'type' => $guardrailType,
-                    'short_circuited' => true,
+                    'message' => $this->buildOutOfScopeGuidance($question, $guardrailType),
                 ],
-            ], 200)
-                ->header('Access-Control-Allow-Origin', '*')
-                ->header('Access-Control-Allow-Methods', 'POST, OPTIONS')
-                ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+            ];
         }
 
-        // Format for LLM Consumption (same as ConsultGuidelines tool)
-        $output = "RETRIEVED GUIDELINES for: \"{$result['question']}\"\n";
-        $output .= "Guidelines Used: " . implode(', ', array_column($result['selected_guidelines'], 'name')) . "\n\n";
+        return [
+            'result' => $result,
+            'assets' => $assets,
+        ];
+    }
+
+    protected function buildConsultPayload(array $result, array $assets): array
+    {
+        $output = $this->buildConsultOutput($result, $assets);
+
+        Log::info('Tool API Response', [
+            'question' => $result['question'] ?? '',
+            'text_length' => strlen($output),
+            'has_narrative_chunks' => !empty($result['narrative_chunks']),
+            'narrative_count' => count($result['narrative_chunks'] ?? []),
+            'citation_count' => count($result['citation_chunks'] ?? []),
+            'asset_count' => count($assets ?? []),
+        ]);
+
+        $output = mb_convert_encoding($output, 'UTF-8', 'UTF-8');
+        $narrativeChunks = json_decode(json_encode($result['narrative_chunks'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
+        $citationChunks = json_decode(json_encode($result['citation_chunks'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
+        $selectedGuidelines = json_decode(json_encode($result['selected_guidelines'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
+        $safeAssets = json_decode(json_encode($assets, JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
+        $queryNormalization = json_decode(json_encode($result['query_normalization'] ?? null, JSON_INVALID_UTF8_SUBSTITUTE), true);
+        $llmCitationChunks = json_decode(json_encode($result['llm_citation_chunks'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
+        $llmNarrativeChunks = json_decode(json_encode($result['llm_narrative_chunks'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
+        $uiCitationChunks = json_decode(json_encode($result['ui_citation_chunks'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
+        $uiNarrativeChunks = json_decode(json_encode($result['ui_narrative_chunks'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
+
+        return [
+            'result' => $output,
+            'narrative_chunks' => $narrativeChunks,
+            'citation_chunks' => $citationChunks,
+            'llm_citation_chunks' => $llmCitationChunks,
+            'llm_narrative_chunks' => $llmNarrativeChunks,
+            'ui_citation_chunks' => $uiCitationChunks,
+            'ui_narrative_chunks' => $uiNarrativeChunks,
+            'must_include_chunk' => $result['must_include_chunk'] ?? null,
+            'intent_profile' => $result['intent_profile'] ?? null,
+            'selected_guidelines' => $selectedGuidelines,
+            'assets' => $safeAssets,
+            'query_normalization' => $queryNormalization,
+            'query_type' => $result['query_type'] ?? 'complex_case',
+        ];
+    }
+
+    protected function buildConsultOutput(array $result, array $assets): string
+    {
+        $question = $result['question'] ?? '';
+        $output = "RETRIEVED GUIDELINES for: \"{$question}\"\n";
+        $output .= "Guidelines Used: " . implode(', ', array_column($result['selected_guidelines'] ?? [], 'name')) . "\n\n";
 
         $output .= "=== NARRATIVE EVIDENCE (Use for context) ===\n";
-        foreach ($result['narrative_chunks'] as $chunk) {
+        foreach (($result['narrative_chunks'] ?? []) as $chunk) {
             $output .= "- " . ($chunk['content'] ?? '') . "\n";
         }
         $output .= "\n";
 
         $output .= "=== CITATIONS (Use for verbatim quoting) ===\n";
-        foreach ($result['citation_chunks'] as $chunk) {
+        foreach (($result['citation_chunks'] ?? []) as $chunk) {
             $meta = [];
-            if (!empty($chunk['recommendation_id']))
+            if (!empty($chunk['recommendation_id'])) {
                 $meta[] = $chunk['recommendation_id'];
-            if (!empty($chunk['class']))
+            }
+            if (!empty($chunk['class'])) {
                 $meta[] = $chunk['class'];
-            if (!empty($chunk['level']))
+            }
+            if (!empty($chunk['level'])) {
                 $meta[] = $chunk['level'];
-            $metaStr = !empty($meta) ? " [" . implode(', ', $meta) . "]" : "";
+            }
+            $metaStr = !empty($meta) ? " [" . implode(', ', $meta) . "]" : '';
 
-            $output .= "> \"{$chunk['text']}\"{$metaStr}\n";
+            $output .= "> \"" . ($chunk['text'] ?? '') . "\"{$metaStr}\n";
         }
 
         if (!empty($assets)) {
             $output .= "\n\n=== FIGURES / TABLES (For user display) ===\n";
             $output .= "If relevant, you may include these in your response as Markdown images.\n";
-            foreach ($assets as $a) {
-                $label = $a['label'] ?? ($a['id'] ?? 'Asset');
-                $caption = $a['caption'] ?? '';
-                $url = $a['url'] ?? '';
-                $gk = $a['guideline_key'] ?? '';
+            foreach ($assets as $asset) {
+                $label = $asset['label'] ?? ($asset['id'] ?? 'Asset');
+                $caption = $asset['caption'] ?? '';
+                $url = $asset['url'] ?? '';
+                $guidelineKey = $asset['guideline_key'] ?? '';
                 if (empty($url)) {
                     continue;
                 }
 
-                $output .= "- {$label}" . (!empty($gk) ? " ({$gk})" : "") . ": {$caption}\n";
+                $output .= "- {$label}" . (!empty($guidelineKey) ? " ({$guidelineKey})" : '') . ": {$caption}\n";
                 $output .= "  {$url}\n";
                 if (!empty($caption)) {
-                    // Most UIs render this; if not, the raw URL is still visible.
                     $output .= "  ![{$caption}]({$url})\n";
                 }
             }
         }
 
-        // Add format reminder
         $output .= "\n\n=== IMPORTANT ===\n";
         $output .= "Present this using the mandatory response format:\n";
         $output .= "1. 🩺 Clinical Synthesis (3-6 bullets with inline citations)\n";
@@ -237,6 +400,7 @@ class ToolController extends Controller
                 $output .= "Place the fit/limitations note within Assessment or Evidence used to preserve the required structure.\n";
             }
         }
+
         if ($gapService->strictTemplateEnabled()) {
             $output .= "\n=== REQUIRED STRUCTURE (STRICT) ===\n";
             $output .= "Assessment:\n";
@@ -249,44 +413,26 @@ class ToolController extends Controller
             $output .= "Evidence used (Rec #, Class, Level):\n";
         }
 
-        // Debug: Log what we're returning
-        Log::info('Tool API Response', [
-            'question' => $question,
-            'text_length' => strlen($output),
-            'has_narrative_chunks' => !empty($result['narrative_chunks']),
-            'narrative_count' => count($result['narrative_chunks'] ?? []),
-            'citation_count' => count($result['citation_chunks'] ?? []),
-            'asset_count' => count($assets ?? []),
+        return $output;
+    }
+
+    protected function guardrailResponse(string $message, string $type)
+    {
+        return $this->jsonApiResponse([
+            'result' => $message,
+            'narrative_chunks' => [],
+            'citation_chunks' => [],
+            'assets' => [],
+            'guardrail' => [
+                'type' => $type,
+                'short_circuited' => true,
+            ],
         ]);
+    }
 
-        // Sanitize UTF-8 to prevent JSON encoding errors from malformed characters
-        $output = mb_convert_encoding($output, 'UTF-8', 'UTF-8');
-        $narrativeChunks = json_decode(json_encode($result['narrative_chunks'], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
-        $citationChunks = json_decode(json_encode($result['citation_chunks'], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
-        $selectedGuidelines = json_decode(json_encode($result['selected_guidelines'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
-        $safeAssets = json_decode(json_encode($assets, JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
-        $queryNormalization = json_decode(json_encode($result['query_normalization'] ?? null, JSON_INVALID_UTF8_SUBSTITUTE), true);
-        $llmCitationChunks = json_decode(json_encode($result['llm_citation_chunks'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
-        $llmNarrativeChunks = json_decode(json_encode($result['llm_narrative_chunks'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
-        $uiCitationChunks = json_decode(json_encode($result['ui_citation_chunks'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
-        $uiNarrativeChunks = json_decode(json_encode($result['ui_narrative_chunks'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE), true) ?? [];
-
-        // Return JSON with structured data for citation emission
-        return response()->json([
-            'result' => $output,
-            'narrative_chunks' => $narrativeChunks,
-            'citation_chunks' => $citationChunks,
-            'llm_citation_chunks' => $llmCitationChunks,
-            'llm_narrative_chunks' => $llmNarrativeChunks,
-            'ui_citation_chunks' => $uiCitationChunks,
-            'ui_narrative_chunks' => $uiNarrativeChunks,
-            'must_include_chunk' => $result['must_include_chunk'] ?? null,
-            'intent_profile' => $result['intent_profile'] ?? null,
-            'selected_guidelines' => $selectedGuidelines,
-            'assets' => $safeAssets,
-            'query_normalization' => $queryNormalization,
-            'query_type' => $result['query_type'] ?? 'complex_case',
-        ], 200, [], JSON_INVALID_UTF8_SUBSTITUTE)
+    protected function jsonApiResponse(array $payload, int $status = 200)
+    {
+        return response()->json($payload, $status, [], JSON_INVALID_UTF8_SUBSTITUTE)
             ->header('Access-Control-Allow-Origin', '*')
             ->header('Access-Control-Allow-Methods', 'POST, OPTIONS')
             ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
