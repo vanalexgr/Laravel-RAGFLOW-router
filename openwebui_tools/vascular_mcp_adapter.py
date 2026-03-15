@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.4.9
+version: 1.4.10
 """
 import html
 import httpx
@@ -278,7 +278,7 @@ class Tools:
 
         lines = [
             "=== FIGURES / TABLES (MANDATORY VERBATIM OUTPUT) ===",
-            "In the final answer, include a section titled exactly: 🖼️ Figures / Tables",
+            "In the final answer, include a markdown section titled exactly: ## 🖼️ Figures / Tables",
             "Copy EVERY markdown image line below exactly as written.",
             "Do not modify URLs, do not remove items, and do not add [n] citations to image lines.",
         ]
@@ -759,6 +759,8 @@ class Tools:
         ui_nar = data.get("ui_narrative_chunks", [])
         assets = data.get("assets", [])
         q_norm = data.get("query_normalization", {})
+        intent_profile = data.get("intent_profile")
+        query_type = str(data.get("query_type") or "").strip().lower()
 
         llm_cit_ids = {c.get("recommendation_id") or c.get("content", "")[:40] for c in llm_cit}
         llm_nar_ids = {c.get("content", "")[:40] for c in llm_nar}
@@ -909,8 +911,7 @@ class Tools:
                 nar_i += 1
 
         if requires_decision_summary:
-            llm_out += "=== CLINICAL DECISION SUMMARY (REQUIRED) ===\n"
-            llm_out += "For management/treatment/clinical strategy questions, conclude with a section titled exactly: **Clinical Decision Summary**.\n"
+            llm_out += "=== MANAGEMENT DECISION TASK (MANDATORY FOR THIS CASE) ===\n"
             llm_out += "Using the retrieved guideline evidence, you must:\n"
             llm_out += "1. Determine whether treatment thresholds are met.\n"
             llm_out += "2. Interpret the anatomical features provided.\n"
@@ -918,14 +919,8 @@ class Tools:
             llm_out += "4. State the guideline-consistent default/preferred strategy when inferable.\n"
             llm_out += "5. Explain why this strategy is preferred and identify the main alternative with when it may be chosen instead.\n"
             llm_out += "Do not stop at 'both options may be considered'; provide a reasoned decision.\n"
-            llm_out += "If anatomical measurements are provided (e.g., neck length, angulation, landing zones), interpret compatibility with standard EVAR, fenestrated/branched repair, and open repair.\n\n"
-            llm_out += "=== PERIOPERATIVE RISK MITIGATION (GUIDELINE-BASED, REQUIRED) ===\n"
-            llm_out += "When discussing operative management, summarize key perioperative risk-reduction strategies, including when relevant:\n"
-            llm_out += "- spinal cord ischemia prevention\n"
-            llm_out += "- renal protection\n"
-            llm_out += "- cardiac risk optimisation\n"
-            llm_out += "- staged repair strategies\n"
-            llm_out += "- preservation of critical branch vessels\n\n"
+            llm_out += "If anatomical measurements are provided (e.g., neck length, angulation, landing zones), interpret compatibility with standard EVAR, fenestrated/branched repair, and open repair.\n"
+            llm_out += "If operative management is discussed, include the key perioperative risk-mitigation strategies supported by the guideline.\n\n"
 
         if needs_stroke_scope:
             llm_out += "=== STROKE SEVERITY SCOPE (CASE-SPECIFIC) ===\n"
@@ -946,21 +941,17 @@ class Tools:
         )
         if assets_block:
             llm_out += (
-                "7. Include a section titled exactly: 🖼️ Figures / Tables "
+                "7. Include a markdown section titled exactly: ## 🖼️ Figures / Tables "
                 "and copy ALL markdown image lines from the FIGURES block verbatim.\n"
             )
 
-        llm_out += "\n=== REQUIRED STRUCTURE (STRICT) ===\n"
-        llm_out += "IMPORTANT: Restrict every section to evidence DIRECTLY relevant to this case. Acknowledge evidence gaps in 'Evidence used' rather than citing tangential recommendations.\n"
-        llm_out += "Assessment:\n"
-        llm_out += "Imaging:\n"
-        llm_out += "Indication for intervention:\n"
-        llm_out += "Treatment options:\n"
-        if requires_decision_summary:
-            llm_out += "Clinical Decision Summary:\n"
-            llm_out += "Perioperative Risk Mitigation:\n"
-        llm_out += "Follow-up:\n"
-        llm_out += "Evidence used (Rec #, Class, Level):\n"
+        llm_out += "\n"
+        llm_out += self._build_answer_blueprint(
+            analysis_question,
+            query_type,
+            intent_profile,
+            bool(assets_block),
+        )
 
         return llm_out
 
@@ -1108,6 +1099,105 @@ class Tools:
         if not has_carotid:
             return False
         return bool(self._CAROTID_SEVERE_STROKE_RE.search(q))
+
+    def _response_mode(self, question: str, query_type: Optional[str], intent_profile: Optional[dict]) -> str:
+        if self._requires_clinical_decision_summary(question, intent_profile):
+            return "management"
+
+        query_type_norm = str(query_type or "").strip().lower()
+        question_type = ""
+        intent = ""
+        if isinstance(intent_profile, dict):
+            question_type = str(intent_profile.get("question_type") or "").strip().lower()
+            intent = str(intent_profile.get("intent") or "").strip().lower()
+
+        if query_type_norm == "knowledge" or question_type in {"definition", "general"} or intent in {"definition", "general"}:
+            return "knowledge"
+        if question_type == "surveillance" or intent == "surveillance":
+            return "surveillance"
+        if question_type == "diagnostic_workup" or intent in {"diagnosis", "imaging"}:
+            return "diagnostic"
+        return "case"
+
+    def _build_answer_blueprint(
+        self,
+        question: str,
+        query_type: Optional[str],
+        intent_profile: Optional[dict],
+        has_assets: bool,
+    ) -> str:
+        mode = self._response_mode(question, query_type, intent_profile)
+        lines = [
+            "=== ANSWER STYLE (MANDATORY) ===",
+            "Write clean markdown with short headings and concise bullets.",
+            "Lead with the direct clinical answer instead of a generic introduction.",
+            "Keep sections tight and scannable; avoid long dense paragraphs.",
+            "Do not repeat the same fact across multiple sections.",
+            "Do not create empty sections.",
+            "Place any evidence-gap or extrapolation note once, briefly, under ## Evidence Used unless it changes the bottom line.",
+            "",
+            "=== OUTPUT BLUEPRINT (STRICT) ===",
+        ]
+
+        if mode == "management":
+            lines.extend([
+                "Use these headings in order, including only sections that are relevant:",
+                "## Bottom Line",
+                "- 1-3 bullets answering the user's practical decision question.",
+                "- If the question is whether to intervene, state the default guideline-consistent strategy in the first bullet when inferable.",
+                "## Key Case Factors",
+                "- Summarize the anatomy, symptoms, timing, severity, and risk features that drive the decision.",
+                "## Guideline-Based Options",
+                "- Compare the main supported options briefly and clearly.",
+                "## Clinical Decision Summary",
+                "- State the preferred approach, why it is preferred, and the main alternative with when it may be chosen instead.",
+                "## Perioperative Considerations",
+                "- Include only if operative or endovascular treatment is discussed.",
+                "## Follow-up and Practical Points",
+                "- Monitoring, surveillance, adjunct medical therapy, timing, or escalation triggers.",
+                "## Evidence Used",
+                "- Compact bullets: Rec [ID] (Class X, Level Y) — how each recommendation supports the answer.",
+            ])
+        elif mode == "surveillance":
+            lines.extend([
+                "Use these headings in order, including only sections that are relevant:",
+                "## Bottom Line",
+                "## Surveillance Plan",
+                "## Timing and Escalation Triggers",
+                "## Evidence Used",
+                "- Keep the answer practical and schedule-focused.",
+            ])
+        elif mode == "diagnostic":
+            lines.extend([
+                "Use these headings in order, including only sections that are relevant:",
+                "## Bottom Line",
+                "## Diagnostic / Imaging Focus",
+                "## Practical Takeaway",
+                "## Evidence Used",
+                "- Emphasize what to image, how to classify, or what findings change management.",
+            ])
+        elif mode == "knowledge":
+            lines.extend([
+                "Use these headings in order, including only sections that are relevant:",
+                "## Answer",
+                "## Key Guideline Points",
+                "## Practical Takeaway",
+                "## Evidence Used",
+                "- Do not add a management plan unless the user asks for one.",
+            ])
+        else:
+            lines.extend([
+                "Use these headings in order, including only sections that are relevant:",
+                "## Bottom Line",
+                "## Key Considerations",
+                "## Practical Takeaway",
+                "## Evidence Used",
+            ])
+
+        if has_assets:
+            lines.append("If figures/tables are provided, end with a markdown heading titled exactly: ## 🖼️ Figures / Tables and copy the supplied image lines verbatim.")
+
+        return "\n".join(lines) + "\n"
 
     # ------------------------------------------------------------------ #
     # Main tool                                                            #

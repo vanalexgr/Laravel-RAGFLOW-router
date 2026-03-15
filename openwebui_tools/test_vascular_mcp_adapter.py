@@ -148,6 +148,37 @@ class VascularMcpAdapterHeuristicTests(unittest.TestCase):
             doc,
         )
 
+    def test_management_answer_blueprint_uses_bottom_line_structure(self):
+        blueprint = self.tools._build_answer_blueprint(
+            "72-year-old with symptomatic carotid stenosis after TIA, should I operate?",
+            "single_case",
+            {"intent": "management", "question_type": "treatment_decision"},
+            has_assets=True,
+        )
+
+        self.assertIn("## Bottom Line", blueprint)
+        self.assertIn("## Key Case Factors", blueprint)
+        self.assertIn("## Guideline-Based Options", blueprint)
+        self.assertIn("## Clinical Decision Summary", blueprint)
+        self.assertIn("## Evidence Used", blueprint)
+        self.assertIn("## 🖼️ Figures / Tables", blueprint)
+        self.assertNotIn("## Answer", blueprint)
+
+    def test_knowledge_answer_blueprint_uses_lighter_structure(self):
+        blueprint = self.tools._build_answer_blueprint(
+            "What is the Rutherford classification for acute limb ischaemia?",
+            "knowledge",
+            {"intent": "definition", "question_type": "definition"},
+            has_assets=False,
+        )
+
+        self.assertIn("## Answer", blueprint)
+        self.assertIn("## Key Guideline Points", blueprint)
+        self.assertIn("## Practical Takeaway", blueprint)
+        self.assertIn("## Evidence Used", blueprint)
+        self.assertNotIn("## Clinical Decision Summary", blueprint)
+        self.assertNotIn("## Guideline-Based Options", blueprint)
+
     def test_extract_history_trims_long_assistant_answers_for_backend_validation(self):
         long_answer = (
             "Checking whether the new detail changes the stored retrieval...\n"
