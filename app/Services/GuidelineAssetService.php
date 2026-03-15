@@ -7,6 +7,10 @@ use Illuminate\Support\Facades\Storage;
 
 class GuidelineAssetService
 {
+    public function __construct(protected BridgeRerankService $bridgeRerank)
+    {
+    }
+
     /**
      * Return a list of assets (figures/tables) relevant to the retrieved chunks.
      *
@@ -221,6 +225,8 @@ class GuidelineAssetService
                 return strcmp((string) ($a['asset']['id'] ?? ''), (string) ($b['asset']['id'] ?? ''));
             });
 
+            $scored = $this->applyFallbackAssetRerank($question, $scored);
+
             if ((bool) config('guideline_assets.log_scoring', false) && !empty($scored)) {
                 Log::info('[GUIDELINE ASSETS] Scored fallback candidates', [
                     'question' => $question,
@@ -290,6 +296,74 @@ class GuidelineAssetService
         }
 
         return $results;
+    }
+
+    protected function applyFallbackAssetRerank(string $question, array $scored): array
+    {
+        $rerankConfig = (array) config('guideline_assets.rerank', []);
+        if (!(bool) ($rerankConfig['enabled'] ?? false)) {
+            return $scored;
+        }
+
+        $candidatePool = (int) ($rerankConfig['candidate_pool'] ?? 8);
+        $candidatePool = max(2, $candidatePool);
+        if (count($scored) < 2) {
+            return $scored;
+        }
+
+        $shortlist = array_slice($scored, 0, min(count($scored), $candidatePool));
+        $documents = array_map(function (array $row): string {
+            $asset = (array) ($row['asset'] ?? []);
+            $parts = [
+                'kind: ' . (string) ($asset['kind'] ?? ''),
+                'subtype: ' . (string) ($asset['subtype'] ?? ''),
+                'label: ' . (string) ($asset['label'] ?? ''),
+                'caption: ' . (string) ($asset['caption'] ?? ''),
+                'description: ' . (string) ($asset['description'] ?? ''),
+                'keywords: ' . implode(', ', array_map('strval', (array) ($asset['keywords'] ?? []))),
+                'aliases: ' . implode(', ', array_map('strval', (array) ($asset['aliases'] ?? []))),
+            ];
+
+            return trim(implode("\n", $parts));
+        }, $shortlist);
+
+        $ranked = $this->bridgeRerank->rerankDocuments(
+            $question,
+            $documents,
+            count($documents),
+            'guideline_assets',
+            $rerankConfig
+        );
+
+        if (empty($ranked)) {
+            return $scored;
+        }
+
+        $rerankedShortlist = [];
+        $used = [];
+        foreach ($ranked as $row) {
+            $index = $row['index'] ?? null;
+            if (!is_int($index) || !isset($shortlist[$index])) {
+                continue;
+            }
+
+            $assetRow = $shortlist[$index];
+            $assetRow['asset_rerank_score'] = $row['score'] ?? null;
+            $rerankedShortlist[] = $assetRow;
+            $used[$index] = true;
+        }
+
+        if (empty($rerankedShortlist)) {
+            return $scored;
+        }
+
+        foreach ($shortlist as $index => $row) {
+            if (!isset($used[$index])) {
+                $rerankedShortlist[] = $row;
+            }
+        }
+
+        return array_merge($rerankedShortlist, array_slice($scored, count($shortlist)));
     }
 
     protected function loadManifest(): array
