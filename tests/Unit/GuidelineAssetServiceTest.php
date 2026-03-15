@@ -506,4 +506,82 @@ class GuidelineAssetServiceTest extends TestCase
         $this->assertContains('tbl_carotid_injury', $assetIds);
         $this->assertNotContains('fig_btai_followup', $assetIds);
     }
+
+    public function test_it_prefers_management_algorithms_over_imaging_workflows_for_definitive_vgei_treatment_questions(): void
+    {
+        Storage::fake('public');
+
+        $manifest = [
+            'vascular_graft_infections' => [
+                [
+                    'id' => 'fig_imaging_workflow',
+                    'kind' => 'figure',
+                    'subtype' => 'flowchart',
+                    'label' => 'Figure 3',
+                    'caption' => 'Imaging Workflow for Suspected VGEI',
+                    'description' => 'Diagnostic imaging pathway for suspected vascular graft or endograft infection.',
+                    'keywords' => ['VGEI', 'imaging', 'CTA', 'PET', 'workflow'],
+                    'path' => 'guideline_assets/vascular_graft_infections/figures/fig_p012_003.png',
+                ],
+                [
+                    'id' => 'fig_thoracic_management',
+                    'kind' => 'figure',
+                    'subtype' => 'flowchart',
+                    'label' => 'Figure 6',
+                    'caption' => 'Algorithm for Thoracic Aortic Graft/Endograft Infection Management',
+                    'description' => 'Decision-making algorithm for thoracic aortic graft infection including acute bleeding, fistula, explantation, and reconstruction.',
+                    'keywords' => ['thoracic aortic graft', 'endograft infection', 'fistula management', 'graft explantation', 'reconstruction'],
+                    'path' => 'guideline_assets/vascular_graft_infections/figures/fig_p019_006.png',
+                ],
+                [
+                    'id' => 'fig_aortic_management',
+                    'kind' => 'figure',
+                    'subtype' => 'flowchart',
+                    'label' => 'Figure 7',
+                    'caption' => 'Algorithm for Managing Aortic Vascular Graft/Endograft Infection',
+                    'description' => 'Treatment algorithm covering acute bleeding, operative fitness, graft explantation, and vascular reconstruction.',
+                    'keywords' => ['aortic graft infection', 'treatment algorithm', 'graft explantation', 'vascular reconstruction'],
+                    'path' => 'guideline_assets/vascular_graft_infections/figures/fig_p030_007.png',
+                ],
+            ],
+        ];
+
+        $tmp = storage_path('app/guideline_assets/_test_manifest_vgei_management_priority.json');
+        @mkdir(dirname($tmp), 0777, true);
+        file_put_contents($tmp, json_encode($manifest));
+        config()->set('guideline_assets.manifest_path', $tmp);
+        config()->set('guideline_assets.disk', 'public');
+        config()->set('guideline_assets.enable_keyword_fallback', true);
+        config()->set('guideline_assets.max_assets', 2);
+
+        $svc = app(GuidelineAssetService::class);
+
+        $assets = $svc->findRelevantAssets(
+            'What is the definite treatment after TEVAR is in place for aorto-oesophageal fistula with infected thoracic endograft?',
+            [
+                [
+                    'content' => 'For patients with aorto-oesophageal fistula complicating thoracic graft or endograft infection, explantation of infected material, repair of the oesophagus, and coverage with viable tissue is recommended as definitive treatment.',
+                    'source_guideline' => 'Management of Vascular Graft and Endograft Infections',
+                ],
+                [
+                    'content' => 'In active bleeding, initial TEVAR may be used as a bridge to definitive treatment before graft explantation and reconstruction.',
+                    'source_guideline' => 'Management of Vascular Graft and Endograft Infections',
+                ],
+                [
+                    'content' => 'CTA and PET imaging may support diagnostic workup for suspected graft infection.',
+                    'source_guideline' => 'Management of Vascular Graft and Endograft Infections',
+                ],
+            ],
+            [],
+            [
+                'vascular_graft_infections' => ['id' => 'x', 'name' => 'Management of Vascular Graft and Endograft Infections'],
+            ]
+        );
+
+        $this->assertCount(2, $assets);
+        $assetIds = array_column($assets, 'id');
+        $this->assertSame('fig_thoracic_management', $assetIds[0]);
+        $this->assertSame(['fig_thoracic_management', 'fig_aortic_management'], $assetIds);
+        $this->assertNotContains('fig_imaging_workflow', $assetIds);
+    }
 }
