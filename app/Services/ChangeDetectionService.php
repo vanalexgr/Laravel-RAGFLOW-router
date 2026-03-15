@@ -21,6 +21,11 @@ class ChangeDetectionService
             return ChangeDetectionResult::fromArray(['decision' => 'reuse', 'reason' => 'empty reply']);
         }
 
+        $deterministic = $this->deterministicGuidelineShift($userReply, $original);
+        if ($deterministic !== null) {
+            return $deterministic;
+        }
+
         try {
             $prompt = $this->buildPrompt(
                 $userReply,
@@ -65,6 +70,7 @@ class ChangeDetectionService
         string $originalRetrievalQuery,
         array $clarificationQuestions = []
     ): string {
+        $availableGuidelines = $this->availableGuidelinesForPrompt();
         $clarificationText = '';
         $clarificationQuestions = array_values(array_filter(array_map(
             fn($question) => is_string($question) ? trim($question) : '',
@@ -86,13 +92,16 @@ Original question:
 Original retrieval query used:
   {$originalRetrievalQuery}
 
+Available guideline keys for updated_guidelines:
+{$availableGuidelines}
+
 {$clarificationText}The reply may be answering one or more of the missing details above.
 
 The user replied with:
   {$userReply}
 
 Decide whether to reuse the existing retrieval result or run a new retrieval.
-Return JSON with exactly 3 fields. No preamble, no explanation, only JSON.
+Return JSON with exactly 4 fields. No preamble, no explanation, only JSON.
 
     decision: 'reuse' if the user reply is a simple confirmation, primarily answers
       the original clarification questions, adds timing/severity/stability/
@@ -111,7 +120,99 @@ reason: one short phrase explaining the decision (for logging only).
 enriched_query: if decision is 'requery', write a new expanded English retrieval
   query incorporating both the original question and the new information.
   If decision is 'reuse', return null.
+
+updated_guidelines: if decision is 'requery' and the clarification changes which
+  guideline set should be searched, return an array of 1-3 guideline keys from
+  the available list above. Prefer anatomy/pathology-based selection, not
+  keywords alone. If the original guideline set remains appropriate, return null.
 PROMPT;
+    }
+
+    protected function availableGuidelinesForPrompt(): string
+    {
+        $lines = [];
+        foreach (config('guidelines.categories', []) as $category) {
+            foreach (($category['guidelines'] ?? []) as $key => $info) {
+                $lines[] = "- {$key}: " . ($info['name'] ?? $key);
+            }
+        }
+
+        return implode("\n", $lines);
+    }
+
+    protected function deterministicGuidelineShift(string $userReply, PreRetrievalResult $original): ?ChangeDetectionResult
+    {
+        $combined = implode(' ', array_filter([
+            $userReply,
+            $original->provisionalDiagnosis,
+            $original->retrievalQuery,
+        ]));
+
+        $hasPadContext = in_array('asymptomatic_pad', $original->guidelines, true)
+            || in_array('clti', $original->guidelines, true)
+            || (bool) preg_match('/\b(peripheral arterial disease|pad|lower limb revasculari[sz]ation|bypass|endovascular)\b/i', $combined);
+
+        $hasCltiSignals = (bool) preg_match(
+            '/\b(clti|chronic limb threatening ischa?emia|rest pain|tissue loss|gangrene|ulcer|wifi|limb threatening)\b/i',
+            $combined
+        );
+
+        if (!$hasPadContext || !$hasCltiSignals) {
+            return null;
+        }
+
+        $updatedGuidelines = array_values(array_filter($original->guidelines, fn(string $guideline): bool => $guideline !== 'asymptomatic_pad'));
+        if (!in_array('clti', $updatedGuidelines, true)) {
+            $updatedGuidelines[] = 'clti';
+        }
+
+        if (
+            (bool) preg_match('/\b(antithrombotic|antiplatelet|anticoag|aspirin|clopidogrel|rivaroxaban|doac|warfarin)\b/i', $combined)
+            && !in_array('antithrombotic_therapy', $updatedGuidelines, true)
+        ) {
+            array_unshift($updatedGuidelines, 'antithrombotic_therapy');
+        }
+
+        $updatedGuidelines = array_slice(array_values(array_unique($updatedGuidelines)), 0, 3);
+
+        $enrichedQuery = $this->appendUniqueTerms($original->retrievalQuery, [
+            preg_match('/\bdistal\s+bypass\b/i', $userReply) ? 'distal bypass' : null,
+            preg_match('/\bvein\b/i', $userReply) ? 'vein bypass' : null,
+            'chronic limb threatening ischemia',
+            preg_match('/\brest pain\b/i', $combined) ? 'rest pain' : null,
+            preg_match('/\btissue loss\b/i', $combined) ? 'tissue loss' : null,
+        ]);
+
+        return ChangeDetectionResult::fromArray([
+            'decision' => 'requery',
+            'reason' => 'clti clarification changes guideline selection',
+            'enriched_query' => $enrichedQuery,
+            'updated_guidelines' => $updatedGuidelines,
+        ]);
+    }
+
+    protected function appendUniqueTerms(string $query, array $terms): string
+    {
+        $base = trim($query);
+        $normalized = strtolower($base);
+
+        foreach ($terms as $term) {
+            if (!is_string($term) || trim($term) === '') {
+                continue;
+            }
+
+            $term = trim($term);
+            if ($term === '') {
+                continue;
+            }
+
+            if (!str_contains($normalized, strtolower($term))) {
+                $base = trim($base . ' ' . $term);
+                $normalized = strtolower($base);
+            }
+        }
+
+        return $base;
     }
 
     protected function parseJson(string $raw): ?array
