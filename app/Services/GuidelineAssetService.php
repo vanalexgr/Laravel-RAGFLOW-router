@@ -57,6 +57,15 @@ class GuidelineAssetService
         if (empty($fallbackScopeKeys)) {
             $fallbackScopeKeys = $scopedKeys;
         }
+        $contextText = $this->buildFallbackContextText(
+            $narrativeChunks,
+            $nameToKey,
+            $fallbackScopeKeys
+        );
+        $questionTerritories = $this->inferVascularTerritories($question, $questionTokens);
+        $contextTerritories = $this->inferVascularTerritories($contextText);
+        $questionFocusAnchors = $this->extractSpecificAnatomyAnchors($question, $questionTokens);
+        $contextFocusAnchors = $this->extractSpecificAnatomyAnchors($contextText);
 
         $results = [];
         $seen = [];
@@ -84,7 +93,15 @@ class GuidelineAssetService
                 if (!$asset) {
                     continue;
                 }
-                if (!$this->shouldUseExplicitReferenceAsset($asset, $ref, $questionTokens, $questionIntent, $questionRefs)) {
+                if (!$this->shouldUseExplicitReferenceAsset(
+                    $asset,
+                    $ref,
+                    $questionTokens,
+                    $questionIntent,
+                    $questionRefs,
+                    $questionTerritories,
+                    $contextTerritories
+                )) {
                     continue;
                 }
 
@@ -106,11 +123,6 @@ class GuidelineAssetService
         // 2) Fallback/supplement: local BM25-style reranking scoped to the
         // guidelines that actually contributed evidence to the answer.
         if (count($results) < $maxAssets && (bool) config('guideline_assets.enable_keyword_fallback', true)) {
-            $contextText = $this->buildFallbackContextText(
-                $narrativeChunks,
-                $nameToKey,
-                $fallbackScopeKeys
-            );
             $contextTokens = array_values(array_unique($this->tokenizeSearchText($contextText)));
             $contextRefs = $this->extractAssetReferences($contextText);
             $guidelineUsageWeights = $this->buildGuidelineUsageWeights(
@@ -145,13 +157,20 @@ class GuidelineAssetService
                     $doc['asset'],
                     $questionTokens,
                     $doc['term_freq'],
-                    $questionIntent
+                    $questionIntent,
+                    $questionTerritories,
+                    $contextTerritories,
+                    $questionFocusAnchors,
+                    $contextFocusAnchors
                 );
                 $contextRefScore = $this->scaleContextReferenceScore(
                     $this->directReferenceScore($doc['asset'], $contextRefs),
                     $questionIntent,
                     $intentFit
                 );
+                $contextCarryScore = (empty($questionTerritories) && empty($questionFocusAnchors))
+                    ? ($contextBm25 * 0.8)
+                    : 0.0;
 
                 // Prioritize the user question while still letting the answer context
                 // steer the fallback toward visuals that match the retrieved evidence
@@ -159,6 +178,7 @@ class GuidelineAssetService
                 $querySignal = ($questionBm25 * 2.0)
                     + $questionRefScore
                     + $contextRefScore
+                    + $contextCarryScore
                     + $guidelineBoost
                     + $intentFit['boost'];
                 $totalScore = $querySignal + ($contextBm25 * 0.4);
@@ -173,8 +193,14 @@ class GuidelineAssetService
                     'context_score' => $contextBm25,
                     'question_ref_score' => $questionRefScore,
                     'context_ref_score' => $contextRefScore,
+                    'context_carry_score' => $contextCarryScore,
                     'guideline_boost' => $guidelineBoost,
                     'intent_boost' => $intentFit['boost'],
+                    'semantic_boost' => $intentFit['semantic_boost'],
+                    'territory_boost' => $intentFit['territory_boost'],
+                    'focus_boost' => $intentFit['focus_boost'],
+                    'territory_conflict' => $intentFit['territory_conflict'],
+                    'focus_overlap' => $intentFit['focus_overlap'],
                     'content_overlap' => $intentFit['content_overlap'],
                     'asset' => $doc['asset'],
                     'guideline_key' => $doc['guideline_key'],
@@ -199,6 +225,10 @@ class GuidelineAssetService
                 Log::info('[GUIDELINE ASSETS] Scored fallback candidates', [
                     'question' => $question,
                     'selected_guidelines' => $fallbackScopeKeys,
+                    'question_territories' => $questionTerritories,
+                    'context_territories' => $contextTerritories,
+                    'question_focus_anchors' => $questionFocusAnchors,
+                    'context_focus_anchors' => $contextFocusAnchors,
                     'top' => array_map(function ($row) {
                         return [
                             'id' => $row['asset']['id'] ?? null,
@@ -209,8 +239,14 @@ class GuidelineAssetService
                             'context_score' => $row['context_score'],
                             'question_ref_score' => $row['question_ref_score'],
                             'context_ref_score' => $row['context_ref_score'],
+                            'context_carry_score' => $row['context_carry_score'],
                             'guideline_boost' => $row['guideline_boost'],
                             'intent_boost' => $row['intent_boost'],
+                            'semantic_boost' => $row['semantic_boost'],
+                            'territory_boost' => $row['territory_boost'],
+                            'focus_boost' => $row['focus_boost'],
+                            'territory_conflict' => $row['territory_conflict'],
+                            'focus_overlap' => $row['focus_overlap'],
                             'content_overlap' => $row['content_overlap'],
                             'total_score' => $row['score'],
                         ];
@@ -505,7 +541,9 @@ class GuidelineAssetService
         string $ref,
         array $questionTokens,
         array $questionIntent,
-        array $questionRefs
+        array $questionRefs,
+        array $questionTerritories = [],
+        array $contextTerritories = []
     ): bool {
         if (in_array($ref, $questionRefs, true)) {
             return true;
@@ -516,14 +554,25 @@ class GuidelineAssetService
         }
 
         $doc = $this->buildAssetDocument($asset);
-        $intentFit = $this->scoreQuestionIntentFit($asset, $questionTokens, $doc['term_freq'] ?? [], $questionIntent);
+        $intentFit = $this->scoreQuestionIntentFit(
+            $asset,
+            $questionTokens,
+            $doc['term_freq'] ?? [],
+            $questionIntent,
+            $questionTerritories,
+            $contextTerritories
+        );
         $minimumOverlap = $questionIntent['management'] ? 2 : 1;
 
         if (($intentFit['content_overlap'] ?? 0) < $minimumOverlap) {
             return false;
         }
 
-        if ($questionIntent['management'] && ($intentFit['boost'] ?? 0.0) < 2.0) {
+        if ($questionIntent['management'] && ($intentFit['semantic_boost'] ?? 0.0) < 2.0) {
+            return false;
+        }
+
+        if (($intentFit['territory_conflict'] ?? false) && ($intentFit['content_overlap'] ?? 0) < 3) {
             return false;
         }
 
@@ -685,6 +734,7 @@ class GuidelineAssetService
             'ica' => ['internal', 'carotid', 'artery', 'carotid'],
             'cea' => ['carotid', 'endarterectomy'],
             'cas' => ['carotid', 'stenting', 'stent'],
+            'tcar' => ['transcarotid', 'carotid', 'artery', 'revascularization', 'revascularisation'],
             'cabg' => ['coronary', 'bypass', 'grafting'],
             'pad' => ['peripheral', 'arterial', 'disease'],
             'clti' => ['limb', 'threatening', 'ischaemia', 'ischemia'],
@@ -692,6 +742,9 @@ class GuidelineAssetService
             'glass' => ['global', 'limb', 'anatomic', 'staging', 'system'],
             'bmt' => ['best', 'medical', 'therapy'],
             'tia' => ['transient', 'ischaemic', 'ischemic', 'attack'],
+            'btai' => ['blunt', 'thoracic', 'aortic', 'injury'],
+            'tevar' => ['thoracic', 'endovascular', 'aortic', 'repair'],
+            'evar' => ['endovascular', 'aneurysm', 'repair'],
             default => [],
         };
     }
@@ -713,13 +766,17 @@ class GuidelineAssetService
         array $asset,
         array $questionTokens,
         array $termFreq,
-        array $questionIntent
+        array $questionIntent,
+        array $questionTerritories = [],
+        array $contextTerritories = [],
+        array $questionFocusAnchors = [],
+        array $contextFocusAnchors = []
     ): array {
         $assetText = strtolower($this->assetSearchText($asset) . ' ' . ($asset['kind'] ?? '') . ' ' . ($asset['subtype'] ?? ''));
         $kind = strtolower((string) ($asset['kind'] ?? ''));
         $subtype = strtolower((string) ($asset['subtype'] ?? ''));
         $contentOverlap = $this->countMeaningfulTokenOverlap($questionTokens, $termFreq);
-        $boost = $contentOverlap * 0.7;
+        $semanticBoost = $contentOverlap * 0.7;
 
         if ($questionIntent['management']) {
             $hasManagementSignal = $this->containsAnyPhrase($assetText, [
@@ -732,62 +789,270 @@ class GuidelineAssetService
             ]);
 
             if ($subtype === 'flowchart' && $contentOverlap >= 2) {
-                $boost += 2.5;
+                $semanticBoost += 2.5;
             }
             if ($kind === 'figure' && $contentOverlap >= 2) {
-                $boost += 0.75;
+                $semanticBoost += 0.75;
             }
             if ($hasManagementSignal) {
-                $boost += $contentOverlap >= 2 ? 3.0 : ($contentOverlap === 1 ? 1.0 : 0.0);
+                $semanticBoost += $contentOverlap >= 2 ? 3.0 : ($contentOverlap === 1 ? 1.0 : 0.0);
             }
             if ($contentOverlap === 0) {
-                $boost -= 2.0;
+                $semanticBoost -= 2.0;
             }
             if (
                 $kind === 'table'
                 && $this->containsAnyPhrase($assetText, ['outcome', 'trial', 'prevalence', 'predictive', 'feature', 'risk'])
             ) {
-                $boost -= 1.5;
+                $semanticBoost -= 1.5;
             }
             if (
                 !$hasManagementSignal
                 && $this->containsAnyPhrase($assetText, ['imaging', 'diagnostic', 'diagnosis', 'workup', 'modality', 'sensitivity', 'specificity', 'measurement'])
             ) {
-                $boost -= 3.0;
+                $semanticBoost -= 3.0;
             }
         }
 
         if ($questionIntent['risk']) {
             if ($kind === 'table') {
-                $boost += 1.0;
+                $semanticBoost += 1.0;
             }
             if ($this->containsAnyPhrase($assetText, ['risk', 'rupture', 'outcome', 'predictive', 'severity', 'mortality'])) {
-                $boost += 2.0;
+                $semanticBoost += 2.0;
             }
         }
 
         if ($questionIntent['definition']) {
             if (in_array($subtype, ['diagram', 'illustration'], true) && $contentOverlap >= 1) {
-                $boost += 2.0;
+                $semanticBoost += 2.0;
             }
             if ($this->containsAnyPhrase($assetText, ['diagram', 'classification', 'staging', 'measurement', 'anatomy', 'illustrat']) && $contentOverlap >= 1) {
-                $boost += 2.0;
+                $semanticBoost += 2.0;
             }
         }
 
         if ($questionIntent['procedure']) {
             if (in_array($subtype, ['diagram', 'illustration'], true) && $contentOverlap >= 1) {
-                $boost += 1.5;
+                $semanticBoost += 1.5;
             }
             if ($this->containsAnyPhrase($assetText, ['procedure', 'deployment', 'illustrat', 'technique', 'stent', 'endarterectomy', 'angioplasty']) && $contentOverlap >= 1) {
-                $boost += 2.0;
+                $semanticBoost += 2.0;
             }
+        }
+        $territoryFit = $this->scoreVascularTerritoryFit($asset, $questionTerritories, $contextTerritories);
+        $focusFit = $this->scoreSpecificAnatomyFit($asset, $questionFocusAnchors, $contextFocusAnchors);
+        $boost = $semanticBoost + $territoryFit['boost'] + $focusFit['boost'];
+
+        return [
+            'boost' => $boost,
+            'semantic_boost' => $semanticBoost,
+            'content_overlap' => $contentOverlap,
+            'territory_boost' => $territoryFit['boost'],
+            'focus_boost' => $focusFit['boost'],
+            'focus_overlap' => $focusFit['overlap'],
+            'territory_conflict' => $territoryFit['conflict'],
+        ];
+    }
+
+    protected function scoreVascularTerritoryFit(
+        array $asset,
+        array $questionTerritories,
+        array $contextTerritories
+    ): array {
+        $assetTerritories = $this->inferVascularTerritories($this->assetSearchText($asset));
+        if (empty($assetTerritories)) {
+            return [
+                'boost' => 0.0,
+                'conflict' => false,
+            ];
+        }
+
+        $boost = 0.0;
+        $matchesQuestion = !empty(array_intersect($assetTerritories, $questionTerritories));
+        $matchesContext = !empty(array_intersect($assetTerritories, $contextTerritories));
+
+        if (!empty($questionTerritories)) {
+            if ($matchesQuestion) {
+                $boost += 3.0;
+            } else {
+                $boost -= 4.0;
+            }
+        }
+
+        if (!empty($contextTerritories)) {
+            if ($matchesContext) {
+                $boost += empty($questionTerritories) ? 2.0 : 1.0;
+            } elseif (empty($questionTerritories)) {
+                $boost -= 2.0;
+            }
+        }
+
+        $conflict = (!empty($questionTerritories) && !$matchesQuestion)
+            || (empty($questionTerritories) && !empty($contextTerritories) && !$matchesContext);
+
+        return [
+            'boost' => $boost,
+            'conflict' => $conflict,
+        ];
+    }
+
+    protected function scoreSpecificAnatomyFit(
+        array $asset,
+        array $questionFocusAnchors,
+        array $contextFocusAnchors
+    ): array {
+        $assetAnchors = $this->extractSpecificAnatomyAnchors($this->assetSearchText($asset));
+        $questionOverlap = array_values(array_intersect($assetAnchors, $questionFocusAnchors));
+        $contextOverlap = array_values(array_intersect($assetAnchors, $contextFocusAnchors));
+        $boost = 0.0;
+
+        if (!empty($questionFocusAnchors)) {
+            if (!empty($questionOverlap)) {
+                $boost += count($questionFocusAnchors) === 1 ? 2.0 : 1.0;
+            } elseif (count($questionFocusAnchors) === 1) {
+                $boost -= 2.0;
+            }
+        } elseif (!empty($contextFocusAnchors) && !empty($contextOverlap)) {
+            $boost += 1.0;
         }
 
         return [
             'boost' => $boost,
-            'content_overlap' => $contentOverlap,
+            'overlap' => !empty($questionFocusAnchors) ? count($questionOverlap) : count($contextOverlap),
         ];
+    }
+
+    protected function inferVascularTerritories(string $text, array $tokens = []): array
+    {
+        $normalized = strtolower($text);
+        $tokenSet = array_fill_keys(
+            array_values(array_unique(!empty($tokens) ? $tokens : $this->tokenizeSearchText($text))),
+            true
+        );
+        $territories = [];
+
+        if ($this->matchesTerritory($normalized, $tokenSet, ['carotid', 'vertebral', 'vertebrobasilar', 'tcar'], [
+            'carotid artery',
+            'internal carotid',
+            'common carotid',
+            'vertebral artery',
+        ])) {
+            $territories[] = 'carotid_vertebral';
+        }
+
+        if ($this->matchesTerritory($normalized, $tokenSet, ['thoracic', 'thoracoabdominal', 'btai', 'tevar'], [
+            'thoracic aorta',
+            'thoracic aortic',
+            'descending thoracic',
+            'type b dissection',
+            'non a non b dissection',
+            'left subclavian',
+            'blunt thoracic aortic injury',
+        ])) {
+            $territories[] = 'thoracic_aorta';
+        }
+
+        if ($this->matchesTerritory($normalized, $tokenSet, ['innominate'], [
+            'aortic arch',
+            'arch aneurysm',
+            'arch dissection',
+            'supra aortic',
+            'supra-aortic',
+            'debranching',
+            'frozen elephant trunk',
+        ])) {
+            $territories[] = 'aortic_arch';
+        }
+
+        if ($this->matchesTerritory($normalized, $tokenSet, ['infrarenal', 'juxtarenal', 'pararenal', 'evar', 'iliac'], [
+            'abdominal aortic',
+            'abdominal aneurysm',
+            'iliac aneurysm',
+            'iliac artery',
+        ])) {
+            $territories[] = 'abdominal_aorta';
+        }
+
+        if ($this->matchesTerritory($normalized, $tokenSet, ['mesenteric', 'coeliac', 'celiac', 'renal', 'visceral', 'sma'], [
+            'renal artery',
+            'visceral artery',
+            'mesenteric ischemia',
+            'mesenteric ischaemia',
+        ])) {
+            $territories[] = 'mesenteric_renal';
+        }
+
+        if ($this->matchesTerritory($normalized, $tokenSet, ['claudication', 'femoropopliteal', 'popliteal', 'tibial', 'wound', 'wifi', 'glass'], [
+            'lower limb',
+            'acute limb ischemia',
+            'acute limb ischaemia',
+            'chronic limb threatening',
+            'rest pain',
+            'foot ulcer',
+        ])) {
+            $territories[] = 'lower_limb_arterial';
+        }
+
+        if ($this->matchesTerritory($normalized, $tokenSet, ['venous', 'varicose', 'saphenous', 'dvt', 'pe'], [
+            'deep vein thrombosis',
+            'pulmonary embolism',
+            'venous ulcer',
+        ])) {
+            $territories[] = 'venous';
+        }
+
+        return array_values(array_unique($territories));
+    }
+
+    protected function extractSpecificAnatomyAnchors(string $text, array $tokens = []): array
+    {
+        $normalized = strtolower($text);
+        $tokenSet = array_fill_keys(
+            array_values(array_unique(!empty($tokens) ? $tokens : $this->tokenizeSearchText($text))),
+            true
+        );
+        $anchors = [];
+
+        $definitions = [
+            'carotid' => [['carotid'], ['carotid artery', 'internal carotid', 'common carotid']],
+            'vertebral' => [['vertebral', 'vertebrobasilar'], ['vertebral artery']],
+            'subclavian' => [['subclavian'], ['left subclavian', 'right subclavian']],
+            'innominate' => [['innominate'], ['innominate artery', 'brachiocephalic']],
+            'arch' => [[], ['aortic arch']],
+            'thoracic' => [['thoracic', 'thoracoabdominal'], ['descending thoracic', 'thoracic aorta', 'thoracic aortic']],
+            'abdominal' => [['infrarenal', 'juxtarenal', 'pararenal'], ['abdominal aortic']],
+            'iliac' => [['iliac'], ['iliac artery', 'iliac aneurysm']],
+            'mesenteric' => [['mesenteric', 'sma', 'coeliac', 'celiac'], ['mesenteric artery', 'coeliac artery', 'celiac artery']],
+            'renal' => [['renal'], ['renal artery']],
+            'femoropopliteal' => [['femoropopliteal', 'femoral'], ['femoropopliteal segment']],
+            'popliteal' => [['popliteal'], ['popliteal artery']],
+            'tibial' => [['tibial'], ['anterior tibial', 'posterior tibial']],
+            'saphenous' => [['saphenous'], ['great saphenous', 'small saphenous']],
+        ];
+
+        foreach ($definitions as $anchor => [$anchorTokens, $anchorPhrases]) {
+            if ($this->matchesTerritory($normalized, $tokenSet, $anchorTokens, $anchorPhrases)) {
+                $anchors[] = $anchor;
+            }
+        }
+
+        return array_values(array_unique($anchors));
+    }
+
+    protected function matchesTerritory(
+        string $normalizedText,
+        array $tokenSet,
+        array $tokens,
+        array $phrases
+    ): bool {
+        foreach ($tokens as $token) {
+            if (isset($tokenSet[$token])) {
+                return true;
+            }
+        }
+
+        return $this->containsAnyPhrase($normalizedText, $phrases);
     }
 
     protected function scaleContextReferenceScore(float $rawScore, array $questionIntent, array $intentFit): float
@@ -798,7 +1063,7 @@ class GuidelineAssetService
 
         $scaledScore = $rawScore * 0.2;
 
-        if ($questionIntent['management'] && ($intentFit['boost'] ?? 0.0) < 2.0) {
+        if ($questionIntent['management'] && (($intentFit['semantic_boost'] ?? $intentFit['boost'] ?? 0.0) < 2.0)) {
             $scaledScore *= 0.2;
         }
 
