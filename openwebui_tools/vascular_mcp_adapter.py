@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.4.7
+version: 1.4.8
 """
 import html
 import httpx
@@ -52,6 +52,7 @@ GATE_CONFIRM_LINE = "Reply to confirm, or add details to refine the search."
 
 class Tools:
     LLM_ASSET_MAX_ITEMS = 3
+    BACKEND_HISTORY_MAX_CHARS = 1800
 
     # ------------------------------------------------------------------ #
     # Lightweight phase-detection heuristics                             #
@@ -377,7 +378,10 @@ class Tools:
     def _extract_history(self, messages: Optional[list], current_question: str = "") -> list:
         history = []
         for message in messages or []:
-            text = self._message_text(message) if isinstance(message, dict) else str(message or "")
+            if isinstance(message, dict):
+                text = self._prepare_backend_history_text(message)
+            else:
+                text = self._truncate_backend_history_text(str(message or ""))
             text = text.strip()
             if text:
                 history.append(text)
@@ -387,6 +391,37 @@ class Tools:
             history = history[:-1]
 
         return history[-20:]
+
+    def _prepare_backend_history_text(self, message: dict) -> str:
+        text = self._message_text(message)
+        if not text:
+            return ""
+
+        if self._message_role(message) == "assistant":
+            text = self._strip_backend_history_noise(text)
+
+        return self._truncate_backend_history_text(text)
+
+    def _strip_backend_history_noise(self, text: str) -> str:
+        cleaned = text or ""
+        for marker in ("🖼️ Figures / Tables", "=== FIGURES / TABLES", "[![", "\n[Full-size]("):
+            if marker in cleaned:
+                cleaned = cleaned.split(marker, 1)[0].rstrip()
+
+        cleaned = re.sub(r"(?m)^Retrieved \d+ chunks[^\n]*\n?", "", cleaned).strip()
+        return cleaned
+
+    def _truncate_backend_history_text(self, text: str) -> str:
+        content = (text or "").strip()
+        if len(content) <= self.BACKEND_HISTORY_MAX_CHARS:
+            return content
+
+        window = content[: self.BACKEND_HISTORY_MAX_CHARS]
+        boundary = max(window.rfind("\n\n"), window.rfind("\n- "), window.rfind(". "))
+        if boundary >= int(self.BACKEND_HISTORY_MAX_CHARS * 0.6):
+            content = window[:boundary].rstrip()
+
+        return self._truncate_for_llm(content, self.BACKEND_HISTORY_MAX_CHARS)
 
     def _conversation_entries(self, messages: Optional[list], current_question: str = "") -> list:
         entries = []
@@ -564,6 +599,7 @@ class Tools:
         return {
             "Authorization": f"Bearer {self.valves.VASCULAR_API_KEY}",
             "Content-Type": "application/json",
+            "Accept": "application/json",
         }
 
     async def _post_backend(self, path: str, payload: dict, timeout: float = 120.0) -> dict:
