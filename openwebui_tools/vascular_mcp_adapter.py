@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.4.8
+version: 1.4.9
 """
 import html
 import httpx
@@ -1125,12 +1125,41 @@ class Tools:
         __event_emitter__: Callable[[dict], Awaitable[None]] = None,
     ) -> str:
         """
-        Consult ESVS Vascular Guidelines.
-        Select 1-3 guidelines based on the clinical question.
-        Call this tool for any vascular surgery clinical or guideline question.
-        Select guidelines matching the anatomical territory and acuity.
-        Add antithrombotic_therapy ONLY when the question specifically concerns
-        anticoagulation or antithrombotic decisions.
+        Consult ESVS Vascular Guidelines. Select 1-3 guidelines based on the clinical question.
+
+        CRITICAL: Call this tool for concrete vascular clinical/guideline questions:
+        1. ANY vascular surgery question, whether it is a first question or a follow-up.
+        2. ANY follow-up question in an ongoing vascular case or guideline discussion, including
+           short or implicit same-case turns such as:
+           - "10 days later the new imaging shows development of a pseudoaneurysm"
+           - "Would you consider stenting given that this is a child?"
+           - "What about asymptomatic?"
+           - "Can I use apixaban instead?"
+           ALWAYS call this tool. NEVER answer from a prior tool result in history.
+           A prior Clinical Query Checkpoint or 🩺 Clinical Synthesis is NOT a reason to skip retrieval.
+           Each new question may require fresh retrieval or change detection by the backend.
+        3. If the immediately prior assistant turn was a clarification gate / Clinical Query Checkpoint,
+           and the user replies with short clinical details, still call this tool again using the
+           current user reply. The adapter will route it through confirmation/change detection.
+        4. If the user asks whether a proposed plan, interpretation, or intervention is guideline-consistent,
+           call this tool again even if the case was already discussed.
+        5. Regeneration rule: if you are regenerating or re-answering a question where guideline retrieval
+           already succeeded, call this tool again. Do not answer from the prior tool result alone.
+
+        DO NOT CALL THIS TOOL for general onboarding/capability questions such as:
+        - "How can you help me?"
+        - "Can this app help me?"
+        - "What does this app do?"
+        In those cases, use explain_app_capabilities instead if available.
+
+        SELECTION RULES:
+        1. Match anatomical territory first.
+        2. Consider acuity and symptomatic status.
+        3. Add companion guidelines if the case spans domains.
+        4. Add antithrombotic_therapy ONLY when the question specifically concerns
+           anticoagulation or antithrombotic decisions.
+        5. Use prior chat history to interpret terse follow-up questions in the same case.
+           Do not treat a short follow-up as out-of-scope just because the current turn is brief.
 
         GUIDELINE REFERENCE:
         - aortic_arch: Arch aneurysm, Zone 0-2, FET, hybrid arch repair (NOT dissection management)

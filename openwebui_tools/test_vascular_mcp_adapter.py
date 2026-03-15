@@ -133,6 +133,21 @@ class VascularMcpAdapterHeuristicTests(unittest.TestCase):
         self.assertEqual("application/json", headers["Accept"])
         self.assertEqual("application/json", headers["Content-Type"])
 
+    def test_tool_description_forces_fresh_tool_calls_for_follow_ups(self):
+        doc = Tools.consult_vascular_guidelines.__doc__ or ""
+        self.assertIn("ANY follow-up question in an ongoing vascular case or guideline discussion", doc)
+        self.assertIn("NEVER answer from a prior tool result in history", doc)
+        self.assertIn("Each new question may require fresh retrieval or change detection by the backend", doc)
+        self.assertIn("Would you consider stenting given that this is a child?", doc)
+
+    def test_tool_description_tells_model_to_use_history_for_terse_follow_ups(self):
+        doc = Tools.consult_vascular_guidelines.__doc__ or ""
+        self.assertIn("Use prior chat history to interpret terse follow-up questions in the same case", doc)
+        self.assertIn(
+            "If the immediately prior assistant turn was a clarification gate / Clinical Query Checkpoint",
+            doc,
+        )
+
     def test_extract_history_trims_long_assistant_answers_for_backend_validation(self):
         long_answer = (
             "Checking whether the new detail changes the stored retrieval...\n"
