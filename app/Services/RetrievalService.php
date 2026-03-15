@@ -632,6 +632,17 @@ class RetrievalService
             }
         }
 
+        if (
+            ($config['vgei_definitive_treatment_enabled'] ?? true)
+            && $this->isVgeiDefinitiveTreatmentQuery($query, $selectedGuidelines)
+        ) {
+            $termsByChannel = $config['vgei_definitive_treatment_terms'] ?? [];
+            $channelTerms = $termsByChannel[$channel] ?? [];
+            if (is_array($channelTerms) && !empty($channelTerms)) {
+                $query = $this->appendUniqueTerms($query, array_map('strval', $channelTerms));
+            }
+        }
+
         // Universal multi-guideline anchor boost: when backend selected >1 guideline,
         // append a small set of representative terms from each guideline to improve
         // cross-guideline recall while keeping the query compact.
@@ -688,6 +699,22 @@ class RetrievalService
             return false;
         }
 
+        $managementPatterns = [
+            '/\bdefinitive\s+treatment\b/u',
+            '/\bdefinite\s+treatment\b/u',
+            '/\b(best|optimal)\s+management\b/u',
+            '/\bwhat\s+is\s+the\s+(?:best\s+|recommended\s+|definitive\s+|definite\s+)?(treatment|management|repair|operation|intervention|surgical\s+option)\b/u',
+            '/\bwhat\s+is\s+(?:the\s+)?indication\s+for\b/u',
+            '/\bshould\s+(?:i|we)\b/u',
+            '/\bwhen\s+should\b/u',
+        ];
+
+        foreach ($managementPatterns as $pattern) {
+            if (preg_match($pattern, $q) === 1) {
+                return false;
+            }
+        }
+
         $patterns = [
             '/\bwhat\s+is\b/u',
             '/\bwhat\s+does\b/u',
@@ -724,6 +751,28 @@ class RetrievalService
         return preg_match($durationPattern, $query) === 1
             || preg_match($reversedPattern, $query) === 1
             || preg_match($recanalPattern, $query) === 1;
+    }
+
+    protected function isVgeiDefinitiveTreatmentQuery(string $query, array $selectedGuidelines): bool
+    {
+        $normalized = $this->normalizeBoostText($query);
+
+        $hasDefinitiveCue = preg_match(
+            '/\b(definitive|definite|curative|explant(?:ation)?|reconstruct(?:ion|ive)?|graft excision|oesophageal repair|esophageal repair|viable tissue)\b/u',
+            $normalized
+        ) === 1;
+
+        if (!$hasDefinitiveCue) {
+            return false;
+        }
+
+        $hasVgeiGuideline = in_array('vascular_graft_infections', $selectedGuidelines, true);
+        $hasComplicationContext = preg_match(
+            '/\b(graft infection|endograft infection|infected graft|infected endograft|aorto oesophageal fistula|aortobronchial fistula|vascular graft endograft infection|vascular graft infection)\b/u',
+            $normalized
+        ) === 1;
+
+        return $hasVgeiGuideline || $hasComplicationContext;
     }
 
     protected function isRecommendationIntent(string $question): bool
@@ -859,6 +908,15 @@ class RetrievalService
         }
 
         return $anchors;
+    }
+
+    protected function normalizeBoostText(string $text): string
+    {
+        $normalized = mb_strtolower($text);
+        $normalized = preg_replace('/[^\p{L}\p{N}]+/u', ' ', $normalized) ?? $normalized;
+        $normalized = preg_replace('/\s+/u', ' ', trim($normalized)) ?? trim($normalized);
+
+        return $normalized;
     }
 
     protected function chunksContainPattern(array $chunks, string $pattern, array $fields): bool

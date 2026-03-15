@@ -759,6 +759,8 @@ class GuidelineAssetService
             'definition' => str_starts_with($normalized, 'what is ')
                 || (bool) preg_match('/\b(define|definition|defined|classification|classify|staging|stage|grading|grade|diagram|anatomy|measurement)\b/', $normalized),
             'procedure' => (bool) preg_match('/\b(procedure|technique|steps|perform|deployment|endarterectomy|stenting|angioplasty)\b/', $normalized),
+            'diagnostic' => (bool) preg_match('/\b(imaging|image|diagnostic|diagnosis|diagnose|workup|cta|mra|duplex|ultrasound|pet|spect|modality)\b/', $normalized),
+            'definitive_treatment' => (bool) preg_match('/\b(definitive|definite|reconstruction|reconstruct|reconstructive|explant|explantation|conduit|flap|bridge|curative|repair)\b/', $normalized),
         ];
     }
 
@@ -777,17 +779,40 @@ class GuidelineAssetService
         $subtype = strtolower((string) ($asset['subtype'] ?? ''));
         $contentOverlap = $this->countMeaningfulTokenOverlap($questionTokens, $termFreq);
         $semanticBoost = $contentOverlap * 0.7;
+        $hasManagementSignal = $this->containsAnyPhrase($assetText, [
+            'management',
+            'algorithm',
+            'flowchart',
+            'pathway',
+            'strategy',
+            'recommend',
+            'treatment algorithm',
+        ]);
+        $hasDiagnosticSignal = $this->containsAnyPhrase($assetText, [
+            'imaging',
+            'diagnostic',
+            'diagnosis',
+            'workup',
+            'modality',
+            'sensitivity',
+            'specificity',
+            'cta',
+            'mra',
+            'pet',
+            'spect',
+        ]);
+        $hasDefinitiveSignal = $this->containsAnyPhrase($assetText, [
+            'explant',
+            'reconstruction',
+            'reconstruct',
+            'definitive treatment',
+            'repair of the oesophagus',
+            'repair of the esophagus',
+            'viable tissue',
+            'fistula',
+        ]);
 
         if ($questionIntent['management']) {
-            $hasManagementSignal = $this->containsAnyPhrase($assetText, [
-                'management',
-                'algorithm',
-                'flowchart',
-                'pathway',
-                'strategy',
-                'recommend',
-            ]);
-
             if ($subtype === 'flowchart' && $contentOverlap >= 2) {
                 $semanticBoost += 2.5;
             }
@@ -796,6 +821,17 @@ class GuidelineAssetService
             }
             if ($hasManagementSignal) {
                 $semanticBoost += $contentOverlap >= 2 ? 3.0 : ($contentOverlap === 1 ? 1.0 : 0.0);
+            }
+            if (($hasManagementSignal || $hasDefinitiveSignal) && $subtype === 'flowchart' && $contentOverlap >= 1) {
+                $semanticBoost += 1.5;
+            }
+            if ($questionIntent['definitive_treatment']) {
+                if ($hasDefinitiveSignal) {
+                    $semanticBoost += $contentOverlap >= 1 ? 4.0 : 2.0;
+                }
+                if ($hasDiagnosticSignal && !$hasDefinitiveSignal) {
+                    $semanticBoost -= 4.0;
+                }
             }
             if ($contentOverlap === 0) {
                 $semanticBoost -= 2.0;
@@ -808,9 +844,18 @@ class GuidelineAssetService
             }
             if (
                 !$hasManagementSignal
-                && $this->containsAnyPhrase($assetText, ['imaging', 'diagnostic', 'diagnosis', 'workup', 'modality', 'sensitivity', 'specificity', 'measurement'])
+                && $hasDiagnosticSignal
             ) {
                 $semanticBoost -= 3.0;
+            }
+        }
+
+        if ($questionIntent['diagnostic']) {
+            if ($hasDiagnosticSignal) {
+                $semanticBoost += $contentOverlap >= 1 ? 3.0 : 1.0;
+            }
+            if (($hasManagementSignal || $hasDefinitiveSignal) && !$hasDiagnosticSignal) {
+                $semanticBoost -= 1.0;
             }
         }
 

@@ -197,6 +197,50 @@ class ChunkSelectionServiceTest extends TestCase
             'Front-matter narrative chunk should score lower due to penalty');
     }
 
+    public function test_rank_by_intent_prefers_definitive_treatment_vgei_recommendation(): void
+    {
+        $definitive = [
+            'recommendation_id' => '29',
+            'guideline' => 'Management of Vascular Graft and Endograft Infections',
+            'text' => 'For patients with aorto-oesophageal fistula complicating thoracic/thoraco-abdominal vascular graft/endograft infection, explantation of the infected material, repair of the oesophagus, and coverage with viable tissue is recommended as definitive treatment.',
+            'class' => 'I',
+            'level' => 'B',
+        ];
+        $bridge = [
+            'recommendation_id' => '30',
+            'guideline' => 'Management of Vascular Graft and Endograft Infections',
+            'text' => 'In the emergency setting with active bleeding complicating thoracic/thoraco-abdominal vascular graft/endograft infection with an aorto-oesophageal fistula, initial treatment with an aortic endograft, as a bridge to definitive treatment, should be considered.',
+            'class' => 'IIa',
+            'level' => 'B',
+        ];
+        $genericTevar = [
+            'recommendation_id' => '64',
+            'guideline' => 'Management of Descending Thoracic and Thoraco-Abdominal Aortic Diseases',
+            'text' => 'Thoracic endovascular aortic repair is recommended as the first line surgical treatment option in patients with descending thoracic aortic aneurysms.',
+            'class' => 'I',
+            'level' => 'B',
+        ];
+
+        $profile = $this->svc->buildIntentProfile([
+            'intent' => 'management',
+            'question_type' => 'treatment_decision',
+            'key_terms' => [
+                'aorto-oesophageal fistula',
+                'infected graft',
+                'definitive treatment',
+                'explantation',
+                'reconstruction',
+            ],
+            'normalized_query' => 'What is the definitive treatment after TEVAR for aorto-oesophageal fistula with infected thoracic endograft?',
+        ]);
+
+        $ranked = $this->svc->rankByIntent([$genericTevar, $bridge, $definitive], 'citation', $profile);
+        $ids = array_column($ranked, 'recommendation_id');
+
+        $this->assertSame('29', $ids[0]);
+        $this->assertSame(['29', '30', '64'], $ids);
+    }
+
     // ── diversify ─────────────────────────────────────────────────────────
 
     /**
@@ -427,6 +471,52 @@ class ChunkSelectionServiceTest extends TestCase
         $this->assertArrayHasKey('ui_narrative_chunks',  $result);
         $this->assertArrayHasKey('must_include_chunk',   $result);
         $this->assertArrayHasKey('intent_profile',       $result);
+    }
+
+    public function test_select_prioritizes_definitive_treatment_citation_in_multi_guideline_case(): void
+    {
+        $citations = [
+            [
+                'recommendation_id' => '64',
+                'guideline' => 'Management of Descending Thoracic and Thoraco-Abdominal Aortic Diseases',
+                'text' => 'Thoracic endovascular aortic repair is recommended as the first line surgical treatment option in patients with descending thoracic aortic aneurysms.',
+                'class' => 'I',
+                'level' => 'B',
+            ],
+            [
+                'recommendation_id' => '30',
+                'guideline' => 'Management of Vascular Graft and Endograft Infections',
+                'text' => 'In the emergency setting with active bleeding complicating thoracic/thoraco-abdominal vascular graft/endograft infection with an aorto-oesophageal fistula, initial treatment with an aortic endograft, as a bridge to definitive treatment, should be considered.',
+                'class' => 'IIa',
+                'level' => 'B',
+            ],
+            [
+                'recommendation_id' => '29',
+                'guideline' => 'Management of Vascular Graft and Endograft Infections',
+                'text' => 'For patients with aorto-oesophageal fistula complicating thoracic/thoraco-abdominal vascular graft/endograft infection, explantation of the infected material, repair of the oesophagus, and coverage with viable tissue is recommended as definitive treatment.',
+                'class' => 'I',
+                'level' => 'B',
+            ],
+        ];
+
+        $norm = [
+            'intent' => 'management',
+            'question_type' => 'treatment_decision',
+            'key_terms' => [
+                'aorto-oesophageal fistula',
+                'infected graft',
+                'definitive treatment',
+                'explantation',
+                'reconstruction',
+            ],
+            'normalized_query' => 'What is the definitive treatment after TEVAR for aorto-oesophageal fistula with infected thoracic endograft?',
+        ];
+
+        $result = $this->svc->select($citations, [], $norm, 2);
+
+        $this->assertNotEmpty($result['llm_citation_chunks']);
+        $this->assertSame('29', $result['llm_citation_chunks'][0]['recommendation_id']);
+        $this->assertSame('29', $result['must_include_chunk']['recommendation_id']);
     }
 
     public function test_select_llm_subset_not_larger_than_ui_subset(): void
