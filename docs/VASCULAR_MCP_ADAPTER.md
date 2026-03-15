@@ -1,5 +1,9 @@
 # Vascular MCP Adapter — Architecture & Layered Responsibilities
 
+Current production state for the March 15, 2026 two-phase clarification flow is documented in `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/docs/SESSION_CHANGES_2026-03-15.md`.
+
+This file is still useful as a layered reference, but parts of the earlier gate description below are now historical because the adapter moved to Laravel-backed pre-retrieval plus confirmation/change-detection orchestration.
+
 This document describes the `vascular_mcp_adapter` OpenWebUI tool introduced in March 2026:
 what it does at each layer (OpenWebUI, Laravel, RAGFlow), how it differs from the production
 `vascular_expert.py` tool, and how to deploy and configure it.
