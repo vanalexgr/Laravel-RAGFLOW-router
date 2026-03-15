@@ -42,12 +42,14 @@ class ChangeDetectionServiceTest extends TestCase
             'decision' => 'requery',
             'reason' => 'different diagnosis',
             'enriched_query' => 'type b aortic dissection thoracic aorta acute management',
+            'updated_guidelines' => ['descending_thoracic_aorta'],
         ]));
 
         $result = $service->detect('actually this is a type B dissection not AAA', $this->originalResult());
 
         $this->assertSame('requery', $result->decision);
         $this->assertNotNull($result->enrichedQuery);
+        $this->assertSame(['descending_thoracic_aorta'], $result->updatedGuidelines);
     }
 
     public function test_new_anatomical_territory_requires_requery(): void
@@ -101,6 +103,49 @@ class ChangeDetectionServiceTest extends TestCase
         $this->assertNull($result->enrichedQuery);
     }
 
+    public function test_clti_clarification_forces_requery_without_waiting_for_llm(): void
+    {
+        $client = new class implements LlmClient
+        {
+            public bool $called = false;
+
+            public function complete(string $prompt, int $maxTokens = 150, float $temperature = 0): string
+            {
+                $this->called = true;
+
+                return json_encode([
+                    'decision' => 'reuse',
+                    'reason' => 'should not reach llm',
+                    'enriched_query' => null,
+                    'updated_guidelines' => null,
+                ]);
+            }
+        };
+
+        $service = new ChangeDetectionService($client);
+        $original = PreRetrievalResult::fromArray([
+            'proceed' => true,
+            'soft_warn' => true,
+            'clarification_questions' => [
+                'Was the revascularization surgical bypass or endovascular intervention?',
+                'Is the patient symptomatic or asymptomatic after the procedure?',
+                'Are there any contraindications to antithrombotic therapy?',
+            ],
+            'provisional_diagnosis' => 'Post lower limb revascularization in peripheral arterial disease requiring guidance on optimal antithrombotic therapy.',
+            'guidelines' => ['antithrombotic_therapy', 'asymptomatic_pad'],
+            'retrieval_query' => 'antithrombotic therapy after lower limb revascularization for peripheral arterial disease surgical or endovascular management',
+            'scope' => 'multi_guideline',
+            'confirmation_message' => 'Clinical Query Checkpoint',
+        ]);
+
+        $result = $service->detect('distal bypass with vein done for tissue loss and rest pain. None', $original);
+
+        $this->assertSame('requery', $result->decision);
+        $this->assertSame(['antithrombotic_therapy', 'clti'], $result->updatedGuidelines);
+        $this->assertStringContainsString('chronic limb threatening ischemia', (string) $result->enrichedQuery);
+        $this->assertFalse($client->called);
+    }
+
     public function test_prompt_includes_original_clarification_questions_for_follow_up_answers(): void
     {
         $client = new class implements LlmClient
@@ -145,6 +190,7 @@ class ChangeDetectionServiceTest extends TestCase
             "Prefer 'reuse' when the original provisional diagnosis and guideline set",
             $client->prompt
         );
+        $this->assertStringContainsString('updated_guidelines', $client->prompt);
     }
 
     private function makeServiceWithResponse(string $response): ChangeDetectionService

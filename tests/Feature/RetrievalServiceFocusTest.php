@@ -30,6 +30,11 @@ class RetrievalServiceFocusTest extends TestCase
             {
                 return $this->isDefinitionIntent($question);
             }
+
+            public function guardrailsForTest(array $selectedGuidelines, string $question): array
+            {
+                return $this->applyGuardrails($selectedGuidelines, $question);
+            }
         };
     }
 
@@ -139,5 +144,41 @@ class RetrievalServiceFocusTest extends TestCase
         $service = $this->makeService();
 
         $this->assertTrue($service->definitionIntentForTest('What is TAP?'));
+    }
+
+    public function test_clti_context_prevents_asymptomatic_pad_guardrail_from_being_added(): void
+    {
+        $service = $this->makeService();
+
+        $selected = [
+            'antithrombotic_therapy' => ['name' => 'Antithrombotic Therapy'],
+            'clti' => ['name' => 'Chronic Limb-Threatening Ischemia'],
+        ];
+
+        $guarded = $service->guardrailsForTest(
+            $selected,
+            'antithrombotic therapy after distal bypass with vein for peripheral arterial disease with tissue loss and rest pain'
+        );
+
+        $this->assertArrayHasKey('antithrombotic_therapy', $guarded);
+        $this->assertArrayHasKey('clti', $guarded);
+        $this->assertArrayNotHasKey('asymptomatic_pad', $guarded);
+    }
+
+    public function test_complex_juxtarenal_aneurysm_adds_thoracic_companion_guideline(): void
+    {
+        $service = $this->makeService();
+
+        $selected = [
+            'abdominal_aortic_aneurysm' => ['name' => 'Abdominal Aortic Aneurysm'],
+        ];
+
+        $guarded = $service->guardrailsForTest(
+            $selected,
+            'symptomatic juxtarenal aneurysm urgent management open repair versus endovascular repair'
+        );
+
+        $this->assertArrayHasKey('abdominal_aortic_aneurysm', $guarded);
+        $this->assertArrayHasKey('descending_thoracic_aorta', $guarded);
     }
 }

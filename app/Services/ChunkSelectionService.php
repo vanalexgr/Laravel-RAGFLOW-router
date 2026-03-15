@@ -70,11 +70,16 @@ class ChunkSelectionService
 
         // 6. Must-include: force the highest-scoring citation into the LLM set
         $keyTerms = $profile['key_terms'] ?? [];
-        [$mustInclude, $mustScore] = $this->findMustInclude($diverseCitations, $keyTerms);
+        [$mustInclude, $mustScore] = $this->findMustInclude($diverseCitations, $keyTerms, $profile);
         $minScore = (int) config('chunk_scoring.scoring.must_include_min_score', 1);
         if ($mustInclude !== null && $mustScore >= $minScore) {
             $llmCitations = $this->forceInclude($llmCitations, $mustInclude, 'citation', $caps['llm_rec']);
         }
+
+        // Coverage seeding is useful, but the final LLM-facing set should still
+        // be ordered by relevance so the best supporting recommendations lead.
+        $llmCitations = $this->rankByIntent($llmCitations, 'citation', $profile);
+        $llmNarrative = $this->rankByIntent($llmNarrative, 'narrative', $profile);
 
         Log::channel('retrieval')->debug('[CHUNK SELECTION] Tiers computed', [
             'guideline_count'      => $guidelineCount,
@@ -272,6 +277,33 @@ class ChunkSelectionService
             }
             if ($bridgeMatch && !$directMatch) {
                 $score += (int) ($w['definitive_treatment_bridge_penalty'] ?? -4);
+            }
+        }
+
+        if ($kind === 'citation' && $this->isComplexAaaFocus($profile)) {
+            $normalizedText = $this->normalizePhraseText($text);
+            $directMatches = $this->countConfiguredTermMatches($normalizedText, 'chunk_scoring.complex_aaa_direct_terms');
+            $contextMatches = $this->countConfiguredTermMatches($normalizedText, 'chunk_scoring.complex_aaa_context_terms');
+            $primaryAnatomyMatches = $this->countConfiguredTermMatches($normalizedText, 'chunk_scoring.complex_aaa_primary_anatomy_terms');
+            $mismatchMatch = $this->matchesConfiguredTerms($normalizedText, 'chunk_scoring.complex_aaa_mismatch_terms');
+
+            if ($directMatches > 0) {
+                $directWeight = (int) ($w['complex_aaa_direct_match'] ?? 9);
+                $score += $directWeight;
+                $score += max(0, $directMatches - 1) * max(1, intdiv($directWeight, 3));
+            }
+            if ($contextMatches > 0) {
+                $contextWeight = (int) ($w['complex_aaa_context_match'] ?? 4);
+                $score += $contextWeight;
+                $score += max(0, $contextMatches - 1) * max(1, intdiv($contextWeight, 2));
+            }
+            if ($primaryAnatomyMatches > 0) {
+                $primaryWeight = (int) ($w['complex_aaa_primary_anatomy_match'] ?? 6);
+                $score += $primaryWeight;
+                $score += max(0, $primaryAnatomyMatches - 1) * max(1, intdiv($primaryWeight, 3));
+            }
+            if ($mismatchMatch && $directMatches === 0) {
+                $score += (int) ($w['complex_aaa_mismatch_penalty'] ?? -6);
             }
         }
 
@@ -547,7 +579,7 @@ class ChunkSelectionService
      * Returns [chunk|null, score].
      * Port of _find_must_include_citation.
      */
-    public function findMustInclude(array $chunks, array $keyTerms): array
+    public function findMustInclude(array $chunks, array $keyTerms, array $profile = []): array
     {
         $best      = null;
         $bestScore = 0;
@@ -555,8 +587,10 @@ class ChunkSelectionService
             if (!is_array($chunk)) {
                 continue;
             }
-            $text  = $this->chunkTextForScoring($chunk, 'citation');
-            $score = $this->termMatchScore($text, $keyTerms);
+            $text = $this->chunkTextForScoring($chunk, 'citation');
+            $score = !empty($profile)
+                ? $this->scoreChunk($chunk, 'citation', $profile)
+                : $this->termMatchScore($text, $keyTerms);
             if ($score > $bestScore) {
                 $best      = $chunk;
                 $bestScore = $score;
@@ -715,6 +749,26 @@ class ChunkSelectionService
             && $this->matchesConfiguredTerms($normalized, 'chunk_scoring.definitive_treatment_context_terms');
     }
 
+    private function isComplexAaaFocus(array $profile): bool
+    {
+        $query = (string) ($profile['combined_query'] ?? '');
+        $keyTerms = implode(' ', array_map('strval', (array) ($profile['key_terms'] ?? [])));
+        $normalized = $this->normalizePhraseText(trim($query . ' ' . $keyTerms));
+
+        if ($normalized === '') {
+            return false;
+        }
+
+        if (!$this->matchesConfiguredTerms($normalized, 'chunk_scoring.complex_aaa_focus_terms')) {
+            return false;
+        }
+
+        return (bool) preg_match(
+            '/\b(symptomatic|urgent|urgently|impending rupture|rupture|ruptured|best management|open repair|endovascular repair|stable)\b/u',
+            $normalized
+        );
+    }
+
     private function matchesConfiguredTerms(string $text, string $configKey): bool
     {
         foreach ((array) config($configKey, []) as $term) {
@@ -725,6 +779,20 @@ class ChunkSelectionService
         }
 
         return false;
+    }
+
+    private function countConfiguredTermMatches(string $text, string $configKey): int
+    {
+        $count = 0;
+
+        foreach ((array) config($configKey, []) as $term) {
+            $normalizedTerm = $this->normalizePhraseText((string) $term);
+            if ($normalizedTerm !== '' && str_contains($text, $normalizedTerm)) {
+                $count++;
+            }
+        }
+
+        return $count;
     }
 
     private function normalizePhraseText(string $text): string

@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.4.13
+version: 1.4.15
 """
 import html
 import httpx
@@ -737,6 +737,47 @@ class Tools:
 
         return self._is_answer_only_turn(question)
 
+    async def _resume_pending_gate_follow_up(
+        self,
+        question: str,
+        messages: Optional[list],
+        user: Optional[dict] = None,
+        metadata: Optional[dict] = None,
+        emitter=None,
+    ) -> Optional[str]:
+        if not self._can_reuse_pending_gate(question, messages):
+            return None
+
+        session_key = self._get_session_key(user, metadata)
+        session = self._get_session(session_key)
+        guidelines = []
+
+        if session:
+            pre_result = session.get("pre_result") or {}
+            if isinstance(pre_result, dict):
+                guidelines = list(pre_result.get("guidelines") or [])
+
+        if not guidelines:
+            recovered = await self._recover_pre_result_from_history(question, messages, [])
+            if recovered:
+                pre_result = recovered.get("pre_result") or {}
+                if isinstance(pre_result, dict):
+                    guidelines = list(pre_result.get("guidelines") or [])
+
+        if not guidelines:
+            return None
+
+        return await self.consult_vascular_guidelines(
+            question=question,
+            guideline_1=guidelines[0],
+            guideline_2=guidelines[1] if len(guidelines) > 1 else None,
+            guideline_3=guidelines[2] if len(guidelines) > 2 else None,
+            __user__=user or {},
+            __messages__=messages or [],
+            __metadata__=metadata or {},
+            __event_emitter__=emitter,
+        )
+
     def _store_session(
         self,
         session_key: str,
@@ -1424,6 +1465,8 @@ class Tools:
         self,
         question: str = "",
         __messages__: list = [],
+        __user__: dict = {},
+        __metadata__: dict = {},
         __event_emitter__: Callable[[dict], Awaitable[None]] = None,
     ) -> str:
         """
@@ -1439,6 +1482,14 @@ class Tools:
 
         Do NOT use this tool for a concrete vascular clinical question. For vascular
         guideline questions, use consult_vascular_guidelines instead.
+        Do NOT use this tool for short clinical clarification replies after a
+        Clinical Query Checkpoint. Those are still same-case vascular follow-ups
+        and must continue through consult_vascular_guidelines.
+        Do NOT use this tool for recommendation-detail follow-ups within the same
+        vascular case, such as:
+        - "Provide class and level of recommendations"
+        - "Give me the recommendation numbers"
+        - "Which recommendations did you use?"
         """
         emitter = __event_emitter__
         if (not question) and __messages__:
@@ -1447,6 +1498,16 @@ class Tools:
                     question = msg["content"].strip()
                     if question:
                         break
+
+        resumed = await self._resume_pending_gate_follow_up(
+            question,
+            __messages__,
+            __user__,
+            __metadata__,
+            emitter,
+        )
+        if resumed is not None:
+            return resumed
 
         guardrail_type = self._guardrail_type(question, __messages__) or "capabilities_onboarding"
         await self._emit_status(emitter, "Providing app usage guidance...")
@@ -1477,6 +1538,9 @@ class Tools:
            - "10 days later the new imaging shows development of a pseudoaneurysm"
            - "Would you consider stenting given that this is a child?"
            - "What is the definite treatment after TEVAR is in place?"
+           - "Provide class and level of recommendations"
+           - "Give me the recommendation numbers"
+           - "Which recommendations did you use?"
            - "What about asymptomatic?"
            - "Can I use apixaban instead?"
            ALWAYS call this tool. NEVER answer from a prior tool result in history.
@@ -1531,6 +1595,7 @@ class Tools:
 
         VALID JSON EXAMPLES:
         {"tool_calls":[{"name":"consult_vascular_guidelines","parameters":{"question":"What is the definite treatment after TEVAR is in place?","guideline_1":"vascular_graft_infections","guideline_2":"descending_thoracic_aorta","guideline_3":null}}]}
+        {"tool_calls":[{"name":"consult_vascular_guidelines","parameters":{"question":"Provide class and level of recommendations","guideline_1":"abdominal_aortic_aneurysm","guideline_2":"descending_thoracic_aorta","guideline_3":null}}]}
         {"tool_calls":[{"name":"consult_vascular_guidelines","parameters":{"question":"Would you consider stenting given that this is a child?","guideline_1":"vascular_trauma","guideline_2":"carotid_vertebral","guideline_3":null}}]}
 
         :param question: The clinical question
@@ -1545,14 +1610,13 @@ class Tools:
         session_key = self._get_session_key(__user__, __metadata__)
         session = self._get_session(session_key)
         try:
-            guardrail_type = self._guardrail_type(question, __messages__)
+            can_reuse_pending_gate = self._can_reuse_pending_gate(question, __messages__)
+            guardrail_type = None if can_reuse_pending_gate else self._guardrail_type(question, __messages__)
             if guardrail_type is not None:
                 await self._emit_status(emitter, "Providing app usage guidance...", done=True)
                 return self._format_capabilities_for_model(
                     self._capabilities_response(question, guardrail_type)
                 )
-
-            can_reuse_pending_gate = self._can_reuse_pending_gate(question, __messages__)
 
             if session and self._should_treat_as_new_query(question, session) and not can_reuse_pending_gate:
                 self._clear_session(session_key, cancel_task=True)

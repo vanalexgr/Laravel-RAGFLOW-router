@@ -1549,6 +1549,23 @@ class RetrievalService
             }
         }
 
+        if (
+            isset($selectedGuidelines['abdominal_aortic_aneurysm'])
+            && !isset($selectedGuidelines['descending_thoracic_aorta'])
+            && $this->isComplexAaaContext($questionLower)
+            && isset($registry['descending_thoracic_aorta'])
+        ) {
+            $selectedGuidelines['descending_thoracic_aorta'] = $registry['descending_thoracic_aorta'];
+            $modified = true;
+            $log->info('[GUARDRAIL] Added descending_thoracic_aorta because complex AAA context needs thoracic companion coverage');
+        }
+
+        if (isset($selectedGuidelines['clti']) && isset($selectedGuidelines['asymptomatic_pad'])) {
+            unset($selectedGuidelines['asymptomatic_pad']);
+            $modified = true;
+            $log->info('[GUARDRAIL] Removed asymptomatic_pad because CLTI context takes precedence');
+        }
+
         // Enforce max 3 guidelines
         if (count($selectedGuidelines) > 3) {
             $keys = array_keys($selectedGuidelines);
@@ -1587,6 +1604,17 @@ class RetrievalService
         }
 
         return str_contains($questionLower, $term);
+    }
+
+    protected function isComplexAaaContext(string $questionLower): bool
+    {
+        return preg_match(
+            '/\b(juxtarenal|pararenal|paravisceral|suprarenal|complex\s+aaa|fenestrated|branched|fevar|bevar|fbevar)\b/iu',
+            $questionLower
+        ) === 1 && preg_match(
+            '/\b(aneurysm|aaa|abdominal\s+aortic)\b/iu',
+            $questionLower
+        ) === 1;
     }
 
     /**

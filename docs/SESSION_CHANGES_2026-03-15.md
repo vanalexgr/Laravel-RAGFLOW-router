@@ -194,6 +194,119 @@ Adapter versions deployed during this session:
 - `1.4.6`: removed duplicate gate status emission
 - `1.4.7`: refreshed gate appearance and added compatibility for icon-based gate detection
 - `1.4.8`: fixed follow-up `302` errors by sending JSON `Accept` headers and trimming oversized backend history
+- `1.4.9`: forced same-case follow-up questions back through the tool and retrieval path
+- `1.4.10`: introduced the newer structured answer blueprint (`## Bottom Line`, `## Evidence Used`, `## 🖼️ Figures / Tables`)
+- `1.4.11`: hardened tool-selection wording for same-case definitive-treatment follow-ups
+- `1.4.13`: restored and exported `explain_app_capabilities` for out-of-scope, onboarding, and prompt-injection requests
+- `1.4.14`: prevented pending clarification replies from being misrouted into app-capabilities guidance
+- `1.4.15`: explicitly treated recommendation-detail follow-ups such as `Provide class and level of recommendations` as mandatory same-case tool calls
+
+## Additional Production Changes Later In The Session
+
+### 1. Gate and change-detection refinement
+
+The Laravel pre-retrieval and confirmation path continued to evolve after the initial two-phase rollout.
+
+Main improvements:
+
+- clarification-gate fallback questions were added for thoracic fistula / haemorrhage scenarios when the LLM returned no sharpening questions
+- saphenous thrombosis clarification logic stopped asking whether a saphenous thrombosis is `superficial or deep`
+- non-A non-B dissection interpretation was normalized earlier so thoracic dissection cases use the correct diagnosis wording, retrieval terms, and guideline mix
+- CLTI clarifications such as `rest pain` and `tissue loss` now force a requery and refresh the guideline set instead of staying on asymptomatic PAD
+- complex juxtarenal / pararenal / fenestrated AAA contexts now add Thoracic Aorta as a companion guideline during both gate analysis and retrieval
+
+Files involved:
+
+- `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/app/Services/PreRetrievalService.php`
+- `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/app/Services/ChangeDetectionService.php`
+- `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/app/Http/Controllers/ToolController.php`
+- `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/app/ValueObjects/ChangeDetectionResult.php`
+- `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/tests/Unit/PreRetrievalServiceTest.php`
+- `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/tests/Unit/ChangeDetectionServiceTest.php`
+- `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/tests/Feature/ConfirmationGuidelineRefreshTest.php`
+
+### 2. Recommendation and citation retrieval tuning
+
+Two retrieval-ranking problems were fixed later in the session.
+
+#### Definitive-treatment VGEI / fistula queries
+
+The system had been over-prioritizing bridge or generic thoracic recommendations for questions about definitive treatment after emergency TEVAR in infected thoracic endograft / aorto-oesophageal fistula scenarios.
+
+Fixes:
+
+- prevented `What is the definitive treatment...` from being misclassified as a definition query
+- added VGEI definitive-treatment query boosts
+- boosted definitive-treatment VGEI citations and penalized bridge-only chunks during chunk scoring
+
+#### Complex urgent juxtarenal AAA queries
+
+The system was retrieving the right urgent complex-AAA recommendations but still letting thoracic companion or generic elective material outrank them in the LLM-facing set.
+
+Fixes:
+
+- added focused complex-AAA scoring cues and mismatch penalties
+- added primary-anatomy weighting for juxtarenal / pararenal / abdominal-complex AAA recommendations
+- changed `must_include` selection to use the full chunk score instead of simple keyword overlap
+- re-ranked the final LLM subset after multi-guideline coverage seeding so the most relevant recommendation leads the synthesis
+
+Files involved:
+
+- `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/app/Services/RetrievalService.php`
+- `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/app/Services/ChunkSelectionService.php`
+- `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/config/chunk_scoring.php`
+- `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/tests/Feature/RetrievalServiceFocusTest.php`
+- `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/tests/Unit/ChunkSelectionServiceTest.php`
+
+### 3. Asset selection improvements
+
+Figure / table selection was tightened so anatomically wrong or workflow-mismatched PNGs are less likely to appear.
+
+Main changes:
+
+- explicit figure / table references still win first, but irrelevant explicit hits are now rejected
+- fallback scoring now understands vascular territory and narrower anatomy anchors
+- definitive-treatment questions now prefer management algorithms over diagnostic imaging workflows
+
+Files involved:
+
+- `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/app/Services/GuidelineAssetService.php`
+- `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/tests/Unit/GuidelineAssetServiceTest.php`
+
+### 4. OpenWebUI prompt and guardrail hardening
+
+The OpenWebUI layer was hardened beyond the first two-phase rollout.
+
+Main changes:
+
+- added a repository copy of the live `gpt-5-chat` system prompt and a deployment helper:
+  - `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/openwebui_tools/gpt5_system_prompt.txt`
+  - `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/push_gpt5_prompt.py`
+- restored the `explain_app_capabilities` tool path for onboarding, out-of-scope, and prompt-injection handling
+- prevented pending gate replies from being diverted into app-capabilities guidance
+- tightened tool-selection wording so recommendation-detail follow-ups re-enter the consult tool
+
+Files involved:
+
+- `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/openwebui_tools/vascular_mcp_adapter.py`
+- `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/openwebui_tools/test_vascular_mcp_adapter.py`
+- `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/openwebui_tools/gpt5_system_prompt.txt`
+- `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/push_gpt5_prompt.py`
+
+### 5. Validation snapshots from the later fixes
+
+Observed successful checks later in the session included:
+
+- local adapter tests:
+  - `python3 -m unittest openwebui_tools.test_vascular_mcp_adapter`
+  - latest observed passing count before final sync: `33` tests
+- Laravel VM retrieval-focused suite:
+  - `php artisan test tests/Unit/ChunkSelectionServiceTest.php tests/Feature/RetrievalServiceFocusTest.php`
+  - final observed result: `37` tests, `92` assertions
+- live Laravel replay for the urgent juxtarenal query:
+  - `LLM: ["129","83","120","128", ...]`
+  - `UI: ["129","83","120","121", ...]`
+  - `must_include = 129`
 
 ## Validation Completed
 

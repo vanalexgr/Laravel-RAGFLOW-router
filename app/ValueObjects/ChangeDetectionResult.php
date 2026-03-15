@@ -8,6 +8,7 @@ class ChangeDetectionResult
         public readonly string $decision,
         public readonly string $reason,
         public readonly ?string $enrichedQuery,
+        public readonly array $updatedGuidelines = [],
     ) {
     }
 
@@ -27,10 +28,24 @@ class ChangeDetectionResult
             $enrichedQuery = null;
         }
 
+        $updatedGuidelines = $data['updated_guidelines'] ?? [];
+        if (!is_array($updatedGuidelines)) {
+            $updatedGuidelines = [];
+        }
+        $updatedGuidelines = array_values(array_unique(array_filter(array_map(
+            fn($guideline) => is_string($guideline) ? trim($guideline) : '',
+            $updatedGuidelines
+        ), fn(string $guideline): bool => $guideline !== '')));
+
+        if ($decision === 'reuse') {
+            $updatedGuidelines = [];
+        }
+
         return new self(
             decision: $decision,
             reason: trim((string) ($data['reason'] ?? '')),
             enrichedQuery: $enrichedQuery,
+            updatedGuidelines: $updatedGuidelines,
         );
     }
 
@@ -40,6 +55,7 @@ class ChangeDetectionResult
             'decision' => $this->decision,
             'reason' => $this->reason,
             'enriched_query' => $this->enrichedQuery,
+            'updated_guidelines' => $this->updatedGuidelines,
         ];
     }
 }
