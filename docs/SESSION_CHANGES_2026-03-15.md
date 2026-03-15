@@ -148,6 +148,27 @@ The adapter was updated to recognize both:
 - the older arrow-style gate messages
 - the new icon-based structured gate messages
 
+### 5. Follow-up 302 redirect fix
+
+Problem:
+
+- some follow-up questions after a completed answer failed with `API error: 302`
+- this happened when the adapter sent a long assistant answer back in `history`
+- Laravel validates `history.*` with `max:2000`
+- without an explicit `Accept: application/json` header, Laravel validation failures could surface as redirects instead of JSON errors
+
+Fix:
+
+- the adapter now sends `Accept: application/json`
+- backend history sent from the adapter is now sanitized for API use:
+  - oversized assistant answers are trimmed before sending
+  - figure/table blocks and other bulky display-only sections are removed from backend history
+
+Result:
+
+- follow-up questions like `What about asymptomatic?` after a long cited answer no longer fail with `302`
+- the exact failing payload from chat `a958cbd5-5162-4566-8546-db68b54a82b3` replays successfully against the live adapter path
+
 ## Live Deployment State
 
 ### Laravel VM
@@ -172,6 +193,7 @@ Adapter versions deployed during this session:
 - `1.4.5`: chat-scoped sessions, restored background retrieval, same-case clarification reuse
 - `1.4.6`: removed duplicate gate status emission
 - `1.4.7`: refreshed gate appearance and added compatibility for icon-based gate detection
+- `1.4.8`: fixed follow-up `302` errors by sending JSON `Accept` headers and trimming oversized backend history
 
 ## Validation Completed
 
@@ -182,7 +204,7 @@ Adapter versions deployed during this session:
 
 Final local adapter result:
 
-- `14` tests passed
+- `16` tests passed
 
 ### Laravel VM validation
 
@@ -211,6 +233,7 @@ Validated directly against live production services:
 - the second turn waits on the already-running background retrieval instead of starting over
 - duplicate gate text in the same assistant bubble was reduced to a single gate instance
 - the live Laravel `pre-retrieval` endpoint returns the icon-based structured gate format
+- the exact follow-up scenario from chat `a958cbd5-5162-4566-8546-db68b54a82b3` now returns a normal clarification gate instead of `API error: 302`
 
 ## Production Backups Created
 
