@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.7
+version: 1.5.8
 """
 import html
 import httpx
@@ -1186,6 +1186,8 @@ class Tools:
         partial_facets = gap_assessment.get("partial_facets") or []
         covered_facets = gap_assessment.get("covered_facets") or []
         gap_summary = (gap_assessment.get("gap_summary") or "").strip()
+        # total_gap: no facets directly covered — ESVS has no applicable evidence at all
+        total_gap = has_gap and not covered_facets
 
         if has_gap:
             gap_label_parts = []
@@ -1199,8 +1201,9 @@ class Tools:
                 gap_status += f" ({gap_detail})"
             gap_status += " — supplementary reasoning section included"
             await self._emit_status(emitter, gap_status, done=False)
-            coverage_label = "PARTIAL / SUPPLEMENTARY"
+            coverage_label = "NONE (total gap — no applicable ESVS recommendations)" if total_gap else "PARTIAL / SUPPLEMENTARY"
         else:
+            total_gap = False
             coverage_label = "FULL"
 
         await self._emit_status(
@@ -1226,11 +1229,19 @@ class Tools:
                 llm_out += f"NOT covered by guidelines: {', '.join(uncovered_facets)}\n"
             if gap_summary:
                 llm_out += f"Gap summary: {gap_summary}\n"
-            llm_out += (
-                "INSTRUCTION: Because has_guideline_gap=true, you MUST produce the "
-                "two-layer answer structure injected in the answer blueprint below. "
-                "Section 4 (SUPPLEMENTARY CLINICAL REASONING) is PERMITTED for this query.\n\n"
-            )
+            if total_gap:
+                llm_out += (
+                    "total_gap=true — NO applicable ESVS recommendation was retrieved for this condition.\n"
+                    "INSTRUCTION: The Guideline-Based Answer section MUST declare 'No applicable ESVS recommendation' "
+                    "and MUST NOT cite recommendations for different conditions. "
+                    "The Clinical Practice Guidance section is the PRIMARY answer for this query.\n\n"
+                )
+            else:
+                llm_out += (
+                    "INSTRUCTION: Because has_guideline_gap=true, you MUST produce the "
+                    "two-layer answer structure injected in the answer blueprint below. "
+                    "Section 4 (SUPPLEMENTARY CLINICAL REASONING) is PERMITTED for this query.\n\n"
+                )
         else:
             llm_out += "=== GUIDELINE COVERAGE ASSESSMENT ===\n"
             llm_out += f"Coverage status: {coverage_label}\n"
@@ -1323,6 +1334,7 @@ class Tools:
             intent_profile,
             bool(assets_block),
             has_gap=has_gap,
+            total_gap=total_gap,
         )
 
         return llm_out
@@ -1491,7 +1503,7 @@ class Tools:
             return "diagnostic"
         return "case"
 
-    def _build_two_layer_blueprint(self, has_assets: bool) -> str:
+    def _build_two_layer_blueprint(self, has_assets: bool, total_gap: bool = False) -> str:
         lines = [
             "=== ANSWER STYLE (MANDATORY) ===",
             "Write clean markdown with short headings and concise bullets.",
@@ -1503,36 +1515,75 @@ class Tools:
             "Produce sections in this EXACT order. Never merge sections.",
             "",
             "## Bottom Line",
-            "2-3 sentence clinical summary integrating both guideline recommendations and supplementary reasoning. No inline tags.",
-            "",
-            "## Guideline-Based Answer",
-            "Use ONLY the retrieved guideline chunks. Include Rec IDs and Class/Level where available.",
-            "State what the guideline directly supports and what it recommends against.",
-            "Do NOT infer, extrapolate, or add clinical reasoning beyond what the chunks state.",
-            "Use inline citations [n] for every fact.",
-            "",
-            "## Guideline Gap",
-            "State clearly which aspects of this query are NOT addressed by the retrieved guidelines.",
-            "Use the gap_summary from the GUIDELINE COVERAGE ASSESSMENT block above.",
-            "Do NOT skip this section when has_guideline_gap=true.",
-            "",
-            "## ⚠️ Supplementary Clinical Reasoning",
-            "Begin with exactly: \"⚠️ Supplementary clinical reasoning — not directly derived from ESVS guidelines\"",
-            "Use ONLY these permitted sub-headings (include only relevant ones):",
-            "- ### Key clinical considerations",
-            "- ### Common practice patterns",
-            "- ### Decision factors",
-            "- ### Specialist input recommended",
-            "- ### Information needed for decision-making",
-            "RULES: Do NOT use phrases like 'ESVS recommends', 'guidelines support', or 'the guideline suggests'.",
-            "Do NOT provide specific dosing, exact timing protocols, or definitive treatment sequences.",
-            "Do NOT tag individual bullets with any model labels — the section headings already identify the type of content.",
-            "End with: \"This reasoning reflects general clinical practice and should be interpreted with clinical judgement.\"",
-            "",
-            "## Evidence Used",
-            "Compact bullets: Rec [ID] (Class X, Level Y) — how each recommendation supports the answer.",
-            "Do not list supplementary reasoning bullets here — they are already labeled in the section above.",
+            "2-3 sentence summary that declares the guideline situation and the key clinical decision point. Be direct and specific.",
         ]
+
+        if total_gap:
+            lines += [
+                "",
+                "## Guideline-Based Answer",
+                "MANDATORY: Because total_gap=true, write EXACTLY:",
+                "  'No applicable ESVS recommendation was retrieved for this condition.'",
+                "Then in one sentence state what the retrieved chunks DO address (e.g., 'Retrieved content covers ICA stenosis and kinks, which are different conditions.').",
+                "DO NOT cite any recommendation here. DO NOT include Rec IDs.",
+                "CRITICAL SCOPE RULE: A recommendation is only applicable if it addresses THE SAME condition as this case.",
+                "A recommendation about ICA kinks, ICA occlusion, or ICA stenosis is NOT applicable to an ICA aneurysm case — they are different conditions in the same anatomical territory.",
+                "",
+                "## Guideline Gap",
+                "One clear sentence stating which condition has no ESVS guidance.",
+                "Do NOT skip this section.",
+                "",
+                "## 📌 Clinical Practice Guidance",
+                "Begin with exactly: '⚠️ No ESVS guideline covers this condition — the following reflects expert clinical practice, not guideline evidence.'",
+                "This is the PRIMARY answer. Be decisive and specific — write at the level of a vascular surgery expert.",
+                "Use ONLY these sub-headings (include only relevant ones):",
+                "- ### Indications for intervention (specific clinical triggers that favour treatment)",
+                "- ### Technique selection (anatomy-driven: which approach for which anatomical scenario — be specific)",
+                "- ### Key decision factors (patient-specific factors that change management)",
+                "- ### MDT / Specialist framing",
+                "RULES:",
+                "- Be DECISIVE: state what a vascular surgeon actually does, not generic principles.",
+                "- Be ANATOMY-SPECIFIC: e.g., 'accessible cervical lesion → open repair; skull-base or hostile anatomy → endovascular (covered stent)'.",
+                "- Avoid vague statements like 'consider intervention' without a clear trigger or context.",
+                "- Do NOT use phrases like 'ESVS recommends', 'guidelines support', or 'the guideline suggests'.",
+                "End with: 'This guidance reflects expert clinical practice in the absence of ESVS evidence and should be interpreted with clinical judgement.'",
+                "",
+                "## Evidence Used",
+                "Write exactly: 'No applicable ESVS recommendations — see gap declaration above.'",
+            ]
+        else:
+            lines += [
+                "",
+                "## Guideline-Based Answer",
+                "Use ONLY the retrieved guideline chunks that DIRECTLY address this case. Include Rec IDs and Class/Level.",
+                "CRITICAL SCOPE RULE: A recommendation is only applicable if it addresses THE SAME condition and procedure as this case.",
+                "If a chunk addresses a different condition in the same anatomical territory (e.g., ICA kinks when the case is ICA aneurysm), DO NOT cite it.",
+                "State what the guidelines directly support and what they do NOT cover.",
+                "Do NOT infer, extrapolate, or add clinical reasoning beyond what the chunks state.",
+                "Use inline citations [n] for every fact.",
+                "",
+                "## Guideline Gap",
+                "State clearly which aspects of this query are NOT addressed by the retrieved guidelines.",
+                "Use the gap_summary from the GUIDELINE COVERAGE ASSESSMENT block above.",
+                "Do NOT skip this section when has_guideline_gap=true.",
+                "",
+                "## ⚠️ Supplementary Clinical Reasoning",
+                "Begin with exactly: '⚠️ Supplementary clinical reasoning — not directly derived from ESVS guidelines'",
+                "Be decisive and specific — write at the level of a vascular surgery expert, not generic principles.",
+                "Use ONLY these permitted sub-headings (include only relevant ones):",
+                "- ### Key clinical considerations",
+                "- ### Technique selection (anatomy-driven where applicable)",
+                "- ### Decision factors",
+                "- ### Specialist input recommended",
+                "RULES: Do NOT use phrases like 'ESVS recommends', 'guidelines support', or 'the guideline suggests'.",
+                "Do NOT tag individual bullets with any model labels — the section headings already identify the type of content.",
+                "End with: 'This reasoning reflects general clinical practice and should be interpreted with clinical judgement.'",
+                "",
+                "## Evidence Used",
+                "Compact bullets: Rec [ID] (Class X, Level Y) — how each recommendation supports the answer.",
+                "Do not list supplementary reasoning bullets here.",
+            ]
+
         if has_assets:
             lines.append("End with a markdown heading titled exactly: ## 🖼️ Figures / Tables and copy the supplied image lines verbatim.")
         return "\n".join(lines) + "\n"
@@ -1544,9 +1595,10 @@ class Tools:
         intent_profile: Optional[dict],
         has_assets: bool,
         has_gap: bool = False,
+        total_gap: bool = False,
     ) -> str:
         if has_gap:
-            return self._build_two_layer_blueprint(has_assets)
+            return self._build_two_layer_blueprint(has_assets, total_gap=total_gap)
 
         mode = self._response_mode(question, query_type, intent_profile)
         lines = [
