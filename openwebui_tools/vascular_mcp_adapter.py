@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.4
+version: 1.5.5
 """
 import html
 import httpx
@@ -1503,7 +1503,7 @@ class Tools:
             "Produce sections in this EXACT order. Never merge sections.",
             "",
             "## Bottom Line",
-            "2-3 sentence clinical summary. Tag each sentence with [GUIDELINE] or [SUPPLEMENTARY].",
+            "2-3 sentence clinical summary. End each sentence with [GUIDELINE] or [SUPPLEMENTARY] in brackets.",
             "",
             "## Guideline-Based Answer",
             "Use ONLY the retrieved guideline chunks. Include Rec IDs and Class/Level where available.",
@@ -1526,12 +1526,13 @@ class Tools:
             "- ### Information needed for decision-making",
             "RULES: Do NOT use phrases like 'ESVS recommends', 'guidelines support', or 'the guideline suggests'.",
             "Do NOT provide specific dosing, exact timing protocols, or definitive treatment sequences.",
-            "Tag every claim with [MODEL: general vascular reasoning] or [MODEL: requires specialist input].",
+            "Do NOT tag individual bullets with [MODEL: general vascular reasoning] — the section heading already labels the entire section as non-guideline.",
+            "In the ### Specialist input recommended sub-heading only, end each bullet with [MODEL: requires specialist input].",
             "End with: \"This reasoning reflects general clinical practice and should be interpreted with clinical judgement.\"",
             "",
             "## Evidence Used",
             "Compact bullets: Rec [ID] (Class X, Level Y) — how each recommendation supports the answer.",
-            "Label supplementary claims as [MODEL].",
+            "Do not list supplementary reasoning bullets here — they are already labeled in the section above.",
         ]
         if has_assets:
             lines.append("End with a markdown heading titled exactly: ## 🖼️ Figures / Tables and copy the supplied image lines verbatim.")
