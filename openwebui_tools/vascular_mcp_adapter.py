@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.14
+version: 1.5.18
 """
 import html
 import httpx
@@ -1355,6 +1355,7 @@ class Tools:
             has_gap=has_gap,
             total_gap=total_gap,
             question_gap=question_gap,
+            core_question=core_question,
         )
 
         return llm_out
@@ -1523,7 +1524,7 @@ class Tools:
             return "diagnostic"
         return "case"
 
-    def _build_two_layer_blueprint(self, has_assets: bool, total_gap: bool = False, question_gap: bool = False) -> str:
+    def _build_two_layer_blueprint(self, has_assets: bool, total_gap: bool = False, question_gap: bool = False, core_question: str = "") -> str:
         lines = [
             "=== ANSWER STYLE (MANDATORY) ===",
             "Write clean markdown with short headings and concise bullets.",
@@ -1538,39 +1539,91 @@ class Tools:
             "5 tight bullets maximum. Cover: (1) guideline situation, (2) what each condition independently meets, (3) the clinical priority decision, (4) key modifying factor, (5) practical implication.",
             "Each bullet must be a DIRECT, SPECIFIC statement. No hedging language.",
             "FORBIDDEN phrases: 'generally warrants', 'may be considered', 'should be discussed', 'it is reasonable to'. State clinical standards directly.",
+            "ARTIFACT RULE: Do NOT copy recommendation IDs, class/level markers, or raw retrieved text into this section. Write clean synthesised clinical statements only.",
         ]
 
         if question_gap and not (total_gap and not question_gap):
             # Interaction gap: individual conditions ARE covered, but their interaction/sequencing is not
+            cq_lower = (core_question or "").lower()
+            is_periop_drug = bool(re.search(
+                r"\b(bridg|anticoagul|antiplatelet|aspirin|heparin|warfarin|doac|rivaroxaban|clopidogrel"
+                r"|periprocedural|perioperative|drug|medication|thrombophilia|aps|antiphospholipid)\b",
+                cq_lower,
+            ))
+            is_sequencing = bool(re.search(
+                r"\b(sequen|which\s+first|treat\s+first|priority|order|before|after|simultaneous|staged)\b",
+                cq_lower,
+            ))
+            # Perioperative/drug management questions get different sub-headings than sequencing questions
+            use_periop_structure = is_periop_drug and not is_sequencing
+
             lines += [
                 "",
                 "## Guideline-Based Answer",
                 "State what ESVS DOES cover for the individual conditions in this case — cite the relevant component recommendations with Rec IDs.",
-                "Then declare explicitly: 'ESVS provides no recommendation on [the specific interaction/sequencing question].'",
+                "Then declare explicitly: 'ESVS provides no recommendation on [the specific interaction question].'",
                 "Do NOT attempt to answer the core question using individual-condition recs — they address components, not the interaction.",
                 "",
                 "## Guideline Gap",
-                "One sentence naming the exact interaction/sequencing question that has no ESVS guidance.",
+                "One sentence naming the exact question that has no ESVS guidance.",
                 "Do NOT skip this section.",
                 "",
                 "## 📌 Clinical Practice Guidance",
                 "Begin with exactly: '⚠️ No ESVS guideline addresses this clinical question — the following reflects expert clinical practice, not guideline evidence.'",
-                "MANDATORY FIRST sub-heading: ### Treatment priority",
-                "  - State CLEARLY which condition is treated first and why, based on urgency and risk.",
-                "  - Do NOT leave this ambiguous. Give the answer: e.g., 'Limb revascularisation is prioritised first because Rutherford 5 tissue loss carries immediate amputation risk, while an asymptomatic 5.8 cm AAA has lower short-term rupture risk (~1%/month).'",
-                "  - Then state the exception: when the alternative order would be chosen and why.",
-                "Then use ONLY these additional sub-headings as needed:",
-                "- ### Technique considerations (brief — not the main focus for sequencing questions)",
-                "- ### Key modifying factors (patient factors that shift the priority)",
-                "- ### MDT / Specialist framing",
-                "RULES:",
-                "- DECISIVE: commit to a clinical recommendation, not just a framework.",
-                "- NO hedging: avoid 'requires expert judgement', 'MDT needed' as the primary answer.",
-                "End with: 'This guidance reflects expert clinical practice in the absence of ESVS evidence and should be interpreted with clinical judgement.'",
+            ]
+
+            if use_periop_structure:
+                lines += [
+                    "Answer the explicit clinical questions directly using these sub-headings as applicable:",
+                    "- ### Bridging strategy",
+                    "  - State directly whether bridging is appropriate and for whom (e.g., high-risk phenotype → bridge with LMWH/UFH; low-risk → no bridging).",
+                    "  - Give the principle with qualifier: e.g., 'Warfarin interruption with heparin bridging is commonly used in high-risk APS when surgery requires interruption; exact timing depends on INR, haemostasis, and local perioperative protocol.'",
+                    "  - Do NOT present specific day-counts (e.g., 'stop 5 days before', 'resume after 12h') as universal protocol steps.",
+                    "- ### Antiplatelet considerations",
+                    "  - State directly whether antiplatelet therapy is appropriate in this context.",
+                    "  - Use calibrated language: e.g., 'Single antiplatelet therapy may be considered in selected cases where graft-patency concerns outweigh bleeding risk — routine combination with full-dose anticoagulation is not universally indicated.'",
+                    "  - Do NOT write 'often added' or imply routine dual therapy without explicit evidence.",
+                    "- ### Perioperative anticoagulation",
+                    "  - Give the general approach (cessation, bridging, restart principle) with explicit qualifier that exact timing depends on INR, bleeding risk, and local protocol.",
+                    "- ### Key modifying factors",
+                    "  - Patient-specific factors that shift the decision — base this ONLY on information explicitly stated in the case. Do NOT introduce patient characteristics not provided (e.g., triple antibody positivity if not stated).",
+                    "- ### MDT / Specialist framing (if relevant)",
+                    "RULES:",
+                    "- Answer the explicit clinical questions directly ('should I bridge?', 'should I add antiplatelet?') — do NOT defer to MDT as the primary answer.",
+                    "- DECISIVE but CALIBRATED: commit to a direction with clear rationale, but use qualified language ('is commonly used', 'is generally considered', 'may be appropriate') to reflect that this is expert practice in a true evidence gap — not a formal protocol.",
+                    "- SCOPE: base the answer only on what was explicitly stated in the case. Do not introduce patient details that were not provided.",
+                    "MANDATORY FINAL BLOCK — must appear at the end of this section:",
+                    "### 🎯 In practice",
+                    "State the clinical decision as a direct action list — one line per drug/decision:",
+                    "e.g., '**[Drug]**: stop preoperatively (do not bridge) | **Antiplatelet**: continue aspirin perioperatively | **Combination therapy**: avoid prolonged dual anticoagulant + antiplatelet unless exceptional indication.'",
+                    "Each line must be a concrete clinical action, not a discussion point.",
+                    "End with: 'This guidance reflects expert clinical practice in the absence of ESVS evidence and should be interpreted with clinical judgement.'",
+                ]
+            else:
+                lines += [
+                    "MANDATORY FIRST sub-heading: ### Treatment priority",
+                    "  - State CLEARLY which condition is treated first and why, based on urgency and risk.",
+                    "  - Do NOT leave this ambiguous. Give the answer: e.g., 'Limb revascularisation is prioritised first because Rutherford 5 tissue loss carries immediate amputation risk, while an asymptomatic 5.8 cm AAA has lower short-term rupture risk (~1%/month).'",
+                    "  - Then state the exception: when the alternative order would be chosen and why.",
+                    "Then use ONLY these additional sub-headings as needed:",
+                    "- ### Technique considerations (brief — not the main focus for sequencing questions)",
+                    "- ### Key modifying factors (patient factors that shift the priority)",
+                    "- ### MDT / Specialist framing",
+                    "RULES:",
+                    "- DECISIVE: commit to a clinical recommendation, not just a framework.",
+                    "- NO hedging: avoid 'requires expert judgement', 'MDT needed' as the primary answer.",
+                    "MANDATORY FINAL BLOCK — must appear at the end of this section:",
+                    "### 🎯 In practice",
+                    "State the treatment priority as a direct action list:",
+                    "e.g., '**Treat [X] first**: [one-line rationale] | **[Y] after**: [timing/condition] | **Exception**: [when order reverses].'",
+                    "End with: 'This guidance reflects expert clinical practice in the absence of ESVS evidence and should be interpreted with clinical judgement.'",
+                ]
+
+            lines += [
                 "",
                 "## Evidence Used",
                 "List only the component recommendations cited in Guideline-Based Answer.",
-                "Note: no ESVS recommendation addresses the interaction/sequencing question itself.",
+                "Note: no ESVS recommendation addresses the interaction question itself.",
             ]
         else:
             lines += [
@@ -1620,9 +1673,10 @@ class Tools:
         has_gap: bool = False,
         total_gap: bool = False,
         question_gap: bool = False,
+        core_question: str = "",
     ) -> str:
         if total_gap:
-            return self._build_two_layer_blueprint(has_assets, total_gap=True, question_gap=question_gap)
+            return self._build_two_layer_blueprint(has_assets, total_gap=True, question_gap=question_gap, core_question=core_question)
 
         mode = self._response_mode(question, query_type, intent_profile)
         lines = [
@@ -1638,7 +1692,7 @@ class Tools:
         ]
 
         if mode == "management":
-            lines.extend([
+            mgmt_sections = [
                 "Use these headings in order, including only sections that are relevant:",
                 "## Bottom Line",
                 "- 1-3 bullets answering the user's practical decision question.",
@@ -1647,15 +1701,33 @@ class Tools:
                 "- Summarize the anatomy, symptoms, timing, severity, and risk features that drive the decision.",
                 "## Guideline-Based Options",
                 "- Compare the main supported options briefly and clearly.",
+            ]
+            if has_gap:
+                mgmt_sections += [
+                    "## Guideline Gap",
+                    "- MANDATORY: state explicitly which aspects of this scenario have no ESVS guidance.",
+                    "- If individual conditions are each covered but their interaction, sequencing, or priority order is not, state: 'ESVS provides no guidance on [the specific interaction/sequencing question].'",
+                    "- Do NOT skip this section.",
+                ]
+            mgmt_sections += [
                 "## Clinical Decision Summary",
                 "- State the preferred approach, why it is preferred, and the main alternative with when it may be chosen instead.",
+                "- For multi-condition cases: state the priority sequence explicitly (e.g., 'treat X first, then Y, delay Z').",
                 "## Perioperative Considerations",
                 "- Include only if operative or endovascular treatment is discussed.",
                 "## Follow-up and Practical Points",
                 "- Monitoring, surveillance, adjunct medical therapy, timing, or escalation triggers.",
                 "## Evidence Used",
                 "- Compact bullets: Rec [ID] (Class X, Level Y) — how each recommendation supports the answer.",
-            ])
+            ]
+            if has_gap:
+                mgmt_sections += [
+                    "## 🎯 In practice",
+                    "- Conclude with a direct action list: one line per key decision (drug, procedure, timing).",
+                    "- Format: '**[Item]**: do X | **[Item]**: avoid Y | **[Item]**: consider Z when [specific condition]'",
+                    "- Each line must be a concrete clinical action, not a discussion point.",
+                ]
+            lines.extend(mgmt_sections)
         elif mode == "surveillance":
             lines.extend([
                 "Use these headings in order, including only sections that are relevant:",

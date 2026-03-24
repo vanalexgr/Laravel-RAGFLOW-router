@@ -100,6 +100,11 @@ coverage rules:
 - "none"    = no chunk addresses this facet/question at all
 
 IMPORTANT: Individual conditions being covered does NOT mean their interaction or sequencing is covered.
+
+MULTI-CONDITION RULE: When the query involves 3 or more conditions (e.g., AAA + CLTI + sepsis, or AAA + CLTI + anticoagulation),
+the core question is almost certainly about interaction, priority, or sequencing — NOT about the individual conditions.
+Be highly skeptical of marking core_question_covered as "direct" in these cases.
+A chunk that covers AAA repair in isolation does NOT cover "how to sequence AAA repair vs CLTI vs active sepsis".
 PROMPT;
     }
 
