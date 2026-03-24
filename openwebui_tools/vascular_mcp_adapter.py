@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.9
+version: 1.5.10
 """
 import html
 import httpx
@@ -1265,8 +1265,11 @@ class Tools:
                 )
 
         assets_block = self._format_assets_markdown(assets)
-        if assets_block:
+        # For total-gap cases no guideline figures are condition-specific — suppress them
+        if assets_block and not total_gap:
             llm_out += assets_block
+        elif total_gap:
+            assets_block = ""
 
         chunk_num = 1
         if llm_cit:
@@ -1518,42 +1521,43 @@ class Tools:
             "=== TWO-LAYER OUTPUT BLUEPRINT (STRICT — GUIDELINE GAP DETECTED) ===",
             "Produce sections in this EXACT order. Never merge sections.",
             "",
-            "## Bottom Line",
-            "2-3 sentence summary that declares the guideline situation and the key clinical decision point. Be direct and specific.",
+            "## 🩺 Clinical Synthesis",
+            "5 tight bullets maximum. Cover: (1) guideline situation for this condition, (2) indication for intervention, (3) anatomy-driven approach, (4) key decision factor, (5) what this means for the patient.",
+            "Each bullet must be a DIRECT, SPECIFIC statement. No hedging language.",
+            "FORBIDDEN phrases: 'generally warrants', 'may be considered', 'should be discussed', 'it is reasonable to'. State clinical standards directly.",
         ]
 
         if total_gap:
             lines += [
                 "",
                 "## Guideline-Based Answer",
-                "MANDATORY: Because total_gap=true, write EXACTLY:",
+                "MANDATORY: Because total_gap=true, write EXACTLY one line:",
                 "  'No applicable ESVS recommendation was retrieved for this condition.'",
-                "Then in one sentence state what the retrieved chunks DO address (e.g., 'Retrieved content covers ICA stenosis and kinks, which are different conditions.').",
+                "Then in one sentence state what the retrieved chunks DO address (e.g., 'Retrieved content covers ICA stenosis and kinks — different conditions in the same territory.').",
                 "DO NOT cite any recommendation here. DO NOT include Rec IDs.",
-                "CRITICAL SCOPE RULE: A recommendation is only applicable if it addresses THE SAME condition as this case.",
-                "A recommendation about ICA kinks, ICA occlusion, or ICA stenosis is NOT applicable to an ICA aneurysm case — they are different conditions in the same anatomical territory.",
+                "CRITICAL SCOPE RULE: Only cite a recommendation if it addresses THE SAME condition as this case — NOT adjacent conditions in the same anatomical territory.",
                 "",
                 "## Guideline Gap",
-                "One clear sentence stating which condition has no ESVS guidance.",
+                "One sentence: which condition has no ESVS guidance and why that matters clinically.",
                 "Do NOT skip this section.",
                 "",
                 "## 📌 Clinical Practice Guidance",
                 "Begin with exactly: '⚠️ No ESVS guideline covers this condition — the following reflects expert clinical practice, not guideline evidence.'",
-                "This is the PRIMARY answer. Be decisive and specific — write at the level of a vascular surgery expert.",
+                "This is the PRIMARY answer. Write at vascular-surgeon expert level — specific, anatomy-driven, decisive.",
                 "Use ONLY these sub-headings (include only relevant ones):",
                 "- ### Indications for intervention (specific clinical triggers that favour treatment)",
-                "- ### Technique selection (anatomy-driven: which approach for which anatomical scenario — be specific)",
-                "- ### Key decision factors (patient-specific factors that change management)",
+                "- ### Technique selection (anatomy-driven: which approach for which anatomical scenario)",
+                "- ### Key decision factors (patient-specific factors that alter management)",
                 "- ### MDT / Specialist framing",
                 "RULES:",
-                "- Be DECISIVE: state what a vascular surgeon actually does, not generic principles.",
-                "- Be ANATOMY-SPECIFIC: e.g., 'accessible cervical lesion → open repair; skull-base or hostile anatomy → endovascular (covered stent)'.",
-                "- Avoid vague statements like 'consider intervention' without a clear trigger or context.",
-                "- Do NOT use phrases like 'ESVS recommends', 'guidelines support', or 'the guideline suggests'.",
+                "- DECISIVE: state what a vascular surgeon does, not generic principles.",
+                "- ANATOMY-SPECIFIC: e.g., 'accessible cervical lesion → open repair; skull-base → endovascular covered stent'.",
+                "- NO hedging: avoid 'generally warrants', 'may be considered', 'should be discussed'.",
+                "- Do NOT use phrases like 'ESVS recommends', 'guidelines support'.",
                 "End with: 'This guidance reflects expert clinical practice in the absence of ESVS evidence and should be interpreted with clinical judgement.'",
                 "",
                 "## Evidence Used",
-                "Write exactly: 'No applicable ESVS recommendations — see gap declaration above.'",
+                "Write exactly: 'No applicable ESVS recommendations — see Guideline Gap above.'",
             ]
         else:
             lines += [
