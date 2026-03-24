@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.11
+version: 1.5.12
 """
 import html
 import httpx
@@ -1186,14 +1186,19 @@ class Tools:
         partial_facets = gap_assessment.get("partial_facets") or []
         covered_facets = gap_assessment.get("covered_facets") or []
         gap_summary = (gap_assessment.get("gap_summary") or "").strip()
-        # total_gap: no facets directly covered — ESVS has no applicable evidence at all
-        total_gap = has_gap and not covered_facets
+        core_question = (gap_assessment.get("core_question") or "").strip()
+        question_gap = bool(gap_assessment.get("question_gap"))  # core question itself has no ESVS guidance
+        # total_gap: no facets covered OR the core question has no guidance even if conditions are individually covered
+        total_gap = has_gap and (not covered_facets or question_gap)
 
         if has_gap:
             gap_label_parts = []
-            if uncovered_facets:
+            # Prefer core_question label when the question itself is the gap
+            if question_gap and core_question:
+                gap_label_parts.append(f"no guidance on: {core_question}")
+            elif uncovered_facets:
                 gap_label_parts.append(f"no guidance: {', '.join(uncovered_facets[:3])}")
-            if partial_facets:
+            if partial_facets and not question_gap:
                 gap_label_parts.append(f"partial: {', '.join(partial_facets[:2])}")
             gap_detail = " | ".join(gap_label_parts) if gap_label_parts else ""
             gap_status = "⚠️ Guideline gap detected"
@@ -1229,12 +1234,15 @@ class Tools:
                 llm_out += f"NOT covered by guidelines: {', '.join(uncovered_facets)}\n"
             if gap_summary:
                 llm_out += f"Gap summary: {gap_summary}\n"
+            if core_question:
+                llm_out += f"Core clinical question: {core_question}\n"
             if total_gap:
+                q_label = f"'{core_question}'" if core_question else "this condition/question"
                 llm_out += (
-                    "total_gap=true — NO applicable ESVS recommendation was retrieved for this condition.\n"
-                    "INSTRUCTION: The Guideline-Based Answer section MUST declare 'No applicable ESVS recommendation' "
-                    "and MUST NOT cite recommendations for different conditions. "
-                    "The Clinical Practice Guidance section is the PRIMARY answer for this query.\n\n"
+                    f"total_gap=true — ESVS provides NO direct guidance on {q_label}.\n"
+                    "INSTRUCTION: The Guideline-Based Answer section MUST declare this explicitly "
+                    "and MUST NOT cite recommendations that address different conditions or questions. "
+                    "The 📌 Clinical Practice Guidance section is the PRIMARY answer — be decisive and specific.\n\n"
                 )
             else:
                 llm_out += (
