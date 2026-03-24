@@ -14,10 +14,10 @@ class AzureOpenAiLlmClient implements LlmClient
 
     public function __construct()
     {
-        $this->endpoint = config('prism.providers.azure.endpoint') ?: env('AZURE_OPENAI_ENDPOINT');
-        $this->apiKey = config('prism.providers.azure.api_key') ?: env('AZURE_OPENAI_API_KEY');
-        $this->deployment = config('prism.providers.azure.deployment') ?: env('AZURE_OPENAI_DEPLOYMENT', 'gpt-5-chat');
-        $this->apiVersion = config('prism.providers.azure.api_version') ?: env('AZURE_OPENAI_VERSION', '2024-12-01-preview');
+        $this->endpoint   = config('prism.providers.azure.endpoint');
+        $this->apiKey     = config('prism.providers.azure.api_key');
+        $this->deployment = config('prism.providers.azure.deployment', 'gpt-5-chat');
+        $this->apiVersion = config('prism.providers.azure.api_version', '2024-12-01-preview');
     }
 
     public function complete(string $prompt, int $maxTokens = 150, float $temperature = 0): string
