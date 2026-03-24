@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.6
+version: 1.5.7
 """
 import html
 import httpx
@@ -1503,7 +1503,7 @@ class Tools:
             "Produce sections in this EXACT order. Never merge sections.",
             "",
             "## Bottom Line",
-            "2-3 sentence clinical summary. End each sentence with [GUIDELINE] or [SUPPLEMENTARY] in brackets.",
+            "2-3 sentence clinical summary integrating both guideline recommendations and supplementary reasoning. No inline tags.",
             "",
             "## Guideline-Based Answer",
             "Use ONLY the retrieved guideline chunks. Include Rec IDs and Class/Level where available.",
@@ -1898,10 +1898,16 @@ class Tools:
                         emitter,
                         "Checking whether the new detail changes the stored retrieval...",
                     )
+                    # Prefetch session payload concurrently with change detection —
+                    # if the background retrieval is still running, it may complete
+                    # while ChangeDetectionService makes its LLM call (~3-5 s).
+                    _prefetch = asyncio.create_task(
+                        self._await_session_payload(session_key, session, emitter)
+                    )
                     phase2 = await self._call_confirmation_phase(question, history, pre_result)
 
                     if phase2.get("reused"):
-                        data = await self._await_session_payload(session_key, session, emitter)
+                        data = await _prefetch  # likely already done
                         if isinstance(data, dict) and data.get("error"):
                             await self._emit_status(emitter, "Stored retrieval failed; retrying search...")
                             data = await self._call_consult_backend(
@@ -1918,6 +1924,13 @@ class Tools:
                             guidelines=effective_guidelines,
                         )
 
+                    # requery path — discard prefetched payload cleanly
+                    if not _prefetch.done():
+                        _prefetch.cancel()
+                        try:
+                            await _prefetch
+                        except asyncio.CancelledError:
+                            pass
                     await self._emit_status(
                         emitter,
                         "New clinical detail changes retrieval — running updated search...",
