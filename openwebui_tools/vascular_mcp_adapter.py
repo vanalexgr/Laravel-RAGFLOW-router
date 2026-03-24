@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.0
+version: 1.5.1
 """
 import html
 import httpx
@@ -1321,6 +1321,7 @@ class Tools:
             query_type,
             intent_profile,
             bool(assets_block),
+            has_gap=has_gap,
         )
 
         return llm_out
@@ -1489,13 +1490,63 @@ class Tools:
             return "diagnostic"
         return "case"
 
+    def _build_two_layer_blueprint(self, has_assets: bool) -> str:
+        lines = [
+            "=== ANSWER STYLE (MANDATORY) ===",
+            "Write clean markdown with short headings and concise bullets.",
+            "Keep sections tight and scannable; avoid long dense paragraphs.",
+            "Do not repeat the same fact across multiple sections.",
+            "Do not create empty sections.",
+            "",
+            "=== TWO-LAYER OUTPUT BLUEPRINT (STRICT — GUIDELINE GAP DETECTED) ===",
+            "Produce sections in this EXACT order. Never merge sections.",
+            "",
+            "## Bottom Line",
+            "2-3 sentence clinical summary. Tag each sentence with [GUIDELINE] or [SUPPLEMENTARY].",
+            "",
+            "## Guideline-Based Answer",
+            "Use ONLY the retrieved guideline chunks. Include Rec IDs and Class/Level where available.",
+            "State what the guideline directly supports and what it recommends against.",
+            "Do NOT infer, extrapolate, or add clinical reasoning beyond what the chunks state.",
+            "Use inline citations [n] for every fact.",
+            "",
+            "## Guideline Gap",
+            "State clearly which aspects of this query are NOT addressed by the retrieved guidelines.",
+            "Use the gap_summary from the GUIDELINE COVERAGE ASSESSMENT block above.",
+            "Do NOT skip this section when has_guideline_gap=true.",
+            "",
+            "## ⚠️ Supplementary Clinical Reasoning",
+            "Begin with exactly: \"⚠️ Supplementary clinical reasoning — not directly derived from ESVS guidelines\"",
+            "Use ONLY these permitted sub-headings (include only relevant ones):",
+            "- ### Key clinical considerations",
+            "- ### Common practice patterns",
+            "- ### Decision factors",
+            "- ### Specialist input recommended",
+            "- ### Information needed for decision-making",
+            "RULES: Do NOT use phrases like 'ESVS recommends', 'guidelines support', or 'the guideline suggests'.",
+            "Do NOT provide specific dosing, exact timing protocols, or definitive treatment sequences.",
+            "Tag every claim with [MODEL: general vascular reasoning] or [MODEL: requires specialist input].",
+            "End with: \"This reasoning reflects general clinical practice and should be interpreted with clinical judgement.\"",
+            "",
+            "## Evidence Used",
+            "Compact bullets: Rec [ID] (Class X, Level Y) — how each recommendation supports the answer.",
+            "Label supplementary claims as [MODEL].",
+        ]
+        if has_assets:
+            lines.append("End with a markdown heading titled exactly: ## 🖼️ Figures / Tables and copy the supplied image lines verbatim.")
+        return "\n".join(lines) + "\n"
+
     def _build_answer_blueprint(
         self,
         question: str,
         query_type: Optional[str],
         intent_profile: Optional[dict],
         has_assets: bool,
+        has_gap: bool = False,
     ) -> str:
+        if has_gap:
+            return self._build_two_layer_blueprint(has_assets)
+
         mode = self._response_mode(question, query_type, intent_profile)
         lines = [
             "=== ANSWER STYLE (MANDATORY) ===",
