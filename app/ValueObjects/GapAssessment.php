@@ -11,6 +11,8 @@ class GapAssessment
         public readonly array  $uncoveredFacets,
         public readonly string $gapSummary,
         public readonly bool   $supplementaryPermitted,
+        public readonly string $coreQuestion,
+        public readonly bool   $questionGap,       // core question itself has no guidance
     ) {}
 
     public static function noGap(): self
@@ -22,6 +24,8 @@ class GapAssessment
             uncoveredFacets:        [],
             gapSummary:             '',
             supplementaryPermitted: false,
+            coreQuestion:           '',
+            questionGap:            false,
         );
     }
 
@@ -44,7 +48,10 @@ class GapAssessment
             };
         }
 
-        $hasGap = !empty($uncovered) || count($partial) >= 2;
+        $coreQuestion        = (string) ($data['core_question'] ?? '');
+        $coreQuestionCovered = (string) ($data['core_question_covered'] ?? 'direct');
+        $questionGap         = in_array($coreQuestionCovered, ['none', 'partial'], true);
+        $hasGap              = !empty($uncovered) || count($partial) >= 2 || $questionGap;
 
         return new self(
             hasGuidelineGap:        $hasGap,
@@ -53,6 +60,8 @@ class GapAssessment
             uncoveredFacets:        $uncovered,
             gapSummary:             (string) ($data['gap_summary'] ?? ''),
             supplementaryPermitted: $hasGap,
+            coreQuestion:           $coreQuestion,
+            questionGap:            $questionGap,
         );
     }
 
@@ -65,6 +74,8 @@ class GapAssessment
             'uncovered_facets'         => $this->uncoveredFacets,
             'gap_summary'              => $this->gapSummary,
             'supplementary_permitted'  => $this->supplementaryPermitted,
+            'core_question'            => $this->coreQuestion,
+            'question_gap'             => $this->questionGap,
         ];
     }
 }
