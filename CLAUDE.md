@@ -60,21 +60,23 @@ sudo systemctl status ragflow-bridge.service
 ### OpenWebUI Tool
 | File | Purpose |
 |---|---|
-| `openwebui_tools/vascular_expert.py` | The OpenWebUI tool (also stored in `webui.db` `tool` table, id=`mcp`) |
+| `openwebui_tools/vascular_mcp_adapter.py` | Production tool — stored in `webui.db` `tool` table, **id=`vascular_mcp_adapter`** |
+| `openwebui_tools/push_adapter.py` | Deploy script — updates the correct DB record |
+| `openwebui_tools/vascular_expert.py` | OLD fallback tool (id=`mcp`) — never modify |
 
-**IMPORTANT**: The live tool runs from the SQLite DB, not from the filesystem. After editing `vascular_expert.py` locally, always push to the DB:
+**IMPORTANT**: The live tool runs from the SQLite DB, not from the filesystem. After editing `vascular_mcp_adapter.py` locally, always push to the DB:
 ```bash
-scp -i ~/ragflownew.pem openwebui_tools/vascular_expert.py azureuser@48.211.217.69:/tmp/vascular_expert_new.py
+scp -i ~/ragflownew.pem openwebui_tools/vascular_mcp_adapter.py azureuser@48.211.217.69:/tmp/vascular_expert_new.py
 ssh -i ~/ragflownew.pem azureuser@48.211.217.69 "
   sudo docker cp /tmp/vascular_expert_new.py open-webui:/tmp/vascular_expert_new.py &&
-  sudo docker exec open-webui python3 /tmp/push_tool_content.py
+  sudo docker cp $(pwd)/openwebui_tools/push_adapter.py /tmp/push_adapter.py &&
+  sudo docker cp /tmp/push_adapter.py open-webui:/tmp/push_adapter.py &&
+  sudo docker exec open-webui python3 /tmp/push_adapter.py &&
+  sudo docker restart open-webui
 "
 ```
-The `/tmp/push_tool_content.py` script inside the container reads `vascular_expert_new.py` and writes it to the DB.
-OpenWebUI also caches the loaded tool module in memory, so DB updates are not live until the `open-webui` container is restarted:
-```bash
-ssh -i ~/ragflownew.pem azureuser@48.211.217.69 "sudo docker restart open-webui"
-```
+`push_adapter.py` writes to **id=`vascular_mcp_adapter`** (the active production tool).
+OpenWebUI caches the loaded tool module in memory — restart is required after every DB update.
 
 ---
 
