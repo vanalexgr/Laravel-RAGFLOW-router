@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.3
+version: 1.5.4
 """
 import html
 import httpx
@@ -130,7 +130,8 @@ class Tools:
         r"show (?:the )?(?:system|developer|hidden|tool) prompt|"
         r"what are your (?:system|developer|hidden) instructions|"
         r"tell me your (?:system|developer|hidden) instructions|"
-        r"bypass|jailbreak|override the rules)\b",
+        r"bypass (?:the )?(?:rules|instructions|filter|safety|restrictions|guardrail)|"
+        r"jailbreak|override the rules)\b",
         re.IGNORECASE,
     )
 
