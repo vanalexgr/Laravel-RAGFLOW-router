@@ -142,14 +142,25 @@ PROMPT;
 
     protected function deterministicGuidelineShift(string $userReply, PreRetrievalResult $original): ?ChangeDetectionResult
     {
+        // This method only serves one purpose: upgrade asymptomatic_pad → clti when
+        // CLTI signals appear in the reply. If clti is already in the guideline set
+        // (and asymptomatic_pad is not), there is nothing to upgrade — fall through
+        // to the LLM prompt which handles confirmatory clarifications correctly.
+        $hasCltiAlready    = in_array('clti', $original->guidelines, true);
+        $hasPadToUpgrade   = in_array('asymptomatic_pad', $original->guidelines, true);
+
+        if ($hasCltiAlready && !$hasPadToUpgrade) {
+            return null;
+        }
+
         $combined = implode(' ', array_filter([
             $userReply,
             $original->provisionalDiagnosis,
             $original->retrievalQuery,
         ]));
 
-        $hasPadContext = in_array('asymptomatic_pad', $original->guidelines, true)
-            || in_array('clti', $original->guidelines, true)
+        $hasPadContext = $hasPadToUpgrade
+            || $hasCltiAlready
             || (bool) preg_match('/\b(peripheral arterial disease|pad|lower limb revasculari[sz]ation|bypass|endovascular)\b/i', $combined);
 
         $hasCltiSignals = (bool) preg_match(
