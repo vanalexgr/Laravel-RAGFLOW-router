@@ -8,7 +8,9 @@ use App\Services\GuidelineAssetService;
 use App\Services\GapDetectionService;
 use App\Services\ClinicalGateService;
 use App\Services\PreRetrievalService;
+use App\Services\CoverageAssessmentService;
 use App\ValueObjects\PreRetrievalResult;
+use App\ValueObjects\GapAssessment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -19,6 +21,7 @@ class ToolController extends Controller
         protected GuidelineAssetService $guidelineAssetService,
         protected PreRetrievalService $preRetrievalService,
         protected ChangeDetectionService $changeDetectionService,
+        protected CoverageAssessmentService $coverageAssessmentService,
     ) {
     }
 
@@ -372,15 +375,31 @@ class ToolController extends Controller
 
     protected function buildConsultPayload(array $result, array $assets): array
     {
-        $output = $this->buildConsultOutput($result, $assets);
+        // Coverage assessment — runs after chunk selection, before synthesis prompt assembly.
+        // Skipped automatically for knowledge_only queries and empty chunk sets.
+        $facets      = $result['intent_profile']['key_terms'] ?? [];
+        $llmChunks   = array_merge(
+            $result['llm_citation_chunks'] ?? [],
+            $result['llm_narrative_chunks'] ?? []
+        );
+        $gapAssessment = $this->coverageAssessmentService->assess(
+            question:  $result['question'] ?? '',
+            llmChunks: $llmChunks,
+            facets:    is_array($facets) ? $facets : [],
+            queryType: $result['query_type'] ?? 'complex_case',
+        );
+
+        $output = $this->buildConsultOutput($result, $assets, $gapAssessment);
 
         Log::info('Tool API Response', [
-            'question' => $result['question'] ?? '',
-            'text_length' => strlen($output),
+            'question'             => $result['question'] ?? '',
+            'text_length'          => strlen($output),
             'has_narrative_chunks' => !empty($result['narrative_chunks']),
-            'narrative_count' => count($result['narrative_chunks'] ?? []),
-            'citation_count' => count($result['citation_chunks'] ?? []),
-            'asset_count' => count($assets ?? []),
+            'narrative_count'      => count($result['narrative_chunks'] ?? []),
+            'citation_count'       => count($result['citation_chunks'] ?? []),
+            'asset_count'          => count($assets ?? []),
+            'has_guideline_gap'    => $gapAssessment->hasGuidelineGap,
+            'uncovered_facets'     => $gapAssessment->uncoveredFacets,
         ]);
 
         $output = mb_convert_encoding($output, 'UTF-8', 'UTF-8');
@@ -407,11 +426,12 @@ class ToolController extends Controller
             'selected_guidelines' => $selectedGuidelines,
             'assets' => $safeAssets,
             'query_normalization' => $queryNormalization,
-            'query_type' => $result['query_type'] ?? 'complex_case',
+            'query_type'          => $result['query_type'] ?? 'complex_case',
+            'gap_assessment'      => $gapAssessment->toArray(),
         ];
     }
 
-    protected function buildConsultOutput(array $result, array $assets): string
+    protected function buildConsultOutput(array $result, array $assets, ?GapAssessment $gapAssessment = null): string
     {
         $question = $result['question'] ?? '';
         $output = "RETRIEVED GUIDELINES for: \"{$question}\"\n";
@@ -460,36 +480,83 @@ class ToolController extends Controller
             }
         }
 
-        $output .= "\n\n=== IMPORTANT ===\n";
-        $output .= "Present this using the mandatory response format:\n";
-        $output .= "1. 🩺 Clinical Synthesis (3-6 bullets with inline citations)\n";
-        $output .= "2. 📑 Recommendations used in this answer (verbatim quotes)\n";
-        $output .= "3. 🧠 Clinical Decision Summary (required for management/treatment/clinical strategy questions)\n";
-        $output .= "   Use the retrieved guideline evidence to:\n";
-        $output .= "   (1) determine whether treatment thresholds are met,\n";
-        $output .= "   (2) interpret the anatomical features provided,\n";
-        $output .= "   (3) compare available treatment strategies,\n";
-        $output .= "   (4) state the default/preferred guideline-consistent strategy when inferable, and\n";
-        $output .= "   (5) identify the main alternative strategy and when it may be chosen instead.\n";
-        $output .= "   Do not stop at \"both options may be considered\"; provide a reasoned decision.\n";
-        $output .= "   If anatomical measurements are provided (neck length, angulation, landing zones), interpret compatibility with standard EVAR, fenestrated/branched endovascular repair, and open surgical repair, and explain how anatomy drives modality choice.\n";
-        $output .= "4. ⚠️ Perioperative Risk Mitigation (Guideline-Based)\n";
-        $output .= "   For operative management, summarize key risk-reduction strategies when relevant: spinal cord ischemia prevention, renal protection, cardiac risk optimisation, staged repair strategies, and preservation of critical branch vessels.\n";
-        $output .= "5. 📌 Guideline supporting statements\n";
-        if (!empty($assets)) {
-            $output .= "6. 🖼️ Figures / Tables (optional; show images if they help)\n";
+        // ── Two-layer synthesis instructions ────────────────────────────────
+        if ($gapAssessment !== null && $gapAssessment->hasGuidelineGap) {
+            $uncovered = implode(', ', $gapAssessment->uncoveredFacets);
+            $partial   = implode(', ', $gapAssessment->partialFacets);
+            $summary   = $gapAssessment->gapSummary;
+
+            $output .= "\n\n=== GUIDELINE COVERAGE ASSESSMENT ===\n";
+            $output .= "Guideline gap detected.\n";
+            if ($uncovered) {
+                $output .= "NOT covered by retrieved guidelines: {$uncovered}\n";
+            }
+            if ($partial) {
+                $output .= "Partially covered: {$partial}\n";
+            }
+            if ($summary) {
+                $output .= "Gap summary: {$summary}\n";
+            }
+
+            $output .= "\n=== TWO-LAYER ANSWER REQUIRED ===\n";
+            $output .= "You MUST produce your answer in exactly this structure, in this order:\n\n";
+
+            $output .= "### 1. GUIDELINE-BASED ANSWER\n";
+            $output .= "Use ONLY the retrieved chunks above. Include recommendation numbers and Class/Level where available.\n";
+            $output .= "State what the guideline directly supports and what it recommends against.\n";
+            $output .= "Do NOT infer, extrapolate, or add clinical reasoning beyond what the chunks state.\n";
+            $output .= "Tag each claim: [GUIDELINE: Rec X.X, Class Y]\n\n";
+
+            $output .= "### 2. GUIDELINE GAP STATEMENT\n";
+            $output .= "State clearly which aspects of the query are NOT addressed by the retrieved guidelines.\n";
+            if ($summary) {
+                $output .= "Use this exact gap summary: \"{$summary}\"\n";
+            }
+            $output .= "\n";
+
+            $output .= "### 3. ⚠️ SUPPLEMENTARY CLINICAL REASONING\n";
+            $output .= "Begin this section with the EXACT label:\n";
+            $output .= "\"⚠️ Supplementary clinical reasoning — not directly derived from ESVS guidelines\"\n\n";
+            $output .= "RULES:\n";
+            $output .= "- Use ONLY these permitted headings: Key clinical considerations / Common practice patterns / Decision factors / Specialist input recommended / Information needed for decision-making\n";
+            $output .= "- NEVER use: \"ESVS recommends\", \"guidelines support\", \"the guideline suggests\", \"the correct approach\"\n";
+            $output .= "- NEVER provide specific dosing, timing intervals, or numerical lab targets\n";
+            $output .= "- ALWAYS include \"Specialist input recommended\" if the case involves perioperative management or emergency decision-making\n";
+            $output .= "- Tag each claim: [MODEL: general vascular reasoning] or [MODEL: requires specialist input]\n";
+            $output .= "End with: \"This reasoning reflects general clinical practice and should be interpreted with clinical judgement.\"\n\n";
+
+            $output .= "### 4. 📌 PROVENANCE SUMMARY\n";
+            $output .= "List which claims are [GUIDELINE-DERIVED] vs [SUPPLEMENTARY REASONING].\n";
+        } else {
+            // No gap — standard single-layer instructions
+            $output .= "\n\n=== GUIDELINE COVERAGE: COMPLETE ===\n";
+            if ($gapAssessment !== null) {
+                $output .= "Retrieved guidelines directly address all key aspects of this query.\n";
+            }
+            $output .= "Do NOT produce supplementary reasoning.\n";
+
+            $output .= "\n=== ANSWER FORMAT ===\n";
+            $output .= "1. 🩺 Clinical Synthesis (3-6 bullets with inline citations)\n";
+            $output .= "2. 📑 Recommendations used (verbatim quotes with Rec #, Class, Level)\n";
+            $output .= "3. 🧠 Clinical Decision Summary (required for management/treatment questions)\n";
+            $output .= "   (1) determine whether treatment thresholds are met\n";
+            $output .= "   (2) compare available strategies\n";
+            $output .= "   (3) state the default/preferred guideline-consistent strategy\n";
+            $output .= "   (4) identify the main alternative and when it applies\n";
+            $output .= "   Do not stop at \"both options may be considered\"; provide a reasoned decision.\n";
+            $output .= "4. ⚠️ Perioperative Risk Mitigation (Guideline-Based, when relevant)\n";
+            $output .= "5. 📌 Guideline supporting statements\n";
+            if (!empty($assets)) {
+                $output .= "6. 🖼️ Figures / Tables (optional)\n";
+            }
         }
 
         $gapService = new GapDetectionService();
-        if ($gapService->allowPartialAnswers()) {
+        if ($gapService->allowPartialAnswers() && ($gapAssessment === null || !$gapAssessment->hasGuidelineGap)) {
             $output .= "\n=== PARTIAL MATCH GUIDANCE ===\n";
             $output .= "If the retrieved evidence is relevant but does not exactly match the scenario, provide a best-fit answer based on the closest evidence.\n";
             $output .= "Clearly state which parts are directly supported vs extrapolated or missing.\n";
             $output .= "Do not return a blanket \"not explicitly addressed\" response unless there is zero relevant evidence.\n";
-            $output .= "Invite the user to decide what is applicable to their case.\n";
-            if ($gapService->strictTemplateEnabled()) {
-                $output .= "Place the fit/limitations note within Assessment or Evidence used to preserve the required structure.\n";
-            }
         }
 
         if ($gapService->strictTemplateEnabled()) {
