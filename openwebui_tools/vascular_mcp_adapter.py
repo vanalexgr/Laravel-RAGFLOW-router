@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.4.16
+version: 1.5.0
 """
 import html
 import httpx
@@ -1178,6 +1178,30 @@ class Tools:
                 or "The provided ESVS guideline context does not explicitly address this scenario."
             )
 
+        # Extract gap assessment before final status
+        gap_assessment = data.get("gap_assessment") or {}
+        has_gap = bool(gap_assessment.get("has_guideline_gap"))
+        uncovered_facets = gap_assessment.get("uncovered_facets") or []
+        partial_facets = gap_assessment.get("partial_facets") or []
+        covered_facets = gap_assessment.get("covered_facets") or []
+        gap_summary = (gap_assessment.get("gap_summary") or "").strip()
+
+        if has_gap:
+            gap_label_parts = []
+            if uncovered_facets:
+                gap_label_parts.append(f"no guidance: {', '.join(uncovered_facets[:3])}")
+            if partial_facets:
+                gap_label_parts.append(f"partial: {', '.join(partial_facets[:2])}")
+            gap_detail = " | ".join(gap_label_parts) if gap_label_parts else ""
+            gap_status = "⚠️ Guideline gap detected"
+            if gap_detail:
+                gap_status += f" ({gap_detail})"
+            gap_status += " — supplementary reasoning section included"
+            await self._emit_status(emitter, gap_status, done=False)
+            coverage_label = "PARTIAL / SUPPLEMENTARY"
+        else:
+            coverage_label = "FULL"
+
         await self._emit_status(
             emitter,
             f"Retrieved {backend_total} chunks from {gdisplay}; using {llm_total} for answer, exposing {ui_total} in Sources",
@@ -1188,6 +1212,31 @@ class Tools:
             f"Consultation successful. Using {llm_total} evidence sources "
             f"(from {backend_total} retrieved; {ui_total} in Sources).\n\n"
         )
+
+        # --- Gap assessment block injected into LLM context ---
+        if has_gap:
+            llm_out += "=== GUIDELINE COVERAGE ASSESSMENT ===\n"
+            llm_out += f"Coverage status: {coverage_label}\n"
+            if covered_facets:
+                llm_out += f"Directly covered facets: {', '.join(covered_facets)}\n"
+            if partial_facets:
+                llm_out += f"Partially covered facets: {', '.join(partial_facets)}\n"
+            if uncovered_facets:
+                llm_out += f"NOT covered by guidelines: {', '.join(uncovered_facets)}\n"
+            if gap_summary:
+                llm_out += f"Gap summary: {gap_summary}\n"
+            llm_out += (
+                "INSTRUCTION: Because has_guideline_gap=true, you MUST produce the "
+                "two-layer answer structure injected in the answer blueprint below. "
+                "Section 4 (SUPPLEMENTARY CLINICAL REASONING) is PERMITTED for this query.\n\n"
+            )
+        else:
+            llm_out += "=== GUIDELINE COVERAGE ASSESSMENT ===\n"
+            llm_out += f"Coverage status: {coverage_label}\n"
+            llm_out += (
+                "INSTRUCTION: Full guideline coverage — SKIP Section 4 entirely. "
+                "Do NOT produce supplementary reasoning.\n\n"
+            )
 
         if isinstance(q_norm, dict):
             frame = str(q_norm.get("clinical_frame") or "").strip()
