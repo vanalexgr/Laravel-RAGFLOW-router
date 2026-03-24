@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.1
+version: 1.5.2
 """
 import html
 import httpx
@@ -1750,12 +1750,12 @@ class Tools:
         - abdominal_aortic_aneurysm: AAA, EVAR, rupture, endoleaks, iliac aneurysm
         - mesenteric_renal: Mesenteric ischemia, renal artery stenosis
         - asymptomatic_pad: Claudication, PAD screening, exercise therapy
-        - clti: Rest pain, tissue loss, gangrene, limb salvage
+        - clti: Rest pain, tissue loss, gangrene, limb salvage, bypass surgery (femoral-popliteal, femoral-tibial, below-knee), primary amputation, revascularization vs amputation decision, CLTI staging
         - acute_limb_ischaemia: ALI, sudden limb pain, 6Ps, embolism
         - carotid_vertebral: Stroke, TIA, carotid stenosis, CEA, CAS
         - venous_thrombosis: DVT, PE, VTE, anticoagulation
         - chronic_venous_disease: Varicose veins, venous ulcers, CEAP
-        - antithrombotic_therapy: Aspirin, DOACs, DAPT, bleeding risk, bridging
+        - antithrombotic_therapy: Aspirin, DOACs, DAPT, bleeding risk, bridging, warfarin, sintrom, acenocoumarol, perioperative anticoagulation, antiphospholipid syndrome anticoagulation
         - vascular_trauma: Penetrating/blunt injury, REBOA
         - vascular_graft_infections: Graft infection, aorto-oesophageal fistula
         - vascular_access: Dialysis AVF, steal syndrome
@@ -1764,6 +1764,8 @@ class Tools:
         {"tool_calls":[{"name":"consult_vascular_guidelines","parameters":{"question":"What is the definite treatment after TEVAR is in place?","guideline_1":"vascular_graft_infections","guideline_2":"descending_thoracic_aorta","guideline_3":null}}]}
         {"tool_calls":[{"name":"consult_vascular_guidelines","parameters":{"question":"Provide class and level of recommendations","guideline_1":"abdominal_aortic_aneurysm","guideline_2":"descending_thoracic_aorta","guideline_3":null}}]}
         {"tool_calls":[{"name":"consult_vascular_guidelines","parameters":{"question":"Would you consider stenting given that this is a child?","guideline_1":"vascular_trauma","guideline_2":"carotid_vertebral","guideline_3":null}}]}
+        {"tool_calls":[{"name":"consult_vascular_guidelines","parameters":{"question":"Patient with CLTI on anticoagulation — bypass surgery BK or primary amputation?","guideline_1":"clti","guideline_2":"antithrombotic_therapy","guideline_3":null}}]}
+        {"tool_calls":[{"name":"consult_vascular_guidelines","parameters":{"question":"CLTI with rest pain and tissue loss — revascularization options and anticoagulation management perioperatively","guideline_1":"clti","guideline_2":"antithrombotic_therapy","guideline_3":null}}]}
 
         :param question: The clinical question
         :param guideline_1: Primary guideline (required)
