@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.4.15
+version: 1.4.16
 """
 import html
 import httpx
@@ -47,6 +47,8 @@ GUIDELINE_NAMES = {
 
 _session_store: dict = {}
 SESSION_TTL = 300
+_case_context_store: dict = {}
+CASE_CONTEXT_TTL = 900  # 15 min — survives after phase 2 completes
 GATE_CONFIRM_LINE = "Reply to confirm, or add details to refine the search."
 APP_GUIDANCE_HEADER = "=== APP CAPABILITIES GUIDANCE ==="
 
@@ -147,6 +149,20 @@ class Tools:
         r"(?:modified\s+)?rankin(?:\s+scale)?|mrs\b|"
         r"(?:hasn'?t|has\s+not|not)\s+yet\s+mobili[sz]ed|"
         r"unable\s+to\s+mobili[sz]e|dense\s+neurological\s+deficit)\b",
+        re.IGNORECASE,
+    )
+
+    # Short vague management questions that need case context to be meaningful,
+    # e.g. "So, what should I do?", "What's the plan?", "Which option?"
+    _VAGUE_MANAGEMENT_RE = re.compile(
+        r"\bwhat\s+should\s+(i|we|you)\s+do\b|"
+        r"\bwhat('?s|\s+is|\s+are)\s+(the\s+)?(plan|approach|best\s+option|next\s+step|treatment|decision|strategy|recommendation)\b|"
+        r"\bwhich\s+(option|approach|treatment|procedure|one)\s+(should|would|do|is)\b|"
+        r"\bwhat\s+(do\s+you|would\s+you|is\s+your|are\s+your)\s+recommend\b|"
+        r"\bhow\s+should\s+(i|we)\s+(proceed|treat|manage|handle)\b|"
+        r"\bwhat\s+(now|next)\b|"
+        r"^\s*so[,\s]+what\b|"
+        r"^\s*and\s+(now|so)[,\s]+what\b",
         re.IGNORECASE,
     )
 
@@ -786,6 +802,7 @@ class Tools:
         task: Optional[asyncio.Task] = None,
     ):
         self._clear_session(session_key, cancel_task=True)
+        self._clear_case_context(session_key)  # new case supersedes old context
         now = time.time()
         _session_store[session_key] = {
             "payload": payload,
@@ -794,6 +811,44 @@ class Tools:
             "started_at": now,
             "ts": now,
         }
+
+    def _store_case_context(self, session_key: str, pre_result: dict):
+        """Persist minimal case context after phase 2 completes (TTL=900s)."""
+        _case_context_store[session_key] = {
+            "provisional_diagnosis": str(pre_result.get("provisional_diagnosis") or "").strip(),
+            "guidelines": list(pre_result.get("guidelines") or []),
+            "retrieval_query": str(pre_result.get("retrieval_query") or "").strip(),
+            "ts": time.time(),
+        }
+
+    def _get_case_context(self, session_key: str) -> Optional[dict]:
+        entry = _case_context_store.get(session_key)
+        if not entry:
+            return None
+        if time.time() - float(entry.get("ts") or 0) > CASE_CONTEXT_TTL:
+            _case_context_store.pop(session_key, None)
+            return None
+        return entry
+
+    def _clear_case_context(self, session_key: str):
+        _case_context_store.pop(session_key, None)
+
+    def _is_vague_management_followup(self, question: str) -> bool:
+        q = (question or "").strip()
+        # Long questions have their own clinical content — don't rewrite them
+        if not q or len(q) > 150:
+            return False
+        return bool(self._VAGUE_MANAGEMENT_RE.search(q))
+
+    def _rewrite_with_case_context(self, question: str, case_ctx: dict) -> str:
+        anchor = (
+            case_ctx.get("provisional_diagnosis")
+            or case_ctx.get("retrieval_query")
+            or ""
+        ).strip()
+        if not anchor:
+            return question
+        return f"{anchor} — {question}"
 
     def _get_session(self, session_key: str) -> Optional[dict]:
         entry = _session_store.get(session_key)
@@ -885,13 +940,21 @@ class Tools:
             timeout=120.0,
         )
 
-    async def _call_confirmation_phase(self, question: str, history: list, pre_result: dict) -> dict:
+    async def _call_confirmation_phase(
+        self,
+        question: str,
+        history: list,
+        pre_result: dict,
+        cached_payload: Optional[dict] = None,
+    ) -> dict:
         payload = {
             "question": question,
             "history": history[-20:],
             "confirmation_mode": True,
             "pre_retrieval_result": pre_result,
         }
+        if cached_payload is not None:
+            payload["cached_retrieval_payload"] = cached_payload
         guidelines = pre_result.get("guidelines") if isinstance(pre_result, dict) else None
         if guidelines:
             payload["guidelines"] = guidelines
@@ -1543,6 +1606,10 @@ class Tools:
            - "Which recommendations did you use?"
            - "What about asymptomatic?"
            - "Can I use apixaban instead?"
+           - "So, what should I do?"
+           - "What's the plan?"
+           - "Which option would you recommend?"
+           - "What is the recommended approach?"
            ALWAYS call this tool. NEVER answer from a prior tool result in history.
            A prior Clinical Query Checkpoint or 🩺 Clinical Synthesis is NOT a reason to skip retrieval.
            Each new question may require fresh retrieval or change detection by the backend.
@@ -1622,6 +1689,27 @@ class Tools:
                 self._clear_session(session_key, cancel_task=True)
                 session = None
 
+            # Vague management follow-up after a completed case (no active session).
+            # e.g. "So, what should I do?" / "What's the plan?" / "Which option?"
+            # Rewrite using the stored case context so RAGFlow gets a meaningful query.
+            if not session and self._is_vague_management_followup(question):
+                case_ctx = self._get_case_context(session_key)
+                if case_ctx:
+                    rewritten = self._rewrite_with_case_context(question, case_ctx)
+                    effective_guidelines = case_ctx.get("guidelines") or guidelines
+                    await self._emit_status(
+                        emitter,
+                        "Retrieving guideline evidence for follow-up question...",
+                    )
+                    data = await self._call_consult_backend(rewritten, history, effective_guidelines)
+                    self._store_case_context(session_key, case_ctx)  # refresh TTL
+                    return await self._build_response_from_payload(
+                        data,
+                        emitter,
+                        analysis_question=rewritten,
+                        guidelines=effective_guidelines,
+                    )
+
             if not session:
                 recovered = await self._recover_pre_result_from_history(question, __messages__, guidelines)
                 if recovered:
@@ -1637,20 +1725,23 @@ class Tools:
                         emitter,
                         "Checking whether the new detail changes the stored retrieval...",
                     )
+                    cached_payload = recovered.get("retrieval_payload") if isinstance(recovered.get("retrieval_payload"), dict) else None
                     phase2 = await self._call_confirmation_phase(
                         question,
                         recovered["confirmation_history"],
                         pre_result,
+                        cached_payload=cached_payload,
                     )
 
                     if phase2.get("reused"):
-                        data = recovered.get("retrieval_payload")
+                        data = phase2.get("retrieval_payload") or cached_payload
                         if not isinstance(data, dict):
                             data = await self._call_consult_backend(
                                 str(pre_result.get("retrieval_query") or recovered["original_question"]),
                                 recovered["retrieval_history"],
                                 effective_guidelines,
                             )
+                        self._store_case_context(session_key, pre_result)
                         return await self._build_response_from_payload(
                             data,
                             emitter,
@@ -1663,6 +1754,11 @@ class Tools:
                         "New clinical detail changes retrieval — running updated search...",
                     )
                     data = phase2.get("retrieval_payload") or phase2
+                    # Update case context to the new retrieval result's diagnosis
+                    requery_pre = dict(pre_result)
+                    if phase2.get("decision_reason"):
+                        requery_pre["retrieval_query"] = phase2.get("retrieval_payload", {}).get("query_normalization", {}).get("normalized_query", pre_result.get("retrieval_query", ""))
+                    self._store_case_context(session_key, requery_pre)
                     return await self._build_response_from_payload(
                         data,
                         emitter,
@@ -1698,6 +1794,7 @@ class Tools:
                                 history,
                                 effective_guidelines,
                             )
+                        self._store_case_context(session_key, pre_result)
                         self._clear_session(session_key)
                         return await self._build_response_from_payload(
                             data,
@@ -1711,6 +1808,7 @@ class Tools:
                         "New clinical detail changes retrieval — running updated search...",
                     )
                     data = phase2.get("retrieval_payload") or phase2
+                    self._store_case_context(session_key, pre_result)
                     self._clear_session(session_key, cancel_task=True)
                     return await self._build_response_from_payload(
                         data,
