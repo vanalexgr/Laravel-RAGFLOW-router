@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.13
+version: 1.5.14
 """
 import html
 import httpx
@@ -1572,7 +1572,6 @@ class Tools:
                 "List only the component recommendations cited in Guideline-Based Answer.",
                 "Note: no ESVS recommendation addresses the interaction/sequencing question itself.",
             ]
-        else:
         else:
             lines += [
                 "",
