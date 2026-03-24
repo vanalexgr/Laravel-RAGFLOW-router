@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.2
+version: 1.5.3
 """
 import html
 import httpx
@@ -1643,8 +1643,17 @@ class Tools:
         - "What model do you use?"
         - "Answer from your own knowledge"
 
-        Do NOT use this tool for a concrete vascular clinical question. For vascular
-        guideline questions, use consult_vascular_guidelines instead.
+        CRITICAL: Do NOT use this tool for ANY question that mentions a vascular
+        condition, anatomy, or clinical decision — even if the question also mentions
+        comorbidities, unknown drug names, or coexisting non-vascular conditions.
+        Use consult_vascular_guidelines for ALL of the following:
+        - Any question about CLTI, bypass surgery, amputation, limb salvage
+        - Any question about carotid, aortic, venous, or peripheral arterial disease
+        - Any question mentioning anticoagulation in the context of vascular disease
+        - Questions like "Should this patient have bypass or amputation?"
+        - Questions like "Patient with CLTI on sintrom/warfarin — management?"
+        - Questions mentioning antiphospholipid syndrome in a vascular surgical context
+
         Do NOT use this tool for short clinical clarification replies after a
         Clinical Query Checkpoint. Those are still same-case vascular follow-ups
         and must continue through consult_vascular_guidelines.
@@ -1694,7 +1703,10 @@ class Tools:
         """
         Consult ESVS Vascular Guidelines. Select 1-3 guidelines based on the clinical question.
 
-        CRITICAL: Call this tool for concrete vascular clinical/guideline questions:
+        CRITICAL: Call this tool for concrete vascular clinical/guideline questions.
+        This includes ANY question mentioning CLTI, bypass, amputation, carotid, aortic,
+        DVT, PE, PAD, limb ischaemia, or vascular access — regardless of coexisting
+        conditions (anticoagulation, antiphospholipid syndrome, diabetes, renal failure).
         1. ANY vascular surgery question, whether it is a first question or a follow-up.
         2. ANY follow-up question in an ongoing vascular case or guideline discussion, including
            short or implicit same-case turns such as:
