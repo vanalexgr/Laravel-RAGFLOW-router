@@ -71,10 +71,23 @@ Clinical facets to evaluate:
 Retrieved guideline chunks:
 {$chunksSummary}
 
-For each facet above, assess whether the retrieved chunks contain direct guidance.
+STEP 1 — Identify the core clinical question:
+What is the user ACTUALLY asking? Express this as a short phrase (e.g., "treatment sequence: AAA vs CLTI",
+"endovascular vs open repair", "anticoagulation duration", "management of ICA aneurysm").
+This may differ from the individual conditions listed as facets.
+
+STEP 2 — Assess core question coverage:
+Does any retrieved chunk provide direct guidance on the CORE QUESTION itself (not just the underlying conditions)?
+Example: if the question is about sequencing AAA and CLTI, check whether any chunk addresses the sequence —
+NOT whether AAA and CLTI are individually covered in their own guidelines.
+
+STEP 3 — Assess individual facet coverage.
+
 Return ONLY valid JSON. No preamble, no explanation, only JSON.
 
 {
+  "core_question": "short phrase describing what the user is actually asking",
+  "core_question_covered": "direct|partial|none",
   "facet_coverage": [
     {"facet": "facet name", "coverage": "direct|partial|none", "evidence": "brief quote or null"}
   ],
@@ -82,9 +95,11 @@ Return ONLY valid JSON. No preamble, no explanation, only JSON.
 }
 
 coverage rules:
-- "direct"  = chunk contains a specific recommendation or explicit guidance on this facet
+- "direct"  = chunk contains a specific recommendation or explicit guidance on this facet/question
 - "partial" = chunk touches the topic but does not provide actionable guidance
-- "none"    = no chunk addresses this facet at all
+- "none"    = no chunk addresses this facet/question at all
+
+IMPORTANT: Individual conditions being covered does NOT mean their interaction or sequencing is covered.
 PROMPT;
     }
 
