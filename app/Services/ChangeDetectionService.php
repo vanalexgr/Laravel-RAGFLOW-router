@@ -21,6 +21,18 @@ class ChangeDetectionService
             return ChangeDetectionResult::fromArray(['decision' => 'reuse', 'reason' => 'empty reply']);
         }
 
+        // Fast-path: very short replies (≤ 4 tokens) with no new anatomical or
+        // diagnostic signals are almost always answering a clarification question,
+        // not introducing new clinical information. Skip the LLM call entirely.
+        $tokens = preg_split('/\s+/', $userReply, -1, PREG_SPLIT_NO_EMPTY);
+        $hasChangeTrigger = (bool) preg_match(
+            '/\b(bilateral|contralateral|also|additionally|new|different|however|actually|wait|but)\b/i',
+            $userReply
+        );
+        if (count($tokens) <= 4 && !$hasChangeTrigger) {
+            return ChangeDetectionResult::fromArray(['decision' => 'reuse', 'reason' => 'short confirmatory reply']);
+        }
+
         $deterministic = $this->deterministicGuidelineShift($userReply, $original);
         if ($deterministic !== null) {
             return $deterministic;
