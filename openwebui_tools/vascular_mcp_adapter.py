@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.10
+version: 1.5.11
 """
 import html
 import httpx
@@ -1238,13 +1238,17 @@ class Tools:
                 )
             else:
                 llm_out += (
-                    "INSTRUCTION: Because has_guideline_gap=true, use the STANDARD answer blueprint below. "
-                    "Supplementary clinical reasoning for the uncovered facets is PERMITTED — embed it "
-                    "naturally within the relevant section (e.g., under ## Clinical Decision Summary or "
-                    "## Follow-up) with a brief note that it is not ESVS-derived. "
-                    "SCOPE FILTER: when citing recommendations, ONLY cite recs that directly address "
-                    "this specific case — exclude recs for different conditions or procedural steps "
-                    "not relevant to the current clinical question.\n\n"
+                    "INSTRUCTION: Because has_guideline_gap=true, use the STANDARD answer blueprint below.\n"
+                    "For each UNCOVERED facet listed above, you MUST provide explicit clinical practice "
+                    "guidance under ## Clinical Decision Summary — do NOT simply state 'this is beyond "
+                    "ESVS scope' and stop there. That is not clinically useful.\n"
+                    "Required content for uncovered facets: state what expert clinical practice dictates — "
+                    "weigh competing urgencies, identify which factor takes priority and explain why, "
+                    "give anatomy-specific or severity-specific guidance as appropriate. "
+                    "Label this guidance clearly as non-ESVS (e.g. 'In clinical practice, ...').\n"
+                    "SCOPE FILTER: cite only recs that directly answer the core clinical question — "
+                    "exclude recs for unrelated procedural steps, peri-operative details, or "
+                    "surveillance/follow-up that does not address the actual question asked.\n\n"
                 )
         else:
             llm_out += "=== GUIDELINE COVERAGE ASSESSMENT ===\n"
