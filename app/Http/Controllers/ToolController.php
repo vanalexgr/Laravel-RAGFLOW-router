@@ -6,7 +6,6 @@ use App\Services\ChangeDetectionService;
 use App\Services\RetrievalService;
 use App\Services\GuidelineAssetService;
 use App\Services\GapDetectionService;
-use App\Services\GuidelineRouterService;
 use App\Services\ClinicalGateService;
 use App\Services\PreRetrievalService;
 use App\ValueObjects\PreRetrievalResult;
@@ -18,7 +17,6 @@ class ToolController extends Controller
     public function __construct(
         protected RetrievalService $retrievalService,
         protected GuidelineAssetService $guidelineAssetService,
-        protected GuidelineRouterService $guidelineRouter,
         protected PreRetrievalService $preRetrievalService,
         protected ChangeDetectionService $changeDetectionService,
     ) {
@@ -36,6 +34,7 @@ class ToolController extends Controller
             'pre_retrieval_mode' => 'nullable|boolean',
             'confirmation_mode' => 'nullable|boolean',
             'pre_retrieval_result' => 'nullable|array',
+            'cached_retrieval_payload' => 'nullable|array',
         ]);
 
         $question = $request->input('question');
@@ -73,11 +72,16 @@ class ToolController extends Controller
             $changeResult = $this->changeDetectionService->detect($question, $original);
 
             if ($changeResult->decision === 'reuse') {
-                return $this->jsonApiResponse([
-                    'phase' => 'complete',
-                    'reused' => true,
+                $cachedPayload = $request->input('cached_retrieval_payload');
+                $response = [
+                    'phase'           => 'complete',
+                    'reused'          => true,
                     'decision_reason' => $changeResult->reason,
-                ]);
+                ];
+                if ($cachedPayload !== null) {
+                    $response['retrieval_payload'] = $cachedPayload;
+                }
+                return $this->jsonApiResponse($response);
             }
 
             $requery = $changeResult->enrichedQuery ?: $original->retrievalQuery;
@@ -550,16 +554,17 @@ class ToolController extends Controller
         $request->validate(['question' => 'required|string|max:2000']);
         $question = $request->input('question');
 
-        $result = $this->guidelineRouter->normalizeForRetrieval($question) ?? [
-            'normalized_query' => $question,
-            'language' => 'en',
-            'changed' => false,
-        ];
+        // Lightweight passthrough normalizer — strips whitespace and detects
+        // non-ASCII (non-English) queries. Full LLM-based normalisation happens
+        // inside RetrievalService via GuidelineRouterService before retrieval.
+        $trimmed  = trim($question);
+        $language = preg_match('/[^\x00-\x7F]/', $trimmed) ? 'other' : 'en';
 
-        return response()->json($result, 200, [], JSON_INVALID_UTF8_SUBSTITUTE)
-            ->header('Access-Control-Allow-Origin', '*')
-            ->header('Access-Control-Allow-Methods', 'POST, OPTIONS')
-            ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        return $this->jsonApiResponse([
+            'normalized_query' => $trimmed,
+            'language'         => $language,
+            'changed'          => $trimmed !== $question,
+        ]);
     }
 
     protected function validateGuideline(string $guideline): ?string
