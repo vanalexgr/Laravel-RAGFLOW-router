@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.8
+version: 1.5.9
 """
 import html
 import httpx
@@ -1238,9 +1238,13 @@ class Tools:
                 )
             else:
                 llm_out += (
-                    "INSTRUCTION: Because has_guideline_gap=true, you MUST produce the "
-                    "two-layer answer structure injected in the answer blueprint below. "
-                    "Section 4 (SUPPLEMENTARY CLINICAL REASONING) is PERMITTED for this query.\n\n"
+                    "INSTRUCTION: Because has_guideline_gap=true, use the STANDARD answer blueprint below. "
+                    "Supplementary clinical reasoning for the uncovered facets is PERMITTED — embed it "
+                    "naturally within the relevant section (e.g., under ## Clinical Decision Summary or "
+                    "## Follow-up) with a brief note that it is not ESVS-derived. "
+                    "SCOPE FILTER: when citing recommendations, ONLY cite recs that directly address "
+                    "this specific case — exclude recs for different conditions or procedural steps "
+                    "not relevant to the current clinical question.\n\n"
                 )
         else:
             llm_out += "=== GUIDELINE COVERAGE ASSESSMENT ===\n"
@@ -1597,8 +1601,8 @@ class Tools:
         has_gap: bool = False,
         total_gap: bool = False,
     ) -> str:
-        if has_gap:
-            return self._build_two_layer_blueprint(has_assets, total_gap=total_gap)
+        if total_gap:
+            return self._build_two_layer_blueprint(has_assets, total_gap=True)
 
         mode = self._response_mode(question, query_type, intent_profile)
         lines = [
