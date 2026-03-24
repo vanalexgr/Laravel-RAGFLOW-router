@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.5
+version: 1.5.6
 """
 import html
 import httpx
@@ -1526,8 +1526,7 @@ class Tools:
             "- ### Information needed for decision-making",
             "RULES: Do NOT use phrases like 'ESVS recommends', 'guidelines support', or 'the guideline suggests'.",
             "Do NOT provide specific dosing, exact timing protocols, or definitive treatment sequences.",
-            "Do NOT tag individual bullets with [MODEL: general vascular reasoning] — the section heading already labels the entire section as non-guideline.",
-            "In the ### Specialist input recommended sub-heading only, end each bullet with [MODEL: requires specialist input].",
+            "Do NOT tag individual bullets with any model labels — the section headings already identify the type of content.",
             "End with: \"This reasoning reflects general clinical practice and should be interpreted with clinical judgement.\"",
             "",
             "## Evidence Used",
