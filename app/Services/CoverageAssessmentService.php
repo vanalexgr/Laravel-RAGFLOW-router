@@ -34,7 +34,7 @@ class CoverageAssessmentService
 
         try {
             $prompt = $this->buildPrompt($question, $llmChunks, $facets);
-            $raw    = $this->llm->complete($prompt, maxTokens: 400, temperature: 0);
+            $raw    = $this->llm->complete($prompt, maxTokens: 700, temperature: 0);
             $data   = $this->parseJson($raw);
 
             if ($data === null) {
@@ -127,6 +127,33 @@ PROMPT;
         $clean = preg_replace('/```json|```/', '', $raw);
         $data  = json_decode(trim($clean), true);
 
-        return is_array($data) ? $data : null;
+        if (is_array($data)) {
+            return $data;
+        }
+
+        // Partial recovery: extract key fields from truncated JSON.
+        // This handles cases where maxTokens cuts the response mid-array
+        // but the critical core_question_covered field was already written.
+        $recovered = [];
+        if (preg_match('/"core_question"\s*:\s*"([^"]+)"/u', $raw, $m)) {
+            $recovered['core_question'] = $m[1];
+        }
+        if (preg_match('/"core_question_covered"\s*:\s*"(direct|partial|none)"/u', $raw, $m)) {
+            $recovered['core_question_covered'] = $m[1];
+        }
+
+        if (!empty($recovered)) {
+            $recovered['facet_coverage'] = [];
+            if (!isset($recovered['gap_summary']) && isset($recovered['core_question'])) {
+                $recovered['gap_summary'] = 'ESVS provides no direct guidance on: ' . $recovered['core_question'];
+            }
+            Log::channel('retrieval')->info('[COVERAGE ASSESSMENT] Partial JSON recovery — core fields extracted', [
+                'core_question'         => $recovered['core_question'] ?? null,
+                'core_question_covered' => $recovered['core_question_covered'] ?? null,
+            ]);
+            return $recovered;
+        }
+
+        return null;
     }
 }
