@@ -110,6 +110,11 @@ MULTI-CONDITION RULE: When the query involves 3 or more conditions (e.g., AAA + 
 the core question is almost certainly about interaction, priority, or sequencing — NOT about the individual conditions.
 Be highly skeptical of marking core_question_covered as "direct" in these cases.
 A chunk that covers AAA repair in isolation does NOT cover "how to sequence AAA repair vs CLTI vs active sepsis".
+
+CONTRAINDICATION RULE: A guideline that EXCLUDES an option due to a contraindication IS direct guidance — it answers the core question by exclusion.
+Example: if ESVS states that CDT/thrombectomy is contraindicated in patients with recent major surgery or high bleeding risk, this DIRECTLY answers "what to do in DVT after recent surgery" — the answer is "anticoagulation alone, intervention contraindicated".
+Do NOT mark core_question_covered as "none" or "partial" when the guidelines clearly address the scenario by contraindication.
+A gap only exists when ESVS provides NO guidance at all on the scenario — not when it provides clear guidance that excludes one option.
 PROMPT;
     }
 
