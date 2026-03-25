@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.25
+version: 1.5.26
 """
 import html
 import httpx
@@ -1800,7 +1800,13 @@ class Tools:
                 ]
             if has_gap:
                 is_partial_guidance = (core_question_covered == "partial")
-                if is_partial_guidance:
+                cq_lower = (core_question or "").lower()
+                cq_is_drug = bool(re.search(
+                    r"\b(anticoagul|antiplatelet|bridg|doac|warfarin|heparin|aspirin|clopidogrel"
+                    r"|rivaroxaban|apixaban|drug|medication|periprocedural|perioperative)\b",
+                    cq_lower,
+                ))
+                if is_partial_guidance and cq_is_drug:
                     mgmt_sections += [
                         "## Perioperative / Drug Management",
                         "- ESVS does not provide a condition-specific protocol for this topic — apply general perioperative principles.",
@@ -1809,7 +1815,7 @@ class Tools:
                         "- BLEEDING RISK MODIFIER: if patient has recent GI bleed or is on full anticoagulation → prefer aspirin alone over DAPT; state 'AVOID triple therapy'.",
                         "- Keep this section brief — general principles, no invented protocols.",
                     ]
-                else:
+                elif not is_partial_guidance:
                     mgmt_sections += [
                         "## Guideline Gap",
                         "- MANDATORY: state explicitly which aspects of this scenario have no ESVS guidance.",
