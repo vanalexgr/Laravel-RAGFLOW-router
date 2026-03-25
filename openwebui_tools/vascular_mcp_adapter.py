@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.35
+version: 1.5.36
 """
 import html
 import httpx
@@ -1318,6 +1318,34 @@ class Tools:
                     "Guidance: You may include a brief interpretive framing note, "
                     "clearly labeled as non-guideline and without citations.\n\n"
                 )
+
+        # --- Confirmed procedure pathway injection ---
+        # Detect confirmed single pathway from query; inject mandatory filter before evidence.
+        # Only fires when one pathway is confirmed and the other is absent — never for comparison questions.
+        _q = analysis_question.lower()
+        _has_bypass = bool(re.search(
+            r'\b(bypass|infrainguinal|femoropopliteal|femoroperoneal|femorotibial|vein graft|vein bypass|prosthetic graft)\b', _q
+        ))
+        _has_endo = bool(re.search(
+            r'\b(endovascular|angioplasty|angioplasties|stenting|ptfe stent|balloon|ptas|pta\b)\b', _q
+        ))
+        if _has_bypass and not _has_endo:
+            llm_out += "=== CONFIRMED PROCEDURE PATHWAY ===\n"
+            llm_out += "Confirmed: infrainguinal bypass (NOT endovascular)\n"
+            llm_out += (
+                "MANDATORY: Present ONLY the bypass pathway in every section. "
+                "Do NOT mention, reference, or include the endovascular pathway anywhere in your answer — "
+                "not in Bottom Line, not in options, not in 'In practice'. "
+                "This patient had bypass surgery. Endovascular is irrelevant to this case.\n\n"
+            )
+        elif _has_endo and not _has_bypass:
+            llm_out += "=== CONFIRMED PROCEDURE PATHWAY ===\n"
+            llm_out += "Confirmed: endovascular intervention (NOT bypass)\n"
+            llm_out += (
+                "MANDATORY: Present ONLY the endovascular pathway in every section. "
+                "Do NOT mention bypass, conduit type, or surgical alternatives anywhere in your answer. "
+                "This patient had endovascular intervention. Bypass is irrelevant to this case.\n\n"
+            )
 
         assets_block = self._format_assets_markdown(assets)
         # For total-gap cases no guideline figures are condition-specific — suppress them
