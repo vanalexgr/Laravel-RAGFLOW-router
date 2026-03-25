@@ -126,6 +126,8 @@ LOW-INDICATION RULE: A guideline that RESTRICTS intervention to selected patient
 Example: "CEA is not routinely recommended in asymptomatic carotid stenosis; consider only in selected patients with high-risk features and operative risk <3%" — this IS direct guidance answering "what to do in asymptomatic carotid disease". The answer is "BMT first, selective CEA".
 Do NOT mark "partial" for nuanced, selective-indication recommendations. A guideline saying "do X only when [criteria]" is as direct as one saying "always do X".
 Mark core_question_covered="direct" when the retrieved chunks clearly state what to do (or not do) in the presented scenario, even if the answer is "restrict to selected cases".
+
+FACET QUALITY RULE: Do NOT create facets for patient demographics or characteristics (age, "elderly patient", sex, obesity, functional status, renal function, frailty). These are patient modifiers, not clinical questions. Facets must represent clinical decisions or treatment questions only (e.g., "anticoagulation duration", "CEA vs CAS", "revascularisation vs amputation", "surveillance interval"). A demographic characteristic cannot be "covered" or "not covered" by guidelines — omit it entirely from facet_coverage.
 PROMPT;
     }
 
