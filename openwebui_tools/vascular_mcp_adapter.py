@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.26
+version: 1.5.27
 """
 import html
 import httpx
