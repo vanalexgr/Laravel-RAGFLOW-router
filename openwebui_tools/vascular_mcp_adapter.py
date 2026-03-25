@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.30
+version: 1.5.31
 """
 import html
 import httpx
@@ -1402,27 +1402,41 @@ class Tools:
             )
 
         llm_out += "\n"
-        llm_out += "=== COVERAGE SELF-DECLARATION ===\n"
+        llm_out += "=== CASE CLASSIFICATION & COVERAGE SELF-DECLARATION ===\n"
         llm_out += (
-            "After reading ALL evidence chunks above, assess coverage yourself.\n"
+            "After reading ALL evidence chunks above, classify this case using the rules below.\n"
             "Output this as the VERY FIRST LINE of your response:\n\n"
-            "**Coverage:** [full | partial | none] — [one sentence: what ESVS guidance you found, or what is missing]\n\n"
-            "Definitions:\n"
-            "- full    = retrieved chunks contain direct ESVS recommendations answering the core question\n"
-            "- partial = chunks address related topics but not the specific scenario; answer requires extrapolation from principles\n"
-            "- none    = no relevant ESVS guidance retrieved; answer is clinical reasoning only\n\n"
-            "Do NOT copy the pre-retrieval signal — make your own judgment from the evidence.\n"
-            "Canonical cases (proximal DVT → anticoagulate; symptomatic carotid → CEA/CAS; "
-            "AAA above threshold → repair) are 'full' when the chunks contain the recommendation.\n"
-            "A contraindication IS guidance (full). A selective-indication recommendation IS guidance (full).\n\n"
-            "NEGATIVE INDICATION RULE: If ESVS defines a positive indication for a treatment "
-            "(e.g., 'anticoagulate when VTE is confirmed', 'repair when AAA >55mm') and the patient "
-            "does NOT meet that indication, this is NOT a gap — it is direct guidance by exclusion. "
-            "coverage_level = 'full'. The answer is 'not indicated'. "
-            "Do NOT declare 'none' or 'partial' simply because the patient doesn't meet the criteria "
-            "for a well-defined intervention. Examples: venous compression without thrombosis → "
-            "anticoagulation not indicated (VTE criteria not met, full guidance); AAA 40mm → "
-            "repair not indicated (size criteria not met, full guidance).\n\n"
+            "**Mode:** [COMPACT | STANDARD | FULL] — Rule [N] — [one sentence reason]\n\n"
+            "Apply rules in order — FIRST MATCH WINS:\n\n"
+            "RULE 1 — TRUE GAP → FULL\n"
+            "  Condition: no direct ESVS recommendation AND no clear implied pathway AND decision requires synthesis across domains\n"
+            "  Examples: CLTI + antiphospholipid syndrome; AAA + active sepsis + anticoagulation dilemma; unusual multi-guideline interaction\n"
+            "  Output: FULL mode, 2-layer answer, explicit gap declaration\n\n"
+            "RULE 2 — NEGATIVE INDICATION → COMPACT\n"
+            "  Condition: guideline defines WHEN to treat AND patient does NOT meet criteria\n"
+            "  Examples: venous compression without thrombosis → no anticoagulation; AAA 40mm → no repair; asymptomatic low-risk carotid → no intervention\n"
+            "  Output: COMPACT, direct 'NOT indicated' — NO gap language, NO MDT discussions, NO exception lists\n\n"
+            "RULE 3 — SINGLE CLEAR PATH → COMPACT\n"
+            "  Condition: single condition AND strong Class I/IIa ESVS recommendation AND no competing risks\n"
+            "  Examples: proximal DVT → anticoagulate; symptomatic AAA above threshold → repair; ALI Rutherford IIb → urgent revascularisation\n"
+            "  Output: COMPACT, 3–5 bullets max\n\n"
+            "RULE 4 — RESTRICTED / SELECTIVE INDICATION → STANDARD\n"
+            "  Condition: guideline exists BUT intervention recommended only for selected patients\n"
+            "  Examples: asymptomatic carotid stenosis; TEVAR in stable TBAD; chronic mesenteric ischaemia borderline cases\n"
+            "  Output: STANDARD with selection criteria — NO gap language\n\n"
+            "RULE 5 — MODIFIER CASE → STANDARD\n"
+            "  Condition: guideline exists BUT decision is modified by anticoagulation, bleeding risk, or comorbidity\n"
+            "  Examples: DVT + recent surgery; CEA + DOAC; CLTI + frailty\n"
+            "  Output: STANDARD with modifier section — NO gap unless truly missing\n\n"
+            "RULE 6 — MULTI-GUIDELINE INTERACTION → FULL\n"
+            "  Condition: multiple conditions AND guidelines do NOT define their interaction\n"
+            "  Examples: APS + CLTI periop anticoagulation; carotid stenosis + active GI bleed + AF\n"
+            "  Output: FULL only if the interaction CANNOT be resolved from guidelines\n\n"
+            "IMPORTANT: Your declared Mode overrides the answer template below.\n"
+            "- COMPACT: write ## Clinical Decision (1-2 bullets), ## What is NOT indicated, ## Evidence Used. MAX 5 bullets total.\n"
+            "- STANDARD: use the structured template below.\n"
+            "- FULL: use the two-layer blueprint below.\n"
+            "Do NOT copy the pre-retrieval signal — classify from the evidence yourself.\n\n"
         )
         llm_out += self._build_answer_blueprint(
             analysis_question,
