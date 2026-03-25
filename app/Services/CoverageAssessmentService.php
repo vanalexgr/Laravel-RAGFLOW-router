@@ -121,6 +121,11 @@ Canonical examples: proximal DVT → anticoagulate; symptomatic carotid stenosis
 If retrieved chunks contain clear treatment recommendations for the primary condition, mark core_question_covered="direct" — even if not every sub-choice (specific DOAC agent, exact duration months) is explicitly stated in the chunk.
 Reserve "partial" ONLY for: multi-condition interactions not addressed, unusual patient factors genuinely absent from guidelines, or scenarios where chunks touch the topic but provide no actionable direction.
 Do NOT mark "partial" simply because you would prefer more specific sub-detail than what is retrieved.
+
+LOW-INDICATION RULE: A guideline that RESTRICTS intervention to selected patients IS direct guidance — not a gap.
+Example: "CEA is not routinely recommended in asymptomatic carotid stenosis; consider only in selected patients with high-risk features and operative risk <3%" — this IS direct guidance answering "what to do in asymptomatic carotid disease". The answer is "BMT first, selective CEA".
+Do NOT mark "partial" for nuanced, selective-indication recommendations. A guideline saying "do X only when [criteria]" is as direct as one saying "always do X".
+Mark core_question_covered="direct" when the retrieved chunks clearly state what to do (or not do) in the presented scenario, even if the answer is "restrict to selected cases".
 PROMPT;
     }
 
