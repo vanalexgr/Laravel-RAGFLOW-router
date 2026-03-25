@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.32
+version: 1.5.33
 """
 import html
 import httpx
@@ -1432,6 +1432,18 @@ class Tools:
             "  Condition: multiple conditions AND guidelines do NOT define their interaction\n"
             "  Examples: APS + CLTI periop anticoagulation; carotid stenosis + active GI bleed + AF\n"
             "  Output: FULL only if the interaction CANNOT be resolved from guidelines\n\n"
+            "BROAD COVERAGE RULE: A guideline that addresses the broader category covers specific sub-scenarios within it. "
+            "Do NOT declare a gap because the guideline doesn't enumerate every sub-detail. "
+            "Examples: 'infrainguinal bypass' covers vein and prosthetic conduits even if not listed separately; "
+            "'lower limb revascularisation' covers both endovascular and surgical. "
+            "'Guideline is broad but applicable' = Rule 3 or 4/5 — NOT Rule 1 or 6. "
+            "Only declare a gap when the guideline genuinely provides NO usable direction, not when it provides broad direction.\n\n"
+            "ANTITHROMBOTIC MODIFIER RULE: When the question involves antithrombotic therapy, anticoagulation, or antiplatelet agents, "
+            "ALWAYS qualify recommendations with bleeding risk context. "
+            "Never state a regimen as universal default — always add: 'if bleeding risk acceptable' or 'adjust based on bleeding risk'. "
+            "DAPT is mainly an endovascular scenario. Aspirin + rivaroxaban is preferred when bleeding risk is not high.\n\n"
+            "FIGURES IN STANDARD: In STANDARD mode, omit figures and tables unless they show a specific anatomical decision "
+            "directly relevant to this case. For antithrombotic, drug, or dosing questions, always omit figures.\n\n"
             "IMPORTANT: Your declared Mode overrides the answer template below.\n"
             "- COMPACT: write ## Clinical Decision (1-2 bullets), ## What is NOT indicated, ## Evidence Used. MAX 5 bullets total.\n"
             "- STANDARD: use the structured template below.\n"
