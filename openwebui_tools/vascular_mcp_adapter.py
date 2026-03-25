@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.23
+version: 1.5.24
 """
 import html
 import httpx
@@ -1190,8 +1190,9 @@ class Tools:
         question_gap = bool(gap_assessment.get("question_gap"))  # core question has no full ESVS guidance
         # 'none' = truly no ESVS guidance; 'partial' = general principles exist, no condition-specific protocol
         core_question_covered = (gap_assessment.get("core_question_covered") or "none").strip()
-        # total_gap: no facets covered OR the core question has no guidance even if conditions are individually covered
-        total_gap = has_gap and (not covered_facets or question_gap)
+        # total_gap triggers the two-layer blueprint — only for TRUE gaps (core_question_covered='none')
+        # or when nothing at all is covered. 'partial' guidance drops back to the enhanced standard template.
+        total_gap = has_gap and (not covered_facets or core_question_covered == "none")
 
         if has_gap:
             gap_label_parts = []
@@ -1783,19 +1784,28 @@ class Tools:
                 "- Compare the main supported options briefly and clearly.",
             ]
             if has_gap:
-                mgmt_sections += [
-                    "## Guideline Gap",
-                    "- MANDATORY: state explicitly which aspects of this scenario have no ESVS guidance.",
-                    "- If individual conditions are each covered but their interaction, sequencing, or priority order is not, state: 'ESVS provides no guidance on [the specific interaction/sequencing question].'",
-                    "- Do NOT skip this section.",
-                ]
+                is_partial_guidance = (core_question_covered == "partial")
+                if is_partial_guidance:
+                    mgmt_sections += [
+                        "## Perioperative / Drug Management",
+                        "- ESVS does not provide a condition-specific protocol for this topic — apply general perioperative principles.",
+                        "- For standard DOAC cessation: state expected timing (e.g., apixaban/rivaroxaban: stop 48h pre-op for major surgery; restart 24–72h post-op when haemostasis secure).",
+                        "- State bridging decision explicitly (e.g., 'no bridging for AF on DOAC').",
+                        "- BLEEDING RISK MODIFIER: if patient has recent GI bleed or is on full anticoagulation → prefer aspirin alone over DAPT; state 'AVOID triple therapy'.",
+                        "- Keep this section brief — general principles, no invented protocols.",
+                    ]
+                else:
+                    mgmt_sections += [
+                        "## Guideline Gap",
+                        "- MANDATORY: state explicitly which aspects of this scenario have no ESVS guidance.",
+                        "- If individual conditions are covered but their interaction/sequencing is not, state: 'ESVS provides no guidance on [the specific interaction question].'",
+                        "- Do NOT skip this section.",
+                    ]
             mgmt_sections += [
                 "## Clinical Decision Summary",
                 "- State the preferred approach for THIS patient directly. When the case has provided clinical criteria (Rutherford class, anatomy, fitness), commit to the recommendation: 'This patient should be offered X' — not 'X should be considered if [criterion already provided]'.",
                 "- Then state the main alternative and when it would be chosen instead.",
                 "- For multi-condition cases: state the priority sequence explicitly (e.g., 'treat X first, then Y, delay Z').",
-                "## Perioperative Considerations",
-                "- Include only if operative or endovascular treatment is discussed.",
                 "## Follow-up and Practical Points",
                 "- Monitoring, surveillance, adjunct medical therapy, timing, or escalation triggers.",
                 "## Evidence Used",
@@ -1806,7 +1816,7 @@ class Tools:
                     "## 🎯 In practice",
                     "- Conclude with a direct action list: one line per key decision (drug, procedure, timing).",
                     "- Format: '**[Item]**: do X | **[Item]**: avoid Y | **[Item]**: consider Z when [specific condition]'",
-                    "- DECISIVENESS RULE: When the case has already provided the decision criteria, state the recommendation for THIS patient directly — not conditionally. 'Offer X' not 'offer X if [criterion already in the case]'.",
+                    "- DECISIVENESS RULE: state the recommendation for THIS patient directly — not conditionally.",
                     "- Each line must be a concrete clinical action, not a discussion point.",
                 ]
             lines.extend(mgmt_sections)
