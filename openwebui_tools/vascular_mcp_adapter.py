@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.29
+version: 1.5.30
 """
 import html
 import httpx
@@ -1415,6 +1415,14 @@ class Tools:
             "Canonical cases (proximal DVT → anticoagulate; symptomatic carotid → CEA/CAS; "
             "AAA above threshold → repair) are 'full' when the chunks contain the recommendation.\n"
             "A contraindication IS guidance (full). A selective-indication recommendation IS guidance (full).\n\n"
+            "NEGATIVE INDICATION RULE: If ESVS defines a positive indication for a treatment "
+            "(e.g., 'anticoagulate when VTE is confirmed', 'repair when AAA >55mm') and the patient "
+            "does NOT meet that indication, this is NOT a gap — it is direct guidance by exclusion. "
+            "coverage_level = 'full'. The answer is 'not indicated'. "
+            "Do NOT declare 'none' or 'partial' simply because the patient doesn't meet the criteria "
+            "for a well-defined intervention. Examples: venous compression without thrombosis → "
+            "anticoagulation not indicated (VTE criteria not met, full guidance); AAA 40mm → "
+            "repair not indicated (size criteria not met, full guidance).\n\n"
         )
         llm_out += self._build_answer_blueprint(
             analysis_question,
