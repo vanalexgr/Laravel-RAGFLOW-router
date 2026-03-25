@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.38
+version: 1.5.39
 """
 import html
 import httpx
@@ -959,7 +959,7 @@ class Tools:
         guidelines = pre_result.get("guidelines") if isinstance(pre_result, dict) else None
         if guidelines:
             payload["guidelines"] = guidelines
-        return await self._post_backend("/api/v1/vascular-consult", payload, timeout=30.0)
+        return await self._post_backend("/api/v1/vascular-consult", payload, timeout=60.0)
 
     async def _run_retrieval_task(self, question: str, history: list, guidelines: list) -> dict:
         try:
@@ -2279,7 +2279,29 @@ class Tools:
                     _prefetch = asyncio.create_task(
                         self._await_session_payload(session_key, session, emitter)
                     )
-                    phase2 = await self._call_confirmation_phase(question, history, pre_result)
+                    try:
+                        phase2 = await self._call_confirmation_phase(question, history, pre_result)
+                    except httpx.TimeoutException:
+                        # Confirmation phase timed out — fall back to the background retrieval
+                        # payload rather than surfacing "Request timed out" to the user.
+                        await self._emit_status(emitter, "Confirmation timed out — using stored retrieval...")
+                        data = await _prefetch
+                        if isinstance(data, dict) and data.get("error"):
+                            await self._emit_status(emitter, "Stored retrieval failed; retrying search...")
+                            data = await self._call_consult_backend(
+                                str(pre_result.get("retrieval_query") or question),
+                                history,
+                                effective_guidelines,
+                            )
+                        self._store_case_context(session_key, pre_result)
+                        self._clear_session(session_key)
+                        return await self._build_response_from_payload(
+                            data,
+                            emitter,
+                            analysis_question=f"{analysis_question} {question}".strip(),
+                            guidelines=effective_guidelines,
+                            confirmed_details=question,
+                        )
 
                     if phase2.get("reused"):
                         data = await _prefetch  # likely already done
