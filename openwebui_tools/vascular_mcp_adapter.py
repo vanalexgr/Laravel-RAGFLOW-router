@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.39
+version: 1.5.40
 """
 import html
 import httpx
@@ -1321,11 +1321,15 @@ class Tools:
                 )
 
         # --- Confirmed procedure pathway injection ---
-        # Use confirmed_details (raw user clarification) for detection — it's specific.
-        # Fall back to analysis_question only when no confirmed_details provided.
-        # The broad retrieval query contains both "bypass" and "endovascular" to maximise recall,
-        # so using it alone would always cancel out both flags.
-        _q = (confirmed_details or analysis_question).lower()
+        # IMPORTANT: Use confirmed_details (raw user clarification) as the sole source
+        # for both bypass and endo detection.
+        # analysis_question is NOT used here because Laravel's TAXONOMY/QUERY BOOST
+        # always appends "surgical bypass or endovascular intervention" to PAD/CLTI
+        # antithrombotic queries for retrieval recall — using it would make _has_endo=True
+        # even when the patient had bypass, cancelling the pathway block.
+        # Only fire pathway blocks when the user has explicitly confirmed a procedure
+        # in confirmed_details. Without it, show both pathways (safe default).
+        _q = (confirmed_details or "").lower()
         _has_bypass = bool(re.search(
             r'\b(bypass|infrainguinal|femoropopliteal|femoroperoneal|femorotibial|'
             r'vein graft|vein bypass|prosthetic graft|'
@@ -2192,11 +2196,16 @@ class Tools:
                     )
                     data = await self._call_consult_backend(rewritten, history, effective_guidelines)
                     self._store_case_context(session_key, case_ctx)  # refresh TTL
+                    # Pass the stored retrieval_query as confirmed_details so pathway
+                    # detection uses the case-specific procedure info rather than the
+                    # Laravel-boosted retrieval query (which always includes "or endovascular").
+                    _case_procedure = str(case_ctx.get("retrieval_query") or "")
                     return await self._build_response_from_payload(
                         data,
                         emitter,
                         analysis_question=rewritten,
                         guidelines=effective_guidelines,
+                        confirmed_details=_case_procedure,
                     )
 
             if not session:
@@ -2341,6 +2350,7 @@ class Tools:
                         emitter,
                         analysis_question=f"{analysis_question} {question}".strip(),
                         guidelines=effective_guidelines,
+                        confirmed_details=question,
                     )
 
             await self._emit_status(emitter, "Interpreting the clinical question before retrieval...")
