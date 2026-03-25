@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.33
+version: 1.5.34
 """
 import html
 import httpx
@@ -1442,8 +1442,18 @@ class Tools:
             "ALWAYS qualify recommendations with bleeding risk context. "
             "Never state a regimen as universal default — always add: 'if bleeding risk acceptable' or 'adjust based on bleeding risk'. "
             "DAPT is mainly an endovascular scenario. Aspirin + rivaroxaban is preferred when bleeding risk is not high.\n\n"
-            "FIGURES IN STANDARD: In STANDARD mode, omit figures and tables unless they show a specific anatomical decision "
-            "directly relevant to this case. For antithrombotic, drug, or dosing questions, always omit figures.\n\n"
+            "FIGURES IN STANDARD: In STANDARD mode, NEVER include figures or tables for antithrombotic, drug, dosing, "
+            "or anticoagulation questions. Only include figures when they show a specific anatomical or procedural "
+            "decision that cannot be expressed in text (e.g., endograft sizing, TASC classification).\n\n"
+            "ANSWER COMPRESSION RULE: Once specific case details are confirmed, collapse the answer to ONLY the "
+            "applicable pathway — do NOT present alternatives that do not apply to this case.\n"
+            "- Vein bypass confirmed → suppress endovascular pathway entirely\n"
+            "- Endovascular confirmed → suppress bypass conduit discussion\n"
+            "- No bleeding risk stated → do not list high-risk alternatives as primary options (one line max)\n"
+            "- Specific conduit known → do not discuss other conduit types\n"
+            "Open the answer with the specific case context: "
+            "'After infrainguinal vein bypass for CLTI...' — NOT 'For patients undergoing lower limb revascularization...'\n"
+            "The answer should read as if written for THIS patient, not a textbook chapter.\n\n"
             "IMPORTANT: Your declared Mode overrides the answer template below.\n"
             "- COMPACT: write ## Clinical Decision (1-2 bullets), ## What is NOT indicated, ## Evidence Used. MAX 5 bullets total.\n"
             "- STANDARD: use the structured template below.\n"
