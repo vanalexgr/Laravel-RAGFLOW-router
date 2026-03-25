@@ -115,6 +115,12 @@ CONTRAINDICATION RULE: A guideline that EXCLUDES an option due to a contraindica
 Example: if ESVS states that CDT/thrombectomy is contraindicated in patients with recent major surgery or high bleeding risk, this DIRECTLY answers "what to do in DVT after recent surgery" — the answer is "anticoagulation alone, intervention contraindicated".
 Do NOT mark core_question_covered as "none" or "partial" when the guidelines clearly address the scenario by contraindication.
 A gap only exists when ESVS provides NO guidance at all on the scenario — not when it provides clear guidance that excludes one option.
+
+CONSERVATIVE DEFAULT RULE: For single-condition, canonical clinical presentations, default to core_question_covered="direct".
+Canonical examples: proximal DVT → anticoagulate; symptomatic carotid stenosis → CEA/CAS; AAA above threshold → repair; CLTI → revascularise per WIfI/GLASS criteria.
+If retrieved chunks contain clear treatment recommendations for the primary condition, mark core_question_covered="direct" — even if not every sub-choice (specific DOAC agent, exact duration months) is explicitly stated in the chunk.
+Reserve "partial" ONLY for: multi-condition interactions not addressed, unusual patient factors genuinely absent from guidelines, or scenarios where chunks touch the topic but provide no actionable direction.
+Do NOT mark "partial" simply because you would prefer more specific sub-detail than what is retrieved.
 PROMPT;
     }
 
