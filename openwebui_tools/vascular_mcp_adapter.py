@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.28
+version: 1.5.29
 """
 import html
 import httpx
@@ -1204,12 +1204,6 @@ class Tools:
                 gap_label_parts.append(f"no guidance: {', '.join(uncovered_facets[:3])}")
             if partial_facets and not question_gap:
                 gap_label_parts.append(f"partial: {', '.join(partial_facets[:2])}")
-            gap_detail = " | ".join(gap_label_parts) if gap_label_parts else ""
-            gap_status = "⚠️ Pre-retrieval signal: possible guideline gap"
-            if gap_detail:
-                gap_status += f" ({gap_detail})"
-            gap_status += " — supplementary reasoning section included"
-            await self._emit_status(emitter, gap_status, done=False)
             if total_gap and not covered_facets:
                 coverage_label = "NONE (total gap — no applicable ESVS recommendations for this condition/question)"
             elif total_gap:
