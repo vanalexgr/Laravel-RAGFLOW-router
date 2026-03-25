@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.24
+version: 1.5.25
 """
 import html
 import httpx
@@ -1773,16 +1773,31 @@ class Tools:
         ]
 
         if mode == "management":
-            mgmt_sections = [
-                "Use these headings in order, including only sections that are relevant:",
-                "## Bottom Line",
-                "- 1-3 bullets answering the user's practical decision question.",
-                "- If the question is whether to intervene, state the default guideline-consistent strategy in the first bullet when inferable.",
-                "## Key Case Factors",
-                "- Summarize the anatomy, symptoms, timing, severity, and risk features that drive the decision.",
-                "## Guideline-Based Options",
-                "- Compare the main supported options briefly and clearly.",
-            ]
+            if not has_gap:
+                # Simple/canonical case — compact, direct, no gap sections
+                mgmt_sections = [
+                    "COMPACT MODE: This is a well-covered guideline case. Be concise — maximum 5 bullets total across all sections.",
+                    "Use these headings in order:",
+                    "## Clinical Decision",
+                    "- State the recommendation for THIS patient directly (1-2 bullets max).",
+                    "- Include key treatment details (agent, duration, route).",
+                    "## What is NOT indicated (if relevant)",
+                    "- 1-2 bullets maximum on excluded options and why.",
+                    "## Evidence Used",
+                    "- Compact: Rec [ID] (Class X, Level Y) — one line per recommendation used.",
+                    "DO NOT add extra sections, lengthy explanations, or follow-up discussion unless directly asked.",
+                ]
+            else:
+                mgmt_sections = [
+                    "Use these headings in order, including only sections that are relevant:",
+                    "## Bottom Line",
+                    "- 1-3 bullets answering the user's practical decision question.",
+                    "- If the question is whether to intervene, state the default guideline-consistent strategy in the first bullet when inferable.",
+                    "## Key Case Factors",
+                    "- Summarize the anatomy, symptoms, timing, severity, and risk features that drive the decision.",
+                    "## Guideline-Based Options",
+                    "- Compare the main supported options briefly and clearly.",
+                ]
             if has_gap:
                 is_partial_guidance = (core_question_covered == "partial")
                 if is_partial_guidance:
