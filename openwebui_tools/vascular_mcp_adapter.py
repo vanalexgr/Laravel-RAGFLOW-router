@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.27
+version: 1.5.28
 """
 import html
 import httpx
@@ -1205,7 +1205,7 @@ class Tools:
             if partial_facets and not question_gap:
                 gap_label_parts.append(f"partial: {', '.join(partial_facets[:2])}")
             gap_detail = " | ".join(gap_label_parts) if gap_label_parts else ""
-            gap_status = "⚠️ Guideline gap detected"
+            gap_status = "⚠️ Pre-retrieval signal: possible guideline gap"
             if gap_detail:
                 gap_status += f" ({gap_detail})"
             gap_status += " — supplementary reasoning section included"
@@ -1231,10 +1231,13 @@ class Tools:
             f"(from {backend_total} retrieved; {ui_total} in Sources).\n\n"
         )
 
-        # --- Gap assessment block injected into LLM context ---
+        # --- Pre-retrieval coverage signal injected into LLM context ---
+        # This is a pre-computed estimate based on chunk previews.
+        # The LLM will make its own authoritative COVERAGE SELF-DECLARATION below.
         if has_gap:
-            llm_out += "=== GUIDELINE COVERAGE ASSESSMENT ===\n"
-            llm_out += f"Coverage status: {coverage_label}\n"
+            llm_out += "=== PRE-RETRIEVAL COVERAGE SIGNAL ===\n"
+            llm_out += "(Pre-computed from chunk previews — the COVERAGE SELF-DECLARATION below is authoritative.)\n"
+            llm_out += f"Signal: {coverage_label}\n"
             if covered_facets:
                 llm_out += f"Directly covered facets: {', '.join(covered_facets)}\n"
             if partial_facets:
@@ -1303,11 +1306,13 @@ class Tools:
                     "surveillance/follow-up that does not address the actual question asked.\n\n"
                 )
         else:
-            llm_out += "=== GUIDELINE COVERAGE ASSESSMENT ===\n"
-            llm_out += f"Coverage status: {coverage_label}\n"
+            llm_out += "=== PRE-RETRIEVAL COVERAGE SIGNAL ===\n"
+            llm_out += "(Pre-computed from chunk previews — the COVERAGE SELF-DECLARATION below is authoritative.)\n"
+            llm_out += f"Signal: {coverage_label}\n"
             llm_out += (
-                "INSTRUCTION: Full guideline coverage — SKIP Section 4 entirely. "
-                "Do NOT produce supplementary reasoning.\n\n"
+                "INSTRUCTION: Pre-retrieval signal indicates full coverage — SKIP Section 4 unless "
+                "your own COVERAGE SELF-DECLARATION below disagrees. "
+                "Do NOT produce supplementary reasoning if evidence supports full coverage.\n\n"
             )
 
         if isinstance(q_norm, dict):
@@ -1403,6 +1408,20 @@ class Tools:
             )
 
         llm_out += "\n"
+        llm_out += "=== COVERAGE SELF-DECLARATION ===\n"
+        llm_out += (
+            "After reading ALL evidence chunks above, assess coverage yourself.\n"
+            "Output this as the VERY FIRST LINE of your response:\n\n"
+            "**Coverage:** [full | partial | none] — [one sentence: what ESVS guidance you found, or what is missing]\n\n"
+            "Definitions:\n"
+            "- full    = retrieved chunks contain direct ESVS recommendations answering the core question\n"
+            "- partial = chunks address related topics but not the specific scenario; answer requires extrapolation from principles\n"
+            "- none    = no relevant ESVS guidance retrieved; answer is clinical reasoning only\n\n"
+            "Do NOT copy the pre-retrieval signal — make your own judgment from the evidence.\n"
+            "Canonical cases (proximal DVT → anticoagulate; symptomatic carotid → CEA/CAS; "
+            "AAA above threshold → repair) are 'full' when the chunks contain the recommendation.\n"
+            "A contraindication IS guidance (full). A selective-indication recommendation IS guidance (full).\n\n"
+        )
         llm_out += self._build_answer_blueprint(
             analysis_question,
             query_type,
