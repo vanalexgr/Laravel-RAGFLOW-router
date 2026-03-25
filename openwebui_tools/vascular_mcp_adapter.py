@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.31
+version: 1.5.32
 """
 import html
 import httpx
@@ -1402,11 +1402,11 @@ class Tools:
             )
 
         llm_out += "\n"
-        llm_out += "=== CASE CLASSIFICATION & COVERAGE SELF-DECLARATION ===\n"
+        llm_out += "=== CASE CLASSIFICATION ===\n"
         llm_out += (
             "After reading ALL evidence chunks above, classify this case using the rules below.\n"
-            "Output this as the VERY FIRST LINE of your response:\n\n"
-            "**Mode:** [COMPACT | STANDARD | FULL] — Rule [N] — [one sentence reason]\n\n"
+            "Classify INTERNALLY — do NOT output a mode or classification header in your response.\n"
+            "Just apply the correct format silently.\n\n"
             "Apply rules in order — FIRST MATCH WINS:\n\n"
             "RULE 1 — TRUE GAP → FULL\n"
             "  Condition: no direct ESVS recommendation AND no clear implied pathway AND decision requires synthesis across domains\n"
