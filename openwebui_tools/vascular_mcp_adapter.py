@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.19
+version: 1.5.20
 """
 import html
 import httpx
@@ -1554,9 +1554,10 @@ class Tools:
             "Produce sections in this EXACT order. Never merge sections.",
             "",
             "## 🩺 Clinical Synthesis",
-            "5 tight bullets maximum. Cover: (1) guideline situation, (2) what each condition independently meets, (3) the clinical priority decision, (4) key modifying factor, (5) practical implication.",
+            "5 tight bullets maximum. Cover: (1) guideline situation, (2) what each condition independently meets, (3) the clinical decision for THIS case, (4) key modifying factor, (5) practical implication.",
             "Each bullet must be a DIRECT, SPECIFIC statement. No hedging language.",
             "FORBIDDEN phrases: 'generally warrants', 'may be considered', 'should be discussed', 'it is reasonable to'. State clinical standards directly.",
+            "DECISIVENESS RULE: When the case has already provided the clinical criteria for a decision (e.g., Rutherford class, anatomy, suitable target, fitness), state the recommendation DIRECTLY for THIS patient — not conditionally. Write 'This patient should be offered X' — NOT 'pursue X if [criterion already stated in the case]'.",
             "ARTIFACT RULE: Do NOT copy recommendation IDs, class/level markers, or raw retrieved text into this section. Write clean synthesised clinical statements only.",
         ]
 
@@ -1614,6 +1615,7 @@ class Tools:
                     "### 🎯 In practice",
                     "State the clinical decision as a direct action list — one line per drug/decision:",
                     "e.g., '**[Drug]**: stop preoperatively (do not bridge) | **Antiplatelet**: continue aspirin perioperatively | **Combination therapy**: avoid prolonged dual anticoagulant + antiplatelet unless exceptional indication.'",
+                    "DECISIVENESS RULE: When the case has already provided the decision criteria, commit to the recommendation for THIS patient directly. Write 'stop X' not 'consider stopping X if [criterion already provided in the case]'.",
                     "Each line must be a concrete clinical action, not a discussion point.",
                     "End with: 'This guidance reflects expert clinical practice in the absence of ESVS evidence and should be interpreted with clinical judgement.'",
                 ]
@@ -1634,6 +1636,7 @@ class Tools:
                     "### 🎯 In practice",
                     "State the treatment priority as a direct action list:",
                     "e.g., '**Treat [X] first**: [one-line rationale] | **[Y] after**: [timing/condition] | **Exception**: [when order reverses].'",
+                    "DECISIVENESS RULE: When the case has already provided the urgency/risk data, state the priority for THIS patient directly — not as a conditional framework.",
                     "End with: 'This guidance reflects expert clinical practice in the absence of ESVS evidence and should be interpreted with clinical judgement.'",
                 ]
 
@@ -1729,7 +1732,8 @@ class Tools:
                 ]
             mgmt_sections += [
                 "## Clinical Decision Summary",
-                "- State the preferred approach, why it is preferred, and the main alternative with when it may be chosen instead.",
+                "- State the preferred approach for THIS patient directly. When the case has provided clinical criteria (Rutherford class, anatomy, fitness), commit to the recommendation: 'This patient should be offered X' — not 'X should be considered if [criterion already provided]'.",
+                "- Then state the main alternative and when it would be chosen instead.",
                 "- For multi-condition cases: state the priority sequence explicitly (e.g., 'treat X first, then Y, delay Z').",
                 "## Perioperative Considerations",
                 "- Include only if operative or endovascular treatment is discussed.",
@@ -1743,6 +1747,7 @@ class Tools:
                     "## 🎯 In practice",
                     "- Conclude with a direct action list: one line per key decision (drug, procedure, timing).",
                     "- Format: '**[Item]**: do X | **[Item]**: avoid Y | **[Item]**: consider Z when [specific condition]'",
+                    "- DECISIVENESS RULE: When the case has already provided the decision criteria, state the recommendation for THIS patient directly — not conditionally. 'Offer X' not 'offer X if [criterion already in the case]'.",
                     "- Each line must be a concrete clinical action, not a discussion point.",
                 ]
             lines.extend(mgmt_sections)
