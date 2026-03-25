@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.34
+version: 1.5.35
 """
 import html
 import httpx
@@ -1394,6 +1394,21 @@ class Tools:
             "If a guideline states 'within 14 days', write '14 days' — not '24h' or 'immediately'. "
             "If a guideline states 'Class IIa', do not upgrade to Class I. "
             "Render timing windows and recommendation strengths exactly as stated.\n"
+        )
+        llm_out += (
+            "9. CASE PATHWAY FILTER: Before writing any section, identify the ONE confirmed pathway "
+            "from the case details (procedure type, conduit, indication). Present ONLY that pathway "
+            "in EVERY section — including Bottom Line, Guideline-Based Options, and Clinical Decision Summary. "
+            "Do NOT present alternative pathways that do not apply to this patient. "
+            "If vein bypass is confirmed: suppress endovascular sections entirely. "
+            "If endovascular is confirmed: suppress bypass sections entirely. "
+            "Do NOT include 'if the endovascular pathway had been taken instead' — that is a different patient.\n"
+        )
+        llm_out += (
+            "10. GAP SECTION SUPPRESSION: Do NOT write a 'Guideline Gap' section unless you classified "
+            "this case as Rule 1 or Rule 6 (FULL mode). In STANDARD or COMPACT mode, there is no gap section. "
+            "A broad guideline that covers the category is NOT a gap — do not note the absence of sub-detail "
+            "(e.g. 'no explicit vein vs prosthetic differentiation') as a gap. Suppress entirely.\n"
         )
         if assets_block:
             llm_out += (
