@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.37
+version: 1.5.38
 """
 import html
 import httpx
@@ -1327,10 +1327,14 @@ class Tools:
         # so using it alone would always cancel out both flags.
         _q = (confirmed_details or analysis_question).lower()
         _has_bypass = bool(re.search(
-            r'\b(bypass|infrainguinal|femoropopliteal|femoroperoneal|femorotibial|vein graft|vein bypass|prosthetic graft)\b', _q
-        ))
+            r'\b(bypass|infrainguinal|femoropopliteal|femoroperoneal|femorotibial|'
+            r'vein graft|vein bypass|prosthetic graft|'
+            r'below.?knee|above.?knee|\bbk\b|\bak\b|conduit|saphenous|'
+            r'femoro|graft|open repair)\b', _q
+        )) or ('vein' in _q and not re.search(r'\b(vein\s*(thrombosis|compression|stenosis|stent|angioplasty|dvt|pe|ilio|axillo|subclavian))\b', _q))
         _has_endo = bool(re.search(
-            r'\b(endovascular|angioplasty|angioplasties|stenting|ptfe stent|balloon|ptas|pta\b)\b', _q
+            r'\b(endovascular|angioplasty|angioplasties|stenting|balloon|ptas|\bpta\b|'
+            r'endovascular intervention|percutaneous|angioplast)\b', _q
         ))
         if _has_bypass and not _has_endo:
             llm_out += "=== CONFIRMED PROCEDURE PATHWAY ===\n"
@@ -1338,8 +1342,8 @@ class Tools:
             llm_out += (
                 "MANDATORY: Present ONLY the bypass pathway in every section. "
                 "Do NOT mention, reference, or include the endovascular pathway anywhere in your answer — "
-                "not in Bottom Line, not in options, not in 'In practice'. "
-                "This patient had bypass surgery. Endovascular is irrelevant to this case.\n\n"
+                "not in Bottom Line, not in options, not in 'In practice', not in Evidence Used. "
+                "This patient had bypass surgery. Endovascular is a DIFFERENT patient. Remove it entirely.\n\n"
             )
         elif _has_endo and not _has_bypass:
             llm_out += "=== CONFIRMED PROCEDURE PATHWAY ===\n"
@@ -1347,14 +1351,20 @@ class Tools:
             llm_out += (
                 "MANDATORY: Present ONLY the endovascular pathway in every section. "
                 "Do NOT mention bypass, conduit type, or surgical alternatives anywhere in your answer. "
-                "This patient had endovascular intervention. Bypass is irrelevant to this case.\n\n"
+                "This patient had endovascular intervention. Bypass is a DIFFERENT patient. Remove it entirely.\n\n"
             )
 
+        # Suppress figures for drug/antithrombotic/dosing questions — not clinically useful there
+        _is_drug_question = bool(re.search(
+            r'\b(anticoag|antiplatelet|antithrombotic|doac|heparin|warfarin|aspirin|'
+            r'rivaroxaban|clopidogrel|dapt|sapt|bridg|apixaban|edoxaban|fondaparinux)\b',
+            analysis_question, re.I
+        ))
         assets_block = self._format_assets_markdown(assets)
-        # For total-gap cases no guideline figures are condition-specific — suppress them
-        if assets_block and not total_gap:
+        # Suppress figures for total-gap cases and drug/antithrombotic questions
+        if assets_block and not total_gap and not _is_drug_question:
             llm_out += assets_block
-        elif total_gap:
+        else:
             assets_block = ""
 
         chunk_num = 1
