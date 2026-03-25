@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.36
+version: 1.5.37
 """
 import html
 import httpx
@@ -1034,6 +1034,7 @@ class Tools:
         emitter,
         analysis_question: str,
         guidelines: Optional[list] = None,
+        confirmed_details: str = "",
     ) -> str:
         if not isinstance(data, dict):
             await self._emit_status(emitter, "Invalid backend payload", done=True)
@@ -1320,9 +1321,11 @@ class Tools:
                 )
 
         # --- Confirmed procedure pathway injection ---
-        # Detect confirmed single pathway from query; inject mandatory filter before evidence.
-        # Only fires when one pathway is confirmed and the other is absent — never for comparison questions.
-        _q = analysis_question.lower()
+        # Use confirmed_details (raw user clarification) for detection — it's specific.
+        # Fall back to analysis_question only when no confirmed_details provided.
+        # The broad retrieval query contains both "bypass" and "endovascular" to maximise recall,
+        # so using it alone would always cancel out both flags.
+        _q = (confirmed_details or analysis_question).lower()
         _has_bypass = bool(re.search(
             r'\b(bypass|infrainguinal|femoropopliteal|femoroperoneal|femorotibial|vein graft|vein bypass|prosthetic graft)\b', _q
         ))
@@ -2223,6 +2226,7 @@ class Tools:
                             emitter,
                             analysis_question=f"{analysis_question} {question}".strip(),
                             guidelines=effective_guidelines,
+                            confirmed_details=question,
                         )
 
                     await self._emit_status(
@@ -2283,6 +2287,7 @@ class Tools:
                             emitter,
                             analysis_question=f"{analysis_question} {question}".strip(),
                             guidelines=effective_guidelines,
+                            confirmed_details=question,
                         )
 
                     # requery path — discard prefetched payload cleanly
