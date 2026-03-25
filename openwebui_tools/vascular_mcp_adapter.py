@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.21
+version: 1.5.22
 """
 import html
 import httpx
@@ -1187,7 +1187,9 @@ class Tools:
         covered_facets = gap_assessment.get("covered_facets") or []
         gap_summary = (gap_assessment.get("gap_summary") or "").strip()
         core_question = (gap_assessment.get("core_question") or "").strip()
-        question_gap = bool(gap_assessment.get("question_gap"))  # core question itself has no ESVS guidance
+        question_gap = bool(gap_assessment.get("question_gap"))  # core question has no full ESVS guidance
+        # 'none' = truly no ESVS guidance; 'partial' = general principles exist, no condition-specific protocol
+        core_question_covered = (gap_assessment.get("core_question_covered") or "none").strip()
         # total_gap: no facets covered OR the core question has no guidance even if conditions are individually covered
         total_gap = has_gap and (not covered_facets or question_gap)
 
@@ -1195,7 +1197,8 @@ class Tools:
             gap_label_parts = []
             # Prefer core_question label when the question itself is the gap
             if question_gap and core_question:
-                gap_label_parts.append(f"no guidance on: {core_question}")
+                prefix = "partial guidance only" if core_question_covered == "partial" else "no guidance"
+                gap_label_parts.append(f"{prefix}: {core_question}")
             elif uncovered_facets:
                 gap_label_parts.append(f"no guidance: {', '.join(uncovered_facets[:3])}")
             if partial_facets and not question_gap:
@@ -1243,25 +1246,47 @@ class Tools:
                 llm_out += f"Core clinical question: {core_question}\n"
             if total_gap:
                 q_label = f"'{core_question}'" if core_question else "this specific interaction/question"
+                is_partial_guidance = (core_question_covered == "partial")
                 if covered_facets:
                     covered_str = ", ".join(covered_facets)
-                    llm_out += (
-                        f"question_gap=true — ESVS covers the component conditions ({covered_str}) "
-                        f"but provides NO direct guidance on {q_label}.\n"
-                        "INSTRUCTION:\n"
-                        f"- The Guideline-Based Answer section MUST first cite the ESVS recommendations "
-                        f"that DO apply (for {covered_str}) — these are real, applicable recommendations.\n"
-                        f"- Then explicitly state: 'ESVS provides no guidance on {q_label}.'\n"
-                        "- Do NOT claim there are no applicable ESVS recommendations — there are, for the component conditions.\n"
-                        "- The 📌 Clinical Practice Guidance section addresses the gap question only.\n\n"
-                    )
+                    if is_partial_guidance:
+                        llm_out += (
+                            f"question_gap=partial — ESVS covers the component conditions ({covered_str}) "
+                            f"and provides GENERAL PRINCIPLES on {q_label}, but no condition-specific protocol.\n"
+                            "INSTRUCTION:\n"
+                            f"- Cite the ESVS recommendations that DO apply (for {covered_str}).\n"
+                            f"- For {q_label}: state 'ESVS provides general perioperative principles "
+                            f"(e.g., stop DOACs before surgery, no routine bridging for AF, restart when haemostasis achieved) "
+                            f"but no condition-specific protocol for this scenario.'\n"
+                            "- Do NOT write 'ESVS provides no guidance' — general principles DO exist.\n"
+                            "- The 📌 Clinical Practice Guidance section applies these general principles to this specific case.\n\n"
+                        )
+                    else:
+                        llm_out += (
+                            f"question_gap=true — ESVS covers the component conditions ({covered_str}) "
+                            f"but provides NO direct guidance on {q_label}.\n"
+                            "INSTRUCTION:\n"
+                            f"- Cite the ESVS recommendations that DO apply (for {covered_str}).\n"
+                            f"- Then explicitly state: 'ESVS provides no guidance on {q_label}.'\n"
+                            "- Do NOT claim there are no applicable ESVS recommendations — there are, for the component conditions.\n"
+                            "- The 📌 Clinical Practice Guidance section addresses the gap question only.\n\n"
+                        )
                 else:
-                    llm_out += (
-                        f"total_gap=true — ESVS provides NO direct guidance on {q_label}.\n"
-                        "INSTRUCTION: The Guideline-Based Answer section MUST declare this explicitly "
-                        "and MUST NOT cite recommendations that address different conditions or questions. "
-                        "The 📌 Clinical Practice Guidance section is the PRIMARY answer — be decisive and specific.\n\n"
-                    )
+                    if is_partial_guidance:
+                        llm_out += (
+                            f"question_gap=partial — ESVS provides GENERAL PRINCIPLES on {q_label} "
+                            f"but no condition-specific protocol.\n"
+                            "INSTRUCTION: State what general principles ESVS provides, then note what is not condition-specific. "
+                            "Do NOT write 'ESVS provides no guidance' — general principles DO exist. "
+                            "The 📌 Clinical Practice Guidance applies them to this specific case.\n\n"
+                        )
+                    else:
+                        llm_out += (
+                            f"total_gap=true — ESVS provides NO direct guidance on {q_label}.\n"
+                            "INSTRUCTION: The Guideline-Based Answer section MUST declare this explicitly "
+                            "and MUST NOT cite recommendations that address different conditions or questions. "
+                            "The 📌 Clinical Practice Guidance section is the PRIMARY answer — be decisive and specific.\n\n"
+                        )
             else:
                 llm_out += (
                     "INSTRUCTION: Because has_guideline_gap=true, use the STANDARD answer blueprint below.\n"
@@ -1363,6 +1388,12 @@ class Tools:
             "IS a directly applicable recommendation — it answers the clinical question by exclusion. "
             "Do NOT declare a guideline gap when ESVS provides clear guidance via contraindication. "
             "Frame it as: 'ESVS supports [X]; [Y] is contraindicated due to [reason] [citation]' — not as a gap.\n"
+        )
+        llm_out += (
+            "8. SYNTHESIS ACCURACY: do not overstate or intensify guideline recommendations. "
+            "If a guideline states 'within 14 days', write '14 days' — not '24h' or 'immediately'. "
+            "If a guideline states 'Class IIa', do not upgrade to Class I. "
+            "Render timing windows and recommendation strengths exactly as stated.\n"
         )
         if assets_block:
             llm_out += (
