@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.20
+version: 1.5.21
 """
 import html
 import httpx
@@ -1357,6 +1357,12 @@ class Tools:
             "6. SCOPE FILTER: before citing a recommendation, verify it directly addresses "
             "this specific case. Exclude recommendations for a different procedure or condition. "
             "When no directly applicable recommendation was retrieved, state this explicitly.\n"
+        )
+        llm_out += (
+            "7. CONTRAINDICATION RULE: a recommendation that EXCLUDES an option due to a contraindication "
+            "IS a directly applicable recommendation — it answers the clinical question by exclusion. "
+            "Do NOT declare a guideline gap when ESVS provides clear guidance via contraindication. "
+            "Frame it as: 'ESVS supports [X]; [Y] is contraindicated due to [reason] [citation]' — not as a gap.\n"
         )
         if assets_block:
             llm_out += (
