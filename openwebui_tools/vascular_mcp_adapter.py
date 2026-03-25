@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.22
+version: 1.5.23
 """
 import html
 import httpx
@@ -1411,6 +1411,7 @@ class Tools:
             total_gap=total_gap,
             question_gap=question_gap,
             core_question=core_question,
+            core_question_covered=core_question_covered,
         )
 
         return llm_out
@@ -1579,7 +1580,7 @@ class Tools:
             return "diagnostic"
         return "case"
 
-    def _build_two_layer_blueprint(self, has_assets: bool, total_gap: bool = False, question_gap: bool = False, core_question: str = "") -> str:
+    def _build_two_layer_blueprint(self, has_assets: bool, total_gap: bool = False, question_gap: bool = False, core_question: str = "", core_question_covered: str = "none") -> str:
         lines = [
             "=== ANSWER STYLE (MANDATORY) ===",
             "Write clean markdown with short headings and concise bullets.",
@@ -1613,48 +1614,68 @@ class Tools:
             # Perioperative/drug management questions get different sub-headings than sequencing questions
             use_periop_structure = is_periop_drug and not is_sequencing
 
+            is_partial = (core_question_covered == "partial")
+
+            if is_partial:
+                gap_header_instruction = (
+                    "State what ESVS DOES cover for the individual conditions — cite recommendations with Rec IDs. "
+                    "Then state: 'ESVS does not provide a condition-specific protocol for [interaction], "
+                    "but general perioperative principles apply.' Do NOT write 'no ESVS guidance' — principles DO exist."
+                )
+                gap_section_instruction = (
+                    "One sentence: 'ESVS does not provide a condition-specific protocol for [interaction]; "
+                    "general perioperative principles (e.g., DOAC cessation, no routine bridging for AF) apply.' "
+                    "Do NOT call this a true gap — general principles DO cover this."
+                )
+                practice_opener = "Apply general perioperative principles to this specific case:"
+            else:
+                gap_header_instruction = (
+                    "State what ESVS DOES cover for the individual conditions — cite recommendations with Rec IDs. "
+                    "Then declare explicitly: 'ESVS provides no recommendation on [the specific interaction question].' "
+                    "Do NOT attempt to answer the core question using individual-condition recs."
+                )
+                gap_section_instruction = "One sentence naming the exact question that has no ESVS guidance. Do NOT skip this section."
+                practice_opener = "⚠️ No ESVS guideline addresses this clinical question — the following reflects expert clinical practice, not guideline evidence."
+
             lines += [
                 "",
                 "## Guideline-Based Answer",
-                "State what ESVS DOES cover for the individual conditions in this case — cite the relevant component recommendations with Rec IDs.",
-                "Then declare explicitly: 'ESVS provides no recommendation on [the specific interaction question].'",
-                "Do NOT attempt to answer the core question using individual-condition recs — they address components, not the interaction.",
+                gap_header_instruction,
                 "",
                 "## Guideline Gap",
-                "One sentence naming the exact question that has no ESVS guidance.",
-                "Do NOT skip this section.",
+                gap_section_instruction,
                 "",
                 "## 📌 Clinical Practice Guidance",
-                "Begin with exactly: '⚠️ No ESVS guideline addresses this clinical question — the following reflects expert clinical practice, not guideline evidence.'",
+                f"Begin with: '{practice_opener}'",
             ]
 
             if use_periop_structure:
                 lines += [
                     "Answer the explicit clinical questions directly using these sub-headings as applicable:",
-                    "- ### Bridging strategy",
-                    "  - State directly whether bridging is appropriate and for whom (e.g., high-risk phenotype → bridge with LMWH/UFH; low-risk → no bridging).",
-                    "  - Give the principle with qualifier: e.g., 'Warfarin interruption with heparin bridging is commonly used in high-risk APS when surgery requires interruption; exact timing depends on INR, haemostasis, and local perioperative protocol.'",
-                    "  - Do NOT present specific day-counts (e.g., 'stop 5 days before', 'resume after 12h') as universal protocol steps.",
-                    "- ### Antiplatelet considerations",
-                    "  - State directly whether antiplatelet therapy is appropriate in this context.",
-                    "  - Use calibrated language: e.g., 'Single antiplatelet therapy may be considered in selected cases where graft-patency concerns outweigh bleeding risk — routine combination with full-dose anticoagulation is not universally indicated.'",
-                    "  - Do NOT write 'often added' or imply routine dual therapy without explicit evidence.",
-                    "- ### Perioperative anticoagulation",
-                    "  - Give the general approach (cessation, bridging, restart principle) with explicit qualifier that exact timing depends on INR, bleeding risk, and local protocol.",
+                    "- ### DOAC / anticoagulation management",
+                    "  - For standard DOACs (apixaban, rivaroxaban, edoxaban): state the expected cessation timing "
+                    "  (typically 48h before major surgery for normal renal function) and restart timing (24–72h post-op when haemostasis secure).",
+                    "  - For complex anticoagulation (warfarin, APS, prosthetic valves): add qualifiers about INR target and local protocol.",
+                    "  - State bridging decision explicitly: 'No bridging for AF on DOAC (routine bridging not indicated).'",
+                    "- ### Antiplatelet strategy",
+                    "  - State directly which antiplatelet therapy is appropriate.",
+                    "  - BLEEDING RISK MODIFIER: if the patient has recent GI bleed, peptic ulcer, or is already on full anticoagulation → prefer aspirin alone over DAPT.",
+                    "  - MANDATORY safety statement: 'AVOID triple therapy (anticoagulation + dual antiplatelet) — high bleeding risk.'",
+                    "  - Do NOT recommend DAPT when the patient is already on full anticoagulation unless there is a specific indication (e.g., recent ACS/stent).",
                     "- ### Key modifying factors",
-                    "  - Patient-specific factors that shift the decision — base this ONLY on information explicitly stated in the case. Do NOT introduce patient characteristics not provided (e.g., triple antibody positivity if not stated).",
+                    "  - Patient-specific factors that shift the decision — base ONLY on information explicitly stated in the case.",
                     "- ### MDT / Specialist framing (if relevant)",
                     "RULES:",
-                    "- Answer the explicit clinical questions directly ('should I bridge?', 'should I add antiplatelet?') — do NOT defer to MDT as the primary answer.",
-                    "- DECISIVE but CALIBRATED: commit to a direction with clear rationale, but use qualified language ('is commonly used', 'is generally considered', 'may be appropriate') to reflect that this is expert practice in a true evidence gap — not a formal protocol.",
-                    "- SCOPE: base the answer only on what was explicitly stated in the case. Do not introduce patient details that were not provided.",
+                    "- Answer the explicit clinical questions directly ('should I bridge?', 'which antiplatelet?') — do NOT defer to MDT as the primary answer.",
+                    "- DECISIVE: commit to a specific recommendation. State the timing for THIS patient.",
+                    "- SCOPE: base the answer only on what was explicitly stated in the case.",
                     "MANDATORY FINAL BLOCK — must appear at the end of this section:",
                     "### 🎯 In practice",
                     "State the clinical decision as a direct action list — one line per drug/decision:",
-                    "e.g., '**[Drug]**: stop preoperatively (do not bridge) | **Antiplatelet**: continue aspirin perioperatively | **Combination therapy**: avoid prolonged dual anticoagulant + antiplatelet unless exceptional indication.'",
-                    "DECISIVENESS RULE: When the case has already provided the decision criteria, commit to the recommendation for THIS patient directly. Write 'stop X' not 'consider stopping X if [criterion already provided in the case]'.",
+                    "e.g., '**Apixaban**: stop 48h preoperatively, no bridging | **Antiplatelet**: aspirin alone perioperatively | **⚠️ Avoid**: triple therapy (anticoagulation + dual antiplatelet)'",
+                    "DECISIVENESS RULE: When the case has already provided the decision criteria, commit to the recommendation for THIS patient directly.",
                     "Each line must be a concrete clinical action, not a discussion point.",
-                    "End with: 'This guidance reflects expert clinical practice in the absence of ESVS evidence and should be interpreted with clinical judgement.'",
+                    "End with: 'This guidance reflects expert clinical practice and should be interpreted with clinical judgement.'",
                 ]
             else:
                 lines += [
@@ -1732,9 +1753,10 @@ class Tools:
         total_gap: bool = False,
         question_gap: bool = False,
         core_question: str = "",
+        core_question_covered: str = "none",
     ) -> str:
         if total_gap:
-            return self._build_two_layer_blueprint(has_assets, total_gap=True, question_gap=question_gap, core_question=core_question)
+            return self._build_two_layer_blueprint(has_assets, total_gap=True, question_gap=question_gap, core_question=core_question, core_question_covered=core_question_covered)
 
         mode = self._response_mode(question, query_type, intent_profile)
         lines = [
