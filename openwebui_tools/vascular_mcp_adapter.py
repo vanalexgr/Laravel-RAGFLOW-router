@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.41
+version: 1.5.42
 """
 import html
 import httpx
@@ -176,6 +176,7 @@ class Tools:
         # ── Carotid stenosis ────────────────────────────────────────────
         "Symptomatic status": {
             "label": "Symptomatic status",
+            "regex": re.compile(r'\bsymptomatic\b|\basymptomatic\b|\btia\b|\bamaurosis\b', re.I),
             "options": {
                 "A": "Symptomatic — recent TIA, stroke, or amaurosis fugax within 6 months",
                 "B": "Asymptomatic",
@@ -184,6 +185,7 @@ class Tools:
         },
         "Stenosis degree": {
             "label": "Stenosis degree (NASCET)",
+            "regex": re.compile(r'\bstenosis\b|\bnascet\b|\bdegree\b.*\b(?:stenosis|carotid)\b|\b(?:stenosis|carotid)\b.*\bdegree\b', re.I),
             "options": {
                 "A": "< 50%",
                 "B": "50–69%",
@@ -195,6 +197,7 @@ class Tools:
         # ── AAA ─────────────────────────────────────────────────────────
         "Aneurysm size": {
             "label": "Aneurysm maximum diameter",
+            "regex": re.compile(r'\baneurysm\b|\bdiameter\b|\bmaximum\s+diameter\b', re.I),
             "options": {
                 "A": "< 5.0 cm — surveillance threshold not met",
                 "B": "5.0–5.4 cm — borderline / approaching threshold",
@@ -204,6 +207,7 @@ class Tools:
         },
         "Patient fitness": {
             "label": "Patient fitness for intervention",
+            "regex": re.compile(r'\bfit(?:ness)?\b|\bsurgical\s+risk\b|\bunfit\b|\boperative\s+risk\b', re.I),
             "options": {
                 "A": "Fit — no significant cardiopulmonary or renal comorbidity",
                 "B": "Borderline — significant but manageable comorbidity",
@@ -215,6 +219,7 @@ class Tools:
         # ── Type B aortic dissection ─────────────────────────────────────
         "complicated": {
             "label": "Dissection complication status",
+            "regex": re.compile(r'\bcomplicat\b|\bmalperfusion\b|\buncomplicated\b', re.I),
             "options": {
                 "A": "Complicated — malperfusion, rupture, or refractory pain/hypertension",
                 "B": "Uncomplicated",
@@ -223,6 +228,7 @@ class Tools:
         },
         "phase": {
             "label": "Dissection phase",
+            "regex": re.compile(r'\b(?:acute|subacute|chronic)\b.*\bdissection\b|\bdissection\b.*\b(?:acute|subacute|chronic|phase|onset)\b|\bphase\b.*\bdissection\b', re.I),
             "options": {
                 "A": "Acute — < 2 weeks from onset",
                 "B": "Subacute — 2–8 weeks",
@@ -234,6 +240,7 @@ class Tools:
         # ── DVT / PE / VTE ───────────────────────────────────────────────
         "Provoking factors": {
             "label": "Provoking factors for VTE",
+            "regex": re.compile(r'\bprovok\b|\bunprovoked\b|\bidiopathic\b|\bmalignancy\b|\bcancer.associated\b', re.I),
             "options": {
                 "A": "Provoked — recent surgery, active malignancy, immobility, or OCP",
                 "B": "Unprovoked / idiopathic",
@@ -242,6 +249,7 @@ class Tools:
         },
         "Prior VTE history": {
             "label": "VTE episode history",
+            "regex": re.compile(r'\bfirst\s+episode\b|\brecurr\b|\bprior\s+vte\b|\bprevious\s+(?:vte|dvt|pe)\b', re.I),
             "options": {
                 "A": "First episode",
                 "B": "Recurrent — second or subsequent episode",
@@ -252,6 +260,7 @@ class Tools:
         # ── CLTI ─────────────────────────────────────────────────────────
         "Anatomical workup": {
             "label": "Vascular anatomical workup",
+            "regex": re.compile(r'\bwork.?up\b|\bimaging\b|\bcta\b|\bduplex\b|\brunoff\b|\banatomic\b', re.I),
             "options": {
                 "A": "Complete — CTA or duplex runoff available",
                 "B": "Partial — limited imaging only",
@@ -260,6 +269,7 @@ class Tools:
         },
         "Patient fitness and life expectancy": {
             "label": "Patient fitness and life expectancy",
+            "regex": re.compile(r'\blife\s+expectancy\b|\bfrailty\b|\bfrail\b|\bprimary\s+amputation\b', re.I),
             "options": {
                 "A": "Fit — reasonable life expectancy, revascularisation candidate",
                 "B": "Borderline — significant comorbidity or frailty",
@@ -270,6 +280,7 @@ class Tools:
         # ── Acute limb ischaemia ─────────────────────────────────────────
         "Rutherford class": {
             "label": "Rutherford class and duration",
+            "regex": re.compile(r'\brutherford\b|\bclass\s+i{1,3}\b|\bviable\b.*\blimb\b|\blimb\b.*\bviable\b', re.I),
             "options": {
                 "A": "Class I — viable, no immediate threat",
                 "B": "Class IIa — marginally threatened, salvageable with urgent treatment",
@@ -280,6 +291,7 @@ class Tools:
         },
         "thrombotic vs embolic": {
             "label": "Aetiology",
+            "regex": re.compile(r'\bthrombotic\b|\bembolic\b|\baetiolog\b|\bcardiac\s+source\b', re.I),
             "options": {
                 "A": "Embolic — known cardiac source (AF, valvular disease)",
                 "B": "Thrombotic — known peripheral arterial disease",
@@ -290,6 +302,7 @@ class Tools:
         # ── SVT ──────────────────────────────────────────────────────────
         "Distance from junction": {
             "label": "Distance of thrombus from SFJ/SPJ",
+            "regex": re.compile(r'\bjunction\b|\bsfj\b|\bspj\b|\bdistance\b.*\bthrombus\b|\bthrombus\b.*\bdistance\b', re.I),
             "options": {
                 "A": "< 3 cm from junction — high-risk, anticoagulation indicated",
                 "B": "3–10 cm from junction",
@@ -299,6 +312,7 @@ class Tools:
         },
         "risk stratification": {
             "label": "SVT risk stratification",
+            "regex": re.compile(r'\brisk\s+stratif\b|\bhigh.risk\s+svt\b|\blow.risk\s+svt\b', re.I),
             "options": {
                 "A": "High risk — length > 5 cm, bilateral, or significant symptoms",
                 "B": "Low risk — short segment, incidental finding",
@@ -309,6 +323,7 @@ class Tools:
         # ── Graft infection ──────────────────────────────────────────────
         "clinical signs": {
             "label": "Clinical presentation",
+            "regex": re.compile(r'\bclinical\s+(?:sign|present|feature)\b|\bsepsis\b|\bwound\s+(?:infect|dehisc)\b', re.I),
             "options": {
                 "A": "Local signs only — wound inflammation, sinus, no systemic sepsis",
                 "B": "Systemic sepsis — fever, elevated CRP/WBC, haemodynamic instability",
@@ -318,6 +333,7 @@ class Tools:
         },
         "prosthesis type": {
             "label": "Graft type and timing of infection",
+            "regex": re.compile(r'\bgraft\s+type\b|\bprosthes\b|\bearly\s+(?:vs|or)?\s*late\s+infect\b|\btiming\s+of\s+infect\b', re.I),
             "options": {
                 "A": "Early infection — < 4 months post-implantation",
                 "B": "Late infection — ≥ 4 months post-implantation",
@@ -328,6 +344,7 @@ class Tools:
         # ── Aortic thrombus ──────────────────────────────────────────────
         "Antithrombotic": {
             "label": "Antithrombotic / anticoagulation status",
+            "regex": re.compile(r'\banticoag\b|\bantithrombotic\b|\bantiplat\b|\bdoac\b|\bwarfarin\b', re.I),
             "options": {
                 "A": "On anticoagulation (DOAC, warfarin, or LMWH)",
                 "B": "On antiplatelet therapy only",
@@ -337,6 +354,7 @@ class Tools:
         },
         "Thrombus morphology": {
             "label": "Thrombus morphology",
+            "regex": re.compile(r'\bmorpholog\b|\bmobile\b.*\bthrombus\b|\bthrombus\b.*\bmobile\b|\bpeduncul\b|\bsessile\b|\bmural\b.*\bthrombus\b', re.I),
             "options": {
                 "A": "Mobile / pedunculated — higher embolic risk",
                 "B": "Sessile / mural — adherent to wall",
@@ -345,6 +363,7 @@ class Tools:
         },
         "Stroke aetiology": {
             "label": "Stroke aetiology workup",
+            "regex": re.compile(r'\bstroke\s+aetiolog\b|\bembolic\s+source\b|\bcardiac\s+source\b|\baortic\s+thrombus\b.*\bsource\b', re.I),
             "options": {
                 "A": "Aortic thrombus identified as probable embolic source",
                 "B": "Cardiac source identified (AF, intracardiac thrombus)",
@@ -814,10 +833,15 @@ class Tools:
         )
 
     def _match_clarification_options(self, question_text: str) -> Optional[dict]:
-        """Match a gate question string to predefined multiple-choice options (case-insensitive substring)."""
-        q_lower = (question_text or "").lower()
+        """Match a gate question string to predefined multiple-choice options.
+        First tries exact substring match on the key, then falls back to the entry's regex pattern."""
+        q = question_text or ""
+        q_lower = q.lower()
         for key, entry in self._CLARIFICATION_OPTIONS.items():
             if key.lower() in q_lower:
+                return entry
+            rx = entry.get("regex")
+            if rx and rx.search(q):
                 return entry
         return None
 
