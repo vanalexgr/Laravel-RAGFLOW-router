@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.40
+version: 1.5.41
 """
 import html
 import httpx
@@ -166,6 +166,192 @@ class Tools:
         r"^\s*and\s+(now|so)[,\s]+what\b",
         re.IGNORECASE,
     )
+
+    # ------------------------------------------------------------------ #
+    # Clarification options — maps gate question text to lettered choices  #
+    # ------------------------------------------------------------------ #
+
+    _CLARIFICATION_OPTIONS: dict = {
+
+        # ── Carotid stenosis ────────────────────────────────────────────
+        "Symptomatic status": {
+            "label": "Symptomatic status",
+            "options": {
+                "A": "Symptomatic — recent TIA, stroke, or amaurosis fugax within 6 months",
+                "B": "Asymptomatic",
+                "C": "Unknown / not documented",
+            },
+        },
+        "Stenosis degree": {
+            "label": "Stenosis degree (NASCET)",
+            "options": {
+                "A": "< 50%",
+                "B": "50–69%",
+                "C": "70–99%",
+                "D": "Not yet measured",
+            },
+        },
+
+        # ── AAA ─────────────────────────────────────────────────────────
+        "Aneurysm size": {
+            "label": "Aneurysm maximum diameter",
+            "options": {
+                "A": "< 5.0 cm — surveillance threshold not met",
+                "B": "5.0–5.4 cm — borderline / approaching threshold",
+                "C": "≥ 5.5 cm — repair threshold met",
+                "D": "Unknown / not yet measured",
+            },
+        },
+        "Patient fitness": {
+            "label": "Patient fitness for intervention",
+            "options": {
+                "A": "Fit — no significant cardiopulmonary or renal comorbidity",
+                "B": "Borderline — significant but manageable comorbidity",
+                "C": "Unfit / high surgical risk",
+                "D": "Not assessed",
+            },
+        },
+
+        # ── Type B aortic dissection ─────────────────────────────────────
+        "complicated": {
+            "label": "Dissection complication status",
+            "options": {
+                "A": "Complicated — malperfusion, rupture, or refractory pain/hypertension",
+                "B": "Uncomplicated",
+                "C": "Uncertain",
+            },
+        },
+        "phase": {
+            "label": "Dissection phase",
+            "options": {
+                "A": "Acute — < 2 weeks from onset",
+                "B": "Subacute — 2–8 weeks",
+                "C": "Chronic — > 8 weeks",
+                "D": "Unknown / onset date unclear",
+            },
+        },
+
+        # ── DVT / PE / VTE ───────────────────────────────────────────────
+        "Provoking factors": {
+            "label": "Provoking factors for VTE",
+            "options": {
+                "A": "Provoked — recent surgery, active malignancy, immobility, or OCP",
+                "B": "Unprovoked / idiopathic",
+                "C": "Uncertain",
+            },
+        },
+        "Prior VTE history": {
+            "label": "VTE episode history",
+            "options": {
+                "A": "First episode",
+                "B": "Recurrent — second or subsequent episode",
+                "C": "Unknown",
+            },
+        },
+
+        # ── CLTI ─────────────────────────────────────────────────────────
+        "Anatomical workup": {
+            "label": "Vascular anatomical workup",
+            "options": {
+                "A": "Complete — CTA or duplex runoff available",
+                "B": "Partial — limited imaging only",
+                "C": "Not yet done",
+            },
+        },
+        "Patient fitness and life expectancy": {
+            "label": "Patient fitness and life expectancy",
+            "options": {
+                "A": "Fit — reasonable life expectancy, revascularisation candidate",
+                "B": "Borderline — significant comorbidity or frailty",
+                "C": "Unfit — primary amputation or conservative management likely",
+            },
+        },
+
+        # ── Acute limb ischaemia ─────────────────────────────────────────
+        "Rutherford class": {
+            "label": "Rutherford class and duration",
+            "options": {
+                "A": "Class I — viable, no immediate threat",
+                "B": "Class IIa — marginally threatened, salvageable with urgent treatment",
+                "C": "Class IIb — immediately threatened, requires emergency treatment",
+                "D": "Class III — irreversible ischaemia",
+                "E": "Unknown / not yet classified",
+            },
+        },
+        "thrombotic vs embolic": {
+            "label": "Aetiology",
+            "options": {
+                "A": "Embolic — known cardiac source (AF, valvular disease)",
+                "B": "Thrombotic — known peripheral arterial disease",
+                "C": "Unknown aetiology",
+            },
+        },
+
+        # ── SVT ──────────────────────────────────────────────────────────
+        "Distance from junction": {
+            "label": "Distance of thrombus from SFJ/SPJ",
+            "options": {
+                "A": "< 3 cm from junction — high-risk, anticoagulation indicated",
+                "B": "3–10 cm from junction",
+                "C": "> 10 cm from junction",
+                "D": "Not measured / unknown",
+            },
+        },
+        "risk stratification": {
+            "label": "SVT risk stratification",
+            "options": {
+                "A": "High risk — length > 5 cm, bilateral, or significant symptoms",
+                "B": "Low risk — short segment, incidental finding",
+                "C": "Uncertain",
+            },
+        },
+
+        # ── Graft infection ──────────────────────────────────────────────
+        "clinical signs": {
+            "label": "Clinical presentation",
+            "options": {
+                "A": "Local signs only — wound inflammation, sinus, no systemic sepsis",
+                "B": "Systemic sepsis — fever, elevated CRP/WBC, haemodynamic instability",
+                "C": "Graft-enteric fistula or anastomotic dehiscence suspected",
+                "D": "Incidental / imaging finding only",
+            },
+        },
+        "prosthesis type": {
+            "label": "Graft type and timing of infection",
+            "options": {
+                "A": "Early infection — < 4 months post-implantation",
+                "B": "Late infection — ≥ 4 months post-implantation",
+                "C": "Timing unknown",
+            },
+        },
+
+        # ── Aortic thrombus ──────────────────────────────────────────────
+        "Antithrombotic": {
+            "label": "Antithrombotic / anticoagulation status",
+            "options": {
+                "A": "On anticoagulation (DOAC, warfarin, or LMWH)",
+                "B": "On antiplatelet therapy only",
+                "C": "No antithrombotic therapy",
+                "D": "Contraindication to anticoagulation",
+            },
+        },
+        "Thrombus morphology": {
+            "label": "Thrombus morphology",
+            "options": {
+                "A": "Mobile / pedunculated — higher embolic risk",
+                "B": "Sessile / mural — adherent to wall",
+                "C": "Not yet characterised on imaging",
+            },
+        },
+        "Stroke aetiology": {
+            "label": "Stroke aetiology workup",
+            "options": {
+                "A": "Aortic thrombus identified as probable embolic source",
+                "B": "Cardiac source identified (AF, intracardiac thrombus)",
+                "C": "Workup incomplete / source uncertain",
+            },
+        },
+    }
 
     class Valves(BaseModel):
         VASCULAR_API_BASE_URL: str = Field(
@@ -626,6 +812,57 @@ class Tools:
             f"{message}\n\n"
             "END"
         )
+
+    def _match_clarification_options(self, question_text: str) -> Optional[dict]:
+        """Match a gate question string to predefined multiple-choice options (case-insensitive substring)."""
+        q_lower = (question_text or "").lower()
+        for key, entry in self._CLARIFICATION_OPTIONS.items():
+            if key.lower() in q_lower:
+                return entry
+        return None
+
+    def _format_clarification_with_options(self, questions: list, preamble: str = "") -> str:
+        """Format gate clarification questions as a numbered multiple-choice block."""
+        lines = []
+        if preamble:
+            lines.append(preamble)
+            lines.append("")
+        lines.append("**To provide accurate ESVS guideline evidence, please answer:**")
+        lines.append("")
+        for i, q_text in enumerate(questions, start=1):
+            entry = self._match_clarification_options(q_text)
+            if entry:
+                lines.append(f"**{i}. {entry['label']}**")
+                for letter, option_text in entry["options"].items():
+                    lines.append(f"   {letter}) {option_text}")
+            else:
+                lines.append(f"**{i}.** {q_text.strip()}")
+            lines.append("")
+        lines.append("*Reply with your selections (e.g. \"A, B\") or type the details directly.*")
+        return "\n".join(lines)
+
+    async def _emit_clarification_options(self, emitter, questions: list) -> None:
+        """Emit clarification questions as action suggestions via OpenWebUI event emitter."""
+        if not emitter:
+            return
+        for q_text in questions:
+            entry = self._match_clarification_options(q_text)
+            if not entry:
+                continue
+            option_labels = [
+                f"{letter}) {text[:60]}{'…' if len(text) > 60 else ''}"
+                for letter, text in entry["options"].items()
+            ]
+            try:
+                await emitter({
+                    "type": "options",
+                    "data": {
+                        "message": entry["label"],
+                        "options": option_labels,
+                    },
+                })
+            except Exception:
+                pass
 
     def _capabilities_response(self, question: str = "", guardrail_type: str = "capabilities_onboarding") -> str:
         q = (question or "").strip()
@@ -2388,6 +2625,30 @@ class Tools:
                 or pre_result.get("confirmation_message")
                 or "Searching guidelines..."
             )
+
+            # Extract structured clarification questions if present
+            clarification_questions = list(
+                phase1.get("clarification_questions")
+                or pre_result.get("clarification_questions")
+                or []
+            )
+
+            if clarification_questions:
+                await self._emit_clarification_options(emitter, clarification_questions)
+                # Extract preamble: any text before the first numbered question line
+                preamble = ""
+                for line in confirmation_message.splitlines():
+                    stripped = line.strip()
+                    if stripped and stripped[0].isdigit() and "." in stripped[:3]:
+                        break
+                    if stripped:
+                        preamble += stripped + "\n"
+                formatted_message = self._format_clarification_with_options(
+                    clarification_questions,
+                    preamble=preamble.strip(),
+                )
+                return self._format_gate_for_model(formatted_message)
+
             return self._format_gate_for_model(confirmation_message)
 
         except httpx.TimeoutException:
