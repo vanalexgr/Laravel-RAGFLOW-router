@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.18
+version: 1.5.19
 """
 import html
 import httpx
@@ -1206,7 +1206,12 @@ class Tools:
                 gap_status += f" ({gap_detail})"
             gap_status += " — supplementary reasoning section included"
             await self._emit_status(emitter, gap_status, done=False)
-            coverage_label = "NONE (total gap — no applicable ESVS recommendations)" if total_gap else "PARTIAL / SUPPLEMENTARY"
+            if total_gap and not covered_facets:
+                coverage_label = "NONE (total gap — no applicable ESVS recommendations for this condition/question)"
+            elif total_gap:
+                coverage_label = "QUESTION GAP — ESVS covers the component conditions but NOT the specific interaction or perioperative management question"
+            else:
+                coverage_label = "PARTIAL / SUPPLEMENTARY"
         else:
             total_gap = False
             coverage_label = "FULL"
@@ -1237,13 +1242,26 @@ class Tools:
             if core_question:
                 llm_out += f"Core clinical question: {core_question}\n"
             if total_gap:
-                q_label = f"'{core_question}'" if core_question else "this condition/question"
-                llm_out += (
-                    f"total_gap=true — ESVS provides NO direct guidance on {q_label}.\n"
-                    "INSTRUCTION: The Guideline-Based Answer section MUST declare this explicitly "
-                    "and MUST NOT cite recommendations that address different conditions or questions. "
-                    "The 📌 Clinical Practice Guidance section is the PRIMARY answer — be decisive and specific.\n\n"
-                )
+                q_label = f"'{core_question}'" if core_question else "this specific interaction/question"
+                if covered_facets:
+                    covered_str = ", ".join(covered_facets)
+                    llm_out += (
+                        f"question_gap=true — ESVS covers the component conditions ({covered_str}) "
+                        f"but provides NO direct guidance on {q_label}.\n"
+                        "INSTRUCTION:\n"
+                        f"- The Guideline-Based Answer section MUST first cite the ESVS recommendations "
+                        f"that DO apply (for {covered_str}) — these are real, applicable recommendations.\n"
+                        f"- Then explicitly state: 'ESVS provides no guidance on {q_label}.'\n"
+                        "- Do NOT claim there are no applicable ESVS recommendations — there are, for the component conditions.\n"
+                        "- The 📌 Clinical Practice Guidance section addresses the gap question only.\n\n"
+                    )
+                else:
+                    llm_out += (
+                        f"total_gap=true — ESVS provides NO direct guidance on {q_label}.\n"
+                        "INSTRUCTION: The Guideline-Based Answer section MUST declare this explicitly "
+                        "and MUST NOT cite recommendations that address different conditions or questions. "
+                        "The 📌 Clinical Practice Guidance section is the PRIMARY answer — be decisive and specific.\n\n"
+                    )
             else:
                 llm_out += (
                     "INSTRUCTION: Because has_guideline_gap=true, use the STANDARD answer blueprint below.\n"

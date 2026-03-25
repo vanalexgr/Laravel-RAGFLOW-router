@@ -76,6 +76,11 @@ What is the user ACTUALLY asking? Express this as a short phrase (e.g., "treatme
 "endovascular vs open repair", "anticoagulation duration", "management of ICA aneurysm").
 This may differ from the individual conditions listed as facets.
 
+COMORBIDITY RULE: Distinguish between a comorbidity that CHANGES THE SURGICAL INDICATION vs one that only AFFECTS PERIOPERATIVE MANAGEMENT.
+- If the comorbidity (e.g., APS, AF, diabetes, renal failure) does NOT change whether to bypass vs amputate, open vs endovascular, or when to intervene — the primary vascular decision is NOT the gap.
+- In that case, frame the core question around the actual gap: "perioperative management of [comorbidity] during [intervention]" — NOT "[intervention] in a patient with [comorbidity]".
+- Example: for CLTI + APS, the bypass vs amputation decision is governed by CLTI criteria (WIfI, GLASS, conduit availability) — APS does not change this. Core question = "perioperative anticoagulation in APS during infrainguinal bypass".
+
 STEP 2 — Assess core question coverage:
 Does any retrieved chunk provide direct guidance on the CORE QUESTION itself (not just the underlying conditions)?
 Example: if the question is about sequencing AAA and CLTI, check whether any chunk addresses the sequence —
