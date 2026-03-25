@@ -12,20 +12,22 @@ class GapAssessment
         public readonly string $gapSummary,
         public readonly bool   $supplementaryPermitted,
         public readonly string $coreQuestion,
-        public readonly bool   $questionGap,       // core question itself has no guidance
+        public readonly bool   $questionGap,              // core question itself has no full guidance
+        public readonly string $coreQuestionCoveredLevel, // 'direct' | 'partial' | 'none'
     ) {}
 
     public static function noGap(): self
     {
         return new self(
-            hasGuidelineGap:        false,
-            coveredFacets:          [],
-            partialFacets:          [],
-            uncoveredFacets:        [],
-            gapSummary:             '',
-            supplementaryPermitted: false,
-            coreQuestion:           '',
-            questionGap:            false,
+            hasGuidelineGap:           false,
+            coveredFacets:             [],
+            partialFacets:             [],
+            uncoveredFacets:           [],
+            gapSummary:                '',
+            supplementaryPermitted:    false,
+            coreQuestion:              '',
+            questionGap:               false,
+            coreQuestionCoveredLevel:  'direct',
         );
     }
 
@@ -54,28 +56,31 @@ class GapAssessment
         $hasGap              = !empty($uncovered) || count($partial) >= 2 || $questionGap;
 
         return new self(
-            hasGuidelineGap:        $hasGap,
-            coveredFacets:          $covered,
-            partialFacets:          $partial,
-            uncoveredFacets:        $uncovered,
-            gapSummary:             (string) ($data['gap_summary'] ?? ''),
-            supplementaryPermitted: $hasGap,
-            coreQuestion:           $coreQuestion,
-            questionGap:            $questionGap,
+            hasGuidelineGap:           $hasGap,
+            coveredFacets:             $covered,
+            partialFacets:             $partial,
+            uncoveredFacets:           $uncovered,
+            gapSummary:                (string) ($data['gap_summary'] ?? ''),
+            supplementaryPermitted:    $hasGap,
+            coreQuestion:              $coreQuestion,
+            questionGap:               $questionGap,
+            coreQuestionCoveredLevel:  in_array($coreQuestionCovered, ['direct', 'partial', 'none'], true)
+                                       ? $coreQuestionCovered : 'direct',
         );
     }
 
     public function toArray(): array
     {
         return [
-            'has_guideline_gap'        => $this->hasGuidelineGap,
-            'covered_facets'           => $this->coveredFacets,
-            'partial_facets'           => $this->partialFacets,
-            'uncovered_facets'         => $this->uncoveredFacets,
-            'gap_summary'              => $this->gapSummary,
-            'supplementary_permitted'  => $this->supplementaryPermitted,
-            'core_question'            => $this->coreQuestion,
-            'question_gap'             => $this->questionGap,
+            'has_guideline_gap'            => $this->hasGuidelineGap,
+            'covered_facets'               => $this->coveredFacets,
+            'partial_facets'               => $this->partialFacets,
+            'uncovered_facets'             => $this->uncoveredFacets,
+            'gap_summary'                  => $this->gapSummary,
+            'supplementary_permitted'      => $this->supplementaryPermitted,
+            'core_question'                => $this->coreQuestion,
+            'question_gap'                 => $this->questionGap,
+            'core_question_covered'        => $this->coreQuestionCoveredLevel,
         ];
     }
 }
