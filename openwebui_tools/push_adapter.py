@@ -32,6 +32,8 @@ checks = [
     ("has_gap", "has_gap" in content),
     ("_build_two_layer_blueprint", "_build_two_layer_blueprint" in content),
     ("SCOPE FILTER", "SCOPE FILTER" in content),
+    ("_CLARIFICATION_OPTIONS", "_CLARIFICATION_OPTIONS" in content),
+    ("_format_clarification_with_options", "_format_clarification_with_options" in content),
 ]
 for name, ok in checks:
     print(f"  {'OK' if ok else 'MISSING'}: {name}")
