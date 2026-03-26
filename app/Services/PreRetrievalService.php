@@ -44,7 +44,7 @@ class PreRetrievalService
 
         try {
             $prompt = $this->buildPrompt($question, $history, $this->availableGuidelines);
-            $raw = $this->llm->complete($prompt, maxTokens: 400, temperature: 0);
+            $raw = $this->llm->complete($prompt, maxTokens: 600, temperature: 0);
             $data = $this->parseJson($raw);
 
             if ($data === null) {
@@ -214,8 +214,11 @@ Trigger phrases: sudden painful leg, acute limb ischemia, embolus, thrombosed an
 antithrombotic_therapy
 Focus: antiplatelet and anticoagulant therapy in vascular patients.
 Typical conditions: antiplatelet therapy, anticoagulation, dual antiplatelet therapy,
-peri-procedural antithrombotic management, DOAC or warfarin use in vascular disease.
-Trigger phrases: aspirin, clopidogrel, anticoagulation, DOAC, warfarin.
+peri-procedural antithrombotic management, DOAC or warfarin use in vascular disease,
+post-operative antithrombotic regimen after bypass or endovascular intervention.
+Trigger phrases: antithrombotic, antithrombotic therapy, antiplatelet, anticoagulation,
+aspirin, clopidogrel, DAPT, rivaroxaban, DOAC, warfarin, post-operative medication,
+perioperative anticoagulation, bleeding risk modifier (ITP, APS, recent GI bleed).
 
 venous_thrombosis
 Focus: venous thromboembolism.
@@ -253,6 +256,30 @@ Add a second or third guideline only if the clinical problem clearly spans anoth
 Examples:
 - arch dissection causing carotid stroke -> aortic_arch + carotid_vertebral
 - EVAR antiplatelet therapy question -> abdominal_aortic_aneurysm + antithrombotic_therapy
+- AAA with concomitant CLTI -> abdominal_aortic_aneurysm + clti (both conditions require guideline evidence)
+- post-bypass or post-endovascular antithrombotic management -> primary procedure guideline + antithrombotic_therapy
+- CLTI with comorbidity affecting antithrombotic choice (ITP, APS, AF) -> clti + antithrombotic_therapy
+
+ANTITHROMBOTIC GUIDELINE RULE:
+Always add antithrombotic_therapy when:
+- The question asks about antithrombotic, antiplatelet, or anticoagulation therapy after any vascular procedure
+- The question asks about post-operative or perioperative medication management
+- The question mentions a bleeding-risk condition (ITP, APS, recent bleed, anticoagulation on warfarin/DOAC) in a surgical context
+Do NOT rely only on drug names (aspirin, DOAC) as triggers — the words "antithrombotic therapy", "anticoagulation", "antiplatelet", or "post-op medication" are equally strong triggers.
+
+CO-DISEASE MANDATORY RULE:
+When two named vascular conditions appear in the same question, you MUST select a guideline for EACH.
+This is not optional — both conditions require evidence.
+
+MANDATORY combinations:
+- AAA (any size) + CLTI (any Rutherford) → abdominal_aortic_aneurysm + clti
+- AAA + gangrene or tissue loss → abdominal_aortic_aneurysm + clti
+- AAA + rest pain → abdominal_aortic_aneurysm + clti
+- CLTI + bypass or post-op management → clti + antithrombotic_therapy
+- bypass surgery (any) + post-op medication question → primary guideline + antithrombotic_therapy
+- claudication or IC + post-endovascular antithrombotic → asymptomatic_pad + antithrombotic_therapy
+
+Do NOT select only the "dominant" condition when both are explicitly stated. Both need guideline evidence to answer the question.
 
 Special aortic dissection rule:
 - If the dissection is distal to or just above the left subclavian, or described as non-A non-B,
@@ -527,6 +554,19 @@ PROMPT;
 
         if ($this->hasCarotidNeurovascularContext($combined)) {
             $merged = $this->insertGuideline('carotid_vertebral', $merged, 'aortic_arch');
+        }
+
+        // AAA + CLTI co-disease: ensure both guidelines present
+        if ($this->isAaaWithCltiContext($combined)) {
+            $merged = $this->prependGuideline('abdominal_aortic_aneurysm', $merged);
+            $merged = $this->insertGuideline('clti', $merged, 'abdominal_aortic_aneurysm');
+        }
+
+        // Post-bypass or post-endovascular antithrombotic management: always add antithrombotic_therapy
+        if ($this->isPostProcedureAntithromboticContext($combined)) {
+            if (!in_array('antithrombotic_therapy', $merged, true)) {
+                $merged[] = 'antithrombotic_therapy';
+            }
         }
 
         return array_slice($merged, 0, 3);
@@ -829,6 +869,27 @@ PROMPT;
     protected function hasDissectionContext(string $text): bool
     {
         return (bool) preg_match('/\bdissection\b/i', $text);
+    }
+
+    protected function isAaaWithCltiContext(string $text): bool
+    {
+        $hasAaa = (bool) preg_match('/\b(AAA|abdominal\s+aortic\s+aneurysm|infrarenal\s+aneurysm|EVAR)\b/i', $text);
+        $hasClti = (bool) preg_match('/\b(CLTI|rest\s+pain|tissue\s+loss|gangrene|Rutherford\s+[456]|limb[- ]threatening|WIfI)\b/i', $text);
+        return $hasAaa && $hasClti;
+    }
+
+    protected function isPostProcedureAntithromboticContext(string $text): bool
+    {
+        // Post-bypass or post-endovascular antithrombotic management
+        $hasPostProcedure = (bool) preg_match(
+            '/\b(post[- ]op|post[- ]operative|after\s+(bypass|revascularization|revascularisation|angioplasty|EVAR|stenting|endovascular)|bypass\s+surgery|infrainguinal\s+bypass|antithrombotic\s+after|antithrombotic\s+therapy\s+after)\b/i',
+            $text
+        );
+        $hasAntithromboticQuestion = (bool) preg_match(
+            '/\b(antithrombotic|antiplatelet|anticoagul|aspirin|clopidogrel|DAPT|rivaroxaban|DOAC|warfarin)\b/i',
+            $text
+        );
+        return $hasPostProcedure || $hasAntithromboticQuestion;
     }
 
     protected function buildNonANonBDiagnosis(string $text): string
