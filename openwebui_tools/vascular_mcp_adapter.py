@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.42
+version: 1.5.47
 """
 import html
 import httpx
@@ -166,211 +166,6 @@ class Tools:
         r"^\s*and\s+(now|so)[,\s]+what\b",
         re.IGNORECASE,
     )
-
-    # ------------------------------------------------------------------ #
-    # Clarification options — maps gate question text to lettered choices  #
-    # ------------------------------------------------------------------ #
-
-    _CLARIFICATION_OPTIONS: dict = {
-
-        # ── Carotid stenosis ────────────────────────────────────────────
-        "Symptomatic status": {
-            "label": "Symptomatic status",
-            "regex": re.compile(r'\bsymptomatic\b|\basymptomatic\b|\btia\b|\bamaurosis\b', re.I),
-            "options": {
-                "A": "Symptomatic — recent TIA, stroke, or amaurosis fugax within 6 months",
-                "B": "Asymptomatic",
-                "C": "Unknown / not documented",
-            },
-        },
-        "Stenosis degree": {
-            "label": "Stenosis degree (NASCET)",
-            "regex": re.compile(r'\bstenosis\b|\bnascet\b|\bdegree\b.*\b(?:stenosis|carotid)\b|\b(?:stenosis|carotid)\b.*\bdegree\b', re.I),
-            "options": {
-                "A": "< 50%",
-                "B": "50–69%",
-                "C": "70–99%",
-                "D": "Not yet measured",
-            },
-        },
-
-        # ── AAA ─────────────────────────────────────────────────────────
-        "Aneurysm size": {
-            "label": "Aneurysm maximum diameter",
-            "regex": re.compile(r'\baneurysm\b|\bdiameter\b|\bmaximum\s+diameter\b', re.I),
-            "options": {
-                "A": "< 5.0 cm — surveillance threshold not met",
-                "B": "5.0–5.4 cm — borderline / approaching threshold",
-                "C": "≥ 5.5 cm — repair threshold met",
-                "D": "Unknown / not yet measured",
-            },
-        },
-        "Patient fitness": {
-            "label": "Patient fitness for intervention",
-            "regex": re.compile(r'\bfit(?:ness)?\b|\bsurgical\s+risk\b|\bunfit\b|\boperative\s+risk\b', re.I),
-            "options": {
-                "A": "Fit — no significant cardiopulmonary or renal comorbidity",
-                "B": "Borderline — significant but manageable comorbidity",
-                "C": "Unfit / high surgical risk",
-                "D": "Not assessed",
-            },
-        },
-
-        # ── Type B aortic dissection ─────────────────────────────────────
-        "complicated": {
-            "label": "Dissection complication status",
-            "regex": re.compile(r'\bcomplicat\b|\bmalperfusion\b|\buncomplicated\b', re.I),
-            "options": {
-                "A": "Complicated — malperfusion, rupture, or refractory pain/hypertension",
-                "B": "Uncomplicated",
-                "C": "Uncertain",
-            },
-        },
-        "phase": {
-            "label": "Dissection phase",
-            "regex": re.compile(r'\b(?:acute|subacute|chronic)\b.*\bdissection\b|\bdissection\b.*\b(?:acute|subacute|chronic|phase|onset)\b|\bphase\b.*\bdissection\b', re.I),
-            "options": {
-                "A": "Acute — < 2 weeks from onset",
-                "B": "Subacute — 2–8 weeks",
-                "C": "Chronic — > 8 weeks",
-                "D": "Unknown / onset date unclear",
-            },
-        },
-
-        # ── DVT / PE / VTE ───────────────────────────────────────────────
-        "Provoking factors": {
-            "label": "Provoking factors for VTE",
-            "regex": re.compile(r'\bprovok\b|\bunprovoked\b|\bidiopathic\b|\bmalignancy\b|\bcancer.associated\b', re.I),
-            "options": {
-                "A": "Provoked — recent surgery, active malignancy, immobility, or OCP",
-                "B": "Unprovoked / idiopathic",
-                "C": "Uncertain",
-            },
-        },
-        "Prior VTE history": {
-            "label": "VTE episode history",
-            "regex": re.compile(r'\bfirst\s+episode\b|\brecurr\b|\bprior\s+vte\b|\bprevious\s+(?:vte|dvt|pe)\b', re.I),
-            "options": {
-                "A": "First episode",
-                "B": "Recurrent — second or subsequent episode",
-                "C": "Unknown",
-            },
-        },
-
-        # ── CLTI ─────────────────────────────────────────────────────────
-        "Anatomical workup": {
-            "label": "Vascular anatomical workup",
-            "regex": re.compile(r'\bwork.?up\b|\bimaging\b|\bcta\b|\bduplex\b|\brunoff\b|\banatomic\b', re.I),
-            "options": {
-                "A": "Complete — CTA or duplex runoff available",
-                "B": "Partial — limited imaging only",
-                "C": "Not yet done",
-            },
-        },
-        "Patient fitness and life expectancy": {
-            "label": "Patient fitness and life expectancy",
-            "regex": re.compile(r'\blife\s+expectancy\b|\bfrailty\b|\bfrail\b|\bprimary\s+amputation\b', re.I),
-            "options": {
-                "A": "Fit — reasonable life expectancy, revascularisation candidate",
-                "B": "Borderline — significant comorbidity or frailty",
-                "C": "Unfit — primary amputation or conservative management likely",
-            },
-        },
-
-        # ── Acute limb ischaemia ─────────────────────────────────────────
-        "Rutherford class": {
-            "label": "Rutherford class and duration",
-            "regex": re.compile(r'\brutherford\b|\bclass\s+i{1,3}\b|\bviable\b.*\blimb\b|\blimb\b.*\bviable\b', re.I),
-            "options": {
-                "A": "Class I — viable, no immediate threat",
-                "B": "Class IIa — marginally threatened, salvageable with urgent treatment",
-                "C": "Class IIb — immediately threatened, requires emergency treatment",
-                "D": "Class III — irreversible ischaemia",
-                "E": "Unknown / not yet classified",
-            },
-        },
-        "thrombotic vs embolic": {
-            "label": "Aetiology",
-            "regex": re.compile(r'\bthrombotic\b|\bembolic\b|\baetiolog\b|\bcardiac\s+source\b', re.I),
-            "options": {
-                "A": "Embolic — known cardiac source (AF, valvular disease)",
-                "B": "Thrombotic — known peripheral arterial disease",
-                "C": "Unknown aetiology",
-            },
-        },
-
-        # ── SVT ──────────────────────────────────────────────────────────
-        "Distance from junction": {
-            "label": "Distance of thrombus from SFJ/SPJ",
-            "regex": re.compile(r'\bjunction\b|\bsfj\b|\bspj\b|\bdistance\b.*\bthrombus\b|\bthrombus\b.*\bdistance\b', re.I),
-            "options": {
-                "A": "< 3 cm from junction — high-risk, anticoagulation indicated",
-                "B": "3–10 cm from junction",
-                "C": "> 10 cm from junction",
-                "D": "Not measured / unknown",
-            },
-        },
-        "risk stratification": {
-            "label": "SVT risk stratification",
-            "regex": re.compile(r'\brisk\s+stratif\b|\bhigh.risk\s+svt\b|\blow.risk\s+svt\b', re.I),
-            "options": {
-                "A": "High risk — length > 5 cm, bilateral, or significant symptoms",
-                "B": "Low risk — short segment, incidental finding",
-                "C": "Uncertain",
-            },
-        },
-
-        # ── Graft infection ──────────────────────────────────────────────
-        "clinical signs": {
-            "label": "Clinical presentation",
-            "regex": re.compile(r'\bclinical\s+(?:sign|present|feature)\b|\bsepsis\b|\bwound\s+(?:infect|dehisc)\b', re.I),
-            "options": {
-                "A": "Local signs only — wound inflammation, sinus, no systemic sepsis",
-                "B": "Systemic sepsis — fever, elevated CRP/WBC, haemodynamic instability",
-                "C": "Graft-enteric fistula or anastomotic dehiscence suspected",
-                "D": "Incidental / imaging finding only",
-            },
-        },
-        "prosthesis type": {
-            "label": "Graft type and timing of infection",
-            "regex": re.compile(r'\bgraft\s+type\b|\bprosthes\b|\bearly\s+(?:vs|or)?\s*late\s+infect\b|\btiming\s+of\s+infect\b', re.I),
-            "options": {
-                "A": "Early infection — < 4 months post-implantation",
-                "B": "Late infection — ≥ 4 months post-implantation",
-                "C": "Timing unknown",
-            },
-        },
-
-        # ── Aortic thrombus ──────────────────────────────────────────────
-        "Antithrombotic": {
-            "label": "Antithrombotic / anticoagulation status",
-            "regex": re.compile(r'\banticoag\b|\bantithrombotic\b|\bantiplat\b|\bdoac\b|\bwarfarin\b', re.I),
-            "options": {
-                "A": "On anticoagulation (DOAC, warfarin, or LMWH)",
-                "B": "On antiplatelet therapy only",
-                "C": "No antithrombotic therapy",
-                "D": "Contraindication to anticoagulation",
-            },
-        },
-        "Thrombus morphology": {
-            "label": "Thrombus morphology",
-            "regex": re.compile(r'\bmorpholog\b|\bmobile\b.*\bthrombus\b|\bthrombus\b.*\bmobile\b|\bpeduncul\b|\bsessile\b|\bmural\b.*\bthrombus\b', re.I),
-            "options": {
-                "A": "Mobile / pedunculated — higher embolic risk",
-                "B": "Sessile / mural — adherent to wall",
-                "C": "Not yet characterised on imaging",
-            },
-        },
-        "Stroke aetiology": {
-            "label": "Stroke aetiology workup",
-            "regex": re.compile(r'\bstroke\s+aetiolog\b|\bembolic\s+source\b|\bcardiac\s+source\b|\baortic\s+thrombus\b.*\bsource\b', re.I),
-            "options": {
-                "A": "Aortic thrombus identified as probable embolic source",
-                "B": "Cardiac source identified (AF, intracardiac thrombus)",
-                "C": "Workup incomplete / source uncertain",
-            },
-        },
-    }
 
     class Valves(BaseModel):
         VASCULAR_API_BASE_URL: str = Field(
@@ -832,61 +627,6 @@ class Tools:
             "END"
         )
 
-    def _match_clarification_options(self, question_text: str) -> Optional[dict]:
-        """Match a gate question string to predefined multiple-choice options.
-        First tries exact substring match on the key, then falls back to the entry's regex pattern."""
-        q = question_text or ""
-        q_lower = q.lower()
-        for key, entry in self._CLARIFICATION_OPTIONS.items():
-            if key.lower() in q_lower:
-                return entry
-            rx = entry.get("regex")
-            if rx and rx.search(q):
-                return entry
-        return None
-
-    def _format_clarification_with_options(self, questions: list, preamble: str = "") -> str:
-        """Format gate clarification questions as a numbered multiple-choice block."""
-        lines = []
-        if preamble:
-            lines.append(preamble)
-            lines.append("")
-        lines.append("**To provide accurate ESVS guideline evidence, please answer:**")
-        lines.append("")
-        for i, q_text in enumerate(questions, start=1):
-            entry = self._match_clarification_options(q_text)
-            if entry:
-                lines.append(f"**{i}. {entry['label']}**")
-                for letter, option_text in entry["options"].items():
-                    lines.append(f"   {letter}) {option_text}")
-            else:
-                lines.append(f"**{i}.** {q_text.strip()}")
-            lines.append("")
-        lines.append("*Reply with your selections (e.g. \"A, B\") or type the details directly.*")
-        return "\n".join(lines)
-
-    async def _emit_clarification_options(self, emitter, questions: list) -> None:
-        """Emit clarification questions as action suggestions via OpenWebUI event emitter."""
-        if not emitter:
-            return
-        for q_text in questions:
-            entry = self._match_clarification_options(q_text)
-            if not entry:
-                continue
-            option_labels = [
-                f"{letter}) {text[:60]}{'…' if len(text) > 60 else ''}"
-                for letter, text in entry["options"].items()
-            ]
-            try:
-                await emitter({
-                    "type": "options",
-                    "data": {
-                        "message": entry["label"],
-                        "options": option_labels,
-                    },
-                })
-            except Exception:
-                pass
 
     def _capabilities_response(self, question: str = "", guardrail_type: str = "capabilities_onboarding") -> str:
         q = (question or "").strip()
@@ -1619,6 +1359,48 @@ class Tools:
                 "This patient had endovascular intervention. Bypass is a DIFFERENT patient. Remove it entirely.\n\n"
             )
 
+        # --- Confirmed bleeding-risk modifier injection ---
+        # When the user explicitly confirms a high bleeding-risk condition,
+        # front-load that modifier: present standard options ONLY conditionally.
+        _bleeding_risk_modifier = bool(re.search(
+            r'\b(itp|immune\s+thrombocytopeni|thrombocytopeni|thrombocytopaeni|'
+            r'low\s+platelets?|platelet\s+count|haemophili|hemophili|'
+            r'recent\s+(major\s+)?(bleed|haemorrhage|hemorrhage|gi\s+bleed)|'
+            r'active\s+bleed|high\s+bleeding\s+risk|bleeding\s+contraindication|'
+            r'anticoagulation\s+contraindicated|cirrhosis|liver\s+failure|'
+            r'coagulopathy|von\s+willebrand)\b',
+            _q, re.I
+        ))
+        if _bleeding_risk_modifier:
+            llm_out += "=== CONFIRMED BLEEDING RISK MODIFIER ===\n"
+            llm_out += (
+                "The patient has an explicitly confirmed high-bleeding-risk condition.\n"
+                "MANDATORY STRUCTURE — follow this exactly:\n"
+                "1. OPEN with the modifier impact: state that standard post-procedural antithrombotic "
+                "regimens apply ONLY when bleeding risk is acceptable. Name the condition explicitly.\n"
+                "2. State the UNKNOWN variables that must be resolved before choosing a regimen. "
+                "For ITP/thrombocytopenia: platelet count, mucosal bleeding history, current ITP stability/treatment. "
+                "For recent major bleed: time since bleed, source control, haemoglobin trend. "
+                "Use a brief bullet list labeled 'Key unknowns:'\n"
+                "3. Give a TIERED decision tree — not two balanced options:\n"
+                "   - If bleeding risk ACCEPTABLE (platelet count stable, no active bleed): "
+                "standard post-endovascular regimen applies (aspirin + rivaroxaban OR short-course DAPT)\n"
+                "   - If bleeding risk UNCERTAIN or platelet count unstable: "
+                "consider de-escalation — single antiplatelet agent, with combination escalation deferred\n"
+                "   - If bleeding risk HIGH or platelet count critically low: "
+                "avoid combination antithrombotic therapy; single-agent or anticoagulation alone\n"
+                "4. Do NOT label aspirin + rivaroxaban as 'preferred approach' without first confirming "
+                "bleeding risk is acceptable. 'Preferred' implies the default — it is NOT the default "
+                "when the patient has an active bleeding-risk modifier.\n"
+                "5. The word 'preferred' may only appear inside the 'bleeding risk acceptable' tier.\n"
+                "6. PLACEMENT RULE: The bleeding-risk qualifier MUST appear in the FIRST bullet of "
+                "## Clinical Decision — NOT only in ## Follow-up. "
+                "Example first bullet: 'Because the patient has ITP, the following applies only if "
+                "platelet count is stable and bleeding risk is acceptable: [regimen].' "
+                "Do NOT bury the modifier in a follow-up monitoring note.\n"
+                "The modifier determines the tier. The standard regimen is only applicable within the correct tier.\n\n"
+            )
+
         # Suppress figures for drug/antithrombotic/dosing questions — not clinically useful there
         _is_drug_question = bool(re.search(
             r'\b(anticoag|antiplatelet|antithrombotic|doac|heparin|warfarin|aspirin|'
@@ -1759,6 +1541,16 @@ class Tools:
             "'lower limb revascularisation' covers both endovascular and surgical. "
             "'Guideline is broad but applicable' = Rule 3 or 4/5 — NOT Rule 1 or 6. "
             "Only declare a gap when the guideline genuinely provides NO usable direction, not when it provides broad direction.\n\n"
+            "NEGATIVE INDICATION FRAMING RULE: When the correct answer is 'do not intervene' or 'continue current treatment', "
+            "state the POSITIVE recommendation first ('Continue best medical therapy' / 'Anticoagulation alone is indicated'), "
+            "then add the negative exclusion ('Routine CEA/CAS is NOT recommended' / 'Thrombolysis is NOT indicated'). "
+            "Do NOT frame the answer only as absence of evidence — state what IS recommended.\n\n"
+            "SEQUENCING DECISIVENESS RULE: When the question is 'which should be treated first?' or 'which takes priority?', "
+            "the 📌 Clinical Practice Guidance section MUST state a SINGLE explicit priority order with one sentence of reasoning. "
+            "Do NOT list urgency of each condition separately without choosing. "
+            "Example: 'In clinical practice, limb revascularisation is addressed first — the AAA is stable and carries lower immediate risk than limb loss.' "
+            "Hedging without a decision ('both are urgent, multidisciplinary discussion recommended') is NOT acceptable as the primary answer. "
+            "State the clinical default priority, then note exceptions if any.\n\n"
             "ANTITHROMBOTIC MODIFIER RULE: When the question involves antithrombotic therapy, anticoagulation, or antiplatelet agents, "
             "ALWAYS qualify recommendations with bleeding risk context. "
             "Never state a regimen as universal default — always add: 'if bleeding risk acceptable' or 'adjust based on bleeding risk'. "
@@ -2649,29 +2441,6 @@ class Tools:
                 or pre_result.get("confirmation_message")
                 or "Searching guidelines..."
             )
-
-            # Extract structured clarification questions if present
-            clarification_questions = list(
-                phase1.get("clarification_questions")
-                or pre_result.get("clarification_questions")
-                or []
-            )
-
-            if clarification_questions:
-                await self._emit_clarification_options(emitter, clarification_questions)
-                # Extract preamble: any text before the first numbered question line
-                preamble = ""
-                for line in confirmation_message.splitlines():
-                    stripped = line.strip()
-                    if stripped and stripped[0].isdigit() and "." in stripped[:3]:
-                        break
-                    if stripped:
-                        preamble += stripped + "\n"
-                formatted_message = self._format_clarification_with_options(
-                    clarification_questions,
-                    preamble=preamble.strip(),
-                )
-                return self._format_gate_for_model(formatted_message)
 
             return self._format_gate_for_model(confirmation_message)
 

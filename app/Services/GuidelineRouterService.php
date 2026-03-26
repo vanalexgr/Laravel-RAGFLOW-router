@@ -667,6 +667,10 @@ PROMPT;
             'complicated', 'anticoagulation decision', 'multiple',
             'bilateral', 'atrial fibrillation', 'cardiac source',
             'multimorbid',
+            // Multi-condition / sequencing signals — prevent lean-mode collapse
+            'concomitant', 'prioritis', 'prioritiz', 'sepsis', 'gangrene',
+            'treat first', 'treated first', 'repair first', 'which first',
+            'sequencing', 'infection control', 'source control',
         ];
 
         $isKnowledge = false;
@@ -699,13 +703,14 @@ PROMPT;
             }
         }
 
+        // Complex signals always get full retrieval — checked BEFORE knowledge to prevent
+        // lean-mode collapse on multi-condition cases (e.g. AAA+CLTI with Rutherford staging).
+        if ($isComplex) {
+            return 'complex_case';
+        }
         // Knowledge wins unless there is an unambiguous patient-case signal.
         if ($isKnowledge && !$isStrongPatient) {
             return 'knowledge';
-        }
-        // Complex signals always get full retrieval
-        if ($isComplex) {
-            return 'complex_case';
         }
         // Patient case without complex signals
         if ($isPatient) {
