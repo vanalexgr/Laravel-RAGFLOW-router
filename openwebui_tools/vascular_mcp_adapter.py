@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.47
+version: 1.5.48
 """
 import html
 import httpx
@@ -1494,9 +1494,13 @@ class Tools:
         )
         llm_out += (
             "10. GAP SECTION SUPPRESSION: Do NOT write a 'Guideline Gap' section unless you classified "
-            "this case as Rule 1 or Rule 6 (FULL mode). In STANDARD or COMPACT mode, there is no gap section. "
-            "A broad guideline that covers the category is NOT a gap — do not note the absence of sub-detail "
-            "(e.g. 'no explicit vein vs prosthetic differentiation') as a gap. Suppress entirely.\n"
+            "this case as Rule 1 or Rule 6 (FULL mode). In STANDARD or COMPACT mode, there is NO gap section — suppress it entirely. "
+            "False-gap patterns that MUST be suppressed: "
+            "'ESVS does not provide location-specific recommendations for peroneal vs other calf veins' (covered under distal DVT); "
+            "'No explicit definition of low bleeding risk' (not a gap — assess clinically); "
+            "'No explicit vein vs prosthetic differentiation' (covered under bypass); "
+            "'Guideline does not address this exact subgroup' (broad coverage applies). "
+            "Writing a gap section in STANDARD/COMPACT mode is a formatting error. Remove it.\n"
         )
         if assets_block:
             llm_out += (
@@ -1525,7 +1529,8 @@ class Tools:
             "  Output: COMPACT, 3–5 bullets max\n\n"
             "RULE 4 — RESTRICTED / SELECTIVE INDICATION → STANDARD\n"
             "  Condition: guideline exists BUT intervention recommended only for selected patients\n"
-            "  Examples: asymptomatic carotid stenosis; TEVAR in stable TBAD; chronic mesenteric ischaemia borderline cases\n"
+            "  Examples: asymptomatic carotid stenosis; TEVAR in stable TBAD; chronic mesenteric ischaemia borderline cases; "
+            "isolated distal calf DVT (anticoagulation is optional — surveillance is the default for low-risk cases)\n"
             "  Output: STANDARD with selection criteria — NO gap language\n\n"
             "RULE 5 — MODIFIER CASE → STANDARD\n"
             "  Condition: guideline exists BUT decision is modified by anticoagulation, bleeding risk, or comorbidity\n"
@@ -1551,6 +1556,14 @@ class Tools:
             "Example: 'In clinical practice, limb revascularisation is addressed first — the AAA is stable and carries lower immediate risk than limb loss.' "
             "Hedging without a decision ('both are urgent, multidisciplinary discussion recommended') is NOT acceptable as the primary answer. "
             "State the clinical default priority, then note exceptions if any.\n\n"
+            "DISTAL DVT PRIORITY RULE: For isolated distal calf DVT (calf / below-knee / peroneal / tibial vein), "
+            "when the patient has NO cancer, NO proximal extension, NO severe symptoms, and low extension-risk features — "
+            "SURVEILLANCE is the preferred front-line approach, NOT anticoagulation. "
+            "Anticoagulation is the ALTERNATIVE for patients who prefer treatment or have higher extension-risk features. "
+            "Do NOT write: 'anticoagulation is the default/preferred approach' for this phenotype. "
+            "Correct framing: 'Surveillance with repeat ultrasound at 1 week is the recommended approach. "
+            "Anticoagulation for 3 months is also guideline-supported if treatment is chosen.' "
+            "This is Rule 4 (selective indication), NOT Rule 1 or 3. Do NOT add a gap section.\n\n"
             "ANTITHROMBOTIC MODIFIER RULE: When the question involves antithrombotic therapy, anticoagulation, or antiplatelet agents, "
             "ALWAYS qualify recommendations with bleeding risk context. "
             "Never state a regimen as universal default — always add: 'if bleeding risk acceptable' or 'adjust based on bleeding risk'. "
