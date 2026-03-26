@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.50
+version: 1.5.53
 """
 import html
 import httpx
@@ -1408,7 +1408,15 @@ class Tools:
             analysis_question, re.I
         ))
         # Suppress figures for single-step operational questions ("next step", "what investigation", "what to do")
-        _is_next_step_question = bool(re.search(
+        # Exclude acute emergency contexts where algorithm figures ARE clinically relevant
+        _is_acute_emergency = bool(re.search(
+            r'\b(acute\s+limb\s+ischaemi|acute\s+limb\s+ischemi|ALI\b|rutherford\s+(II|III)|'
+            r'ruptured|rupture[sd]|acute\s+aort|haemodynamic(ally)?\s+unstable|'
+            r'hemodynamic(ally)?\s+unstable|emergenc[yies]|acute\s+mesenteric|'
+            r'acute\s+dissect|type\s+[AB]\s+dissect)\b',
+            analysis_question, re.I
+        ))
+        _is_next_step_question = (not _is_acute_emergency) and bool(re.search(
             r'\b(next\s+step|what\s+(is\s+the\s+)?next|what\s+(should|do\s+you)\s+do|'
             r'what\s+investigation|what\s+test|how\s+do\s+you\s+investigate|'
             r'what\s+would\s+you|immediate\s+(management|action)|first\s+step)\b',
@@ -1540,9 +1548,11 @@ class Tools:
             "isolated distal calf DVT (anticoagulation is optional — surveillance is the default for low-risk cases)\n"
             "  Output: STANDARD with selection criteria — NO gap language\n\n"
             "RULE 5 — MODIFIER CASE → STANDARD\n"
-            "  Condition: guideline exists BUT decision is modified by anticoagulation, bleeding risk, or comorbidity\n"
-            "  Examples: DVT + recent surgery; CEA + DOAC; CLTI + frailty\n"
-            "  Output: STANDARD with modifier section — NO gap unless truly missing\n\n"
+            "  Condition: guideline exists BUT decision is modified by anatomy, anticoagulation, bleeding risk, or comorbidity\n"
+            "  Examples: DVT + recent surgery; CEA + DOAC; CLTI + frailty; symptomatic carotid + contralateral occlusion; "
+            "carotid stenosis + recent major stroke\n"
+            "  Output: STANDARD with modifier-driven reasoning — the modifier is the REASON the question exists, "
+            "not a secondary factor. NO gap unless truly missing\n\n"
             "RULE 6 — MULTI-GUIDELINE INTERACTION → FULL\n"
             "  Condition: multiple conditions AND guidelines do NOT define their interaction\n"
             "  Examples: APS + CLTI periop anticoagulation; carotid stenosis + active GI bleed + AF\n"
@@ -1570,6 +1580,22 @@ class Tools:
             "Examples of correct opening: 'Urgent CEA is recommended.'; 'Anticoagulation alone is indicated.'; "
             "'Surveillance with repeat ultrasound at 1 week is the preferred approach.' "
             "Do NOT open with 'In a patient with X and Y...' — state the decision, then explain.\n\n"
+            "DOMINANT MODIFIER RULE: When the clinical question was asked BECAUSE of a specific modifier "
+            "(an anatomical variant, comorbidity, or risk factor that changes standard management), "
+            "that modifier MUST appear in the FIRST sentence of ## Clinical Decision — not buried in a later bullet. "
+            "Do NOT open with the standard recommendation for the condition without the modifier. "
+            "The first sentence must name the modifier AND its implication.\n"
+            "Examples of correct opening sentences:\n"
+            "- Contralateral carotid occlusion: 'In symptomatic carotid stenosis with contralateral occlusion, "
+            "CEA/CAS choice must be individualized — contralateral occlusion increases the haemodynamic risk of CEA "
+            "and may favour CAS in selected patients.'\n"
+            "- Recent major stroke + carotid stenosis: 'In a patient with recent disabling stroke, "
+            "intervention should be deferred — the risk of haemorrhagic transformation outweighs early revascularisation benefit.'\n"
+            "- CKD + EVAR: 'In the setting of severe renal impairment, contrast-related nephropathy risk "
+            "must be explicitly weighed and CO2 angiography or staged approach considered.'\n"
+            "How to identify the dominant modifier: it is the element that makes this case DIFFERENT from the standard case. "
+            "If removed, the question would be answered by a simple guideline lookup. "
+            "That element must drive the opening sentence.\n\n"
             "RECOMMENDATION MODIFIER RULE: When a cited guideline recommendation includes a patient-specific "
             "modifier that was NOT stated in the case (e.g., 'aged ≥70', 'male sex', 'bilateral disease'), "
             "do NOT apply that modifier as a condition of the recommendation. "
@@ -1582,6 +1608,38 @@ class Tools:
             "the timing window MUST be stated explicitly in ## Clinical Decision. "
             "For symptomatic carotid stenosis: 'within 14 days of symptom onset, ideally as soon as possible'. "
             "Do not imply urgency — state it.\n\n"
+            "CLINICAL SEQUENCE RULE: For emergency or urgent presentations where immediate stabilisation "
+            "MUST precede the definitive revascularisation decision, the answer MUST list actions in correct "
+            "clinical order — stabilisation first, revascularisation strategy second. "
+            "Do NOT open with the revascularisation modality if an immediate stabilisation step is required first.\n"
+            "- ALI (Rutherford IIa/IIb or any threatened limb): FIRST bullet = 'Immediate systemic anticoagulation "
+            "with UFH (bolus + infusion)'. SECOND bullet = urgent revascularisation strategy (CDT / surgical / hybrid). "
+            "CDT must NEVER appear before UFH in the answer.\n"
+            "- Sepsis / graft infection: FIRST bullet = source control / antibiotics. SECOND = surgical plan.\n"
+            "- Active haemorrhage / bleeding: FIRST bullet = haemostasis / reversal agent. SECOND = downstream recs.\n\n"
+            "LIFE-THREATENING PRIORITY RULE: When the scenario involves active haemorrhage, rupture, "
+            "haemodynamic instability, or acute limb threat, the FIRST sentence of the answer MUST state "
+            "the dominant life/limb-saving priority — not build toward it. "
+            "All secondary elements (monitoring, long-term anticoagulation, procedural details, aspirin, DVT prophylaxis) "
+            "must be compressed to 1–2 bullets AFTER the dominant priority is stated. "
+            "Do NOT give equal weight to secondary elements — they are subordinate. "
+            "Examples of correct opening sentences:\n"
+            "- Ruptured AAA: 'Immediately withhold all anticoagulation and prioritise haemorrhage control; "
+            "survival takes absolute priority over antithrombotic therapy.'\n"
+            "- ALI threatened limb: 'Immediate systemic UFH and urgent revascularisation — limb salvage "
+            "takes priority over all other management considerations.'\n"
+            "- Sepsis with graft infection: 'Source control and systemic antibiotics are the immediate priority "
+            "before any revascularisation is considered.'\n"
+            "If this rule applies, FULL or STANDARD mode answers MUST compress to a 3-bullet ## Clinical Decision "
+            "followed by a SHORT ## Clinical Context and ## Evidence Used only. "
+            "Remove or collapse: intra-abdominal pressure monitoring, routine post-op drug restarts, EVAR vs open "
+            "comparisons, and any element not directly relevant to the immediate management question.\n\n"
+            "PRIOR INTERVENTION MODIFIER: When the affected segment contains prior stents, bypass grafts, or "
+            "occluded prosthetic conduits (acute-on-chronic occlusion), note in ## Treatment options that CDT "
+            "efficacy may be reduced through stented or prosthetic segments. In such cases, mention mechanical "
+            "thrombectomy or hybrid approach (thrombectomy + patch/bypass) as equivalent or preferred alternatives. "
+            "This modifier applies whenever prior endovascular or surgical intervention in the affected segment "
+            "is confirmed or stated in the case details.\n\n"
             "SINGLE-STEP QUESTION RULE: When the question is 'what is the next step?', 'what investigation?', "
             "'what would you do?', or any single operational action question — "
             "this is COMPACT mode, Rule 3. The entire answer MUST be:\n"

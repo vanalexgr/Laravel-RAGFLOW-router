@@ -310,6 +310,8 @@ Special venous rule:
 - saphenous vein thrombosis is superficial by definition.
 - Never ask whether saphenous thrombosis is superficial or deep.
 - Instead ask about extent, distance from the SFJ/SPJ, and associated DVT or PE when missing.
+- If the question already states distance/proximity to SFJ/SPJ (e.g. "within 2 cm of the SFJ", "3 cm from the junction", "close to the SPJ"), do NOT ask about SFJ/SPJ distance — it is already known.
+- If the question already states DVT status (e.g. "no DVT", "DVT excluded", "no deep vein involvement"), do NOT ask about DVT.
 
 
 PROVISIONAL DIAGNOSIS
@@ -614,7 +616,7 @@ PROMPT;
         ), fn(string $item): bool => $item !== '')));
 
         if ($this->isSaphenousThrombosisContext($question, $provisionalDiagnosis, $retrievalQuery)) {
-            $questions = $this->normalizeSaphenousClarificationQuestions($questions);
+            $questions = $this->normalizeSaphenousClarificationQuestions($questions, $question);
         }
 
         return array_slice($questions, 0, 3);
@@ -667,10 +669,10 @@ PROMPT;
         );
     }
 
-    protected function normalizeSaphenousClarificationQuestions(array $questions): array
+    protected function normalizeSaphenousClarificationQuestions(array $questions, string $originalQuestion = ''): array
     {
-        $filtered = array_values(array_filter($questions, function (string $question): bool {
-            return !preg_match('/\b(superficial|deep)\b.{0,24}\b(superficial|deep)\b/i', $question);
+        $filtered = array_values(array_filter($questions, function (string $q): bool {
+            return !preg_match('/\b(superficial|deep)\b.{0,24}\b(superficial|deep)\b/i', $q);
         }));
 
         $location = null;
@@ -678,38 +680,56 @@ PROMPT;
         $dvt = null;
         $other = [];
 
-        foreach ($filtered as $question) {
-            if ($location === null && preg_match('/\b(sfj|spj|junction|distance|location|where|proximity)\b/i', $question)) {
-                $location = $question;
+        foreach ($filtered as $q) {
+            if ($location === null && preg_match('/\b(sfj|spj|junction|distance|location|where|proximity)\b/i', $q)) {
+                $location = $q;
                 continue;
             }
 
-            if ($extent === null && preg_match('/\b(length|extent|ultrasound|cm)\b/i', $question)) {
-                $extent = $question;
+            if ($extent === null && preg_match('/\b(length|extent|ultrasound|cm)\b/i', $q)) {
+                $extent = $q;
                 continue;
             }
 
-            if ($dvt === null && preg_match('/\b(deep vein thrombosis|dvt|pulmonary embolism|pe)\b/i', $question)) {
-                $dvt = $question;
+            if ($dvt === null && preg_match('/\b(deep vein thrombosis|dvt|pulmonary embolism|pe)\b/i', $q)) {
+                $dvt = $q;
                 continue;
             }
 
-            $other[] = $question;
+            $other[] = $q;
         }
 
+        // Suppress SFJ/SPJ location question if distance or proximity is already stated in the question.
+        // Matches: "within 2 cm of the SFJ", "3 cm from the junction", "close to the SFJ", "at the SFJ"
+        $sfjAlreadyKnown = $originalQuestion !== '' && (bool) preg_match(
+            '/(?:\d[\d.,]*\s*cm\b[^.]{0,50}\b(?:sfj|spj|junction|sapheno)'
+            . '|\b(?:sfj|spj|junction|sapheno)[^.]{0,50}\d[\d.,]*\s*cm\b'
+            . '|\b(?:within|from|near|close\s+to|at\s+the|proximal\s+to)\s+(?:the\s+)?(?:sfj|spj|sapheno.femoral|sapheno.popliteal|junction))\b/i',
+            $originalQuestion
+        );
+
+        // Suppress DVT question if DVT presence/absence already stated.
+        $dvtAlreadyKnown = $originalQuestion !== '' && (bool) preg_match(
+            '/\b(no\s+dvt|dvt\s+(?:confirmed|excluded|present|absent|positive|negative|ruled\s+out)'
+            . '|no\s+deep\s+vein|deep\s+vein\s+(?:not|no)\b|without\s+dvt)\b/i',
+            $originalQuestion
+        );
+
         $ordered = [];
-        $ordered[] = $location ?? 'How far is the thrombus from the sapheno-femoral or sapheno-popliteal junction?';
+        if (!$sfjAlreadyKnown) {
+            $ordered[] = $location ?? 'How far is the thrombus from the sapheno-femoral or sapheno-popliteal junction?';
+        }
 
         if ($extent !== null) {
             $ordered[] = $extent;
         }
 
-        if ($dvt !== null) {
+        if ($dvt !== null && !$dvtAlreadyKnown) {
             $ordered[] = $dvt;
         }
 
-        foreach ($other as $question) {
-            $ordered[] = $question;
+        foreach ($other as $q) {
+            $ordered[] = $q;
         }
 
         return array_values(array_unique(array_slice($ordered, 0, 3)));
