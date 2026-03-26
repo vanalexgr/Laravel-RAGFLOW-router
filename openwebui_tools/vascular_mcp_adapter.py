@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.49
+version: 1.5.50
 """
 import html
 import httpx
@@ -1563,6 +1563,25 @@ class Tools:
             "Example: 'In clinical practice, limb revascularisation is addressed first — the AAA is stable and carries lower immediate risk than limb loss.' "
             "Hedging without a decision ('both are urgent, multidisciplinary discussion recommended') is NOT acceptable as the primary answer. "
             "State the clinical default priority, then note exceptions if any.\n\n"
+            "DECISION-FIRST RULE: In STANDARD mode, the first sentence or first bullet of ## Clinical Decision "
+            "MUST be the direct recommendation — not a build-up to it. "
+            "Format: '[Action] is recommended / indicated / the preferred approach.' "
+            "Everything after that is justification. "
+            "Examples of correct opening: 'Urgent CEA is recommended.'; 'Anticoagulation alone is indicated.'; "
+            "'Surveillance with repeat ultrasound at 1 week is the preferred approach.' "
+            "Do NOT open with 'In a patient with X and Y...' — state the decision, then explain.\n\n"
+            "RECOMMENDATION MODIFIER RULE: When a cited guideline recommendation includes a patient-specific "
+            "modifier that was NOT stated in the case (e.g., 'aged ≥70', 'male sex', 'bilateral disease'), "
+            "do NOT apply that modifier as a condition of the recommendation. "
+            "Present it as a preference factor: 'CEA is preferred, particularly in patients ≥70 [1]' — "
+            "not 'CEA is recommended when the patient is ≥70'. "
+            "The recommendation may apply to a broader group than the age/modifier subgroup cited. "
+            "Never anchor the decision to an assumption about the patient that was not provided.\n\n"
+            "URGENCY TIMING RULE: When the case involves a recently symptomatic patient requiring urgent "
+            "intervention (recent TIA/stroke + carotid stenosis; acute limb threat; ruptured/symptomatic AAA), "
+            "the timing window MUST be stated explicitly in ## Clinical Decision. "
+            "For symptomatic carotid stenosis: 'within 14 days of symptom onset, ideally as soon as possible'. "
+            "Do not imply urgency — state it.\n\n"
             "SINGLE-STEP QUESTION RULE: When the question is 'what is the next step?', 'what investigation?', "
             "'what would you do?', or any single operational action question — "
             "this is COMPACT mode, Rule 3. The entire answer MUST be:\n"
