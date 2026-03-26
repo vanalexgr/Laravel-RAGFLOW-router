@@ -53,7 +53,10 @@ class GapAssessment
         $coreQuestion        = (string) ($data['core_question'] ?? '');
         $coreQuestionCovered = (string) ($data['core_question_covered'] ?? 'direct');
         $questionGap         = in_array($coreQuestionCovered, ['none', 'partial'], true);
-        $hasGap              = !empty($uncovered) || count($partial) >= 2 || $questionGap;
+        // Partial guidance alone (question_gap='partial') does NOT declare a gap —
+        // partial means general principles exist, which is handled by the standard template.
+        // Only true 'none' coverage (no ESVS guidance at all) triggers has_gap from question_gap.
+        $hasGap              = !empty($uncovered) || count($partial) >= 2 || ($questionGap && $coreQuestionCovered === 'none');
 
         return new self(
             hasGuidelineGap:           $hasGap,
