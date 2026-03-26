@@ -1247,11 +1247,14 @@ class RetrievalService
 
     protected function queryNeedsAntithromboticCompanion(string $question): bool
     {
-        $directMedicationPattern = '/\b(antithrombotic|anticoag(?:ulation|ulant|ulate)?|antiplatelet|dual\s+antiplatelet|single\s+antiplatelet|dapt|sapt|dual\s+pathway|aspirin|clopidogrel|ticagrelor|prasugrel|warfarin|vka|doac|apixaban|rivaroxaban|dabigatran|edoxaban|heparin|lmwh|fondaparinux|bridge|bridging|bleed(?:ing)?|haemorrhag\w*|hemorrhag\w*)\b/iu';
+        $directMedicationPattern = '/\b(antithrombotic|anticoag(?:ulation|ulant|ulate)?|antiplatelet|dual\s+antiplatelet|single\s+antiplatelet|dapt|sapt|dual\s+pathway|aspirin|clopidogrel|ticagrelor|prasugrel|warfarin|vka|doac|apixaban|rivaroxaban|dabigatran|edoxaban|heparin|lmwh|fondaparinux|bridge|bridging|bleed(?:ing)?|haemorrhag\w*|hemorrhag\w*|itp|thrombocytopeni|thrombocytopaeni|antiphospholipid|aps)\b/iu';
         $thrombusPattern = '/\b(aortic\s+mural\s+thrombus|mural\s+thrombus|aortic\s+thrombus|free[-\s]*floating\s+thrombus)\b/iu';
+        // Post-procedural management questions always need antithrombotic context
+        $postProcPattern = '/\b(post[- ]op(?:erative)?|after\s+(?:bypass|revasculariz|revascularis|evar|stenting|angioplasty|endarterectomy)|bypass\s+(?:surgery|graft|management)|perioperative\s+(?:management|anticoag)|post[- ](?:bypass|revasculariz|revascularis|evar|procedure))\b/iu';
 
         return preg_match($directMedicationPattern, $question) === 1
-            || preg_match($thrombusPattern, $question) === 1;
+            || preg_match($thrombusPattern, $question) === 1
+            || preg_match($postProcPattern, $question) === 1;
     }
 
     protected function selectGuidelinesByKeywordScore(string $question, int $max = 4): array
