@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.48
+version: 1.5.49
 """
 import html
 import httpx
@@ -1407,9 +1407,16 @@ class Tools:
             r'rivaroxaban|clopidogrel|dapt|sapt|bridg|apixaban|edoxaban|fondaparinux)\b',
             analysis_question, re.I
         ))
+        # Suppress figures for single-step operational questions ("next step", "what investigation", "what to do")
+        _is_next_step_question = bool(re.search(
+            r'\b(next\s+step|what\s+(is\s+the\s+)?next|what\s+(should|do\s+you)\s+do|'
+            r'what\s+investigation|what\s+test|how\s+do\s+you\s+investigate|'
+            r'what\s+would\s+you|immediate\s+(management|action)|first\s+step)\b',
+            analysis_question, re.I
+        ))
         assets_block = self._format_assets_markdown(assets)
-        # Suppress figures for total-gap cases and drug/antithrombotic questions
-        if assets_block and not total_gap and not _is_drug_question:
+        # Suppress figures for total-gap cases, drug/antithrombotic questions, and single-step operational questions
+        if assets_block and not total_gap and not _is_drug_question and not _is_next_step_question:
             llm_out += assets_block
         else:
             assets_block = ""
@@ -1556,6 +1563,15 @@ class Tools:
             "Example: 'In clinical practice, limb revascularisation is addressed first — the AAA is stable and carries lower immediate risk than limb loss.' "
             "Hedging without a decision ('both are urgent, multidisciplinary discussion recommended') is NOT acceptable as the primary answer. "
             "State the clinical default priority, then note exceptions if any.\n\n"
+            "SINGLE-STEP QUESTION RULE: When the question is 'what is the next step?', 'what investigation?', "
+            "'what would you do?', or any single operational action question — "
+            "this is COMPACT mode, Rule 3. The entire answer MUST be:\n"
+            "  1. ONE clear action statement as the first bullet (e.g. 'Next step: duplex ultrasound to assess maturation failure')\n"
+            "  2. 2–3 bullets of brief supporting context (why this, what to look for)\n"
+            "  3. ONE follow-up action bullet\n"
+            "  4. ## Evidence Used — citations only\n"
+            "Do NOT add: surveillance programs, long-term fallback pathways, multiple downstream branches, figures, "
+            "or any section beyond the above. The question asks for ONE step — answer with ONE step.\n\n"
             "DISTAL DVT PRIORITY RULE: For isolated distal calf DVT (calf / below-knee / peroneal / tibial vein), "
             "when the patient has NO cancer, NO proximal extension, NO severe symptoms, and low extension-risk features — "
             "SURVEILLANCE is the preferred front-line approach, NOT anticoagulation. "
