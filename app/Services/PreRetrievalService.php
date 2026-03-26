@@ -569,6 +569,16 @@ PROMPT;
             }
         }
 
+        // Vein bypass antithrombotic context: bypass antithrombotic recs live in the CLTI guideline,
+        // not asymptomatic_pad. Replace asymptomatic_pad with clti when bypass is confirmed.
+        if ($this->isVeinBypassAntithromboticContext($combined)) {
+            if (!in_array('clti', $merged, true)) {
+                $merged[] = 'clti';
+            }
+            // asymptomatic_pad has no bypass-specific antithrombotic recs — remove to free a slot
+            $merged = array_values(array_filter($merged, fn($k) => $k !== 'asymptomatic_pad'));
+        }
+
         return array_slice($merged, 0, 3);
     }
 
@@ -876,6 +886,26 @@ PROMPT;
         $hasAaa = (bool) preg_match('/\b(AAA|abdominal\s+aortic\s+aneurysm|infrarenal\s+aneurysm|EVAR)\b/i', $text);
         $hasClti = (bool) preg_match('/\b(CLTI|rest\s+pain|tissue\s+loss|gangrene|Rutherford\s+[456]|limb[- ]threatening|WIfI)\b/i', $text);
         return $hasAaa && $hasClti;
+    }
+
+    protected function isVeinBypassAntithromboticContext(string $text): bool
+    {
+        // Detects questions about antithrombotic therapy after surgical vein bypass.
+        // Bypass antithrombotic recommendations (aspirin + rivaroxaban) live in the CLTI guideline,
+        // not asymptomatic_pad. Fire when bypass is confirmed AND the question is about anticoagulation/
+        // antiplatelet management post-procedure.
+        $hasBypass = (bool) preg_match(
+            '/\b(bypass|infrainguinal|femoropopliteal|femoroperoneal|femorotibial|'
+            . 'vein\s+bypass|vein\s+graft|below.?knee\s+bypass|bk\s+bypass|'
+            . 'above.?knee\s+bypass|open\s+revasculariz|surgical\s+revasculariz|'
+            . 'open\s+repair\s+(?:of\s+)?(?:peripheral|limb|leg)|conduit)\b/i',
+            $text
+        );
+        $hasAntithrombotic = (bool) preg_match(
+            '/\b(antithrombotic|antiplatelet|anticoagul|aspirin|clopidogrel|rivaroxaban|DAPT|DOAC|warfarin)\b/i',
+            $text
+        );
+        return $hasBypass && $hasAntithrombotic;
     }
 
     protected function isPostProcedureAntithromboticContext(string $text): bool
