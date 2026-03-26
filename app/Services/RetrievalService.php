@@ -148,6 +148,19 @@ class RetrievalService
         // Apply post-routing guardrails (SVT/anticoag)
         $selectedGuidelines = $this->applyGuardrails($selectedGuidelines, $retrievalQuestion);
 
+        // Bypass-context correction: antithrombotic recs for vein bypass live in the CLTI guideline,
+        // not asymptomatic_pad. Swap asymptomatic_pad → clti when bypass + antithrombotic context confirmed.
+        if ($this->isVeinBypassAntithromboticContext($retrievalQuestion)) {
+            if (!isset($selectedGuidelines['clti'])) {
+                $registry = $this->buildGuidelineRegistry();
+                if (isset($registry['clti'])) {
+                    $selectedGuidelines['clti'] = $registry['clti'];
+                }
+            }
+            // asymptomatic_pad has no bypass antithrombotic recs — free the slot for clti
+            unset($selectedGuidelines['asymptomatic_pad']);
+        }
+
         // 4. Fallback Keyword Scoring (if still empty)
         if (empty($selectedGuidelines)) {
             $selectedGuidelines = $this->selectGuidelinesByKeywordScore($retrievalQuestion, 4);
@@ -1243,6 +1256,21 @@ class RetrievalService
         }
 
         return $selectedGuidelines;
+    }
+
+    protected function isVeinBypassAntithromboticContext(string $question): bool
+    {
+        $hasBypass = (bool) preg_match(
+            '/\b(bypass|infrainguinal|femoropopliteal|femoroperoneal|femorotibial|'
+            . 'vein\s+bypass|vein\s+graft|below.?knee\s+bypass|bk\s+bypass|'
+            . 'above.?knee\s+bypass|open\s+revasculariz|surgical\s+revasculariz|conduit)\b/iu',
+            $question
+        );
+        $hasAntithrombotic = (bool) preg_match(
+            '/\b(antithrombotic|antiplatelet|anticoagul|aspirin|clopidogrel|rivaroxaban|DAPT|DOAC|warfarin)\b/iu',
+            $question
+        );
+        return $hasBypass && $hasAntithrombotic;
     }
 
     protected function queryNeedsAntithromboticCompanion(string $question): bool
