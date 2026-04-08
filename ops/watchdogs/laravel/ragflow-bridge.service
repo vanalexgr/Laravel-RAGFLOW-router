@@ -1,0 +1,19 @@
+[Unit]
+Description=RAGFlow Bridge API on port 8000
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=azureuser
+Group=azureuser
+WorkingDirectory=/home/azureuser/laravel-ragflow/ragflow_service
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/bin/bash -lc 'set -a && source /home/azureuser/laravel-ragflow/.env && set +a && source /home/azureuser/laravel-ragflow/ragflow_service/venv/bin/activate && exec uvicorn app:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 120 --timeout-graceful-shutdown 30'
+Restart=always
+RestartSec=2
+StandardOutput=append:/home/azureuser/laravel-ragflow/bridge.log
+StandardError=append:/home/azureuser/laravel-ragflow/bridge.log
+
+[Install]
+WantedBy=multi-user.target
