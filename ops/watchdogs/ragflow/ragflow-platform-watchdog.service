@@ -1,0 +1,9 @@
+[Unit]
+Description=Self-heal OpenWebUI and RAGFlow Docker containers
+After=docker.service network-online.target
+Wants=docker.service network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/bin/ragflow-platform-watchdog.sh
