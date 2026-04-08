@@ -1,0 +1,9 @@
+[Unit]
+Description=Self-heal Laravel API and RAGFlow bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/bin/laravel-platform-watchdog.sh
