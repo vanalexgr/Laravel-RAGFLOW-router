@@ -72,7 +72,7 @@ return [
                     'key_concepts' => ['DOACs', 'warfarin', 'triple therapy', 'cancer-associated thrombosis', 'anticoagulation', 'aspirin', 'clopidogrel', 'dual antiplatelet'],
                 ],
                 'venous_thrombosis' => [
-                    'id' => '7a8a227619b511f183b3aa811fe4315f',
+                    'id' => '9302da4a352211f18a57896c82939c88',  // pplx-embed-v1-4b conceptual embeddings
                     'name' => 'Venous Thrombosis (DVT/PE)',
                     'recs_doc_id' => '5c98958919b511f18770aa811fe4315f',
                     'key_concepts' => ['DVT', 'PE', 'deep vein thrombosis', 'pulmonary embolism', 'IVC filters', 'PTS', 'post-thrombotic syndrome', 'catheter-directed thrombolysis'],
@@ -120,7 +120,7 @@ return [
         '650c8742053511f1a14932d89964721d',
         '9eeed489ff9d11f0b82f32d89964721d',
         'b6b02fdaffad11f0885f32d89964721d',
-        '7a8a227619b511f183b3aa811fe4315f',
+        '9302da4a352211f18a57896c82939c88',
         'ec53f8c1ff9811f0a09132d89964721d',
         '94269d17007f11f1b59a32d89964721d',
         '29981e72dc4311f09021f2381272676b',
