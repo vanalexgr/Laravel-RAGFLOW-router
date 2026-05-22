@@ -111,9 +111,27 @@ After the asset migration, old OpenWebUI chats still rendered Azure Blob URLs be
 Fix applied on the live Hetzner host:
 
 - generated an exact old-to-new asset URL map from the previous manifest revision
-- rewrote persisted OpenWebUI chat records to replace Azure Blob URLs with the new `chat.clinicalguidelines.io/storage/...` URLs
+- rewrote persisted OpenWebUI `message` table records to replace Azure Blob URLs with the new `chat.clinicalguidelines.io/storage/...` URLs
 - restarted OpenWebUI after the SQLite rewrite
-- verified that the database no longer contained `pngsrag.blob.core.windows.net` references
+- verified that the `message` table no longer contained `pngsrag.blob.core.windows.net` references
+
+### Follow-Up Fix: Remaining Azure URLs in `chat` Table (2026-05-22)
+
+A second pass found that OpenWebUI stores the full conversation JSON in a
+separate `chat` table in addition to individual rows in `message`. The initial
+rewrite only targeted `message`, leaving 3 `chat` rows (all "Peripheral
+Arterial Disease" sessions) that still embedded Azure Blob thumbnail and
+full-size image URLs.
+
+Fix applied on the live Hetzner host:
+
+- queried `chat` table for rows containing `pngsrag.blob.core.windows.net`
+- found 3 rows; replaced `https://pngsrag.blob.core.windows.net/guideline-assets/`
+  with `https://chat.clinicalguidelines.io/storage/` in the full JSON blob of each
+- verified `chat` table count dropped to 0
+- restarted OpenWebUI to flush any in-memory chat cache
+
+Both `message` and `chat` tables are now free of Azure Blob Storage references.
 
 ## Operational Notes
 
