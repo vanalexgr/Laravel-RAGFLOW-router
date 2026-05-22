@@ -22,6 +22,12 @@ return [
     // Storage disk where assets live (typically "public" -> storage/app/public).
     'disk' => env('GUIDELINE_ASSET_DISK', 'public'),
 
+    // Optional override for public asset URLs when the Laravel app itself is
+    // not served from APP_URL (for example, when assets need to be exposed via
+    // a different subdomain that already points at the app host).
+    'base_url' => env('GUIDELINE_ASSET_BASE_URL'),
+    'url_prefix' => env('GUIDELINE_ASSET_URL_PREFIX', '/storage'),
+
     // JSON manifest (see resources/guideline_assets/manifest.example.json).
     'manifest_path' => env(
         'GUIDELINE_ASSET_MANIFEST',
