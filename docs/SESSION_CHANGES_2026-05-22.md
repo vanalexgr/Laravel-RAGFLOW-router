@@ -104,6 +104,17 @@ These changes were applied on the live Hetzner server and are not fully represen
 - sample original and thumbnail asset URLs returned `200`
 - no live application/config/resource references to `pngsrag.blob.core.windows.net` remained after the manifest cleanup
 
+## Follow-Up Fix: Historical OpenWebUI Messages
+
+After the asset migration, old OpenWebUI chats still rendered Azure Blob URLs because those URLs were already persisted inside historical assistant messages and chat JSON in the OpenWebUI SQLite database.
+
+Fix applied on the live Hetzner host:
+
+- generated an exact old-to-new asset URL map from the previous manifest revision
+- rewrote persisted OpenWebUI chat records to replace Azure Blob URLs with the new `chat.clinicalguidelines.io/storage/...` URLs
+- restarted OpenWebUI after the SQLite rewrite
+- verified that the database no longer contained `pngsrag.blob.core.windows.net` references
+
 ## Operational Notes
 
 - the local repository already contained unrelated in-progress changes during this session
