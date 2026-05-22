@@ -34,6 +34,7 @@ Shape:
       "description": "Optional longer description",
       "keywords": ["CLTI", "ABI", "diagnostic flowchart"],
       "path": "guideline_assets/clti/figures/fig_p033_004.png",
+      "thumbnail_path": "thumbnails/fig_p033_004.png",
       "aliases": ["Fig. 4", "Algorithm 4"]
     }
   ]
@@ -41,7 +42,11 @@ Shape:
 ```
 
 Notes:
-- Prefer `path` over `url`. The system calls `Storage::disk(...)->url(path)` to generate the display URL.
+- Prefer `path` and `thumbnail_path` over hard-coded `url` fields. The service generates `url` and `thumbnail_url` at runtime.
+- The default behavior uses `Storage::disk(...)->url(path)` for both originals and thumbnails.
+- If you need the asset host to differ from `APP_URL`, set:
+  - `GUIDELINE_ASSET_BASE_URL=https://chat.example.com`
+  - `GUIDELINE_ASSET_URL_PREFIX=/storage`
 - If you already uploaded blobs to a public container and do not want to configure an Azure filesystem driver in Laravel, you can set `url` per asset (the service will use it as-is).
 - If you need per-asset signed URLs (SAS), you can either:
   - Configure the disk `url()` to return SAS URLs, or
@@ -58,6 +63,25 @@ node scripts/import_guideline_assets.mjs --src /Volumes/macshare/guidelines/di_c
 This will:
 - Copy PNGs into `storage/app/public/guideline_assets/clti/...`
 - Create/update `resources/guideline_assets/manifest.json`
+
+## Local/Public Hosting Pattern
+
+Recommended production pattern:
+
+- store originals under `storage/app/public/guideline_assets/...`
+- store thumbnails under `storage/app/public/thumbnails/...`
+- keep the manifest path-only
+- expose `/storage/*` through the public web server
+
+Example environment:
+
+```dotenv
+GUIDELINE_ASSET_DISK=public
+GUIDELINE_ASSET_BASE_URL=https://chat.clinicalguidelines.io
+GUIDELINE_ASSET_URL_PREFIX=/storage
+```
+
+This is useful when the Laravel app and the chat UI live on different hostnames and the asset URLs must resolve through the chat-facing domain.
 
 ## Using Azure Blob Storage
 
