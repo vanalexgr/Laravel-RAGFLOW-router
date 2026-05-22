@@ -595,7 +595,7 @@ class GuidelineAssetService
         if (empty($asset['url']) && !empty($asset['path'])) {
             $path = (string) $asset['path'];
             try {
-                $asset['url'] = Storage::disk($disk)->url($path);
+                $asset['url'] = $this->buildAssetUrl($disk, $path);
             } catch (\Throwable $e) {
                 Log::warning('[GUIDELINE ASSETS] Failed to build asset URL', [
                     'disk' => $disk,
@@ -605,9 +605,34 @@ class GuidelineAssetService
             }
         }
 
+        if (empty($asset['thumbnail_url']) && !empty($asset['thumbnail_path'])) {
+            $thumbnailPath = (string) $asset['thumbnail_path'];
+            try {
+                $asset['thumbnail_url'] = $this->buildAssetUrl($disk, $thumbnailPath);
+            } catch (\Throwable $e) {
+                Log::warning('[GUIDELINE ASSETS] Failed to build thumbnail URL', [
+                    'disk' => $disk,
+                    'path' => $thumbnailPath,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
         $asset['guideline_key'] = $guidelineKey;
 
         return $asset;
+    }
+
+    protected function buildAssetUrl(string $disk, string $path): string
+    {
+        $baseUrl = trim((string) config('guideline_assets.base_url', ''));
+        if ($baseUrl !== '') {
+            $prefix = '/' . trim((string) config('guideline_assets.url_prefix', '/storage'), '/');
+
+            return rtrim($baseUrl, '/') . $prefix . '/' . ltrim($path, '/');
+        }
+
+        return Storage::disk($disk)->url($path);
     }
 
     protected function shouldUseExplicitReferenceAsset(
