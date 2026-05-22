@@ -133,6 +133,37 @@ Fix applied on the live Hetzner host:
 
 Both `message` and `chat` tables are now free of Azure Blob Storage references.
 
+## RAGFlow Upgrade: v0.23.1 → v0.25.5
+
+Upgrade performed after migration was stable and verified.
+
+### Pre-upgrade state
+- Running: nightly build tagged v0.23.1 (3 commits ahead of tag)
+- ES chunk count confirmed: 72,292
+
+### Changes applied on Hetzner
+
+1. Backed up `docker/.env`, `docker/docker-compose.yml`, `docker/entrypoint.sh` as
+   `.backup-v0.23.1` files in the same directory.
+2. `git stash` (to park local .env/compose modifications), then `git checkout v0.25.5`.
+3. Patched the new `docker/.env`:
+   - `EXPOSE_MYSQL_PORT=127.0.0.1:3306` (restore localhost-only binding)
+   - `REDIS_PORT=127.0.0.1:6379` (restore localhost-only binding)
+   - `SVR_WEB_HTTP_PORT=8082` (avoid conflict with Caddy on port 80)
+   - `SVR_WEB_HTTPS_PORT=8443` (avoid conflict with Caddy on port 443)
+   - All passwords unchanged; ES_PORT=1200 unchanged.
+4. Dropped the Infinity `schema_marker` entrypoint patch — the new `entrypoint.sh`
+   from v0.25.5 is used as-is (patch was dead weight with `DOC_ENGINE=elasticsearch`).
+5. `docker compose pull` — pulled `infiniflow/ragflow:v0.25.5` and updated base images.
+6. `docker compose up -d` — all 5 compose containers recreated and started healthy.
+
+### Post-upgrade verification
+- All containers healthy: `docker-mysql-1`, `docker-redis-1`, `docker-minio-1`,
+  `docker-es01-1`, `docker-ragflow-cpu-1`, `open-webui`
+- ES chunk count: 72,292 (unchanged)
+- RAGFlow public UI: HTTP 200
+- Retrieval test (carotid stenosis, top_k=3): 30 chunks returned
+
 ## Operational Notes
 
 - the local repository already contained unrelated in-progress changes during this session
