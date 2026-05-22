@@ -1,23 +1,55 @@
 # Watchdogs
 
-These templates back the production self-healing setup on the Azure VMs.
+These templates back the production self-healing setup.
 
-## Laravel VM (`135.237.148.105`)
+## Hetzner all-in-one VM (`178.105.193.206`) — current production
 
-- `ragflow-bridge.service`
-  Runs the FastAPI bridge on `127.0.0.1:8000` under `systemd`.
-- `laravel-platform-watchdog.service`
-  Checks Laravel (`/up`) and the bridge (`/health`), then restarts the specific service if either one is down.
-- `laravel-platform-watchdog.timer`
-  Runs the Laravel watchdog every 3 minutes.
+### RAGFlow / OpenWebUI stack (`ragflow/`)
 
-## OpenWebUI + RAGFlow VM (`48.211.217.69`)
+- `ragflow-platform-watchdog.sh`
+  Checks all five Docker Compose services (`mysql`, `redis`, `minio`, `es01`,
+  `ragflow-cpu`) and `open-webui`. If any compose service is stopped or
+  unhealthy, runs `docker compose up -d` from the compose directory so all
+  services are restored in dependency order. OpenWebUI is outside the compose
+  stack and gets an individual `docker restart` if its HTTP check fails.
+- `ragflow-platform-watchdog.service` — oneshot systemd unit.
+- `ragflow-platform-watchdog.timer` — fires every 3 minutes, starts 2 min after boot.
 
-- `ragflow-platform-watchdog.service`
-  Checks `open-webui` and `docker-ragflow-cpu-1`, then restarts the affected container if it is unhealthy.
-- `ragflow-platform-watchdog.timer`
-  Runs the container watchdog every 3 minutes.
+**Recovery strategy**: `docker compose up -d` rather than individual
+`docker restart` calls, so dependency ordering (ES before RAGFlow, etc.) is
+always respected and stopped containers come back without manual intervention.
+
+### Installation (Hetzner)
+
+```bash
+cp ops/watchdogs/ragflow/ragflow-platform-watchdog.sh /usr/local/bin/
+chmod +x /usr/local/bin/ragflow-platform-watchdog.sh
+cp ops/watchdogs/ragflow/ragflow-platform-watchdog.service /etc/systemd/system/
+cp ops/watchdogs/ragflow/ragflow-platform-watchdog.timer   /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now ragflow-platform-watchdog.timer
+# Verify
+systemctl status ragflow-platform-watchdog.timer
+```
+
+---
+
+## Legacy Azure VMs (decommissioned)
+
+### Laravel VM (`135.237.148.105`) — `laravel/`
+
+- `ragflow-bridge.service` — FastAPI bridge on `127.0.0.1:8000`.
+- `laravel-platform-watchdog.sh` — checks Laravel (`/up`) and bridge (`/health`).
+- `laravel-platform-watchdog.timer` — runs every 3 minutes.
+
+### OpenWebUI + RAGFlow VM (`48.211.217.69`) — `ragflow/` (old version)
+
+The old script monitored only `open-webui` and `docker-ragflow-cpu-1` via
+`docker restart`. Superseded by the Hetzner version above.
+
+---
 
 ## Installed Paths
 
-The scripts are installed to `/usr/local/bin/` and the units to `/etc/systemd/system/`.
+Scripts → `/usr/local/bin/`  
+Units  → `/etc/systemd/system/`
