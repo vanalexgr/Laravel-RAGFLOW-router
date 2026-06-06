@@ -55,7 +55,7 @@ class PreRetrievalService
                 return PreRetrievalResult::fromArray($this->safeDefaults($question));
             }
 
-            return PreRetrievalResult::fromArray($this->normalizeData($data, $question));
+            return PreRetrievalResult::fromArray($this->normalizeData($data, $question, $history));
         } catch (\Throwable $e) {
             Log::channel('retrieval')->warning('[PRE-RETRIEVAL] LLM call failed, using safe defaults', [
                 'question_preview' => substr($question, 0, 120),
@@ -292,18 +292,29 @@ Do not select more than 3 guidelines.
 
 SOFT WARN RULES
 
-soft_warn = true only when missing information would significantly change management
-or materially improve retrieval quality.
+soft_warn = true ONLY when ALL three conditions are met:
+  1. The query describes a specific patient case — not a classification, staging, or
+     guideline-interpretation question.
+  2. At least one of these CRITICAL parameters is genuinely absent from the question
+     AND from the recent history:
+     - Symptom status (symptomatic / asymptomatic) for carotid, PAD, or venous queries
+     - Haemodynamic stability for acute aortic, visceral, or limb ischaemia
+     - Time from neurological event (hours / days / weeks) for carotid or TIA cases
+     - Rupture vs intact for aortic aneurysm where surveillance vs intervention differs
+     - Aneurysm diameter when explicitly near the intervention threshold (45–60 mm range)
+     - ABI or toe pressure for CLTI or rest pain when revascularisation is undecided
+  3. The missing parameter would CHANGE THE FIRST-LINE TREATMENT DECISION —
+     not merely improve retrieval quality.
 
-Examples:
-- symptomatic vs asymptomatic
-- time from neurological event
-- aneurysm size
-- haemodynamic stability
-- rupture suspicion
+soft_warn = false when ANY of the following apply:
+  - scope = knowledge_question (classification systems, staging, definitions, guideline text)
+  - The query specifies symptom status, severity grade, and timeline explicitly
+  - The query is a follow-up and the history already establishes the case
+  - The condition is outside vascular surgery (cardiac, oncology, respiratory, infectious)
+  - Missing information is supplementary (nice-to-know but not decision-changing)
 
 If soft_warn = true, clarification_questions must contain 1-3 short questions.
-Ask only for missing details.
+Ask only for the specific missing critical parameter(s) listed above.
 Never ask for information already present in the question or recent history.
 
 Special venous rule:
@@ -412,7 +423,7 @@ PROMPT;
         ];
     }
 
-    protected function normalizeData(array $data, string $question): array
+    protected function normalizeData(array $data, string $question, array $history = []): array
     {
         $guidelines = $data['guidelines'] ?? [];
         if (!is_array($guidelines)) {
@@ -461,6 +472,23 @@ PROMPT;
         $questions = $this->normalizeClarificationQuestions($questions, $question, $provisionalDiagnosis, $retrievalQuery);
 
         $softWarn = (bool) ($data['soft_warn'] ?? false);
+
+        // ── Deterministic suppression overrides ──────────────────────────────
+        // These take precedence over the LLM's soft_warn decision.
+        if ($scope === 'knowledge_question') {
+            // Classification systems, staging systems, definitions — never need
+            // patient-specific clarification; the LLM already identified this scope.
+            $softWarn = false;
+        } elseif (!empty($history) && count($history) >= 2) {
+            // Follow-up turns: the clinical case is established in history.
+            // Re-interrogating the user would be disruptive and incorrect.
+            $softWarn = false;
+        } elseif ($this->isOutOfVascularScope($question)) {
+            // Out-of-scope queries (cardiac, oncology, respiratory) must not
+            // receive vascular clarification questions.
+            $softWarn = false;
+        }
+
         [$softWarn, $questions] = $this->enforceDeterministicClarificationRules(
             $softWarn,
             $questions,
@@ -1003,5 +1031,48 @@ PROMPT;
         }
 
         return implode(', ', array_slice($items, 0, -1)) . ', and ' . $items[$count - 1];
+    }
+
+    /**
+     * Detect queries that are clearly outside the vascular surgery scope.
+     *
+     * These queries should never receive vascular clarification questions.
+     * The gate should suppress and let the synthesis layer issue an appropriate
+     * out-of-scope refusal.
+     */
+    protected function isOutOfVascularScope(string $question): bool
+    {
+        $lower = strtolower($question);
+
+        $outOfScopePatterns = [
+            // Cardiac surgery / cardiology
+            'mitral', 'tricuspid', 'aortic valve', 'pulmonary valve',
+            'coronary artery', 'myocardial infarction', 'stemi', 'nstemi',
+            'heart failure', 'cardiac tamponade', 'pericarditis',
+            'atrial fibrillation management', 'cardioversion',
+            // Oncology
+            'chemotherapy', 'pembrolizumab', 'nivolumab', 'immunotherapy',
+            'nsclc', 'non-small cell lung', 'small cell lung',
+            'egfr mutation', 'alk fusion', 'kras',
+            'breast cancer', 'colorectal cancer', 'prostate cancer',
+            'lymphoma', 'leukaemia', 'leukemia', 'myeloma',
+            // Respiratory / infectious disease
+            'community-acquired pneumonia', 'hospital-acquired pneumonia',
+            'antibiotic for pneumonia', 'antibiotic treatment for',
+            'tuberculosis', 'copd exacerbation', 'asthma',
+            // Neurology (non-vascular)
+            'epilepsy', 'multiple sclerosis', 'parkinson',
+            // Gastroenterology (non-vascular)
+            'inflammatory bowel', 'crohn', 'ulcerative colitis',
+            'hepatitis', 'cirrhosis',
+        ];
+
+        foreach ($outOfScopePatterns as $pattern) {
+            if (str_contains($lower, $pattern)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
