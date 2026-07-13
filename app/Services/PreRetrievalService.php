@@ -629,6 +629,16 @@ PROMPT;
             $softWarn = true;
         }
 
+        $carotidSupplemental = $this->carotidTimingClarificationQuestions($question, $provisionalDiagnosis, $retrievalQuery);
+        if (!empty($carotidSupplemental)) {
+            foreach ($carotidSupplemental as $item) {
+                if (!in_array($item, $questions, true)) {
+                    $questions[] = $item;
+                }
+            }
+            $softWarn = true;
+        }
+
         return [$softWarn, array_slice(array_values(array_unique($questions)), 0, 3)];
     }
 
@@ -679,6 +689,58 @@ PROMPT;
         }
 
         return array_slice($questions, 0, 3);
+    }
+
+    protected function carotidTimingClarificationQuestions(
+        string $question,
+        string $provisionalDiagnosis,
+        string $retrievalQuery
+    ): array {
+        $combined = implode(' ', array_filter([$question, $provisionalDiagnosis, $retrievalQuery]));
+        $source    = $question !== '' ? $question : $combined;
+
+        // Only fire when there is a carotid stenosis context...
+        if (!preg_match('/\b(carotid\s+stenosis|carotid\s+artery\s+stenosis|carotid\s+plaque|cea|cas|carotid\s+stenting|endarterectomy)\b/i', $combined)) {
+            return [];
+        }
+
+        // ...AND a neurological event is described
+        if (!preg_match('/\b(aphasia|tia|transient\s+isch[ae]mic|stroke|hemiplegia|hemiparesis|amaurosis\s+fugax|monocular\s+blindness|visual\s+loss|dysphasia|dysarthria)\b/i', $combined)) {
+            return [];
+        }
+
+        $questions = [];
+
+        // Ask about timing when it is genuinely absent
+        $timingKnown = (bool) preg_match(
+            '/\b(\d+\s*(hour|day|week|month)s?\s+ago'
+            . '|recent(?:ly)?'
+            . '|acute\s+(onset|event|stroke|tia|presentation)'
+            . '|yesterday'
+            . '|last\s+(week|month|\d+\s+day)'
+            . '|within\s+\d'
+            . '|hours?\s+ago|days?\s+ago|weeks?\s+ago'
+            . '|this\s+(morning|afternoon|evening|week)'
+            . '|\d+\s*(h|d)\s+ago)\b/i',
+            $source
+        );
+
+        if (!$timingKnown) {
+            $questions[] = 'When did the neurological symptoms begin? (hours, days, or weeks ago — timing determines urgency of intervention)';
+        }
+
+        // Ask about stroke severity when not stated
+        $severityKnown = (bool) preg_match(
+            '/\b(tia|transient\s+isch[ae]mic|minor\s+stroke|non[- ]?disabling|disabling\s+stroke|major\s+stroke'
+            . '|mrs|m?rankin|mobilise|mobilize|unable\s+to\s+mobilize|failed\s+to\s+mobilize)\b/i',
+            $source
+        );
+
+        if (!$severityKnown) {
+            $questions[] = 'Was this a TIA, a minor non-disabling stroke, or a major/disabling stroke?';
+        }
+
+        return array_slice($questions, 0, 2);
     }
 
     protected function isSaphenousThrombosisContext(
