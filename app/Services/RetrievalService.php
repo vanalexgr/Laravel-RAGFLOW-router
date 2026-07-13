@@ -42,8 +42,41 @@ class RetrievalService
         $clinicalFrame = null;
         $shouldNormalize = $this->containsNonAscii($scrubbedQuestion)
             || ($graphEnabled && $graphRag->intentEnabled());
+        $planApplied = false;
+        $mergedExpansionTerms = [];
+        $planner = app(PreRetrievalPlannerService::class);
 
-        if ($shouldNormalize) {
+        // The planner is deliberately opt-in. A null plan leaves every legacy call below intact.
+        if ($planner->enabled() && !config('ragflow.planner.shadow', false)) {
+            $plan = $planner->plan($scrubbedQuestion, $history, $requestedKeys);
+            if ($plan !== null) {
+                $planApplied = true;
+                if (($this->containsNonAscii($scrubbedQuestion) || config('graphrag.use_normalized_query', false))
+                    && $plan->normalizedQuery !== '') {
+                    $retrievalQuestion = $plan->normalizedQuery;
+                }
+                $normalizationMeta = [
+                    'normalized_query' => $plan->normalizedQuery,
+                    'language' => $plan->language,
+                    'changed' => $plan->normalizedChanged,
+                    'interpretation_terms' => $plan->interpretationTerms,
+                    'must_include_terms' => $plan->mustIncludeTerms,
+                    'clinical_frame' => $plan->clinicalFrame,
+                    'graph_terms' => $plan->graphCoreConcepts,
+                    'graph_slots' => $plan->graphSlots,
+                ];
+                $interpretationTerms = $plan->interpretationTerms;
+                $interpretationMustTerms = $plan->mustIncludeTerms;
+                $clinicalFrame = $plan->clinicalFrame;
+                $selectedGuidelines = $this->validateGuidelineKeys($plan->guidelines);
+                $guidelineScores = $plan->guidelineScores;
+                $routingMethod = 'merged_planner';
+                $queryType = $plan->queryType;
+                $mergedExpansionTerms = array_merge($plan->expansionTerms, $plan->graphCoreConcepts);
+            }
+        }
+
+        if (!$planApplied && $shouldNormalize) {
             try {
                 $normalizer = new GuidelineRouterService();
                 $normalizationMeta = $normalizer->normalizeForRetrieval($scrubbedQuestion, $requestedKeys);
@@ -80,7 +113,7 @@ class RetrievalService
             'has_history' => !empty($history),
         ]);
 
-        if ($clinicalInterpreter->enabled()) {
+        if (!$planApplied && $clinicalInterpreter->enabled()) {
             $interpretation = $clinicalInterpreter->interpret($scrubbedQuestion, $normalizationMeta);
             if (!empty($interpretation['terms'])) {
                 $interpretationTerms = $interpretation['terms'];
@@ -104,10 +137,10 @@ class RetrievalService
         }
 
         // 2. Routing
-        $guidelineScores = [];
-        $routingMethod = 'manual';
+        $guidelineScores = $guidelineScores ?? [];
+        $routingMethod = $routingMethod ?? 'manual';
 
-        if (empty($requestedKeys)) {
+        if (!$planApplied && empty($requestedKeys)) {
             $router = new GuidelineRouterService();
             // Use context-aware routing
             $llmResult = $router->routeWithContext($retrievalQuestion, $history, 3);
@@ -130,7 +163,7 @@ class RetrievalService
                 $selectedGuidelines = $this->selectGuidelinesRuleBased($retrievalQuestion);
                 $routingMethod = 'rule_based_fallback';
             }
-        } else {
+        } elseif (!$planApplied) {
             $selectedGuidelines = $this->validateGuidelineKeys($requestedKeys);
             $routingMethod = 'explicit';
         }
@@ -172,8 +205,10 @@ class RetrievalService
         }
 
         // 3b. Query type classification — drives lean vs. full retrieval path
-        $classifier = new GuidelineRouterService();
-        $queryType  = $classifier->classifyQueryType($scrubbedQuestion);
+        if (!$planApplied) {
+            $classifier = new GuidelineRouterService();
+            $queryType = $classifier->classifyQueryType($scrubbedQuestion);
+        }
         $leanEnabled = (bool) config('ragflow.lean.enabled', true);
 
         // Cap to 1 guideline on lean path (only when guidelines were auto-selected)
@@ -218,14 +253,21 @@ class RetrievalService
         }
 
         // Create an expanded query for retrieval
-        $router = new GuidelineRouterService();
-        $expansionResult = $router->selectAndExpand($retrievalQuestion, 3, null, null);
-        $expandedQuery = $expansionResult['expanded'] ?? $retrievalQuestion; // Use expanded or original
-        $expandedQuery = $this->buildCitationQuery($expandedQuery, $normalizationOriginalQuestion, $normalizationMeta, array_keys($selectedGuidelines));
-        $citationQuery = $this->buildCitationQuery($retrievalQuestion, $normalizationOriginalQuestion, $normalizationMeta, array_keys($selectedGuidelines));
+        if (!$planApplied) {
+            $router = new GuidelineRouterService();
+            $expansionResult = $router->selectAndExpand($retrievalQuestion, 3, null, null);
+            $expandedQuery = $expansionResult['expanded'] ?? $retrievalQuestion;
+            $expandedQuery = $this->buildCitationQuery($expandedQuery, $normalizationOriginalQuestion, $normalizationMeta, array_keys($selectedGuidelines));
+            $citationQuery = $this->buildCitationQuery($retrievalQuestion, $normalizationOriginalQuestion, $normalizationMeta, array_keys($selectedGuidelines));
+        } else {
+            $expandedQuery = $this->appendUniqueTerms($retrievalQuestion, $mergedExpansionTerms);
+            $citationQuery = $this->appendUniqueTerms($retrievalQuestion, $mergedExpansionTerms);
+            $expandedQuery = $this->buildCitationQuery($expandedQuery, $normalizationOriginalQuestion, $normalizationMeta, array_keys($selectedGuidelines));
+            $citationQuery = $this->buildCitationQuery($citationQuery, $normalizationOriginalQuestion, $normalizationMeta, array_keys($selectedGuidelines));
+        }
 
         $graphExpansion = null;
-        if ($graphEnabled) {
+        if (!$planApplied && $graphEnabled) {
             $graphExpansion = $graphRag->expand($scrubbedQuestion, array_keys($selectedGuidelines), $normalizationMeta);
             if (!empty($graphExpansion['retrieval_terms'])) {
                 $expandedQuery = $this->appendUniqueTerms($expandedQuery, $graphExpansion['retrieval_terms']);
@@ -247,6 +289,28 @@ class RetrievalService
                 'terms' => $interpretationTerms,
                 'must_terms' => $interpretationMustTerms,
             ]);
+        }
+
+        if (!$planApplied && $planner->enabled() && config('ragflow.planner.shadow', false)) {
+            $shadowPlan = $planner->plan($scrubbedQuestion, $history, $requestedKeys);
+            if ($shadowPlan !== null) {
+                $legacyNormalized = (string) ($normalizationMeta['normalized_query'] ?? $retrievalQuestion);
+                $differences = [
+                    'guidelines' => $shadowPlan->guidelines !== array_keys($selectedGuidelines),
+                    'query_type' => $shadowPlan->queryType !== $queryType,
+                    'normalized_query' => $shadowPlan->normalizedQuery !== $legacyNormalized,
+                ];
+                if (in_array(true, $differences, true)) {
+                    $log->info('[PLANNER SHADOW] Legacy/merged disagreement', [
+                        'correlation_id' => $correlationId,
+                        'differences' => $differences,
+                        'legacy_guidelines' => array_keys($selectedGuidelines),
+                        'planner_guidelines' => $shadowPlan->guidelines,
+                        'legacy_query_type' => $queryType,
+                        'planner_query_type' => $shadowPlan->queryType,
+                    ]);
+                }
+            }
         }
 
         $taxonomyExpander = new TaxonomyExpanderService();

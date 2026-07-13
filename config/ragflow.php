@@ -10,8 +10,8 @@ return [
     'bridge_secret' => env('RAGFLOW_BRIDGE_SECRET'),
 
     'retrieval' => [
-        'top_k' => (int) env('RAGFLOW_TOP_K', 40),  // Keep candidate pool tight for bridge rerank
-        'top_k_ceiling' => (int) env('RAGFLOW_TOP_K_CEILING', 80),
+        'top_k' => (int) env('RAGFLOW_TOP_K', 80),
+        'top_k_ceiling' => (int) env('RAGFLOW_TOP_K_CEILING', 96),
         // Only quality-pass calls should use this higher ceiling.
         'high_recall_top_k_ceiling' => (int) env('RAGFLOW_HIGH_RECALL_TOP_K_CEILING', 1024),
         'size' => (int) env('RAGFLOW_SIZE', 10),
@@ -28,7 +28,7 @@ return [
         // Must match an authorized rerank model name in RAGFlow tenant settings.
         'rerank_id' => env('RAGFLOW_RERANK_ID', 'Cohere-rerank-v4.0-pro___OpenAI-API'),
         'use_kg' => filter_var(env('RAGFLOW_USE_KG', false), FILTER_VALIDATE_BOOLEAN), // Server KG is broken
-        'citation_top_k' => (int) env('RAGFLOW_CITATION_TOP_K', 10),
+        'citation_top_k' => (int) env('RAGFLOW_CITATION_TOP_K', 48),
         // Highlighting bloats chunk payloads and can degrade downstream prompt quality.
         'highlight' => filter_var(env('RAGFLOW_HIGHLIGHT', false), FILTER_VALIDATE_BOOLEAN),
         // Narrative excerpts are trimmed around query matches to keep prompts compact.
@@ -131,14 +131,14 @@ return [
     // Query-type-aware lean retrieval — lower top_k for simple knowledge questions.
     'lean' => [
         'enabled'        => filter_var(env('RAGFLOW_LEAN_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
-        'top_k'          => (int) env('RAGFLOW_LEAN_TOP_K', 20),
+        'top_k'          => (int) env('RAGFLOW_LEAN_TOP_K', 64),
         'quality_pass'   => filter_var(env('RAGFLOW_LEAN_QUALITY_PASS_ENABLED', false), FILTER_VALIDATE_BOOLEAN),
         'max_guidelines' => 1,   // lean path always single-guideline
     ],
 
     // Single-case retrieval for patient-specific single-domain queries.
     'single_case' => [
-        'top_k'        => (int) env('RAGFLOW_SINGLE_CASE_TOP_K', 40),
+        'top_k'        => (int) env('RAGFLOW_SINGLE_CASE_TOP_K', 96),
         'quality_pass' => filter_var(env('RAGFLOW_SINGLE_CASE_QUALITY_PASS_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
         'min_citation' => (int) env('RAGFLOW_SINGLE_CASE_MIN_CITATION', 2),
     ],
@@ -153,6 +153,15 @@ return [
         'model' => env('BRIDGE_RERANK_MODEL', 'rerank-english-v3.0'),
         'top_n' => (int) env('BRIDGE_RERANK_TOP_N', 20),
         'timeout' => (int) env('BRIDGE_RERANK_TIMEOUT', 20),
+    ],
+
+    // One-call replacement for the legacy pre-retrieval LLM chain. Disabled by default.
+    'planner' => [
+        'merged_enabled' => filter_var(env('RETRIEVAL_PLANNER_MERGED_ENABLED', false), FILTER_VALIDATE_BOOLEAN),
+        'shadow' => filter_var(env('RETRIEVAL_PLANNER_SHADOW', false), FILTER_VALIDATE_BOOLEAN),
+        'model' => env('RETRIEVAL_PLANNER_MODEL', null),
+        'max_tokens' => (int) env('RETRIEVAL_PLANNER_MAX_TOKENS', 1000),
+        'temperature' => (float) env('RETRIEVAL_PLANNER_TEMPERATURE', 0.0),
     ],
 
     // Dataset registry is defined in config/guidelines.php
