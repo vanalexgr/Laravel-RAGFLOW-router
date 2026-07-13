@@ -88,7 +88,6 @@ class ClinicalGateService
                         ],
                     ],
                     'max_completion_tokens'  => 220,
-                    'temperature' => 0,
                 ]);
 
             if (!$response->successful()) {
