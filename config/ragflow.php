@@ -3,7 +3,8 @@
 return [
     'api_key' => env('RAGFLOW_API_KEY'),
     'api_endpoint' => env('RAGFLOW_ENDPOINT', 'http://localhost/api/v1'),
-    'request_timeout' => env('RAGFLOW_REQUEST_TIMEOUT', 30),
+    'request_timeout' => env('RAGFLOW_REQUEST_TIMEOUT', 60),
+    'connect_timeout' => env('RAGFLOW_CONNECT_TIMEOUT', 5),
 
     'use_bridge' => filter_var(env('RAGFLOW_USE_BRIDGE', false), FILTER_VALIDATE_BOOLEAN),
     'bridge_url' => env('RAGFLOW_BRIDGE_URL', 'http://localhost:8000'),
@@ -130,15 +131,15 @@ return [
 
     // Query-type-aware lean retrieval — lower top_k for simple knowledge questions.
     'lean' => [
-        'enabled'        => filter_var(env('RAGFLOW_LEAN_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
-        'top_k'          => (int) env('RAGFLOW_LEAN_TOP_K', 64),
-        'quality_pass'   => filter_var(env('RAGFLOW_LEAN_QUALITY_PASS_ENABLED', false), FILTER_VALIDATE_BOOLEAN),
+        'enabled' => filter_var(env('RAGFLOW_LEAN_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
+        'top_k' => (int) env('RAGFLOW_LEAN_TOP_K', 64),
+        'quality_pass' => filter_var(env('RAGFLOW_LEAN_QUALITY_PASS_ENABLED', false), FILTER_VALIDATE_BOOLEAN),
         'max_guidelines' => 1,   // lean path always single-guideline
     ],
 
     // Single-case retrieval for patient-specific single-domain queries.
     'single_case' => [
-        'top_k'        => (int) env('RAGFLOW_SINGLE_CASE_TOP_K', 96),
+        'top_k' => (int) env('RAGFLOW_SINGLE_CASE_TOP_K', 96),
         'quality_pass' => filter_var(env('RAGFLOW_SINGLE_CASE_QUALITY_PASS_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
         'min_citation' => (int) env('RAGFLOW_SINGLE_CASE_MIN_CITATION', 2),
     ],

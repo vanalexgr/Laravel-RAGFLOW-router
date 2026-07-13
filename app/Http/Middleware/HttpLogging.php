@@ -71,10 +71,25 @@ class HttpLogging
 
     private function getRequestBody(Request $request): mixed
     {
+        if (! config('logging.http_log_bodies', false)) {
+            $body = $request->all();
+
+            return [
+                'question_length' => is_string($body['question'] ?? null)
+                    ? mb_strlen($body['question'])
+                    : 0,
+                'history_count' => is_array($body['history'] ?? null)
+                    ? count($body['history'])
+                    : 0,
+                'keys' => array_keys($body),
+            ];
+        }
+
         $contentType = $request->header('Content-Type', '');
 
         if (str_contains($contentType, 'application/json')) {
             $json = $request->json()->all();
+
             return $this->redactSensitiveFields($json);
         }
 
@@ -88,6 +103,14 @@ class HttpLogging
     private function getResponseBody(Response $response): mixed
     {
         $content = $response->getContent();
+
+        if (! config('logging.http_log_bodies', false)) {
+            return [
+                'status' => $response->getStatusCode(),
+                'byte_length' => strlen($content),
+            ];
+        }
+
         $contentType = $response->headers->get('Content-Type', '');
 
         if (str_contains($contentType, 'application/json')) {
@@ -98,7 +121,7 @@ class HttpLogging
         }
 
         if (strlen($content) > 2000) {
-            return substr($content, 0, 2000) . '... [truncated]';
+            return substr($content, 0, 2000).'... [truncated]';
         }
 
         return $content;
@@ -139,7 +162,7 @@ class HttpLogging
                 if (isset($choice['message']['content']) && is_string($choice['message']['content'])) {
                     $content = $choice['message']['content'];
                     if (strlen($content) > 500) {
-                        $data['choices'][$i]['message']['content'] = substr($content, 0, 500) . '... [truncated]';
+                        $data['choices'][$i]['message']['content'] = substr($content, 0, 500).'... [truncated]';
                     }
                 }
             }

@@ -3,67 +3,102 @@
 namespace App\Services\RAGFlow;
 
 use GuzzleHttp\Client;
+use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Exception\GuzzleException;
+use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Middleware;
 use Illuminate\Support\Facades\Log;
+use Psr\Http\Message\RequestInterface;
+use Psr\Http\Message\ResponseInterface;
 
 class RAGFlowClient
 {
     protected Client $httpClient;
+
     protected string $apiKey;
+
     protected string $baseUrl;
+
     protected int $timeout;
+
     protected bool $useBridge;
+
     protected string $bridgeUrl;
+
     protected ?string $bridgeSecret;
 
-    public function __construct(string $apiKey, string $baseUrl, int $timeout = 30)
+    public function __construct(string $apiKey, string $baseUrl, int $timeout = 60)
     {
         $this->apiKey = $apiKey;
-        $this->baseUrl = rtrim($baseUrl, '/') . '/';
+        $this->baseUrl = rtrim($baseUrl, '/').'/';
         $this->timeout = $timeout;
         $this->useBridge = config('ragflow.use_bridge', false);
         $this->bridgeUrl = rtrim(config('ragflow.bridge_url', 'http://localhost:7001'), '/');
         $this->bridgeSecret = config('ragflow.bridge_secret');
-        
+
         $headers = [
             'Content-Type' => 'application/json',
             'Accept' => 'application/json',
         ];
-        
-        if (!$this->useBridge) {
-            $headers['Authorization'] = 'Bearer ' . $this->apiKey;
+
+        if (! $this->useBridge) {
+            $headers['Authorization'] = 'Bearer '.$this->apiKey;
         }
-        
+
+        $stack = HandlerStack::create();
+        $stack->push(Middleware::retry(
+            function (
+                int $retries,
+                RequestInterface $request,
+                ?ResponseInterface $response = null,
+                ?\Throwable $exception = null
+            ): bool {
+                if (! $exception instanceof ConnectException || $retries >= 2) {
+                    return false;
+                }
+
+                Log::channel('ragflow')->warning('RAGFlow connection retry', [
+                    'attempt' => $retries + 1,
+                    'error' => $exception->getMessage(),
+                ]);
+
+                return true;
+            },
+            fn (int $retries): int => 100 * $retries
+        ));
+
         $this->httpClient = new Client([
-            'base_uri' => $this->useBridge ? $this->bridgeUrl . '/' : $this->baseUrl,
+            'base_uri' => $this->useBridge ? $this->bridgeUrl.'/' : $this->baseUrl,
             'timeout' => $this->timeout,
+            'connect_timeout' => (int) config('ragflow.connect_timeout', 5),
             'headers' => $headers,
+            'handler' => $stack,
         ]);
     }
 
     protected function request(string $method, string $endpoint, array $data = []): array
     {
-        $targetUrl = $this->useBridge 
-            ? $this->bridgeUrl . '/' . ltrim($endpoint, '/')
-            : $this->baseUrl . ltrim($endpoint, '/');
-        
-        Log::channel('ragflow')->info("RAGFlow Request", [
+        $targetUrl = $this->useBridge
+            ? $this->bridgeUrl.'/'.ltrim($endpoint, '/')
+            : $this->baseUrl.ltrim($endpoint, '/');
+
+        Log::channel('ragflow')->info('RAGFlow Request', [
             'method' => $method,
             'url' => $targetUrl,
             'via_bridge' => $this->useBridge,
             'payload_keys' => array_keys($data),
         ]);
-        
+
         $startTime = microtime(true);
-        
+
         try {
             $options = [];
-            
+
             if ($this->useBridge && $this->bridgeSecret) {
                 $options['headers'] = ['X-Bridge-Secret' => $this->bridgeSecret];
             }
-            
-            if (!empty($data)) {
+
+            if (! empty($data)) {
                 if ($method === 'GET') {
                     $options['query'] = $data;
                 } else {
@@ -74,12 +109,12 @@ class RAGFlowClient
             $response = $this->httpClient->request($method, $endpoint, $options);
             $body = $response->getBody()->getContents();
             $duration = round((microtime(true) - $startTime) * 1000, 2);
-            
+
             $decoded = json_decode($body, true) ?? [];
-            
+
             $retrievalInfo = $decoded['retrieval_info'] ?? null;
-            
-            Log::channel('ragflow')->info("RAGFlow Response", [
+
+            Log::channel('ragflow')->info('RAGFlow Response', [
                 'url' => $targetUrl,
                 'status' => $response->getStatusCode(),
                 'duration_ms' => $duration,
@@ -90,9 +125,9 @@ class RAGFlowClient
                 'message' => $decoded['message'] ?? null,
                 'retrieval_info' => $retrievalInfo,
             ]);
-            
+
             if ($retrievalInfo) {
-                Log::channel('ragflow')->info("RAGFlow Retrieval Details", [
+                Log::channel('ragflow')->info('RAGFlow Retrieval Details', [
                     'rerank_id' => $retrievalInfo['rerank_id'] ?? 'not_set',
                     'use_kg' => $retrievalInfo['use_kg'] ?? false,
                     'top_k' => $retrievalInfo['top_k'] ?? null,
@@ -103,16 +138,16 @@ class RAGFlowClient
                     'top_chunks' => $retrievalInfo['top_chunks'] ?? [],
                 ]);
             }
-            
+
             return $decoded;
         } catch (GuzzleException $e) {
             $duration = round((microtime(true) - $startTime) * 1000, 2);
-            Log::channel('ragflow')->error("RAGFlow Error", [
+            Log::channel('ragflow')->error('RAGFlow Error', [
                 'url' => $targetUrl,
                 'duration_ms' => $duration,
                 'error' => $e->getMessage(),
             ]);
-            throw new \RuntimeException('RAGFlow API request failed: ' . $e->getMessage(), 0, $e);
+            throw new \RuntimeException('RAGFlow API request failed: '.$e->getMessage(), 0, $e);
         }
     }
 

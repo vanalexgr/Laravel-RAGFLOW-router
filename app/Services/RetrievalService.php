@@ -3,23 +3,22 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\Log;
-use App\Services\GuidelineRouterService;
-use App\Services\PHIScrubberService;
-use App\Services\BridgeRerankService;
-use App\Services\GapDetectionService;
-use App\Services\GraphRagService;
-use App\Services\TaxonomyExpanderService;
-use App\Services\ClinicalInterpreterService;
 
 class RetrievalService
 {
+    public function __construct(
+        private readonly PHIScrubberService $phiScrubber,
+        private readonly GraphRagService $graphRag,
+        private readonly ClinicalInterpreterService $clinicalInterpreter,
+        private readonly GuidelineRouterService $guidelineRouter,
+        private readonly TaxonomyExpanderService $taxonomyExpander,
+        private readonly GapDetectionService $gapDetection,
+        private readonly ChunkSelectionService $chunkSelection,
+        private readonly BridgeRerankService $bridgeRerank,
+    ) {}
+
     /**
      * Core retrieval pipeline: PHI Scrub -> Route -> Dual Retrieve.
-     *
-     * @param string $question
-     * @param array $history
-     * @param array|null $requestedKeys
-     * @return array
      */
     public function retrieve(string $question, array $history = [], ?array $requestedKeys = null): array
     {
@@ -28,15 +27,15 @@ class RetrievalService
         $correlationId = substr(uniqid(), -8);
 
         // 1. PHI Scrubbing
-        $phiScrubber = new PHIScrubberService();
+        $phiScrubber = $this->phiScrubber;
         $scrubResult = $phiScrubber->scrub($question);
         $scrubbedQuestion = $scrubResult['scrubbed_text'];
         $retrievalQuestion = $scrubbedQuestion;
         $normalizationOriginalQuestion = $scrubbedQuestion;
         $normalizationMeta = null;
-        $graphRag = new GraphRagService();
+        $graphRag = $this->graphRag;
         $graphEnabled = $graphRag->enabled();
-        $clinicalInterpreter = new ClinicalInterpreterService();
+        $clinicalInterpreter = $this->clinicalInterpreter;
         $interpretationTerms = [];
         $interpretationMustTerms = [];
         $clinicalFrame = null;
@@ -49,7 +48,7 @@ class RetrievalService
         // The planner is deliberately opt-in. A null plan leaves every legacy call below intact.
         $preRetrievalTimings = [];
 
-        if ($planner->enabled() && !config('ragflow.planner.shadow', false)) {
+        if ($planner->enabled() && ! config('ragflow.planner.shadow', false)) {
             $t0 = microtime(true);
             $plan = $planner->plan($scrubbedQuestion, $history, $requestedKeys);
             $preRetrievalTimings['planner_ms'] = (int) round((microtime(true) - $t0) * 1000);
@@ -80,13 +79,13 @@ class RetrievalService
             }
         }
 
-        if (!$planApplied && $shouldNormalize) {
+        if (! $planApplied && $shouldNormalize) {
             try {
-                $normalizer = new GuidelineRouterService();
+                $normalizer = $this->guidelineRouter;
                 $t0 = microtime(true);
                 $normalizationMeta = $normalizer->normalizeForRetrieval($scrubbedQuestion, $requestedKeys);
                 $preRetrievalTimings['normalize_ms'] = (int) round((microtime(true) - $t0) * 1000);
-                if (is_array($normalizationMeta) && !empty($normalizationMeta['normalized_query'])) {
+                if (is_array($normalizationMeta) && ! empty($normalizationMeta['normalized_query'])) {
                     $candidate = trim((string) $normalizationMeta['normalized_query']);
                     if ($candidate !== '') {
                         $useNormalized = $this->containsNonAscii($scrubbedQuestion)
@@ -116,30 +115,30 @@ class RetrievalService
             'correlation_id' => $correlationId,
             'question_preview' => substr($scrubbedQuestion, 0, 50),
             'retrieval_query_preview' => substr($retrievalQuestion, 0, 80),
-            'has_history' => !empty($history),
+            'has_history' => ! empty($history),
         ]);
 
-        if (!$planApplied && $clinicalInterpreter->enabled()) {
+        if (! $planApplied && $clinicalInterpreter->enabled()) {
             $t0 = microtime(true);
             $interpretation = $clinicalInterpreter->interpret($scrubbedQuestion, $normalizationMeta);
             $preRetrievalTimings['interpret_ms'] = (int) round((microtime(true) - $t0) * 1000);
-            if (!empty($interpretation['terms'])) {
+            if (! empty($interpretation['terms'])) {
                 $interpretationTerms = $interpretation['terms'];
             }
-            if (!empty($interpretation['must_terms'])) {
+            if (! empty($interpretation['must_terms'])) {
                 $interpretationMustTerms = $interpretation['must_terms'];
             }
             $clinicalFrame = $interpretation['frame'] ?? null;
-            if (!is_array($normalizationMeta)) {
+            if (! is_array($normalizationMeta)) {
                 $normalizationMeta = [];
             }
-            if (!empty($interpretationTerms)) {
+            if (! empty($interpretationTerms)) {
                 $normalizationMeta['interpretation_terms'] = $interpretationTerms;
             }
-            if (!empty($interpretationMustTerms)) {
+            if (! empty($interpretationMustTerms)) {
                 $normalizationMeta['must_include_terms'] = $interpretationMustTerms;
             }
-            if (!empty($clinicalFrame)) {
+            if (! empty($clinicalFrame)) {
                 $normalizationMeta['clinical_frame'] = $clinicalFrame;
             }
         }
@@ -147,9 +146,10 @@ class RetrievalService
         // 2. Routing
         $guidelineScores = $guidelineScores ?? [];
         $routingMethod = $routingMethod ?? 'manual';
+        $router = null;
 
-        if (!$planApplied && empty($requestedKeys)) {
-            $router = new GuidelineRouterService();
+        if (! $planApplied && empty($requestedKeys)) {
+            $router = $this->guidelineRouter;
             // Use context-aware routing
             $t0 = microtime(true);
             $llmResult = $router->routeWithContext($retrievalQuestion, $history, 3);
@@ -160,7 +160,7 @@ class RetrievalService
             $routingMethod = $llmResult['routing_method'] ?? 'unknown';
 
             // Convert keys to full guideline info
-            if (!empty($selectedKeys)) {
+            if (! empty($selectedKeys)) {
                 $registry = $this->buildGuidelineRegistry();
                 $selectedGuidelines = [];
                 foreach ($selectedKeys as $key) {
@@ -173,7 +173,7 @@ class RetrievalService
                 $selectedGuidelines = $this->selectGuidelinesRuleBased($retrievalQuestion);
                 $routingMethod = 'rule_based_fallback';
             }
-        } elseif (!$planApplied) {
+        } elseif (! $planApplied) {
             $selectedGuidelines = $this->validateGuidelineKeys($requestedKeys);
             $routingMethod = 'explicit';
         }
@@ -194,7 +194,7 @@ class RetrievalService
         // Bypass-context correction: antithrombotic recs for vein bypass live in the CLTI guideline,
         // not asymptomatic_pad. Swap asymptomatic_pad → clti when bypass + antithrombotic context confirmed.
         if ($this->isVeinBypassAntithromboticContext($retrievalQuestion)) {
-            if (!isset($selectedGuidelines['clti'])) {
+            if (! isset($selectedGuidelines['clti'])) {
                 $registry = $this->buildGuidelineRegistry();
                 if (isset($registry['clti'])) {
                     $selectedGuidelines['clti'] = $registry['clti'];
@@ -215,9 +215,9 @@ class RetrievalService
         }
 
         // 3b. Query type classification — drives lean vs. full retrieval path
-        if (!$planApplied) {
-            $classifier = new GuidelineRouterService();
-            $queryType = $classifier->classifyQueryType($scrubbedQuestion);
+        if (! $planApplied) {
+            $router ??= $this->guidelineRouter;
+            $queryType = $router->classifyQueryType($scrubbedQuestion);
         }
         $leanEnabled = (bool) config('ragflow.lean.enabled', true);
 
@@ -230,8 +230,8 @@ class RetrievalService
         }
 
         $log->info('[QUERY CLASSIFIER] Query type determined', [
-            'query_type'      => $queryType,
-            'lean_enabled'    => $leanEnabled,
+            'query_type' => $queryType,
+            'lean_enabled' => $leanEnabled,
             'question_preview' => substr($scrubbedQuestion, 0, 80),
         ]);
 
@@ -246,10 +246,10 @@ class RetrievalService
         $definitionIntent = $this->isDefinitionIntent($scrubbedQuestion);
         $recommendationIntent = $this->isRecommendationIntent($scrubbedQuestion);
         $definitionFocusConfig = config('ragflow.retrieval.definition_focus', []);
-        if ($definitionIntent && !empty($definitionFocusConfig['enabled'])) {
+        if ($definitionIntent && ! empty($definitionFocusConfig['enabled'])) {
             $narrativeMax = max($narrativeMax, (int) ($definitionFocusConfig['narrative_max'] ?? $narrativeMax));
             $citationMax = min($citationMax, max(0, (int) ($definitionFocusConfig['citation_max'] ?? $citationMax)));
-            $skipCitationWhenNotRequested = !$recommendationIntent
+            $skipCitationWhenNotRequested = ! $recommendationIntent
                 && (bool) ($definitionFocusConfig['skip_citation_when_not_requested'] ?? true);
             if ($skipCitationWhenNotRequested) {
                 $citationMax = 0;
@@ -263,12 +263,11 @@ class RetrievalService
         }
 
         // Create an expanded query for retrieval
-        if (!$planApplied) {
-            $router = new GuidelineRouterService();
+        if (! $planApplied) {
+            $router ??= $this->guidelineRouter;
             $t0 = microtime(true);
-            $expansionResult = $router->selectAndExpand($retrievalQuestion, 3, null, null);
+            $expandedQuery = $router->expandQuery($retrievalQuestion);
             $preRetrievalTimings['expand_ms'] = (int) round((microtime(true) - $t0) * 1000);
-            $expandedQuery = $expansionResult['expanded'] ?? $retrievalQuestion;
             $expandedQuery = $this->buildCitationQuery($expandedQuery, $normalizationOriginalQuestion, $normalizationMeta, array_keys($selectedGuidelines));
             $citationQuery = $this->buildCitationQuery($retrievalQuestion, $normalizationOriginalQuestion, $normalizationMeta, array_keys($selectedGuidelines));
         } else {
@@ -285,22 +284,22 @@ class RetrievalService
         ));
 
         $graphExpansion = null;
-        if (!$planApplied && $graphEnabled) {
+        if (! $planApplied && $graphEnabled) {
             $graphExpansion = $graphRag->expand($scrubbedQuestion, array_keys($selectedGuidelines), $normalizationMeta);
-            if (!empty($graphExpansion['retrieval_terms'])) {
+            if (! empty($graphExpansion['retrieval_terms'])) {
                 $expandedQuery = $this->appendUniqueTerms($expandedQuery, $graphExpansion['retrieval_terms']);
             }
-            if (!empty($graphExpansion['citation_terms'])) {
+            if (! empty($graphExpansion['citation_terms'])) {
                 $citationQuery = $this->appendUniqueTerms($citationQuery, $graphExpansion['citation_terms']);
             }
-            if (!is_array($normalizationMeta)) {
+            if (! is_array($normalizationMeta)) {
                 $normalizationMeta = [];
             }
             $normalizationMeta['graph_terms'] = $graphExpansion['core_concepts'] ?? [];
             $normalizationMeta['graph_slots'] = $graphExpansion['slots'] ?? [];
         }
 
-        if (!empty($interpretationTerms)) {
+        if (! empty($interpretationTerms)) {
             $expandedQuery = $this->appendUniqueTerms($expandedQuery, $interpretationTerms);
             $citationQuery = $this->appendUniqueTerms($citationQuery, $interpretationTerms);
             $log->info('[CLINICAL INTERPRETER] Added pre-retrieval terms', [
@@ -309,7 +308,7 @@ class RetrievalService
             ]);
         }
 
-        if (!$planApplied && $planner->enabled() && config('ragflow.planner.shadow', false)) {
+        if (! $planApplied && $planner->enabled() && config('ragflow.planner.shadow', false)) {
             $shadowPlan = $planner->plan($scrubbedQuestion, $history, $requestedKeys);
             if ($shadowPlan !== null) {
                 $legacyNormalized = (string) ($normalizationMeta['normalized_query'] ?? $retrievalQuestion);
@@ -331,13 +330,13 @@ class RetrievalService
             }
         }
 
-        $taxonomyExpander = new TaxonomyExpanderService();
+        $taxonomyExpander = $this->taxonomyExpander;
         if ($taxonomyExpander->enabled()) {
             $taxonomy = $taxonomyExpander->expand($scrubbedQuestion);
-            if (!empty($taxonomy['terms'])) {
+            if (! empty($taxonomy['terms'])) {
                 $expandedQuery = $this->appendUniqueTerms($expandedQuery, $taxonomy['terms']);
                 $citationQuery = $this->appendUniqueTerms($citationQuery, $taxonomy['terms']);
-                if (!is_array($normalizationMeta)) {
+                if (! is_array($normalizationMeta)) {
                     $normalizationMeta = [];
                 }
                 $normalizationMeta['taxonomy_terms'] = $taxonomy['terms'];
@@ -370,7 +369,7 @@ class RetrievalService
             $dualResult
         );
 
-        $gapService = new GapDetectionService();
+        $gapService = $this->gapDetection;
         $gapReport = null;
         if ($definitionFastPath) {
             $log->info('[DEFINITION FAST PATH] Single-guideline definitional query satisfied first-pass evidence; skipping secondary retrieval passes', [
@@ -381,7 +380,7 @@ class RetrievalService
             ]);
         } else {
             $skipQualityPass = ($queryType === 'knowledge' && $leanEnabled
-                && !config('ragflow.lean.quality_pass', false));
+                && ! config('ragflow.lean.quality_pass', false));
 
             $dualResult = $this->applyFocusedRecall(
                 $dualResult,
@@ -394,18 +393,20 @@ class RetrievalService
                 $guidelineScores
             );
 
-            if (!$skipQualityPass) $dualResult = $this->applyQualityPass(
-                $dualResult,
-                $scrubbedQuestion,
-                $expandedQuery,
-                $citationQuery,
-                $selectedGuidelines,
-                $narrativeMax,
-                $citationMax,
-                $guidelineScores
-            );
+            if (! $skipQualityPass) {
+                $dualResult = $this->applyQualityPass(
+                    $dualResult,
+                    $scrubbedQuestion,
+                    $expandedQuery,
+                    $citationQuery,
+                    $selectedGuidelines,
+                    $narrativeMax,
+                    $citationMax,
+                    $guidelineScores
+                );
+            }
 
-            if (!$skipQualityPass && $gapService->enabled() && $gapService->maxPasses() > 0) {
+            if (! $skipQualityPass && $gapService->enabled() && $gapService->maxPasses() > 0) {
                 $gapReport = $gapService->detect(
                     $scrubbedQuestion,
                     $dualResult['narrative_chunks'] ?? [],
@@ -427,11 +428,11 @@ class RetrievalService
                     $normalizationMeta
                 );
 
-                $hasGap = !empty($gapReport['missing']); // missing_concepts handled by applyQualityPassOnConceptGap()
-                if ($hasGap && !empty($gapReport['query_terms'])) {
+                $hasGap = ! empty($gapReport['missing']); // missing_concepts handled by applyQualityPassOnConceptGap()
+                if ($hasGap && ! empty($gapReport['query_terms'])) {
                     $limits = $gapService->secondPassLimits();
-                    $focusedNarrativeQuery = trim($expandedQuery . ' ' . implode(' ', $gapReport['query_terms']));
-                    $focusedCitationQuery = trim($citationQuery . ' ' . implode(' ', $gapReport['query_terms']));
+                    $focusedNarrativeQuery = trim($expandedQuery.' '.implode(' ', $gapReport['query_terms']));
+                    $focusedCitationQuery = trim($citationQuery.' '.implode(' ', $gapReport['query_terms']));
 
                     $log->info('[GAP DETECTION] Missing fields detected; running focused second pass', [
                         'missing' => $gapReport['missing'],
@@ -460,6 +461,7 @@ class RetrievalService
                             $second['citation_chunks'] ?? [],
                             'citation'
                         ),
+                        'degraded' => ($dualResult['degraded'] ?? false) || ($second['degraded'] ?? false),
                     ];
 
                     // Re-evaluate gaps after second pass.
@@ -474,41 +476,42 @@ class RetrievalService
         }
 
         // Intent-aware ranking, diversification, and LLM/UI tier split.
-        $chunkSelector  = new \App\Services\ChunkSelectionService();
+        $chunkSelector = $this->chunkSelection;
         $guidelineCount = count($selectedGuidelines);
-        $selection      = $chunkSelector->select(
-            $dualResult['citation_chunks']  ?? [],
+        $selection = $chunkSelector->select(
+            $dualResult['citation_chunks'] ?? [],
             $dualResult['narrative_chunks'] ?? [],
-            $normalizationMeta              ?? [],
+            $normalizationMeta ?? [],
             $guidelineCount
         );
 
         $duration = round((microtime(true) - $startTime) * 1000);
 
         return [
-            'success'              => true,
-            'question'             => $scrubbedQuestion,
-            'retrieval_query'      => $retrievalQuestion,
-            'query_normalization'  => $normalizationMeta,
-            'expanded_query'       => $expandedQuery,
-            'phi_scrubbed'         => $scrubResult['was_modified'],
-            'selected_guidelines'  => $selectedGuidelines,
-            'routing_method'       => $routingMethod,
-            'query_type'           => $queryType,
+            'success' => true,
+            'question' => $scrubbedQuestion,
+            'retrieval_query' => $retrievalQuestion,
+            'query_normalization' => $normalizationMeta,
+            'expanded_query' => $expandedQuery,
+            'phi_scrubbed' => $scrubResult['was_modified'],
+            'selected_guidelines' => $selectedGuidelines,
+            'routing_method' => $routingMethod,
+            'query_type' => $queryType,
             // Tiered chunk arrays
-            'llm_citation_chunks'  => $selection['llm_citation_chunks'],
+            'llm_citation_chunks' => $selection['llm_citation_chunks'],
             'llm_narrative_chunks' => $selection['llm_narrative_chunks'],
-            'ui_citation_chunks'   => $selection['ui_citation_chunks'],
-            'ui_narrative_chunks'  => $selection['ui_narrative_chunks'],
-            'must_include_chunk'   => $selection['must_include_chunk'],
-            'intent_profile'       => $selection['intent_profile'],
+            'ui_citation_chunks' => $selection['ui_citation_chunks'],
+            'ui_narrative_chunks' => $selection['ui_narrative_chunks'],
+            'must_include_chunk' => $selection['must_include_chunk'],
+            'intent_profile' => $selection['intent_profile'],
             // Backward-compatible aliases (point to UI tier)
-            'citation_chunks'      => $selection['ui_citation_chunks'],
-            'narrative_chunks'     => $selection['ui_narrative_chunks'],
-            'duration_ms'          => $duration,
-            'system_prompt'        => $this->getDualSystemPrompt(),
-            'gap_report'           => $gapService->enabled() && config('gap_detection.include_debug', false) ? $gapReport : null,
-            'graph_expansion'      => $graphEnabled && config('graphrag.include_debug', false) ? $graphExpansion : null,
+            'citation_chunks' => $selection['ui_citation_chunks'],
+            'narrative_chunks' => $selection['ui_narrative_chunks'],
+            'duration_ms' => $duration,
+            'system_prompt' => $this->getDualSystemPrompt(),
+            'gap_report' => $gapService->enabled() && config('gap_detection.include_debug', false) ? $gapReport : null,
+            'graph_expansion' => $graphEnabled && config('graphrag.include_debug', false) ? $graphExpansion : null,
+            'degraded' => (bool) ($dualResult['degraded'] ?? false),
         ];
     }
 
@@ -548,7 +551,7 @@ class RetrievalService
 
         Log::channel('retrieval')->info('[QUALITY PASS] Concept gap trigger', [
             'missing_concepts' => $gapReport['missing_concepts'],
-            'overrides' => array_filter($overrides, fn($v) => $v !== null),
+            'overrides' => array_filter($overrides, fn ($v) => $v !== null),
         ]);
 
         $gapNarrativeMax = max($narrativeMax, (int) ($qualityConfig['narrative_max'] ?? $narrativeMax));
@@ -564,6 +567,7 @@ class RetrievalService
             $overrides,
             true
         );
+        $dualResult['degraded'] = ($dualResult['degraded'] ?? false) || ($quality['degraded'] ?? false);
 
         $dualResult['narrative_chunks'] = $this->mergeChunks(
             $dualResult['narrative_chunks'] ?? [],
@@ -597,15 +601,17 @@ class RetrievalService
             if ($type === 'citation') {
                 $text = (string) ($chunk['text'] ?? '');
                 $rec = (string) ($chunk['recommendation_id'] ?? '');
-                return md5($rec . '|' . $text);
+
+                return md5($rec.'|'.$text);
             }
             $text = (string) ($chunk['content'] ?? '');
             $source = (string) ($chunk['source_guideline'] ?? '');
-            return md5($source . '|' . $text);
+
+            return md5($source.'|'.$text);
         };
 
         foreach (array_merge($primary, $secondary) as $chunk) {
-            if (!is_array($chunk)) {
+            if (! is_array($chunk)) {
                 continue;
             }
             $key = $fingerprint($chunk);
@@ -639,11 +645,12 @@ class RetrievalService
         $lower = mb_strtolower($query);
         foreach ($terms as $term) {
             $termLower = mb_strtolower($term);
-            if (!str_contains($lower, $termLower)) {
-                $query .= ' ' . $term;
-                $lower .= ' ' . $termLower;
+            if (! str_contains($lower, $termLower)) {
+                $query .= ' '.$term;
+                $lower .= ' '.$termLower;
             }
         }
+
         return $query;
     }
 
@@ -652,13 +659,13 @@ class RetrievalService
         $config = config('ragflow.retrieval.query_boosts', []);
         $definitionFocusConfig = config('ragflow.retrieval.definition_focus', []);
 
-        if (empty($config['enabled']) && !$definitionIntent) {
+        if (empty($config['enabled']) && ! $definitionIntent) {
             return $query;
         }
 
         $original = $query;
 
-        if (!empty($config['non_a_non_b_enabled']) && $this->containsNonANonB($query)) {
+        if (! empty($config['non_a_non_b_enabled']) && $this->containsNonANonB($query)) {
             $query = $this->appendUniqueTerms($query, [
                 'aortic arch dissection',
                 'arch-involving dissection',
@@ -666,7 +673,7 @@ class RetrievalService
             ]);
         }
 
-        if (!empty($config['blue_toe_enabled'])) {
+        if (! empty($config['blue_toe_enabled'])) {
             $blueToePattern = '/\\bblue\\s*toe\\b|\\btrash\\s*foot\\b|\\bblue[-\\s]*toe\\b/iu';
             $shaggyPattern = '/\\bshaggy\\b\\s*\\w*\\s*\\baorta\\b/iu';
             $atheroPattern = '/\\batheroembolic|\\batheroembol|\\bcholesterol\\s*embol/iu';
@@ -718,11 +725,10 @@ class RetrievalService
             ]);
         }
 
-
-        if ($definitionIntent && !empty($definitionFocusConfig['enabled'])) {
+        if ($definitionIntent && ! empty($definitionFocusConfig['enabled'])) {
             $termsKey = $channel === 'citation' ? 'citation_terms' : 'narrative_terms';
             $definitionTerms = $definitionFocusConfig[$termsKey] ?? [];
-            if (is_array($definitionTerms) && !empty($definitionTerms)) {
+            if (is_array($definitionTerms) && ! empty($definitionTerms)) {
                 $query = $this->appendUniqueTerms($query, array_map('strval', $definitionTerms));
             }
         }
@@ -733,7 +739,7 @@ class RetrievalService
         ) {
             $termsByChannel = $config['vgei_definitive_treatment_terms'] ?? [];
             $channelTerms = $termsByChannel[$channel] ?? [];
-            if (is_array($channelTerms) && !empty($channelTerms)) {
+            if (is_array($channelTerms) && ! empty($channelTerms)) {
                 $query = $this->appendUniqueTerms($query, array_map('strval', $channelTerms));
             }
         }
@@ -780,7 +786,7 @@ class RetrievalService
         $hasCarotidContext = in_array('carotid_vertebral', $selectedGuidelines, true)
             || preg_match('/\b(carotid|cea|cas|tcar|endarterectomy|carotid\s+stenting)\b/iu', $query) === 1;
 
-        if (!$hasCarotidContext) {
+        if (! $hasCarotidContext) {
             return false;
         }
 
@@ -835,7 +841,7 @@ class RetrievalService
         $hasVenousContext = in_array('venous_thrombosis', $selectedGuidelines, true)
             || in_array('antithrombotic_therapy', $selectedGuidelines, true);
 
-        if (!$hasVenousContext) {
+        if (! $hasVenousContext) {
             return false;
         }
 
@@ -857,7 +863,7 @@ class RetrievalService
             $normalized
         ) === 1;
 
-        if (!$hasDefinitiveCue) {
+        if (! $hasDefinitiveCue) {
             return false;
         }
 
@@ -901,7 +907,7 @@ class RetrievalService
         bool $recommendationIntent,
         array $dualResult
     ): bool {
-        if (!$definitionIntent || !$singleGuideline || $recommendationIntent) {
+        if (! $definitionIntent || ! $singleGuideline || $recommendationIntent) {
             return false;
         }
 
@@ -940,7 +946,7 @@ class RetrievalService
         ];
 
         foreach ($narrativeChunks as $chunk) {
-            if (!is_array($chunk)) {
+            if (! is_array($chunk)) {
                 continue;
             }
             $content = mb_strtolower((string) ($chunk['content'] ?? ''));
@@ -971,7 +977,7 @@ class RetrievalService
         $maxTotal = 8;
 
         foreach ($selectedGuidelines as $guidelineKey) {
-            if (!is_string($guidelineKey) || $guidelineKey === '') {
+            if (! is_string($guidelineKey) || $guidelineKey === '') {
                 continue;
             }
 
@@ -988,7 +994,7 @@ class RetrievalService
                 if (preg_match('/^\\d+(?:\\.\\d+)?\\s*(cm|mm)?$/i', $term)) {
                     continue;
                 }
-                if (!in_array($term, $anchors, true)) {
+                if (! in_array($term, $anchors, true)) {
                     $anchors[] = $term;
                     $countForGuideline++;
                 }
@@ -1017,7 +1023,7 @@ class RetrievalService
     protected function chunksContainPattern(array $chunks, string $pattern, array $fields): bool
     {
         foreach ($chunks as $chunk) {
-            if (!is_array($chunk)) {
+            if (! is_array($chunk)) {
                 continue;
             }
             foreach ($fields as $field) {
@@ -1027,6 +1033,7 @@ class RetrievalService
                 }
             }
         }
+
         return false;
     }
 
@@ -1054,6 +1061,7 @@ class RetrievalService
                 $rest[] = $chunk;
             }
         }
+
         return array_merge($matches, $rest);
     }
 
@@ -1084,7 +1092,7 @@ class RetrievalService
             return $dualResult;
         }
 
-        if (!$this->containsNonANonB($question)) {
+        if (! $this->containsNonANonB($question)) {
             return $dualResult;
         }
 
@@ -1103,6 +1111,7 @@ class RetrievalService
                 $pattern,
                 ['text', 'content']
             );
+
             return $dualResult;
         }
 
@@ -1121,7 +1130,7 @@ class RetrievalService
         Log::channel('retrieval')->info('[FOCUSED RECALL] non-A non-B second pass', [
             'focus_narrative_max' => $focusNarrativeMax,
             'focus_citation_max' => $focusCitationMax,
-            'overrides' => array_filter($overrides, fn($v) => $v !== null),
+            'overrides' => array_filter($overrides, fn ($v) => $v !== null),
             'query_preview' => substr($focusQuery, 0, 140),
         ]);
 
@@ -1134,6 +1143,7 @@ class RetrievalService
             $guidelineScores,
             $overrides
         );
+        $dualResult['degraded'] = ($dualResult['degraded'] ?? false) || ($focused['degraded'] ?? false);
 
         $mergedNarrative = $this->mergeChunks(
             $dualResult['narrative_chunks'] ?? [],
@@ -1183,7 +1193,7 @@ class RetrievalService
         $needsNarrative = $minNarrative > 0 && $haveNarrative < $minNarrative;
         $needsCitation = $minCitation > 0 && $haveCitation < $minCitation;
 
-        if (!$alwaysRun && !$needsNarrative && !$needsCitation) {
+        if (! $alwaysRun && ! $needsNarrative && ! $needsCitation) {
             return $dualResult;
         }
 
@@ -1210,7 +1220,7 @@ class RetrievalService
             'have_citation' => $haveCitation,
             'narrative_max' => $qualityNarrativeMax,
             'citation_max' => $qualityCitationMax,
-            'overrides' => array_filter($overrides, fn($v) => $v !== null),
+            'overrides' => array_filter($overrides, fn ($v) => $v !== null),
         ]);
 
         $quality = $this->retrieveDualChunks(
@@ -1223,6 +1233,7 @@ class RetrievalService
             $overrides,
             true
         );
+        $dualResult['degraded'] = ($dualResult['degraded'] ?? false) || ($quality['degraded'] ?? false);
 
         $dualResult['narrative_chunks'] = $this->mergeChunks(
             $dualResult['narrative_chunks'] ?? [],
@@ -1266,6 +1277,7 @@ class RetrievalService
                 ];
             }
         }
+
         return $registry;
     }
 
@@ -1290,15 +1302,17 @@ class RetrievalService
             foreach ($rule['triggers'] as $trigger) {
                 if (str_contains($questionLower, $trigger)) {
                     foreach ($rule['keys'] as $key) {
-                        if (isset($registry[$key]))
+                        if (isset($registry[$key])) {
                             $selected[$key] = $registry[$key];
+                        }
                     }
                 }
             }
         }
 
-        if (!empty($selected))
+        if (! empty($selected)) {
             return $selected;
+        }
 
         // Basic keyword match if no force rules
         foreach ($categories as $category) {
@@ -1324,6 +1338,7 @@ class RetrievalService
                 $validated[$key] = $registry[$key];
             }
         }
+
         return $validated;
     }
 
@@ -1333,7 +1348,7 @@ class RetrievalService
             return $selectedGuidelines;
         }
 
-        if (isset($selectedGuidelines['antithrombotic_therapy']) && !$this->queryNeedsAntithromboticCompanion($question)) {
+        if (isset($selectedGuidelines['antithrombotic_therapy']) && ! $this->queryNeedsAntithromboticCompanion($question)) {
             unset($selectedGuidelines['antithrombotic_therapy']);
         }
 
@@ -1344,14 +1359,15 @@ class RetrievalService
     {
         $hasBypass = (bool) preg_match(
             '/\b(bypass|infrainguinal|femoropopliteal|femoroperoneal|femorotibial|'
-            . 'vein\s+bypass|vein\s+graft|below.?knee\s+bypass|bk\s+bypass|'
-            . 'above.?knee\s+bypass|open\s+revasculariz|surgical\s+revasculariz|conduit)\b/iu',
+            .'vein\s+bypass|vein\s+graft|below.?knee\s+bypass|bk\s+bypass|'
+            .'above.?knee\s+bypass|open\s+revasculariz|surgical\s+revasculariz|conduit)\b/iu',
             $question
         );
         $hasAntithrombotic = (bool) preg_match(
             '/\b(antithrombotic|antiplatelet|anticoagul|aspirin|clopidogrel|rivaroxaban|DAPT|DOAC|warfarin)\b/iu',
             $question
         );
+
         return $hasBypass && $hasAntithrombotic;
     }
 
@@ -1379,8 +1395,9 @@ class RetrievalService
             foreach ($category['guidelines'] as $key => $guideline) {
                 $score = 0;
                 foreach ($guideline['key_concepts'] as $concept) {
-                    if (str_contains($questionLower, strtolower($concept)))
+                    if (str_contains($questionLower, strtolower($concept))) {
                         $score += 2;
+                    }
                 }
                 if ($score > 0) {
                     $scores[$key] = $score;
@@ -1394,16 +1411,17 @@ class RetrievalService
         foreach (array_slice(array_keys($scores), 0, $max) as $key) {
             $result[$key] = $data[$key];
         }
+
         return $result;
     }
 
     /**
      * Apply post-routing guardrails to ensure critical guidelines are not missed.
-     * 
+     *
      * Guardrails A-N cover all 14 ESVS guidelines with keyword detection.
-     * 
-     * @param array $selectedGuidelines Current selection (key => guideline info)
-     * @param string $question The scrubbed user question
+     *
+     * @param  array  $selectedGuidelines  Current selection (key => guideline info)
+     * @param  string  $question  The scrubbed user question
      * @return array Updated selection with guardrails applied
      */
     protected function applyGuardrails(array $selectedGuidelines, string $question): array
@@ -1428,7 +1446,7 @@ class RetrievalService
                 'venous thromboembolism',
                 'ivc filter',
                 'post-thrombotic',
-                'catheter-directed thrombolysis'
+                'catheter-directed thrombolysis',
             ],
 
             // Guardrail B: Anticoag terms → antithrombotic_therapy
@@ -1448,7 +1466,7 @@ class RetrievalService
                 'clopidogrel',
                 'dual antiplatelet',
                 'dapt',
-                'triple therapy'
+                'triple therapy',
             ],
 
             // Guardrail C: Aortic Arch terms → aortic_arch
@@ -1462,7 +1480,7 @@ class RetrievalService
                 'arch aneurysm',
                 'hybrid arch',
                 'arch repair',
-                'total arch'
+                'total arch',
             ],
 
             // Guardrail D: Thoracic Aorta terms → descending_thoracic_aorta
@@ -1493,7 +1511,7 @@ class RetrievalService
                 'pararenal aaa',
                 'paravisceral aaa',
                 'suprarenal aaa',
-                'complex aaa'
+                'complex aaa',
             ],
 
             // Guardrail E: AAA terms → abdominal_aortic_aneurysm
@@ -1506,7 +1524,7 @@ class RetrievalService
                 'iliac aneurysm',
                 'aortic rupture',
                 'abdominal aneurysm',
-                'open repair'
+                'open repair',
             ],
 
             // Guardrail F: Mesenteric/Renal terms → mesenteric_renal
@@ -1521,7 +1539,7 @@ class RetrievalService
                 'ras',
                 'visceral aneurysm',
                 'chronic mesenteric',
-                'acute mesenteric'
+                'acute mesenteric',
             ],
 
             // Guardrail G: Carotid terms → carotid_vertebral
@@ -1536,7 +1554,7 @@ class RetrievalService
                 'carotid endarterectomy',
                 'carotid stenting',
                 'vertebral artery',
-                'carotid artery'
+                'carotid artery',
             ],
 
             // Guardrail H: PAD/Claudication terms → asymptomatic_pad
@@ -1548,7 +1566,7 @@ class RetrievalService
                 'ankle brachial',
                 'supervised exercise',
                 'walking distance',
-                'exercise therapy'
+                'exercise therapy',
             ],
 
             // Guardrail I: CLTI terms → clti
@@ -1564,7 +1582,7 @@ class RetrievalService
                 'limb salvage',
                 'heel ulcer',
                 'angiosome',
-                'ischemic ulcer'
+                'ischemic ulcer',
             ],
 
             // Guardrail J: ALI terms → acute_limb_ischaemia
@@ -1576,7 +1594,7 @@ class RetrievalService
                 'pulseless limb',
                 'sudden leg pain',
                 'rutherford',
-                'acute arterial occlusion'
+                'acute arterial occlusion',
             ],
 
             // Guardrail K: Venous/Varicose terms → chronic_venous_disease
@@ -1592,7 +1610,7 @@ class RetrievalService
                 'sclerotherapy',
                 'venous ablation',
                 'leg ulcer',
-                'venous insufficiency'
+                'venous insufficiency',
             ],
 
             // Guardrail L: Trauma terms → vascular_trauma
@@ -1606,7 +1624,7 @@ class RetrievalService
                 'vascular injury',
                 'hemorrhage control',
                 'vascular laceration',
-                'arterial injury'
+                'arterial injury',
             ],
 
             // Guardrail M: Graft Infection terms → vascular_graft_infections
@@ -1618,7 +1636,7 @@ class RetrievalService
                 'infected graft',
                 'endograft infection',
                 'graft excision',
-                'infected bypass'
+                'infected bypass',
             ],
 
             // Guardrail N: Vascular Access terms → vascular_access
@@ -1631,7 +1649,7 @@ class RetrievalService
                 'steal syndrome',
                 'access thrombosis',
                 'fistula maturation',
-                'dialysis catheter'
+                'dialysis catheter',
             ],
         ];
 
@@ -1654,8 +1672,8 @@ class RetrievalService
         }
 
         $boosts = config('ragflow.retrieval.query_boosts', []);
-        if (!empty($boosts['enabled']) && !empty($boosts['non_a_non_b_enabled']) && $this->containsNonANonB($questionLower)) {
-            if (!isset($selectedGuidelines['aortic_arch']) && isset($registry['aortic_arch'])) {
+        if (! empty($boosts['enabled']) && ! empty($boosts['non_a_non_b_enabled']) && $this->containsNonANonB($questionLower)) {
+            if (! isset($selectedGuidelines['aortic_arch']) && isset($registry['aortic_arch'])) {
                 $selectedGuidelines['aortic_arch'] = $registry['aortic_arch'];
                 $modified = true;
                 $log->info('[GUARDRAIL] Added aortic_arch (detected: non-A non-B dissection)');
@@ -1664,7 +1682,7 @@ class RetrievalService
 
         if (
             isset($selectedGuidelines['abdominal_aortic_aneurysm'])
-            && !isset($selectedGuidelines['descending_thoracic_aorta'])
+            && ! isset($selectedGuidelines['descending_thoracic_aorta'])
             && $this->isComplexAaaContext($questionLower)
             && isset($registry['descending_thoracic_aorta'])
         ) {
@@ -1684,14 +1702,14 @@ class RetrievalService
             $keys = array_keys($selectedGuidelines);
             $count = count($selectedGuidelines);
             $log->warning("[GUARDRAIL] Exceeded 3 guidelines ($count), keeping first 3", [
-                'all_keys' => $keys
+                'all_keys' => $keys,
             ]);
             $selectedGuidelines = array_slice($selectedGuidelines, 0, 3, true);
         }
 
         if ($modified) {
-            $log->info("[GUARDRAILS] Final guideline keys after guardrails", [
-                'guideline_keys' => array_keys($selectedGuidelines)
+            $log->info('[GUARDRAILS] Final guideline keys after guardrails', [
+                'guideline_keys' => array_keys($selectedGuidelines),
             ]);
         }
 
@@ -1713,7 +1731,7 @@ class RetrievalService
         // For short abbreviations (e.g., ali, evar, dvt), enforce word boundaries
         // to avoid false positives like "modality" -> "ali".
         if (preg_match('/^[a-z0-9]+$/', $term) && strlen($term) <= 4) {
-            return preg_match('/\\b' . preg_quote($term, '/') . '\\b/', $questionLower) === 1;
+            return preg_match('/\\b'.preg_quote($term, '/').'\\b/', $questionLower) === 1;
         }
 
         return str_contains($questionLower, $term);
@@ -1741,9 +1759,9 @@ class RetrievalService
                 return $category['guidelines'][$key];
             }
         }
+
         return null;
     }
-
 
     protected function retrieveDualChunks(
         string $narrativeQuery,
@@ -1754,8 +1772,7 @@ class RetrievalService
         array $scores = [],
         array $overrides = [],
         bool $allowHighRecallTopK = false
-    ): array
-    {
+    ): array {
         $narrativeDatasets = [];
         $citationDocumentIds = []; // NEW: for hard scoping citations
 
@@ -1769,25 +1786,26 @@ class RetrievalService
 
             // NEW: Collect citation document IDs
             $guidelineConfig = $this->getGuidelineConfig($key);
-            if (!empty($guidelineConfig['recs_doc_id'])) {
+            if (! empty($guidelineConfig['recs_doc_id'])) {
                 // Only add if it's not a placeholder
-                if (!str_starts_with($guidelineConfig['recs_doc_id'], 'NEED_')) {
+                if (! str_starts_with($guidelineConfig['recs_doc_id'], 'NEED_')) {
                     $citationDocumentIds[] = $guidelineConfig['recs_doc_id'];
                 }
             }
         }
 
         // Log citation document IDs
-        Log::info("[CITATION SCOPE] Document IDs for selected guidelines", [
+        Log::info('[CITATION SCOPE] Document IDs for selected guidelines', [
             'guideline_keys' => array_keys($guidelines),
             'citation_document_ids' => $citationDocumentIds,
             'count' => count($citationDocumentIds),
-            'has_placeholders' => count($citationDocumentIds) < count($guidelines)
+            'has_placeholders' => count($citationDocumentIds) < count($guidelines),
         ]);
 
         $citationDatasetId = config('guidelines.recommendations_dataset');
-        if (empty($citationDatasetId))
+        if (empty($citationDatasetId)) {
             throw new \RuntimeException('Citation dataset not configured');
+        }
 
         $retrievalConfig = config('ragflow.retrieval', []);
 
@@ -1804,7 +1822,7 @@ class RetrievalService
             'base_citation_top_k'
         );
 
-        $bridgeRerank = new BridgeRerankService();
+        $bridgeRerank = $this->bridgeRerank;
         $params = [
             'question' => $narrativeQuery,
             'citation_query' => $citationQuery,
@@ -1820,14 +1838,14 @@ class RetrievalService
             'citation_top_k' => $citationTopK,
             'highlight' => (bool) ($retrievalConfig['highlight'] ?? false),
         ];
-        if (!empty($overrides)) {
+        if (! empty($overrides)) {
             foreach (['top_k', 'similarity_threshold', 'keyword', 'vector_similarity_weight', 'use_kg', 'citation_top_k'] as $key) {
                 if (array_key_exists($key, $overrides) && $overrides[$key] !== null) {
                     if ($key === 'top_k' || $key === 'citation_top_k') {
                         $params[$key] = $this->clampTopKParameter(
                             (int) $overrides[$key],
                             $allowHighRecallTopK,
-                            'override_' . $key
+                            'override_'.$key
                         );
                     } else {
                         $params[$key] = $overrides[$key];
@@ -1838,18 +1856,29 @@ class RetrievalService
         // Always provide rerank_id if configured; ragflow_service will only forward it
         // upstream if it is non-empty and not "local". If bridge rerank is enabled,
         // do not forward rerank_id to RAGFlow to avoid remote rerank latency.
-        if (!$bridgeRerank->enabled() && array_key_exists('rerank_id', $retrievalConfig) && !empty($retrievalConfig['rerank_id'])) {
+        if (! $bridgeRerank->enabled() && array_key_exists('rerank_id', $retrievalConfig) && ! empty($retrievalConfig['rerank_id'])) {
             $params['rerank_id'] = $retrievalConfig['rerank_id'];
         }
 
         try {
             $response = \App\Facades\RAGFlow::datasets()->retrieveDual($narrativeDatasets, $citationDatasetId, $params);
         } catch (\Exception $e) {
-            throw new \RuntimeException('RAGFlow bridge retrieval failed: ' . $e->getMessage());
+            throw new \RuntimeException('RAGFlow bridge retrieval failed: '.$e->getMessage());
         }
 
         if (($response['status'] ?? 0) !== 200) {
-            throw new \RuntimeException('RAGFlow retrieval failed');
+            $message = trim((string) ($response['message'] ?? ''));
+            $errors = json_encode($response['errors'] ?? [], JSON_UNESCAPED_SLASHES);
+            throw new \RuntimeException(trim(
+                'RAGFlow retrieval failed: '.$message.' '.($errors ?: '')
+            ));
+        }
+
+        $degraded = (bool) ($response['degraded'] ?? false);
+        if ($degraded) {
+            Log::channel('retrieval')->warning('[RAGFLOW] Retrieval completed with partial upstream failures', [
+                'errors' => $response['errors'] ?? [],
+            ]);
         }
 
         $narrativeChunks = $response['narrative']['chunks'] ?? [];
@@ -1917,6 +1946,7 @@ class RetrievalService
         return [
             'narrative_chunks' => $formattedNarrative,
             'citation_chunks' => $formattedCitation,
+            'degraded' => $degraded,
         ];
     }
 
@@ -1976,8 +2006,8 @@ class RetrievalService
                 'ultrasound',
             ];
             foreach ($extras as $term) {
-                if (!str_contains(mb_strtolower($q), mb_strtolower($term))) {
-                    $q .= ' ' . $term;
+                if (! str_contains(mb_strtolower($q), mb_strtolower($term))) {
+                    $q .= ' '.$term;
                 }
             }
         }
@@ -1990,8 +2020,9 @@ class RetrievalService
         $formatted = [];
         foreach ($rawChunks as $chunk) {
             $content = $chunk['content'] ?? $chunk['content_with_weight'] ?? '';
-            if (empty($content))
+            if (empty($content)) {
                 continue;
+            }
 
             $meta = [];
 
@@ -1999,37 +2030,43 @@ class RetrievalService
                 $text = $content;
                 // Parse Citation Metadata - Handle both formats
                 // Format 1: RECOMMENDATION_ID: Rec 12
-                if (preg_match('/RECOMMENDATION_ID:\s*(Rec\s*[\d\w]+)/i', $content, $m))
+                if (preg_match('/RECOMMENDATION_ID:\s*(Rec\s*[\d\w]+)/i', $content, $m)) {
                     $meta['recommendation_id'] = $m[1];
+                }
                 // Format 2: rec_id:vascular_trauma_R002
-                elseif (preg_match('/rec_id:\s*([^\s;]+)/i', $content, $m))
+                elseif (preg_match('/rec_id:\s*([^\s;]+)/i', $content, $m)) {
                     $meta['recommendation_id'] = $m[1];
+                }
 
-                if (preg_match('/CLASS:\s*(Class\s*\S+)/i', $content, $m))
+                if (preg_match('/CLASS:\s*(Class\s*\S+)/i', $content, $m)) {
                     $meta['class'] = $m[1];
-                elseif (preg_match('/class:\s*([^\s;]+)/i', $content, $m))
+                } elseif (preg_match('/class:\s*([^\s;]+)/i', $content, $m)) {
                     $meta['class'] = $m[1];
+                }
 
-                if (preg_match('/LEVEL:\s*(Level\s*\S+)/i', $content, $m))
+                if (preg_match('/LEVEL:\s*(Level\s*\S+)/i', $content, $m)) {
                     $meta['level'] = $m[1];
-                elseif (preg_match('/level:\s*([^\s;]+)/i', $content, $m))
+                } elseif (preg_match('/level:\s*([^\s;]+)/i', $content, $m)) {
                     $meta['level'] = $m[1];
+                }
 
                 // Extract guideline name if present
-                if (preg_match('/guideline_name:\s*([^;]+)/i', $content, $m))
+                if (preg_match('/guideline_name:\s*([^;]+)/i', $content, $m)) {
                     $meta['guideline'] = trim($m[1]);
+                }
 
                 // Extract text content (remove metadata headers if possible)
-                if (preg_match('/RECOMMENDATION_TEXT:\s*(.+?)(?=TRIPLES:|CLASS:|LEVEL:|$)/is', $content, $m))
+                if (preg_match('/RECOMMENDATION_TEXT:\s*(.+?)(?=TRIPLES:|CLASS:|LEVEL:|$)/is', $content, $m)) {
                     $text = trim($m[1]);
-                elseif (preg_match('/recommendation_text:\s*(.+?)(?=;|$)/is', $content, $m))
+                } elseif (preg_match('/recommendation_text:\s*(.+?)(?=;|$)/is', $content, $m)) {
                     $text = trim($m[1]);
+                }
                 // If the content is just metadata-heavy, we might want to clean it, but usually the text is in there.
                 // For the new format, if no explicit text field, use the whole thing?
                 // The chunk preview showed "rec_id:...". Let's assume the text follows or is the whole thing?
                 // Actually, let's keep the full content as fallback.
 
-                $meta['text'] = strlen($text) > 800 ? substr($text, 0, 800) . '...' : $text;
+                $meta['text'] = strlen($text) > 800 ? substr($text, 0, 800).'...' : $text;
             } else {
                 // Narrative
                 $maxChars = (int) (config('ragflow.retrieval.narrative_excerpt_max_chars', 1000));
@@ -2046,6 +2083,7 @@ class RetrievalService
                 'similarity' => round(($chunk['similarity'] ?? 0) * 100, 1),
             ], $meta);
         }
+
         return $formatted;
     }
 
@@ -2080,7 +2118,7 @@ class RetrievalService
         }
 
         if ($matchPos === null) {
-            return mb_substr($content, 0, $maxChars) . '...';
+            return mb_substr($content, 0, $maxChars).'...';
         }
 
         $window = $maxChars;
@@ -2093,7 +2131,8 @@ class RetrievalService
         $snippet = mb_substr($content, $start, $window);
         $prefix = $start > 0 ? '...' : '';
         $suffix = ($start + $window) < $contentLen ? '...' : '';
-        return $prefix . $snippet . $suffix;
+
+        return $prefix.$snippet.$suffix;
     }
 
     protected function extractQueryTerms(string $query): array
@@ -2122,13 +2161,14 @@ class RetrievalService
             if (in_array($part, $stop, true)) {
                 continue;
             }
-            if (!isset($terms[$part])) {
+            if (! isset($terms[$part])) {
                 $terms[$part] = true;
             }
         }
 
         $unique = array_keys($terms);
-        usort($unique, fn($a, $b) => mb_strlen($b) <=> mb_strlen($a));
+        usort($unique, fn ($a, $b) => mb_strlen($b) <=> mb_strlen($a));
+
         return $unique;
     }
 
@@ -2158,7 +2198,7 @@ class RetrievalService
 
         $out = [];
         foreach ($rawChunks as $chunk) {
-            if (!is_array($chunk)) {
+            if (! is_array($chunk)) {
                 continue;
             }
 
@@ -2170,6 +2210,7 @@ class RetrievalService
                 if ($this->guidelineLabelAllowed($sourceGuideline, $allowedLabels)) {
                     $out[] = $chunk;
                 }
+
                 continue;
             }
 
@@ -2187,7 +2228,7 @@ class RetrievalService
                 if (preg_match('/rec_id:\s*([a-z0-9_]+)/i', $content, $m)) {
                     $recId = strtolower(trim($m[1]));
                     foreach ($selectedKeys as $k) {
-                        if (is_string($k) && $k !== '' && str_starts_with($recId, strtolower($k) . '_')) {
+                        if (is_string($k) && $k !== '' && str_starts_with($recId, strtolower($k).'_')) {
                             $candidates[] = $k;
                         }
                     }
@@ -2200,7 +2241,7 @@ class RetrievalService
             // If the row explicitly declares a guideline_name and it is not one of the selected
             // guidelines, treat that as authoritative and drop the chunk, even if other metadata
             // fields (e.g., category_name / rec_id prefix) look compatible.
-            if ($explicitGuidelineName !== null && !$this->guidelineLabelAllowed($explicitGuidelineName, $allowedLabels)) {
+            if ($explicitGuidelineName !== null && ! $this->guidelineLabelAllowed($explicitGuidelineName, $allowedLabels)) {
                 continue;
             }
 
@@ -2208,6 +2249,7 @@ class RetrievalService
             // keep it (to avoid accidentally dropping valid chunks with sparse metadata).
             if (empty($candidates)) {
                 $out[] = $chunk;
+
                 continue;
             }
 
@@ -2252,7 +2294,7 @@ class RetrievalService
 
         $out = [];
         foreach ($chunks as $chunk) {
-            if (!is_array($chunk)) {
+            if (! is_array($chunk)) {
                 continue;
             }
 
@@ -2292,6 +2334,7 @@ class RetrievalService
                 return true;
             }
         }
+
         return false;
     }
 
@@ -2305,6 +2348,7 @@ class RetrievalService
         $s = str_replace(['&', '/'], ' ', $s);
         $s = preg_replace('/[^\\p{L}\\p{N}]+/u', ' ', $s) ?? $s;
         $s = trim(preg_replace('/\\s+/u', ' ', $s) ?? $s);
+
         return str_replace(' ', '_', $s);
     }
 

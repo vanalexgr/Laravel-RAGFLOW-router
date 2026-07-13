@@ -3,27 +3,30 @@
 namespace App\Http\Controllers;
 
 use App\Services\ChangeDetectionService;
-use App\Services\RetrievalService;
-use App\Services\GuidelineAssetService;
-use App\Services\GapDetectionService;
 use App\Services\ClinicalGateService;
-use App\Services\PreRetrievalService;
 use App\Services\CoverageAssessmentService;
-use App\ValueObjects\PreRetrievalResult;
+use App\Services\GapDetectionService;
+use App\Services\GuidelineAssetService;
+use App\Services\PreRetrievalService;
+use App\Services\RetrievalService;
 use App\ValueObjects\GapAssessment;
+use App\ValueObjects\PreRetrievalResult;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class ToolController extends Controller
 {
+    private ?array $guidelineValidationMaps = null;
+
     public function __construct(
         protected RetrievalService $retrievalService,
         protected GuidelineAssetService $guidelineAssetService,
         protected PreRetrievalService $preRetrievalService,
         protected ChangeDetectionService $changeDetectionService,
         protected CoverageAssessmentService $coverageAssessmentService,
-    ) {
-    }
+        protected GapDetectionService $gapDetectionService,
+        protected ClinicalGateService $clinicalGateService,
+    ) {}
 
     public function consult(Request $request)
     {
@@ -47,15 +50,15 @@ class ToolController extends Controller
         $confirmationMode = (bool) $request->boolean('confirmation_mode', false);
 
         [$requestedKeys, $invalidGuidelines] = $this->resolveRequestedGuidelineKeys($guidelinesInput);
-        if (!empty($invalidGuidelines)) {
+        if (! empty($invalidGuidelines)) {
             return $this->jsonApiResponse([
-                'error' => "Invalid guideline(s): " . implode(', ', $invalidGuidelines) . ". Check tool documentation for valid options."
+                'error' => 'Invalid guideline(s): '.implode(', ', $invalidGuidelines).'. Check tool documentation for valid options.',
             ], 400);
         }
 
         // Debug logging
         Log::info('Tool API Request', [
-            'question' => $question,
+            ...$this->questionLogMetadata($question),
             'history_count' => count($history),
             'guidelines_selected' => $requestedKeys ?? 'auto',
             'selection_mode' => $requestedKeys ? 'explicit' : 'auto-routing',
@@ -65,7 +68,7 @@ class ToolController extends Controller
 
         if ($confirmationMode) {
             $preRetrievalData = $request->input('pre_retrieval_result');
-            if (!is_array($preRetrievalData)) {
+            if (! is_array($preRetrievalData)) {
                 return $this->jsonApiResponse([
                     'error' => 'confirmation_mode requires pre_retrieval_result.',
                 ], 422);
@@ -77,13 +80,14 @@ class ToolController extends Controller
             if ($changeResult->decision === 'reuse') {
                 $cachedPayload = $request->input('cached_retrieval_payload');
                 $response = [
-                    'phase'           => 'complete',
-                    'reused'          => true,
+                    'phase' => 'complete',
+                    'reused' => true,
                     'decision_reason' => $changeResult->reason,
                 ];
                 if ($cachedPayload !== null) {
                     $response['retrieval_payload'] = $cachedPayload;
                 }
+
                 return $this->jsonApiResponse($response);
             }
 
@@ -95,6 +99,9 @@ class ToolController extends Controller
                 $requestedKeys
             );
             $retrieval = $this->executeRetrieval($requery, $history, $effectiveKeys);
+            if ($retrieval instanceof \Illuminate\Http\JsonResponse) {
+                return $retrieval;
+            }
 
             if (isset($retrieval['guardrail'])) {
                 return $this->guardrailResponse($retrieval['guardrail']['message'], $retrieval['guardrail']['type']);
@@ -114,7 +121,7 @@ class ToolController extends Controller
         $guardrailType = $this->preRetrievalGuardrailType($question);
         if ($guardrailType !== null) {
             Log::warning('[GUARDRAIL] Out-of-scope or onboarding prompt routed to consult endpoint; short-circuiting retrieval', [
-                'question' => $question,
+                ...$this->questionLogMetadata($question),
                 'guidelines_selected' => $requestedKeys ?? 'auto',
                 'guardrail_type' => $guardrailType,
             ]);
@@ -127,8 +134,11 @@ class ToolController extends Controller
         if ($preRetrievalMode) {
             $preResult = $this->preRetrievalService->analyse($question, $history);
             $preResult = $this->preRetrievalService->applyRequestedGuidelines($preResult, $requestedKeys);
-            $effectiveKeys = !empty($preResult->guidelines) ? $preResult->guidelines : $requestedKeys;
+            $effectiveKeys = ! empty($preResult->guidelines) ? $preResult->guidelines : $requestedKeys;
             $retrieval = $this->executeRetrieval($preResult->retrievalQuery ?: $question, $history, $effectiveKeys);
+            if ($retrieval instanceof \Illuminate\Http\JsonResponse) {
+                return $retrieval;
+            }
 
             if (isset($retrieval['guardrail'])) {
                 return $this->guardrailResponse($retrieval['guardrail']['message'], $retrieval['guardrail']['type']);
@@ -151,6 +161,9 @@ class ToolController extends Controller
         }
 
         $retrieval = $this->executeRetrieval($question, $history, $requestedKeys);
+        if ($retrieval instanceof \Illuminate\Http\JsonResponse) {
+            return $retrieval;
+        }
 
         if (isset($retrieval['guardrail'])) {
             return $this->guardrailResponse($retrieval['guardrail']['message'], $retrieval['guardrail']['type']);
@@ -176,15 +189,16 @@ class ToolController extends Controller
         $guidelinesInput = $request->input('guidelines', null);
 
         [$requestedKeys, $invalidGuidelines] = $this->resolveRequestedGuidelineKeys($guidelinesInput);
-        if (!empty($invalidGuidelines)) {
+        if (! empty($invalidGuidelines)) {
             return $this->jsonApiResponse([
-                'error' => "Invalid guideline(s): " . implode(', ', $invalidGuidelines) . ". Check tool documentation for valid options."
+                'error' => 'Invalid guideline(s): '.implode(', ', $invalidGuidelines).'. Check tool documentation for valid options.',
             ], 400);
         }
 
         $guardrailType = $this->preRetrievalGuardrailType($question);
         if ($guardrailType !== null) {
             $message = $this->buildOutOfScopeGuidance($question, $guardrailType);
+
             return $this->guardrailResponse($message, $guardrailType);
         }
 
@@ -206,7 +220,7 @@ class ToolController extends Controller
         $requestedKeys = null;
         $invalidGuidelines = [];
 
-        if (!empty($guidelinesInput) && is_array($guidelinesInput)) {
+        if (! empty($guidelinesInput) && is_array($guidelinesInput)) {
             $validKeys = [];
 
             foreach ($guidelinesInput as $guideline) {
@@ -218,7 +232,7 @@ class ToolController extends Controller
                 }
             }
 
-            if (!empty($validKeys)) {
+            if (! empty($validKeys)) {
                 $requestedKeys = $validKeys;
             }
         }
@@ -232,9 +246,9 @@ class ToolController extends Controller
         \App\ValueObjects\ChangeDetectionResult $changeResult,
         ?array $requestedKeys
     ): ?array {
-        $keys = !empty($changeResult->updatedGuidelines)
+        $keys = ! empty($changeResult->updatedGuidelines)
             ? $changeResult->updatedGuidelines
-            : (!empty($original->guidelines) ? $original->guidelines : ($requestedKeys ?? []));
+            : (! empty($original->guidelines) ? $original->guidelines : ($requestedKeys ?? []));
 
         $keys = $this->sanitizeGuidelineKeys($keys);
 
@@ -251,7 +265,7 @@ class ToolController extends Controller
         );
 
         if ($hasCltiContext) {
-            $keys = array_values(array_filter($keys, fn(string $key): bool => $key !== 'asymptomatic_pad'));
+            $keys = array_values(array_filter($keys, fn (string $key): bool => $key !== 'asymptomatic_pad'));
             $keys = $this->ensureGuidelineKey($keys, 'clti', after: 'antithrombotic_therapy');
         }
 
@@ -264,19 +278,19 @@ class ToolController extends Controller
             $keys = $this->ensureGuidelineKey($keys, 'antithrombotic_therapy');
         }
 
-        return !empty($keys) ? array_slice($keys, 0, 3) : $requestedKeys;
+        return ! empty($keys) ? array_slice($keys, 0, 3) : $requestedKeys;
     }
 
     protected function sanitizeGuidelineKeys(?array $keys): array
     {
         $sanitized = [];
         foreach ($keys ?? [] as $key) {
-            if (!is_string($key) || trim($key) === '') {
+            if (! is_string($key) || trim($key) === '') {
                 continue;
             }
 
             $validated = $this->validateGuideline($key);
-            if ($validated !== null && !in_array($validated, $sanitized, true)) {
+            if ($validated !== null && ! in_array($validated, $sanitized, true)) {
                 $sanitized[] = $validated;
             }
         }
@@ -291,45 +305,70 @@ class ToolController extends Controller
             return $keys;
         }
 
-        $keys = array_values(array_filter($keys, fn(string $key): bool => $key !== $validated));
+        $keys = array_values(array_filter($keys, fn (string $key): bool => $key !== $validated));
 
         if ($after === null) {
             array_unshift($keys, $validated);
+
             return $keys;
         }
 
         $afterIndex = array_search($after, $keys, true);
         if ($afterIndex === false) {
             $keys[] = $validated;
+
             return $keys;
         }
 
         array_splice($keys, $afterIndex + 1, 0, [$validated]);
+
         return $keys;
     }
 
-    protected function executeRetrieval(string $question, array $history, ?array $requestedKeys): array
+    protected function executeRetrieval(string $question, array $history, ?array $requestedKeys): array|\Illuminate\Http\JsonResponse
     {
-        $result = $this->retrievalService->retrieve($question, $history, $requestedKeys);
+        try {
+            $result = $this->retrievalService->retrieve($question, $history, $requestedKeys);
+        } catch (\RuntimeException $e) {
+            Log::channel('retrieval')->error('[RAGFLOW] Guideline retrieval backend unavailable', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return $this->retrievalUnavailableResponse();
+        }
 
         $narrativeCount = count($result['narrative_chunks'] ?? []);
         $citationCount = count($result['citation_chunks'] ?? []);
+        if (($result['degraded'] ?? false) && $narrativeCount === 0 && $citationCount === 0) {
+            return $this->retrievalUnavailableResponse();
+        }
+
         if ($narrativeCount === 0 && $citationCount === 0 && $this->containsNonAscii($question)) {
             $fallbackQuery = $this->buildMultilingualRetrievalFallbackQuery($question, $requestedKeys, $result['selected_guidelines'] ?? []);
             if ($fallbackQuery !== null) {
                 Log::info('[MULTILINGUAL RETRY] No evidence for non-English query; retrying retrieval with guideline-aware English hints', [
-                    'question' => $question,
-                    'fallback_query' => $fallbackQuery,
+                    ...$this->questionLogMetadata($question),
+                    'fallback_query_length' => mb_strlen($fallbackQuery),
+                    'fallback_query_hash' => substr(sha1($fallbackQuery), 0, 12),
                     'guidelines_selected' => $requestedKeys ?? 'auto',
                 ]);
 
-                $retryResult = $this->retrievalService->retrieve($fallbackQuery, $history, $requestedKeys);
+                try {
+                    $retryResult = $this->retrievalService->retrieve($fallbackQuery, $history, $requestedKeys);
+                } catch (\RuntimeException $e) {
+                    Log::channel('retrieval')->error('[RAGFLOW] Multilingual retrieval retry failed', [
+                        'error' => $e->getMessage(),
+                    ]);
+
+                    return $this->retrievalUnavailableResponse();
+                }
                 $retryNarrativeCount = count($retryResult['narrative_chunks'] ?? []);
                 $retryCitationCount = count($retryResult['citation_chunks'] ?? []);
                 if ($retryNarrativeCount > 0 || $retryCitationCount > 0) {
                     Log::info('[MULTILINGUAL RETRY] Recovery succeeded', [
-                        'question' => $question,
-                        'retry_question' => $fallbackQuery,
+                        ...$this->questionLogMetadata($question),
+                        'retry_question_length' => mb_strlen($fallbackQuery),
+                        'retry_question_hash' => substr(sha1($fallbackQuery), 0, 12),
                         'narrative_count' => $retryNarrativeCount,
                         'citation_count' => $retryCitationCount,
                     ]);
@@ -351,7 +390,7 @@ class ToolController extends Controller
 
         if ($narrativeCount === 0 && $citationCount === 0) {
             Log::warning('[GUARDRAIL] Retrieval returned no evidence; returning predefined out-of-scope/help guidance', [
-                'question' => $question,
+                ...$this->questionLogMetadata($question),
                 'guidelines_selected' => $requestedKeys ?? 'auto',
             ]);
 
@@ -373,33 +412,41 @@ class ToolController extends Controller
         ];
     }
 
+    private function retrievalUnavailableResponse(): \Illuminate\Http\JsonResponse
+    {
+        return $this->jsonApiResponse([
+            'error' => 'Guideline retrieval backend unavailable — please retry',
+            'retryable' => true,
+        ], 503);
+    }
+
     protected function buildConsultPayload(array $result, array $assets): array
     {
         // Coverage assessment — runs after chunk selection, before synthesis prompt assembly.
         // Skipped automatically for knowledge_only queries and empty chunk sets.
-        $facets      = $result['intent_profile']['key_terms'] ?? [];
-        $llmChunks   = array_merge(
+        $facets = $result['intent_profile']['key_terms'] ?? [];
+        $llmChunks = array_merge(
             $result['llm_citation_chunks'] ?? [],
             $result['llm_narrative_chunks'] ?? []
         );
         $gapAssessment = $this->coverageAssessmentService->assess(
-            question:  $result['question'] ?? '',
+            question: $result['question'] ?? '',
             llmChunks: $llmChunks,
-            facets:    is_array($facets) ? $facets : [],
+            facets: is_array($facets) ? $facets : [],
             queryType: $result['query_type'] ?? 'complex_case',
         );
 
         $output = $this->buildConsultOutput($result, $assets, $gapAssessment);
 
         Log::info('Tool API Response', [
-            'question'             => $result['question'] ?? '',
-            'text_length'          => strlen($output),
-            'has_narrative_chunks' => !empty($result['narrative_chunks']),
-            'narrative_count'      => count($result['narrative_chunks'] ?? []),
-            'citation_count'       => count($result['citation_chunks'] ?? []),
-            'asset_count'          => count($assets ?? []),
-            'has_guideline_gap'    => $gapAssessment->hasGuidelineGap,
-            'uncovered_facets'     => $gapAssessment->uncoveredFacets,
+            ...$this->questionLogMetadata($result['question'] ?? ''),
+            'text_length' => strlen($output),
+            'has_narrative_chunks' => ! empty($result['narrative_chunks']),
+            'narrative_count' => count($result['narrative_chunks'] ?? []),
+            'citation_count' => count($result['citation_chunks'] ?? []),
+            'asset_count' => count($assets ?? []),
+            'has_guideline_gap' => $gapAssessment->hasGuidelineGap,
+            'uncovered_facets' => $gapAssessment->uncoveredFacets,
         ]);
 
         $output = mb_convert_encoding($output, 'UTF-8', 'UTF-8');
@@ -426,8 +473,8 @@ class ToolController extends Controller
             'selected_guidelines' => $selectedGuidelines,
             'assets' => $safeAssets,
             'query_normalization' => $queryNormalization,
-            'query_type'          => $result['query_type'] ?? 'complex_case',
-            'gap_assessment'      => $gapAssessment->toArray(),
+            'query_type' => $result['query_type'] ?? 'complex_case',
+            'gap_assessment' => $gapAssessment->toArray(),
         ];
     }
 
@@ -435,32 +482,32 @@ class ToolController extends Controller
     {
         $question = $result['question'] ?? '';
         $output = "RETRIEVED GUIDELINES for: \"{$question}\"\n";
-        $output .= "Guidelines Used: " . implode(', ', array_column($result['selected_guidelines'] ?? [], 'name')) . "\n\n";
+        $output .= 'Guidelines Used: '.implode(', ', array_column($result['selected_guidelines'] ?? [], 'name'))."\n\n";
 
         $output .= "=== NARRATIVE EVIDENCE (Use for context) ===\n";
         foreach (($result['narrative_chunks'] ?? []) as $chunk) {
-            $output .= "- " . ($chunk['content'] ?? '') . "\n";
+            $output .= '- '.($chunk['content'] ?? '')."\n";
         }
         $output .= "\n";
 
         $output .= "=== CITATIONS (Use for verbatim quoting) ===\n";
         foreach (($result['citation_chunks'] ?? []) as $chunk) {
             $meta = [];
-            if (!empty($chunk['recommendation_id'])) {
+            if (! empty($chunk['recommendation_id'])) {
                 $meta[] = $chunk['recommendation_id'];
             }
-            if (!empty($chunk['class'])) {
+            if (! empty($chunk['class'])) {
                 $meta[] = $chunk['class'];
             }
-            if (!empty($chunk['level'])) {
+            if (! empty($chunk['level'])) {
                 $meta[] = $chunk['level'];
             }
-            $metaStr = !empty($meta) ? " [" . implode(', ', $meta) . "]" : '';
+            $metaStr = ! empty($meta) ? ' ['.implode(', ', $meta).']' : '';
 
-            $output .= "> \"" . ($chunk['text'] ?? '') . "\"{$metaStr}\n";
+            $output .= '> "'.($chunk['text'] ?? '')."\"{$metaStr}\n";
         }
 
-        if (!empty($assets)) {
+        if (! empty($assets)) {
             $output .= "\n\n=== FIGURES / TABLES (For user display) ===\n";
             $output .= "If relevant, you may include these in your response as Markdown images.\n";
             foreach ($assets as $asset) {
@@ -472,9 +519,9 @@ class ToolController extends Controller
                     continue;
                 }
 
-                $output .= "- {$label}" . (!empty($guidelineKey) ? " ({$guidelineKey})" : '') . ": {$caption}\n";
+                $output .= "- {$label}".(! empty($guidelineKey) ? " ({$guidelineKey})" : '').": {$caption}\n";
                 $output .= "  {$url}\n";
-                if (!empty($caption)) {
+                if (! empty($caption)) {
                     $output .= "  ![{$caption}]({$url})\n";
                 }
             }
@@ -483,8 +530,8 @@ class ToolController extends Controller
         // ── Two-layer synthesis instructions ────────────────────────────────
         if ($gapAssessment !== null && $gapAssessment->hasGuidelineGap) {
             $uncovered = implode(', ', $gapAssessment->uncoveredFacets);
-            $partial   = implode(', ', $gapAssessment->partialFacets);
-            $summary   = $gapAssessment->gapSummary;
+            $partial = implode(', ', $gapAssessment->partialFacets);
+            $summary = $gapAssessment->gapSummary;
 
             $output .= "\n\n=== GUIDELINE COVERAGE ASSESSMENT ===\n";
             $output .= "Guideline gap detected.\n";
@@ -546,13 +593,13 @@ class ToolController extends Controller
             $output .= "   Do not stop at \"both options may be considered\"; provide a reasoned decision.\n";
             $output .= "4. ⚠️ Perioperative Risk Mitigation (Guideline-Based, when relevant)\n";
             $output .= "5. 📌 Guideline supporting statements\n";
-            if (!empty($assets)) {
+            if (! empty($assets)) {
                 $output .= "6. 🖼️ Figures / Tables (optional)\n";
             }
         }
 
-        $gapService = new GapDetectionService();
-        if ($gapService->allowPartialAnswers() && ($gapAssessment === null || !$gapAssessment->hasGuidelineGap)) {
+        $gapService = $this->gapDetectionService;
+        if ($gapService->allowPartialAnswers() && ($gapAssessment === null || ! $gapAssessment->hasGuidelineGap)) {
             $output .= "\n=== PARTIAL MATCH GUIDANCE ===\n";
             $output .= "If the retrieved evidence is relevant but does not exactly match the scenario, provide a best-fit answer based on the closest evidence.\n";
             $output .= "Clearly state which parts are directly supported vs extrapolated or missing.\n";
@@ -600,20 +647,16 @@ class ToolController extends Controller
     {
         $request->validate([
             'question' => 'required|string|max:2000',
-            'history'  => 'nullable|array|max:20',
+            'history' => 'nullable|array|max:20',
             'history.*' => 'string|max:2000',
         ]);
 
         $question = $request->input('question');
-        $history  = $request->input('history', []);
+        $history = $request->input('history', []);
 
-        $service = new ClinicalGateService();
-        $result  = $service->interpret($question, $history);
+        $result = $this->clinicalGateService->interpret($question, $history);
 
-        return response()->json($result, 200, [], JSON_INVALID_UTF8_SUBSTITUTE)
-            ->header('Access-Control-Allow-Origin', '*')
-            ->header('Access-Control-Allow-Methods', 'POST, OPTIONS')
-            ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        return $this->jsonApiResponse($result);
     }
 
     public function normalize(Request $request)
@@ -623,62 +666,58 @@ class ToolController extends Controller
 
         // Lightweight passthrough normalizer — strips whitespace and detects
         // non-ASCII (non-English) queries. Full LLM-based normalisation happens
-        // inside RetrievalService via GuidelineRouterService before retrieval.
-        $trimmed  = trim($question);
+        // inside RetrievalService via PreRetrievalPlannerService when enabled.
+        $trimmed = trim($question);
         $language = preg_match('/[^\x00-\x7F]/', $trimmed) ? 'other' : 'en';
 
         return $this->jsonApiResponse([
             'normalized_query' => $trimmed,
-            'language'         => $language,
-            'changed'          => $trimmed !== $question,
+            'language' => $language,
+            'changed' => $trimmed !== $question,
         ]);
     }
 
     protected function validateGuideline(string $guideline): ?string
     {
-        $categories = config('guidelines.categories', []);
-        $nameMap = [];
-        $keywordMap = [];
-        $allKeys = [];
+        if ($this->guidelineValidationMaps === null) {
+            $nameMap = [];
+            $keywordMap = [];
 
-        foreach ($categories as $category) {
-            foreach ($category['guidelines'] as $key => $info) {
-                $allKeys[] = $key;
+            foreach (config('guidelines.categories', []) as $category) {
+                foreach ($category['guidelines'] as $key => $info) {
+                    $nameMap[strtolower($key)] = $key;
+                    $nameMap[strtolower($info['name'])] = $key;
 
-                // Accept exact key
-                $nameMap[strtolower($key)] = $key;
-                // Accept exact display name
-                $nameMap[strtolower($info['name'])] = $key;
-
-                // Extract keywords from key name
-                $keyWords = explode('_', strtolower($key));
-                foreach ($keyWords as $word) {
-                    if (strlen($word) > 2) {
-                        $keywordMap[$word][] = $key;
-                    }
-                }
-
-                // Also add key_concepts as exact matches and keywords
-                foreach ($info['key_concepts'] ?? [] as $concept) {
-                    $conceptLower = strtolower($concept);
-                    $nameMap[$conceptLower] = $key;
-
-                    // Also extract words from concepts
-                    $conceptWords = preg_split('/[\s\-_]+/', $conceptLower);
-                    foreach ($conceptWords as $word) {
+                    foreach (explode('_', strtolower($key)) as $word) {
                         if (strlen($word) > 2) {
                             $keywordMap[$word][] = $key;
                         }
                     }
+
+                    foreach ($info['key_concepts'] ?? [] as $concept) {
+                        $conceptLower = strtolower($concept);
+                        $nameMap[$conceptLower] = $key;
+
+                        foreach (preg_split('/[\s\-_]+/', $conceptLower) as $word) {
+                            if (strlen($word) > 2) {
+                                $keywordMap[$word][] = $key;
+                            }
+                        }
+                    }
                 }
             }
+
+            $this->guidelineValidationMaps = [$nameMap, $keywordMap];
         }
+
+        [$nameMap, $keywordMap] = $this->guidelineValidationMaps;
 
         $guidelineLower = strtolower(trim($guideline));
 
         // 1. Try exact match
         if (isset($nameMap[$guidelineLower])) {
             Log::info("[GUIDELINE MATCH] Exact: '{$guideline}' -> '{$nameMap[$guidelineLower]}'");
+
             return $nameMap[$guidelineLower];
         }
 
@@ -692,20 +731,21 @@ class ToolController extends Controller
             }
         }
 
-        if (!empty($scores)) {
+        if (! empty($scores)) {
             arsort($scores);
             $bestKey = array_key_first($scores);
             $bestScore = $scores[$bestKey];
             if ($bestScore >= 1) { // Accept even 1 keyword match
                 Log::info("[GUIDELINE MATCH] Keyword: '{$guideline}' -> '{$bestKey}' (score: {$bestScore})");
+
                 return $bestKey;
             }
         }
 
         // 3. Failed
-        Log::warning("[GUIDELINE VALIDATION FAILED]", [
+        Log::warning('[GUIDELINE VALIDATION FAILED]', [
             'received' => $guideline,
-            'available_keys' => $allKeys
+            'available_keys' => $allKeys,
         ]);
 
         return null;
@@ -719,6 +759,7 @@ class ToolController extends Controller
         if ($this->isLikelyOutOfScopePrompt($question)) {
             return 'out_of_scope';
         }
+
         return null;
     }
 
@@ -734,11 +775,11 @@ class ToolController extends Controller
             $q
         ) === 1;
 
-        if (!$capabilityIntent) {
+        if (! $capabilityIntent) {
             return false;
         }
 
-        return !$this->hasConcreteVascularTarget($q);
+        return ! $this->hasConcreteVascularTarget($q);
     }
 
     protected function isLikelyOutOfScopePrompt(string $question): bool
@@ -765,7 +806,7 @@ class ToolController extends Controller
         $generalAskWithoutESVSContext = preg_match(
             '/\b(can you help|help me|what should i do|what do you think|explain this|summarize this|translate|write|draft)\b/u',
             $q
-        ) === 1 && !preg_match('/\b(esvs|guideline|vascular)\b/u', $q);
+        ) === 1 && ! preg_match('/\b(esvs|guideline|vascular)\b/u', $q);
 
         return $nonClinicalTechOrGeneral || $broadNonVascularMedical || $generalAskWithoutESVSContext;
     }
@@ -833,6 +874,14 @@ class ToolController extends Controller
         return preg_match('/[^\x00-\x7F]/', $text) === 1;
     }
 
+    private function questionLogMetadata(string $question): array
+    {
+        return [
+            'question_length' => mb_strlen($question),
+            'question_hash' => substr(sha1($question), 0, 12),
+        ];
+    }
+
     protected function buildMultilingualRetrievalFallbackQuery(string $question, ?array $requestedKeys, array $selectedGuidelines = []): ?string
     {
         $keys = [];
@@ -840,17 +889,17 @@ class ToolController extends Controller
             $keys = $requestedKeys;
         }
 
-        if (empty($keys) && !empty($selectedGuidelines)) {
+        if (empty($keys) && ! empty($selectedGuidelines)) {
             // When selectedGuidelines is keyed by guideline key, prefer those keys directly.
-            if (!array_is_list($selectedGuidelines)) {
+            if (! array_is_list($selectedGuidelines)) {
                 $keys = array_keys($selectedGuidelines);
             } else {
                 foreach ($selectedGuidelines as $g) {
-                    if (!is_array($g)) {
+                    if (! is_array($g)) {
                         continue;
                     }
                     foreach (['key', 'guideline_key', 'slug'] as $candidate) {
-                        if (!empty($g[$candidate]) && is_string($g[$candidate])) {
+                        if (! empty($g[$candidate]) && is_string($g[$candidate])) {
                             $keys[] = $g[$candidate];
                             break;
                         }
