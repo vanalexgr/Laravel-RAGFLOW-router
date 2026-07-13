@@ -52,7 +52,7 @@ class PreRetrievalService
                     'question_preview' => substr($question, 0, 120),
                     'raw_preview' => substr($raw, 0, 240),
                 ]);
-                return PreRetrievalResult::fromArray($this->safeDefaults($question));
+                return PreRetrievalResult::fromArray($this->normalizeData($this->safeDefaults($question), $question, $history));
             }
 
             return PreRetrievalResult::fromArray($this->normalizeData($data, $question, $history));
@@ -62,7 +62,9 @@ class PreRetrievalService
                 'error' => $e->getMessage(),
             ]);
 
-            return PreRetrievalResult::fromArray($this->safeDefaults($question));
+            // Still run deterministic rules on safe defaults so the gate can ask
+            // critical clarification questions even when the LLM is unavailable.
+            return PreRetrievalResult::fromArray($this->normalizeData($this->safeDefaults($question), $question, $history));
         }
     }
 
