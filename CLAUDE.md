@@ -45,8 +45,11 @@ sudo systemctl status ragflow-bridge.service
 | `routes/api.php` | Single route: `POST /api/v1/vascular-consult` |
 | `app/Http/Controllers/ToolController.php` | Request entry point; input validation (max:2000, history max:20) |
 | `app/Http/Middleware/ValidateApiKey.php` | API key auth via `config('services.api.key')`, `hash_equals()` |
-| `app/Services/RetrievalService.php` | Orchestrates the full retrieval pipeline |
-| `app/Services/GuidelineRouterService.php` | LLM-based guideline selection + query expansion |
+| `app/Services/RetrievalService.php` | Orchestrates the full retrieval pipeline; uses merged planner when enabled |
+| `app/Services/PreRetrievalPlannerService.php` | Merged pre-retrieval planner — single LLM call for normalize/route/interpret/expand |
+| `app/Services/PlannerPrompt.php` | Six-section prompt contract for the merged planner |
+| `app/ValueObjects/RetrievalPlan.php` | Typed value object returned by the planner |
+| `app/Services/GuidelineRouterService.php` | LLM-based guideline selection + query expansion (legacy; bypassed when planner active) |
 | `app/Services/RAGFlow/RAGFlowClient.php` | HTTP client for RAGFlow bridge |
 | `app/Services/RAGFlow/DatasetResource.php` | `retrieve_dual` calls |
 | `app/Services/PHIScrubberService.php` | PHI scrubbing before any external API calls |
@@ -89,11 +92,12 @@ OpenWebUI (user message)
       ├─ [CASE GATE] _assess_context_gaps() — asks for missing params once per case before retrieval
       ├─ [CASE STATE] builds compact same-case state from prior user turns, answered clarifications, attachments, and cited recommendations
       ├─ [QUERY REWRITE] rewrites same-case follow-ups into a standalone retrieval query
-      ├─ POST /api/v1/vascular-consult (Laravel, 135 VM)
+      ├─ POST /api/v1/vascular-consult (Laravel, Hetzner VM)
       │     ├─ ValidateApiKey middleware
       │     ├─ PHIScrubberService (scrub before external calls)
-      │     ├─ GuidelineRouterService (Azure OpenAI → selects guidelines + expands query)
       │     ├─ RetrievalService
+      │     │     ├─ [PLANNER] PreRetrievalPlannerService — 1 LLM call: normalize + route + interpret + expand
+      │     │     │     └─ fallback: GuidelineRouterService (4 sequential LLM calls) if planner disabled/fails
       │     │     ├─ retrieveDualChunks() → RAGFlow bridge (port 8000) → RAGFlow API
       │     │     ├─ Quality pass (if < min_citation chunks returned)
       │     │     ├─ GapDetectionService (optional second pass)
@@ -105,10 +109,17 @@ OpenWebUI (user message)
 
 ---
 
-## Retrieval Tuning (`.env` on 135 VM)
+## Retrieval Tuning (`.env` on Hetzner VM)
 
 Key env vars affecting performance:
 ```
+# Merged planner (enabled in production as of 2026-07-13)
+RETRIEVAL_PLANNER_MERGED_ENABLED=true   # single LLM call replaces 4 legacy calls; ~3-6s saving
+RAGFLOW_PLANNER_SHADOW=false            # set true to log plan without changing pipeline behaviour
+RAGFLOW_PLANNER_MAX_TOKENS=1000
+RAGFLOW_PLANNER_TEMPERATURE=0.0
+
+# RAGFlow retrieval
 RAGFLOW_QUALITY_PASS_ENABLED=true
 RAGFLOW_QUALITY_PASS_MIN_CITATION=2     # trigger quality pass if < 2 citation chunks
 RAGFLOW_QUALITY_PASS_TOP_K=80           # was 256 — reduced to prevent 60s timeouts
@@ -117,6 +128,14 @@ RAGFLOW_QUALITY_PASS_MIN_NARRATIVE=8
 ```
 
 3-guideline queries previously timed out (90–102s) because quality pass used `top_k=256` → 60s per RAGFlow call. Now capped at 80.
+
+### Monitoring pre-retrieval latency
+Every request now logs a `[PRE-RETRIEVAL TIMING]` line in the retrieval log:
+```bash
+tail -f /opt/cg/laravel/app/storage/logs/retrieval-$(date +%Y-%m-%d).log | grep 'PRE-RETRIEVAL TIMING'
+# Planner path:  {"plan_applied":true,"total_ms":1240,"planner_ms":1240}
+# Legacy path:   {"plan_applied":false,"total_ms":5830,"normalize_ms":1210,"route_ms":1820,...}
+```
 
 ---
 
