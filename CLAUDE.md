@@ -125,9 +125,29 @@ RAGFLOW_QUALITY_PASS_MIN_CITATION=2     # trigger quality pass if < 2 citation c
 RAGFLOW_QUALITY_PASS_TOP_K=80           # was 256 — reduced to prevent 60s timeouts
 RAGFLOW_HIGH_RECALL_TOP_K_CEILING=128   # was 1024
 RAGFLOW_QUALITY_PASS_MIN_NARRATIVE=8
+
+# Reranker candidate pool (top_k = how many chunks RAGFlow feeds the Cohere reranker)
+RAGFLOW_TOP_K=80                        # base case-mode pool (was 60)
+RAGFLOW_TOP_K_CEILING=96                # standard clamp ceiling (was 80)
+RAGFLOW_LEAN_TOP_K=64                   # knowledge/lean-mode pool (was 20)
+RAGFLOW_SINGLE_CASE_TOP_K=80            # patient-case pool (was 40)
 ```
 
 3-guideline queries previously timed out (90–102s) because quality pass used `top_k=256` → 60s per RAGFlow call. Now capped at 80.
+
+### Reranker candidate pool (top_k) — raised 2026-07-13
+`top_k` is **not** the returned-chunk count — it is the size of the candidate pool RAGFlow
+retrieves and hands to the Cohere reranker. Returned chunks are separately capped by
+`RAGFLOW_NARRATIVE_MAX` (12) + `RAGFLOW_CITATION_MAX` (18) and the `RAGFLOW_SIMILARITY_THRESHOLD` (0.3) floor.
+
+The Hetzner `.env` had **stale low values** (lean=20, base=60, single_case=40, ceiling=80) that
+overrode the higher `config/ragflow.php` code defaults, so the reranker only saw 20 candidates on
+knowledge queries. Raised to lean=64 / base=80 / single_case=80 / ceiling=96 to give the reranker a
+richer pool without changing the reranker `top_n` (12) or final selection. Confirmed live: a carotid
+case that ran `top_k:40` pre-change ran `top_k:80` after.
+
+**Lesson:** `config/ragflow.php` nests these under `retrieval.top_k` / `retrieval.top_k_ceiling`,
+but `lean.top_k` and `single_case.top_k` are top-level — verify with the correct nested config path.
 
 ### Monitoring pre-retrieval latency
 Every request now logs a `[PRE-RETRIEVAL TIMING]` line in the retrieval log:
