@@ -17,6 +17,7 @@ Route::prefix('v1')->group(function () {
 // Authenticated API endpoints
 Route::prefix('v1')->middleware([ValidateApiKey::class, 'throttle:60,1'])->group(function () {
     Route::post('/vascular-consult', [App\Http\Controllers\ToolController::class, 'consult']);
+    Route::post('/agent-consult',    \App\Http\Controllers\AgentConsultController::class);
     Route::post('/pre-retrieval',    [App\Http\Controllers\ToolController::class, 'preRetrieve']);
     Route::post('/normalize',        [App\Http\Controllers\ToolController::class, 'normalize']);
     Route::post('/clinical-gate',    [App\Http\Controllers\ToolController::class, 'clinicalGate']);

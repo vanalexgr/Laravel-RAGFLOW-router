@@ -365,11 +365,13 @@ class Tools:
                 headline += f": {self._truncate_for_llm(caption, 180)}"
 
             lines.append(headline)
+            # Use plain markdown image syntax for the inline thumbnail.
+            # Nested linked-image markdown has been fragile across OpenWebUI
+            # viewer/lightbox variants and can trigger inconsistent popup/tab
+            # behavior depending on the client.
+            lines.append(f"![{alt_text}]({thumb_url})")
             if full_url and full_url != thumb_url:
-                lines.append(f"[![{alt_text}]({thumb_url})]({full_url})")
                 lines.append(f"[Full-size]({full_url})")
-            else:
-                lines.append(f"![{alt_text}]({thumb_url})")
             lines.append("")
             count += 1
 
@@ -557,7 +559,7 @@ class Tools:
 
     def _strip_backend_history_noise(self, text: str) -> str:
         cleaned = text or ""
-        for marker in ("🖼️ Figures / Tables", "=== FIGURES / TABLES", "[![", "\n[Full-size]("):
+        for marker in ("🖼️ Figures / Tables", "=== FIGURES / TABLES", "[![", "\n![", "\n[Full-size]("):
             if marker in cleaned:
                 cleaned = cleaned.split(marker, 1)[0].rstrip()
 
