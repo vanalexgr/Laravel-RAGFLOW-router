@@ -47,7 +47,7 @@ class AzureOpenAiLlmClient implements LlmClient
             'max_completion_tokens' => $maxTokens,
         ];
 
-        if (config('prism.providers.azure.supports_temperature', true)) {
+        if (config('prism.providers.azure.supports_temperature', false)) {
             $payload['temperature'] = $temperature;
         }
 

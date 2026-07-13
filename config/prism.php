@@ -11,7 +11,7 @@ return [
             'endpoint' => env('AZURE_OPENAI_ENDPOINT'),
             'deployment' => env('AZURE_OPENAI_DEPLOYMENT', 'gpt-5-chat'),
             'api_version' => env('AZURE_OPENAI_VERSION', '2024-12-01-preview'),
-            'supports_temperature' => env('AZURE_OPENAI_SUPPORTS_TEMPERATURE', true),
+            'supports_temperature' => env('AZURE_OPENAI_SUPPORTS_TEMPERATURE', false),
         ],
         'openai' => [
             'url' => env(
