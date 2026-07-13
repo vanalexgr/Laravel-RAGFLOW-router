@@ -47,7 +47,6 @@ class AzureOpenAiLlmClient implements LlmClient
                     ],
                 ],
                 'max_completion_tokens' => $maxTokens,
-                'temperature' => $temperature,
             ]);
 
         if (!$response->successful()) {

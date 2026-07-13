@@ -126,7 +126,6 @@ class GuidelineRouterService
                         ['role' => 'user', 'content' => $prompt],
                     ],
                     'max_completion_tokens' => 150,
-                    'temperature' => 0,
                 ]);
 
             if (!$response->successful()) {
@@ -287,7 +286,6 @@ PROMPT;
                             ['role' => 'user', 'content' => $routingPrompt],
                         ],
                         'max_completion_tokens' => 150,
-                        'temperature' => 0,
                     ]),
                 // Expansion call REMOVED - use original query instead
             ]);
@@ -500,7 +498,6 @@ PROMPT;
                         ['role' => 'user', 'content' => $prompt],
                     ],
                     'max_completion_tokens' => 100,
-                    'temperature' => 0,
                 ]);
 
             if ($response->successful()) {
@@ -575,7 +572,6 @@ PROMPT;
                         ['role' => 'user', 'content' => $prompt],
                     ],
                     'max_completion_tokens' => 220,
-                    'temperature' => 0,
                 ]);
 
             if (!$response->successful()) {
@@ -757,7 +753,6 @@ PROMPT;
                         ['role' => 'user', 'content' => $prompt],
                     ],
                     'max_completion_tokens'  => $maxTokens,
-                    'temperature' => 0,
                 ]);
             if (!$response->successful()) {
                 return '';

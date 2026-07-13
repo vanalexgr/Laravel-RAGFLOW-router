@@ -245,7 +245,6 @@ PROMPT;
                         ['role' => 'user', 'content' => $prompt],
                     ],
                     'max_completion_tokens' => 260,
-                    'temperature' => 0,
                 ]);
 
             if (!$response->successful()) {
