@@ -47,8 +47,12 @@ class RetrievalService
         $planner = app(PreRetrievalPlannerService::class);
 
         // The planner is deliberately opt-in. A null plan leaves every legacy call below intact.
+        $preRetrievalTimings = [];
+
         if ($planner->enabled() && !config('ragflow.planner.shadow', false)) {
+            $t0 = microtime(true);
             $plan = $planner->plan($scrubbedQuestion, $history, $requestedKeys);
+            $preRetrievalTimings['planner_ms'] = (int) round((microtime(true) - $t0) * 1000);
             if ($plan !== null) {
                 $planApplied = true;
                 if (($this->containsNonAscii($scrubbedQuestion) || config('graphrag.use_normalized_query', false))
@@ -79,7 +83,9 @@ class RetrievalService
         if (!$planApplied && $shouldNormalize) {
             try {
                 $normalizer = new GuidelineRouterService();
+                $t0 = microtime(true);
                 $normalizationMeta = $normalizer->normalizeForRetrieval($scrubbedQuestion, $requestedKeys);
+                $preRetrievalTimings['normalize_ms'] = (int) round((microtime(true) - $t0) * 1000);
                 if (is_array($normalizationMeta) && !empty($normalizationMeta['normalized_query'])) {
                     $candidate = trim((string) $normalizationMeta['normalized_query']);
                     if ($candidate !== '') {
@@ -114,7 +120,9 @@ class RetrievalService
         ]);
 
         if (!$planApplied && $clinicalInterpreter->enabled()) {
+            $t0 = microtime(true);
             $interpretation = $clinicalInterpreter->interpret($scrubbedQuestion, $normalizationMeta);
+            $preRetrievalTimings['interpret_ms'] = (int) round((microtime(true) - $t0) * 1000);
             if (!empty($interpretation['terms'])) {
                 $interpretationTerms = $interpretation['terms'];
             }
@@ -143,7 +151,9 @@ class RetrievalService
         if (!$planApplied && empty($requestedKeys)) {
             $router = new GuidelineRouterService();
             // Use context-aware routing
+            $t0 = microtime(true);
             $llmResult = $router->routeWithContext($retrievalQuestion, $history, 3);
+            $preRetrievalTimings['route_ms'] = (int) round((microtime(true) - $t0) * 1000);
 
             $selectedKeys = $llmResult['selected'];
             $guidelineScores = $llmResult['scores'] ?? [];
@@ -255,7 +265,9 @@ class RetrievalService
         // Create an expanded query for retrieval
         if (!$planApplied) {
             $router = new GuidelineRouterService();
+            $t0 = microtime(true);
             $expansionResult = $router->selectAndExpand($retrievalQuestion, 3, null, null);
+            $preRetrievalTimings['expand_ms'] = (int) round((microtime(true) - $t0) * 1000);
             $expandedQuery = $expansionResult['expanded'] ?? $retrievalQuestion;
             $expandedQuery = $this->buildCitationQuery($expandedQuery, $normalizationOriginalQuestion, $normalizationMeta, array_keys($selectedGuidelines));
             $citationQuery = $this->buildCitationQuery($retrievalQuestion, $normalizationOriginalQuestion, $normalizationMeta, array_keys($selectedGuidelines));
@@ -265,6 +277,12 @@ class RetrievalService
             $expandedQuery = $this->buildCitationQuery($expandedQuery, $normalizationOriginalQuestion, $normalizationMeta, array_keys($selectedGuidelines));
             $citationQuery = $this->buildCitationQuery($citationQuery, $normalizationOriginalQuestion, $normalizationMeta, array_keys($selectedGuidelines));
         }
+
+        $preRetrievalTotal = array_sum($preRetrievalTimings);
+        $log->info('[PRE-RETRIEVAL TIMING]', array_merge(
+            ['plan_applied' => $planApplied, 'total_ms' => $preRetrievalTotal, 'correlation_id' => $correlationId],
+            $preRetrievalTimings,
+        ));
 
         $graphExpansion = null;
         if (!$planApplied && $graphEnabled) {
