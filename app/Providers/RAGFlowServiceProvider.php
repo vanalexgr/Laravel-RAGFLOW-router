@@ -9,11 +9,6 @@ class RAGFlowServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->mergeConfigFrom(
-            config_path('ragflow.php'),
-            'ragflow'
-        );
-
         $this->app->singleton('ragflow', function ($app) {
             $apiKey = config('ragflow.api_key');
             $endpoint = config('ragflow.api_endpoint');
@@ -41,7 +36,7 @@ class RAGFlowServiceProvider extends ServiceProvider
     {
         if ($this->app->runningInConsole()) {
             $this->publishes([
-                __DIR__ . '/../../config/ragflow.php' => config_path('ragflow.php'),
+                __DIR__.'/../../config/ragflow.php' => config_path('ragflow.php'),
             ], 'ragflow-config');
         }
     }

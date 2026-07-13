@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use Tests\TestCase;
-use Illuminate\Support\Facades\Http;
 
 class LeanRetrievalTest extends TestCase
 {
@@ -12,6 +11,7 @@ class LeanRetrievalTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->fakeExternalServices();
         $this->apiKey = config('services.api.key', '');
     }
 
@@ -22,7 +22,7 @@ class LeanRetrievalTest extends TestCase
     {
         $response = $this->postJson('/api/v1/vascular-consult', [
             'question' => 'What is the recommended diameter threshold for elective AAA repair?',
-            'history'  => [],
+            'history' => [],
         ], ['X-API-Key' => $this->apiKey]);
 
         $response->assertStatus(200);
@@ -41,7 +41,7 @@ class LeanRetrievalTest extends TestCase
     {
         $response = $this->postJson('/api/v1/vascular-consult', [
             'question' => 'What is the recommended diameter threshold for elective AAA repair?',
-            'history'  => [],
+            'history' => [],
         ], ['X-API-Key' => $this->apiKey]);
 
         $response->assertStatus(200);
@@ -57,7 +57,7 @@ class LeanRetrievalTest extends TestCase
     {
         $response = $this->postJson('/api/v1/vascular-consult', [
             'question' => '75-year-old fit man, symptomatic 80% carotid stenosis, TIA 5 days ago. Recommended intervention?',
-            'history'  => [],
+            'history' => [],
         ], ['X-API-Key' => $this->apiKey]);
 
         $response->assertStatus(200);

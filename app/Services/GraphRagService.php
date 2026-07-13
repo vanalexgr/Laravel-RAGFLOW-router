@@ -8,19 +8,23 @@ use Illuminate\Support\Facades\Log;
 class GraphRagService
 {
     protected ?string $endpoint;
+
     protected ?string $apiKey;
+
     protected ?string $deployment;
+
     protected ?string $apiVersion;
+
     protected bool $isConfigured = false;
 
     public function __construct()
     {
-        $this->endpoint = config('prism.providers.azure.endpoint') ?: env('AZURE_OPENAI_ENDPOINT');
-        $this->apiKey = config('prism.providers.azure.api_key') ?: env('AZURE_OPENAI_API_KEY');
-        $this->deployment = config('prism.providers.azure.deployment') ?: env('AZURE_OPENAI_DEPLOYMENT', 'gpt-5-chat');
-        $this->apiVersion = config('prism.providers.azure.api_version') ?: env('AZURE_OPENAI_VERSION', '2024-12-01-preview');
+        $this->endpoint = config('prism.providers.azure.endpoint');
+        $this->apiKey = config('prism.providers.azure.api_key');
+        $this->deployment = config('prism.providers.azure.deployment');
+        $this->apiVersion = config('prism.providers.azure.api_version');
 
-        $this->isConfigured = !empty($this->endpoint) && !empty($this->apiKey) && !empty($this->deployment);
+        $this->isConfigured = ! empty($this->endpoint) && ! empty($this->apiKey) && ! empty($this->deployment);
     }
 
     public function enabled(): bool
@@ -41,7 +45,7 @@ class GraphRagService
     public function expand(string $question, array $selectedGuidelineKeys, ?array $intentProfile = null): array
     {
         $enabled = $this->enabled();
-        if (!$enabled) {
+        if (! $enabled) {
             return ['enabled' => false];
         }
 
@@ -64,7 +68,7 @@ class GraphRagService
             $result = $this->expandWithLlm($question, $intentProfile, $candidates, $maxCore, $maxRelated);
         }
 
-        if (!is_array($result)) {
+        if (! is_array($result)) {
             $result = $this->expandHeuristic($question, $intentProfile, $candidates, $maxCore, $maxRelated);
         }
 
@@ -104,7 +108,7 @@ class GraphRagService
         $candidates = [];
         foreach ($selectedGuidelineKeys as $key) {
             $config = $this->getGuidelineConfig((string) $key);
-            if (!$config) {
+            if (! $config) {
                 continue;
             }
             foreach (($config['key_concepts'] ?? []) as $concept) {
@@ -154,12 +158,12 @@ class GraphRagService
         $core = [];
         foreach (($intentProfile['key_terms'] ?? []) as $term) {
             $term = trim((string) $term);
-            if ($term !== '' && !in_array($term, $core, true)) {
+            if ($term !== '' && ! in_array($term, $core, true)) {
                 $core[] = $term;
             }
         }
         foreach ($matched as $term) {
-            if (!in_array($term, $core, true)) {
+            if (! in_array($term, $core, true)) {
                 $core[] = $term;
             }
         }
@@ -169,7 +173,7 @@ class GraphRagService
 
         $related = [];
         foreach ($candidates as $term) {
-            if (!in_array($term, $core, true)) {
+            if (! in_array($term, $core, true)) {
                 $related[] = $term;
             }
         }
@@ -185,20 +189,20 @@ class GraphRagService
     protected function expandWithLlm(string $question, ?array $intentProfile, array $candidates, int $maxCore, int $maxRelated): ?array
     {
         $log = Log::channel('retrieval');
-        if (!$this->isConfigured) {
+        if (! $this->isConfigured) {
             return null;
         }
 
         $intent = trim((string) ($intentProfile['intent'] ?? ''));
         $questionType = trim((string) ($intentProfile['question_type'] ?? ''));
         $keyTerms = $intentProfile['key_terms'] ?? [];
-        if (!is_array($keyTerms)) {
+        if (! is_array($keyTerms)) {
             $keyTerms = [];
         }
-        $keyTerms = array_values(array_filter(array_map(fn($v) => trim((string) $v), $keyTerms), fn($v) => $v !== ''));
+        $keyTerms = array_values(array_filter(array_map(fn ($v) => trim((string) $v), $keyTerms), fn ($v) => $v !== ''));
 
         $candidateText = '';
-        if (!empty($candidates)) {
+        if (! empty($candidates)) {
             $candidateText = implode(', ', array_slice($candidates, 0, 60));
         }
 
@@ -232,7 +236,7 @@ Candidate concepts: {$candidateText}
 PROMPT;
 
         try {
-            $url = rtrim($this->endpoint, '/') . "/openai/deployments/{$this->deployment}/chat/completions?api-version={$this->apiVersion}";
+            $url = rtrim($this->endpoint, '/')."/openai/deployments/{$this->deployment}/chat/completions?api-version={$this->apiVersion}";
 
             $response = Http::timeout(7)
                 ->withHeaders([
@@ -247,10 +251,11 @@ PROMPT;
                     'max_completion_tokens' => 260,
                 ]);
 
-            if (!$response->successful()) {
+            if (! $response->successful()) {
                 $log->warning('[GRAPHRAG] LLM expansion failed', [
                     'status' => $response->status(),
                 ]);
+
                 return null;
             }
 
@@ -262,19 +267,23 @@ PROMPT;
             $json = $this->extractJsonObject($content);
             if ($json === null) {
                 $log->warning('[GRAPHRAG] LLM JSON extraction failed', ['content' => $content]);
+
                 return null;
             }
 
             $decoded = json_decode($json, true);
-            if (!is_array($decoded)) {
+            if (! is_array($decoded)) {
                 $log->warning('[GRAPHRAG] LLM JSON parse failed', ['content' => $json]);
+
                 return null;
             }
 
             $decoded['used_llm'] = true;
+
             return $decoded;
         } catch (\Throwable $e) {
             $log->warning('[GRAPHRAG] LLM exception', ['error' => $e->getMessage()]);
+
             return null;
         }
     }
@@ -307,20 +316,24 @@ PROMPT;
             if ($inString) {
                 if ($escape) {
                     $escape = false;
+
                     continue;
                 }
                 if ($ch === '\\\\') {
                     $escape = true;
+
                     continue;
                 }
                 if ($ch === '"') {
                     $inString = false;
                 }
+
                 continue;
             }
 
             if ($ch === '"') {
                 $inString = true;
+
                 continue;
             }
 
@@ -344,7 +357,7 @@ PROMPT;
             $this->pushTerm($terms, $term);
         }
         foreach ($slots as $slotTerms) {
-            if (!is_array($slotTerms)) {
+            if (! is_array($slotTerms)) {
                 continue;
             }
             foreach ($slotTerms as $term) {
@@ -363,13 +376,14 @@ PROMPT;
         }
         foreach (['intervention', 'imaging', 'complications'] as $slot) {
             $slotTerms = $slots[$slot] ?? [];
-            if (!is_array($slotTerms)) {
+            if (! is_array($slotTerms)) {
                 continue;
             }
             foreach ($slotTerms as $term) {
                 $this->pushTerm($terms, $term);
             }
         }
+
         return array_slice($terms, 0, $maxTerms);
     }
 
@@ -386,21 +400,23 @@ PROMPT;
             $seen[$norm] = true;
             $out[] = $term;
         }
+
         return $out;
     }
 
     protected function normalizeSlots($slots): array
     {
-        if (!is_array($slots)) {
+        if (! is_array($slots)) {
             return [];
         }
         $out = [];
         foreach ($slots as $slot => $terms) {
-            if (!is_array($terms)) {
+            if (! is_array($terms)) {
                 continue;
             }
             $out[$slot] = $this->normalizeList($terms);
         }
+
         return $out;
     }
 
@@ -408,6 +424,7 @@ PROMPT;
     {
         $term = mb_strtolower(trim($term));
         $term = preg_replace('/[^\p{L}\p{N}]+/u', ' ', $term) ?? $term;
+
         return trim(preg_replace('/\s+/u', ' ', $term) ?? $term);
     }
 
@@ -418,7 +435,7 @@ PROMPT;
             return;
         }
         $norm = $this->normalizeTerm($term);
-        if ($norm === '' || in_array($norm, array_map(fn($t) => $this->normalizeTerm((string) $t), $terms), true)) {
+        if ($norm === '' || in_array($norm, array_map(fn ($t) => $this->normalizeTerm((string) $t), $terms), true)) {
             return;
         }
         $terms[] = $term;
@@ -429,7 +446,8 @@ PROMPT;
         if (empty($vals)) {
             return '';
         }
-        return implode('", "', array_map(fn($v) => str_replace('"', '', (string) $v), $vals));
+
+        return implode('", "', array_map(fn ($v) => str_replace('"', '', (string) $v), $vals));
     }
 
     protected function getGuidelineConfig(string $key): ?array
@@ -440,6 +458,7 @@ PROMPT;
                 return $category['guidelines'][$key];
             }
         }
+
         return null;
     }
 }

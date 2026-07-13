@@ -11,6 +11,8 @@ class RetrievalServiceFocusTest extends TestCase
     {
         return new class extends RetrievalService
         {
+            public function __construct() {}
+
             public function pruneForTest(array $selectedGuidelines, string $question): array
             {
                 return $this->pruneSelectedGuidelines($selectedGuidelines, $question);

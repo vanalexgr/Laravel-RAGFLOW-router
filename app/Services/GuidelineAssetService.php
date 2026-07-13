@@ -7,9 +7,9 @@ use Illuminate\Support\Facades\Storage;
 
 class GuidelineAssetService
 {
-    public function __construct(protected BridgeRerankService $bridgeRerank)
-    {
-    }
+    protected static array $manifestCache = [];
+
+    public function __construct(protected BridgeRerankService $bridgeRerank) {}
 
     /**
      * Return a list of assets (figures/tables) relevant to the retrieved chunks.
@@ -17,11 +17,9 @@ class GuidelineAssetService
      * Assets are intended for user display only. They are not "evidence" and
      * should not be quoted as text.
      *
-     * @param string $question
-     * @param array $narrativeChunks RetrievalService formatted narrative chunks
-     * @param array $citationChunks RetrievalService formatted citation chunks
-     * @param array $selectedGuidelines key => ['id'=>..., 'name'=>...]
-     * @return array
+     * @param  array  $narrativeChunks  RetrievalService formatted narrative chunks
+     * @param  array  $citationChunks  RetrievalService formatted citation chunks
+     * @param  array  $selectedGuidelines  key => ['id'=>..., 'name'=>...]
      */
     public function findRelevantAssets(
         string $question,
@@ -42,7 +40,7 @@ class GuidelineAssetService
 
         $selectedKeys = array_keys($selectedGuidelines);
         $preferredGuidelineKeys = array_values(array_unique(array_filter($preferredGuidelineKeys)));
-        $scopedKeys = !empty($preferredGuidelineKeys)
+        $scopedKeys = ! empty($preferredGuidelineKeys)
             ? array_values(array_intersect($selectedKeys, $preferredGuidelineKeys))
             : $selectedKeys;
         if (empty($scopedKeys)) {
@@ -94,10 +92,10 @@ class GuidelineAssetService
 
             foreach ($refs as $ref) {
                 $asset = $this->lookupByReference($manifest, $sourceKey, $ref);
-                if (!$asset) {
+                if (! $asset) {
                     continue;
                 }
-                if (!$this->shouldUseExplicitReferenceAsset(
+                if (! $this->shouldUseExplicitReferenceAsset(
                     $asset,
                     $ref,
                     $questionTokens,
@@ -227,7 +225,7 @@ class GuidelineAssetService
 
             $scored = $this->applyFallbackAssetRerank($question, $scored);
 
-            if ((bool) config('guideline_assets.log_scoring', false) && !empty($scored)) {
+            if ((bool) config('guideline_assets.log_scoring', false) && ! empty($scored)) {
                 Log::info('[GUIDELINE ASSETS] Scored fallback candidates', [
                     'question' => $question,
                     'selected_guidelines' => $fallbackScopeKeys,
@@ -260,7 +258,7 @@ class GuidelineAssetService
                 ]);
             }
 
-            $bestQuerySignal = !empty($scored) ? (float) ($scored[0]['query_signal'] ?? 0.0) : 0.0;
+            $bestQuerySignal = ! empty($scored) ? (float) ($scored[0]['query_signal'] ?? 0.0) : 0.0;
             $minAbsQuerySignal = (float) (config('guideline_assets.min_query_signal', 2.0) ?: 2.0);
             $minRelativeRatio = (float) (config('guideline_assets.min_query_signal_ratio', 0.45) ?: 0.45);
             $minRelativeRatio = max(0.0, min(1.0, $minRelativeRatio));
@@ -301,7 +299,7 @@ class GuidelineAssetService
     protected function applyFallbackAssetRerank(string $question, array $scored): array
     {
         $rerankConfig = (array) config('guideline_assets.rerank', []);
-        if (!(bool) ($rerankConfig['enabled'] ?? false)) {
+        if (! (bool) ($rerankConfig['enabled'] ?? false)) {
             return $scored;
         }
 
@@ -315,13 +313,13 @@ class GuidelineAssetService
         $documents = array_map(function (array $row): string {
             $asset = (array) ($row['asset'] ?? []);
             $parts = [
-                'kind: ' . (string) ($asset['kind'] ?? ''),
-                'subtype: ' . (string) ($asset['subtype'] ?? ''),
-                'label: ' . (string) ($asset['label'] ?? ''),
-                'caption: ' . (string) ($asset['caption'] ?? ''),
-                'description: ' . (string) ($asset['description'] ?? ''),
-                'keywords: ' . implode(', ', array_map('strval', (array) ($asset['keywords'] ?? []))),
-                'aliases: ' . implode(', ', array_map('strval', (array) ($asset['aliases'] ?? []))),
+                'kind: '.(string) ($asset['kind'] ?? ''),
+                'subtype: '.(string) ($asset['subtype'] ?? ''),
+                'label: '.(string) ($asset['label'] ?? ''),
+                'caption: '.(string) ($asset['caption'] ?? ''),
+                'description: '.(string) ($asset['description'] ?? ''),
+                'keywords: '.implode(', ', array_map('strval', (array) ($asset['keywords'] ?? []))),
+                'aliases: '.implode(', ', array_map('strval', (array) ($asset['aliases'] ?? []))),
             ];
 
             return trim(implode("\n", $parts));
@@ -343,7 +341,7 @@ class GuidelineAssetService
         $used = [];
         foreach ($ranked as $row) {
             $index = $row['index'] ?? null;
-            if (!is_int($index) || !isset($shortlist[$index])) {
+            if (! is_int($index) || ! isset($shortlist[$index])) {
                 continue;
             }
 
@@ -358,7 +356,7 @@ class GuidelineAssetService
         }
 
         foreach ($shortlist as $index => $row) {
-            if (!isset($used[$index])) {
+            if (! isset($used[$index])) {
                 $rerankedShortlist[] = $row;
             }
         }
@@ -369,8 +367,13 @@ class GuidelineAssetService
     protected function loadManifest(): array
     {
         $path = (string) config('guideline_assets.manifest_path');
-        if ($path === '' || !is_file($path)) {
+        if ($path === '' || ! is_file($path)) {
             return [];
+        }
+
+        $cacheKey = $path.'|'.(string) filemtime($path);
+        if (array_key_exists($cacheKey, self::$manifestCache)) {
+            return self::$manifestCache[$cacheKey];
         }
 
         $raw = @file_get_contents($path);
@@ -379,13 +382,14 @@ class GuidelineAssetService
         }
 
         $decoded = json_decode($raw, true);
-        if (!is_array($decoded)) {
+        if (! is_array($decoded)) {
             Log::warning('[GUIDELINE ASSETS] Manifest JSON invalid', ['path' => $path]);
+
             return [];
         }
 
         // Expected shape: { "guideline_key": [ {asset...}, ... ], ... }
-        return $decoded;
+        return self::$manifestCache[$cacheKey] = $decoded;
     }
 
     protected function buildGuidelineNameToKeyMap(): array
@@ -540,7 +544,7 @@ class GuidelineAssetService
         $uniq = [];
         $seen = [];
         foreach ($out as $x) {
-            if (!isset($seen[$x])) {
+            if (! isset($seen[$x])) {
                 $seen[$x] = true;
                 $uniq[] = $x;
             }
@@ -552,12 +556,12 @@ class GuidelineAssetService
     protected function lookupByReference(array $manifest, string $guidelineKey, string $normalizedRef): ?array
     {
         $assets = $manifest[$guidelineKey] ?? null;
-        if (!is_array($assets) || empty($assets)) {
+        if (! is_array($assets) || empty($assets)) {
             return null;
         }
 
         foreach ($assets as $asset) {
-            if (!is_array($asset)) {
+            if (! is_array($asset)) {
                 continue;
             }
 
@@ -585,6 +589,7 @@ class GuidelineAssetService
         $label = strtolower($label);
         $label = preg_replace('/\s+/', ' ', $label) ?? $label;
         $label = str_replace(['fig.', 'fig '], ['figure ', 'figure '], $label);
+
         return trim($label);
     }
 
@@ -592,7 +597,7 @@ class GuidelineAssetService
     {
         $disk = (string) config('guideline_assets.disk', 'public');
 
-        if (empty($asset['url']) && !empty($asset['path'])) {
+        if (empty($asset['url']) && ! empty($asset['path'])) {
             $path = (string) $asset['path'];
             try {
                 $asset['url'] = $this->buildAssetUrl($disk, $path);
@@ -605,7 +610,7 @@ class GuidelineAssetService
             }
         }
 
-        if (empty($asset['thumbnail_url']) && !empty($asset['thumbnail_path'])) {
+        if (empty($asset['thumbnail_url']) && ! empty($asset['thumbnail_path'])) {
             $thumbnailPath = (string) $asset['thumbnail_path'];
             try {
                 $asset['thumbnail_url'] = $this->buildAssetUrl($disk, $thumbnailPath);
@@ -627,9 +632,9 @@ class GuidelineAssetService
     {
         $baseUrl = trim((string) config('guideline_assets.base_url', ''));
         if ($baseUrl !== '') {
-            $prefix = '/' . trim((string) config('guideline_assets.url_prefix', '/storage'), '/');
+            $prefix = '/'.trim((string) config('guideline_assets.url_prefix', '/storage'), '/');
 
-            return rtrim($baseUrl, '/') . $prefix . '/' . ltrim($path, '/');
+            return rtrim($baseUrl, '/').$prefix.'/'.ltrim($path, '/');
         }
 
         return Storage::disk($disk)->url($path);
@@ -687,12 +692,12 @@ class GuidelineAssetService
 
         foreach ($scopedKeys as $key) {
             $assets = $manifest[$key] ?? [];
-            if (!is_array($assets)) {
+            if (! is_array($assets)) {
                 continue;
             }
 
             foreach ($assets as $asset) {
-                if (!is_array($asset)) {
+                if (! is_array($asset)) {
                     continue;
                 }
 
@@ -812,13 +817,13 @@ class GuidelineAssetService
             if (
                 strlen($token) > 4
                 && str_ends_with($token, 's')
-                && !preg_match('/(ss|us|is|os)$/', $token)
+                && ! preg_match('/(ss|us|is|os)$/', $token)
             ) {
                 $tokens[] = substr($token, 0, -1);
             }
 
             foreach ($this->expandClinicalToken($token) as $expandedToken) {
-                if ($expandedToken !== '' && !isset($stopwords[$expandedToken])) {
+                if ($expandedToken !== '' && ! isset($stopwords[$expandedToken])) {
                     $tokens[] = $expandedToken;
                 }
             }
@@ -873,7 +878,7 @@ class GuidelineAssetService
         array $questionFocusAnchors = [],
         array $contextFocusAnchors = []
     ): array {
-        $assetText = strtolower($this->assetSearchText($asset) . ' ' . ($asset['kind'] ?? '') . ' ' . ($asset['subtype'] ?? ''));
+        $assetText = strtolower($this->assetSearchText($asset).' '.($asset['kind'] ?? '').' '.($asset['subtype'] ?? ''));
         $kind = strtolower((string) ($asset['kind'] ?? ''));
         $subtype = strtolower((string) ($asset['subtype'] ?? ''));
         $contentOverlap = $this->countMeaningfulTokenOverlap($questionTokens, $termFreq);
@@ -928,7 +933,7 @@ class GuidelineAssetService
                 if ($hasDefinitiveSignal) {
                     $semanticBoost += $contentOverlap >= 1 ? 4.0 : 2.0;
                 }
-                if ($hasDiagnosticSignal && !$hasDefinitiveSignal) {
+                if ($hasDiagnosticSignal && ! $hasDefinitiveSignal) {
                     $semanticBoost -= 4.0;
                 }
             }
@@ -942,7 +947,7 @@ class GuidelineAssetService
                 $semanticBoost -= 1.5;
             }
             if (
-                !$hasManagementSignal
+                ! $hasManagementSignal
                 && $hasDiagnosticSignal
             ) {
                 $semanticBoost -= 3.0;
@@ -953,7 +958,7 @@ class GuidelineAssetService
             if ($hasDiagnosticSignal) {
                 $semanticBoost += $contentOverlap >= 1 ? 3.0 : 1.0;
             }
-            if (($hasManagementSignal || $hasDefinitiveSignal) && !$hasDiagnosticSignal) {
+            if (($hasManagementSignal || $hasDefinitiveSignal) && ! $hasDiagnosticSignal) {
                 $semanticBoost -= 1.0;
             }
         }
@@ -1013,10 +1018,10 @@ class GuidelineAssetService
         }
 
         $boost = 0.0;
-        $matchesQuestion = !empty(array_intersect($assetTerritories, $questionTerritories));
-        $matchesContext = !empty(array_intersect($assetTerritories, $contextTerritories));
+        $matchesQuestion = ! empty(array_intersect($assetTerritories, $questionTerritories));
+        $matchesContext = ! empty(array_intersect($assetTerritories, $contextTerritories));
 
-        if (!empty($questionTerritories)) {
+        if (! empty($questionTerritories)) {
             if ($matchesQuestion) {
                 $boost += 3.0;
             } else {
@@ -1024,7 +1029,7 @@ class GuidelineAssetService
             }
         }
 
-        if (!empty($contextTerritories)) {
+        if (! empty($contextTerritories)) {
             if ($matchesContext) {
                 $boost += empty($questionTerritories) ? 2.0 : 1.0;
             } elseif (empty($questionTerritories)) {
@@ -1032,8 +1037,8 @@ class GuidelineAssetService
             }
         }
 
-        $conflict = (!empty($questionTerritories) && !$matchesQuestion)
-            || (empty($questionTerritories) && !empty($contextTerritories) && !$matchesContext);
+        $conflict = (! empty($questionTerritories) && ! $matchesQuestion)
+            || (empty($questionTerritories) && ! empty($contextTerritories) && ! $matchesContext);
 
         return [
             'boost' => $boost,
@@ -1051,19 +1056,19 @@ class GuidelineAssetService
         $contextOverlap = array_values(array_intersect($assetAnchors, $contextFocusAnchors));
         $boost = 0.0;
 
-        if (!empty($questionFocusAnchors)) {
-            if (!empty($questionOverlap)) {
+        if (! empty($questionFocusAnchors)) {
+            if (! empty($questionOverlap)) {
                 $boost += count($questionFocusAnchors) === 1 ? 2.0 : 1.0;
             } elseif (count($questionFocusAnchors) === 1) {
                 $boost -= 2.0;
             }
-        } elseif (!empty($contextFocusAnchors) && !empty($contextOverlap)) {
+        } elseif (! empty($contextFocusAnchors) && ! empty($contextOverlap)) {
             $boost += 1.0;
         }
 
         return [
             'boost' => $boost,
-            'overlap' => !empty($questionFocusAnchors) ? count($questionOverlap) : count($contextOverlap),
+            'overlap' => ! empty($questionFocusAnchors) ? count($questionOverlap) : count($contextOverlap),
         ];
     }
 
@@ -1071,7 +1076,7 @@ class GuidelineAssetService
     {
         $normalized = strtolower($text);
         $tokenSet = array_fill_keys(
-            array_values(array_unique(!empty($tokens) ? $tokens : $this->tokenizeSearchText($text))),
+            array_values(array_unique(! empty($tokens) ? $tokens : $this->tokenizeSearchText($text))),
             true
         );
         $territories = [];
@@ -1153,7 +1158,7 @@ class GuidelineAssetService
     {
         $normalized = strtolower($text);
         $tokenSet = array_fill_keys(
-            array_values(array_unique(!empty($tokens) ? $tokens : $this->tokenizeSearchText($text))),
+            array_values(array_unique(! empty($tokens) ? $tokens : $this->tokenizeSearchText($text))),
             true
         );
         $anchors = [];
@@ -1242,7 +1247,7 @@ class GuidelineAssetService
         $count = 0;
 
         foreach (array_values(array_unique($questionTokens)) as $token) {
-            if (!$this->isIntentOnlyToken($token)) {
+            if (! $this->isIntentOnlyToken($token)) {
                 $count++;
             }
         }

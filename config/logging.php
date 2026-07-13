@@ -20,6 +20,8 @@ return [
 
     'default' => env('LOG_CHANNEL', 'stack'),
 
+    'http_log_bodies' => env('HTTP_LOG_BODIES', false),
+
     /*
     |--------------------------------------------------------------------------
     | Deprecations Log Channel

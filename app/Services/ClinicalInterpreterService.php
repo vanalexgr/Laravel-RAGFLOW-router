@@ -8,18 +8,22 @@ use Illuminate\Support\Facades\Log;
 class ClinicalInterpreterService
 {
     protected ?string $endpoint;
+
     protected ?string $apiKey;
+
     protected ?string $deployment;
+
     protected ?string $apiVersion;
+
     protected bool $isConfigured = false;
 
     public function __construct()
     {
-        $this->endpoint = config('prism.providers.azure.endpoint') ?: env('AZURE_OPENAI_ENDPOINT');
-        $this->apiKey = config('prism.providers.azure.api_key') ?: env('AZURE_OPENAI_API_KEY');
-        $this->deployment = config('prism.providers.azure.deployment') ?: env('AZURE_OPENAI_DEPLOYMENT', 'gpt-5-chat');
-        $this->apiVersion = config('prism.providers.azure.api_version') ?: env('AZURE_OPENAI_VERSION', '2024-12-01-preview');
-        $this->isConfigured = !empty($this->endpoint) && !empty($this->apiKey) && !empty($this->deployment);
+        $this->endpoint = config('prism.providers.azure.endpoint');
+        $this->apiKey = config('prism.providers.azure.api_key');
+        $this->deployment = config('prism.providers.azure.deployment');
+        $this->apiVersion = config('prism.providers.azure.api_version');
+        $this->isConfigured = ! empty($this->endpoint) && ! empty($this->apiKey) && ! empty($this->deployment);
     }
 
     public function enabled(): bool
@@ -34,10 +38,10 @@ class ClinicalInterpreterService
      */
     public function interpret(string $question, ?array $intentProfile = null): array
     {
-        if (!$this->enabled()) {
+        if (! $this->enabled()) {
             return ['enabled' => false, 'frame' => null, 'terms' => [], 'must_terms' => [], 'used_llm' => false];
         }
-        if (!$this->isConfigured) {
+        if (! $this->isConfigured) {
             return ['enabled' => true, 'frame' => null, 'terms' => [], 'must_terms' => [], 'used_llm' => false];
         }
 
@@ -47,10 +51,10 @@ class ClinicalInterpreterService
 
         $intent = trim((string) ($intentProfile['intent'] ?? ''));
         $keyTerms = $intentProfile['key_terms'] ?? [];
-        if (!is_array($keyTerms)) {
+        if (! is_array($keyTerms)) {
             $keyTerms = [];
         }
-        $keyTerms = array_values(array_filter(array_map(fn($v) => trim((string) $v), $keyTerms), fn($v) => $v !== ''));
+        $keyTerms = array_values(array_filter(array_map(fn ($v) => trim((string) $v), $keyTerms), fn ($v) => $v !== ''));
 
         $prompt = <<<PROMPT
 Task: Interpret this vascular clinical query to guide ESVS guideline retrieval.
@@ -75,7 +79,7 @@ Key terms: ["{$this->joinJsonArray($keyTerms)}"]
 PROMPT;
 
         try {
-            $url = rtrim($this->endpoint, '/') . "/openai/deployments/{$this->deployment}/chat/completions?api-version={$this->apiVersion}";
+            $url = rtrim($this->endpoint, '/')."/openai/deployments/{$this->deployment}/chat/completions?api-version={$this->apiVersion}";
             $response = Http::timeout($timeout)
                 ->withHeaders([
                     'api-key' => $this->apiKey,
@@ -89,17 +93,18 @@ PROMPT;
                     'max_completion_tokens' => 220,
                 ]);
 
-            if (!$response->successful()) {
+            if (! $response->successful()) {
                 Log::channel('retrieval')->warning('[CLINICAL INTERPRETER] LLM failed', [
                     'status' => $response->status(),
                     'body' => $response->body(),
                 ]);
+
                 return ['enabled' => true, 'frame' => null, 'terms' => [], 'must_terms' => [], 'used_llm' => false];
             }
 
             $content = (string) $response->json('choices.0.message.content', '');
             $parsed = $this->parseJson($content);
-            if (!is_array($parsed)) {
+            if (! is_array($parsed)) {
                 return ['enabled' => true, 'frame' => null, 'terms' => [], 'must_terms' => [], 'used_llm' => false];
             }
 
@@ -134,6 +139,7 @@ PROMPT;
             Log::channel('retrieval')->warning('[CLINICAL INTERPRETER] Exception', [
                 'error' => $e->getMessage(),
             ]);
+
             return ['enabled' => true, 'frame' => null, 'terms' => [], 'must_terms' => [], 'used_llm' => false];
         }
     }
@@ -149,6 +155,7 @@ PROMPT;
         }
         try {
             $decoded = json_decode($content, true, 512, JSON_THROW_ON_ERROR);
+
             return is_array($decoded) ? $decoded : null;
         } catch (\Throwable $e) {
             return null;
@@ -157,7 +164,7 @@ PROMPT;
 
     protected function normalizeList($list): array
     {
-        if (!is_array($list)) {
+        if (! is_array($list)) {
             return [];
         }
         $out = [];
@@ -174,12 +181,14 @@ PROMPT;
             $seen[$norm] = true;
             $out[] = $term;
         }
+
         return $out;
     }
 
     protected function joinJsonArray(array $items): string
     {
-        $escaped = array_map(fn($v) => str_replace('"', '\\"', (string) $v), $items);
+        $escaped = array_map(fn ($v) => str_replace('"', '\\"', (string) $v), $items);
+
         return implode('","', $escaped);
     }
 }

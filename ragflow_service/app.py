@@ -1,8 +1,9 @@
 import os
+import hmac
 import logging
 import asyncio
 from datetime import datetime
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import Depends, FastAPI, Request, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 import httpx
@@ -43,6 +44,25 @@ HIGH_RECALL_TOP_K_CEILING = max(
     int(os.getenv("RAGFLOW_HIGH_RECALL_TOP_K_CEILING", "1024")),
 )
 SIZE_CEILING = max(1, int(os.getenv("RAGFLOW_SIZE_CEILING", "12")))
+UPSTREAM_TIMEOUT = float(os.getenv("RAGFLOW_UPSTREAM_TIMEOUT", "25"))
+
+if not SHARED_SECRET:
+    logger.warning(
+        "RAGFLOW_BRIDGE_SECRET is not configured; authenticated endpoints will return 503"
+    )
+
+
+async def verify_bridge_auth(request: Request) -> None:
+    if not SHARED_SECRET:
+        raise HTTPException(status_code=503, detail="bridge secret not configured")
+
+    if SHARED_SECRET:
+        provided_secret = request.headers.get("X-Bridge-Secret") or ""
+        if not hmac.compare_digest(provided_secret, SHARED_SECRET):
+            raise HTTPException(status_code=403, detail="Unauthorized")
+
+    if not RAGFLOW_API_KEY:
+        raise HTTPException(status_code=500, detail="RAGFLOW_API_KEY not configured")
 
 
 def clamp_top_k(value: int, high_recall: bool = False) -> int:
@@ -107,17 +127,10 @@ class RetrieveMultiRequest(BaseModel):
     high_recall: bool = False
     highlight: bool = False
 
-@app.post("/retrieve")
-@app.post("/retrieval")
+@app.post("/retrieve", dependencies=[Depends(verify_bridge_auth)])
+@app.post("/retrieval", dependencies=[Depends(verify_bridge_auth)])
 async def retrieve(request: Request, body: RetrieveRequest):
     logger.info(f"RETRIEVE: q='{body.question}' ds={body.dataset_ids} kg={body.use_kg}")
-    if SHARED_SECRET:
-        provided_secret = request.headers.get("X-Bridge-Secret")
-        if provided_secret != SHARED_SECRET:
-            raise HTTPException(status_code=403, detail="Unauthorized")
-
-    if not RAGFLOW_API_KEY:
-        raise HTTPException(status_code=500, detail="RAGFLOW_API_KEY not configured")
 
     logger.info(f"Retrieve request: question='{body.question[:50]}...', kb_ids={body.dataset_ids}")
 
@@ -155,7 +168,10 @@ async def retrieve(request: Request, body: RetrieveRequest):
     start_time = datetime.now()
 
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(
+            timeout=UPSTREAM_TIMEOUT,
+            transport=httpx.AsyncHTTPTransport(retries=1),
+        ) as client:
             response = await client.post(
                 f"{RAGFLOW_BASE_URL}/retrieval",
                 json=payload,
@@ -223,16 +239,9 @@ async def retrieve(request: Request, body: RetrieveRequest):
         logger.error(f"RAGFlow request failed: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/retrieve_multi")
+@app.post("/retrieve_multi", dependencies=[Depends(verify_bridge_auth)])
 async def retrieve_multi(request: Request, body: RetrieveMultiRequest):
     """Parallel retrieval across multiple datasets with per-dataset capping."""
-    if SHARED_SECRET:
-        provided_secret = request.headers.get("X-Bridge-Secret")
-        if provided_secret != SHARED_SECRET:
-            raise HTTPException(status_code=403, detail="Unauthorized")
-
-    if not RAGFLOW_API_KEY:
-        raise HTTPException(status_code=500, detail="RAGFLOW_API_KEY not configured")
 
     if not body.datasets:
         raise HTTPException(status_code=400, detail="No datasets provided")
@@ -280,8 +289,11 @@ async def retrieve_multi(request: Request, body: RetrieveMultiRequest):
                     "Content-Type": "application/json",
                 }
             )
+            response.raise_for_status()
             ds_duration = (datetime.now() - ds_start).total_seconds() * 1000
             result = response.json()
+            if result.get("code") not in (None, 0):
+                raise RuntimeError(result.get("message") or f"RAGFlow error code {result.get('code')}")
             chunks = result.get("data", {}).get("chunks", [])
             
             # Tag chunks with source
@@ -311,7 +323,10 @@ async def retrieve_multi(request: Request, body: RetrieveMultiRequest):
 
     # Parallel fetch all datasets
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(
+            timeout=UPSTREAM_TIMEOUT,
+            transport=httpx.AsyncHTTPTransport(retries=1),
+        ) as client:
             tasks = [fetch_single_dataset(client, ds) for ds in body.datasets]
             results = await asyncio.gather(*tasks)
 
@@ -340,8 +355,14 @@ async def retrieve_multi(request: Request, body: RetrieveMultiRequest):
 
         logger.info(f"Retrieve MULTI complete: combined_after_per_cap={len(interleaved)} combined_after_global_cap={len(capped)} total_duration={total_duration:.0f}ms")
 
+        errors = [r["error"] for r in results if r.get("error")]
+        all_failed = bool(results) and len(errors) == len(results)
+
         return {
-            "status": 200,
+            "status": 502 if all_failed else 200,
+            "message": "All RAGFlow dataset retrievals failed" if all_failed else None,
+            "errors": errors,
+            "degraded": bool(errors),
             "duration_ms": total_duration,
             "data": {
                 "chunks": capped,
@@ -443,20 +464,13 @@ class RetrieveDualRequest(BaseModel):
         
         return allocation
 
-@app.post("/retrieve_dual")
+@app.post("/retrieve_dual", dependencies=[Depends(verify_bridge_auth)])
 async def retrieve_dual(request: Request, body: RetrieveDualRequest):
     """
     Parallel dual retrieval:
     - Narrative chunks: from full guideline datasets WITH KG enabled (for synthesis)
     - Citation chunks: from recommendations-only dataset WITHOUT KG (for verbatim citations)
     """
-    if SHARED_SECRET:
-        provided_secret = request.headers.get("X-Bridge-Secret")
-        if provided_secret != SHARED_SECRET:
-            raise HTTPException(status_code=403, detail="Unauthorized")
-
-    if not RAGFLOW_API_KEY:
-        raise HTTPException(status_code=500, detail="RAGFLOW_API_KEY not configured")
 
     logger.info(f"Retrieve DUAL request: question='{body.question[:50]}...'")
     logger.info(f"  Narrative datasets: {len(body.narrative_datasets)}, Citation dataset: {body.citation_dataset_id}")
@@ -521,8 +535,11 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
                         "Content-Type": "application/json",
                     }
                 )
+                response.raise_for_status()
                 ds_duration = (datetime.now() - ds_start).total_seconds() * 1000
                 result = response.json()
+                if result.get("code") not in (None, 0):
+                    raise RuntimeError(result.get("message") or f"RAGFlow error code {result.get('code')}")
                 chunks = result.get("data", {}).get("chunks", [])
                 
                 # Tag chunks with source
@@ -621,6 +638,7 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
             "chunks": capped,
             "duration_ms": total_duration,
             "per_dataset": [{"name": r["dataset_name"], "count": len(r["chunks"])} for r in results],
+            "errors": [r["error"] for r in results if r.get("error")],
         }
 
 
@@ -698,8 +716,11 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
                     "Content-Type": "application/json",
                 }
             )
+            response.raise_for_status()
             cit_duration = (datetime.now() - cit_start).total_seconds() * 1000
             result = response.json()
+            if result.get("code") not in (None, 0):
+                raise RuntimeError(result.get("message") or f"RAGFlow error code {result.get('code')}")
             chunks = result.get("data", {}).get("chunks", [])
             logger.info(f"  Raw Citations Retrieved: {len(chunks)}")
             
@@ -753,6 +774,7 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
                             "Content-Type": "application/json",
                         }
                     )
+                    retry_response.raise_for_status()
                     retry_result = retry_response.json()
                     retry_chunks = retry_result.get("data", {}).get("chunks", [])
                     for chunk in retry_chunks:
@@ -776,7 +798,10 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
             return {"chunks": [], "total": 0, "error": str(e), "duration_ms": 0}
 
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(
+            timeout=UPSTREAM_TIMEOUT,
+            transport=httpx.AsyncHTTPTransport(retries=1),
+        ) as client:
             if body.citation_max <= 0:
                 narrative_result = await fetch_narrative_chunks(client)
                 citation_result = {
@@ -801,8 +826,20 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
         
         logger.info(f"Retrieve DUAL complete: narrative={len(narrative_result['chunks'])}→{len(narrative_for_ui)} citations={len(citation_result['chunks'])}→{len(citations_for_ui)} total_duration={total_duration:.0f}ms")
 
+        narrative_errors = narrative_result.get("errors", [])
+        citation_errors = [citation_result["error"]] if citation_result.get("error") else []
+        requested_fetches = len(body.narrative_datasets) + (1 if body.citation_max > 0 else 0)
+        failed_fetches = len(narrative_errors) + len(citation_errors)
+        all_failed = requested_fetches > 0 and failed_fetches == requested_fetches
+
         return {
-            "status": 200,
+            "status": 502 if all_failed else 200,
+            "message": "All RAGFlow retrieval branches failed" if all_failed else None,
+            "errors": {
+                "narrative": narrative_errors,
+                "citation": citation_errors,
+            },
+            "degraded": failed_fetches > 0,
             "duration_ms": total_duration,
             "narrative": {
                 "chunks": narrative_for_ui,  # ← Capped for UI
@@ -839,18 +876,14 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
         logger.error(f"Retrieve DUAL failed: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/datasets")
+@app.get("/datasets", dependencies=[Depends(verify_bridge_auth)])
 async def list_datasets(request: Request):
-    if SHARED_SECRET:
-        provided_secret = request.headers.get("X-Bridge-Secret")
-        if provided_secret != SHARED_SECRET:
-            raise HTTPException(status_code=403, detail="Unauthorized")
-
-    if not RAGFLOW_API_KEY:
-        raise HTTPException(status_code=500, detail="RAGFLOW_API_KEY not configured")
 
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(
+            timeout=UPSTREAM_TIMEOUT,
+            transport=httpx.AsyncHTTPTransport(retries=1),
+        ) as client:
             response = await client.get(
                 f"{RAGFLOW_BASE_URL}/datasets",
                 headers={
@@ -865,18 +898,14 @@ async def list_datasets(request: Request):
         logger.error(f"Failed to list datasets: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/datasets/{dataset_id}")
+@app.get("/datasets/{dataset_id}", dependencies=[Depends(verify_bridge_auth)])
 async def get_dataset(dataset_id: str, request: Request):
-    if SHARED_SECRET:
-        provided_secret = request.headers.get("X-Bridge-Secret")
-        if provided_secret != SHARED_SECRET:
-            raise HTTPException(status_code=403, detail="Unauthorized")
-
-    if not RAGFLOW_API_KEY:
-        raise HTTPException(status_code=500, detail="RAGFLOW_API_KEY not configured")
 
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(
+            timeout=UPSTREAM_TIMEOUT,
+            transport=httpx.AsyncHTTPTransport(retries=1),
+        ) as client:
             response = await client.get(
                 f"{RAGFLOW_BASE_URL}/datasets/{dataset_id}",
                 headers={
@@ -895,4 +924,8 @@ async def get_dataset(dataset_id: str, request: Request):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Docker/systemd deployments require a network bind; authenticated endpoints
+    # remain closed unless RAGFLOW_BRIDGE_SECRET is configured.
+    host = os.getenv("RAGFLOW_BRIDGE_HOST", "0.0.0.0")
+    port = int(os.getenv("RAGFLOW_BRIDGE_PORT", "8000"))
+    uvicorn.run(app, host=host, port=port)

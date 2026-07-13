@@ -8,24 +8,28 @@ use Illuminate\Support\Facades\Log;
 class GuidelineRouterService
 {
     protected ?string $endpoint;
+
     protected ?string $apiKey;
+
     protected ?string $deployment;
+
     protected ?string $apiVersion;
+
     protected bool $isConfigured = false;
 
     public function __construct()
     {
-        $this->endpoint = config('prism.providers.azure.endpoint') ?: env('AZURE_OPENAI_ENDPOINT');
-        $this->apiKey = config('prism.providers.azure.api_key') ?: env('AZURE_OPENAI_API_KEY');
-        $this->deployment = config('prism.providers.azure.deployment') ?: env('AZURE_OPENAI_DEPLOYMENT', 'gpt-5-chat');
-        $this->apiVersion = config('prism.providers.azure.api_version') ?: env('AZURE_OPENAI_VERSION', '2024-12-01-preview');
+        $this->endpoint = config('prism.providers.azure.endpoint');
+        $this->apiKey = config('prism.providers.azure.api_key');
+        $this->deployment = config('prism.providers.azure.deployment');
+        $this->apiVersion = config('prism.providers.azure.api_version');
 
-        $this->isConfigured = !empty($this->endpoint) && !empty($this->apiKey) && !empty($this->deployment);
+        $this->isConfigured = ! empty($this->endpoint) && ! empty($this->apiKey) && ! empty($this->deployment);
     }
 
     /**
      * Smart routing: uses LLM-based routing with abbreviation expansion and guardrails.
-     * 
+     *
      * @return array With 'keys' array of guideline keys and 'scores' map of key => confidence
      */
     public function routeQuery(string $question, int $maxGuidelines = 2): array
@@ -68,7 +72,7 @@ class GuidelineRouterService
         // Apply guardrails
         $guardrailsEnabled = config('router_abbreviations.guardrails_enabled', true);
 
-        if ($guardrailsEnabled && !empty($llmKeys)) {
+        if ($guardrailsEnabled && ! empty($llmKeys)) {
             try {
                 $guardrails = app(\App\Services\Routing\GuardrailDecider::class);
                 $guardrailResult = $guardrails->apply($expandedQuery, $result);
@@ -95,12 +99,13 @@ class GuidelineRouterService
         $log = Log::channel('retrieval');
 
         $log->info('[LLM ROUTER] Question received for routing', [
-            'question_preview' => substr($question, 0, 80) . (strlen($question) > 80 ? '...' : ''),
+            'question_preview' => substr($question, 0, 80).(strlen($question) > 80 ? '...' : ''),
             'question_length' => strlen($question),
         ]);
 
-        if (!$this->isConfigured) {
+        if (! $this->isConfigured) {
             $log->warning('[LLM ROUTER] Azure OpenAI not configured, skipping LLM routing');
+
             return [];
         }
 
@@ -108,7 +113,7 @@ class GuidelineRouterService
         $prompt = $this->buildPrompt($question, $guidelineList, $maxGuidelines);
 
         try {
-            $url = rtrim($this->endpoint, '/') . "/openai/deployments/{$this->deployment}/chat/completions?api-version={$this->apiVersion}";
+            $url = rtrim($this->endpoint, '/')."/openai/deployments/{$this->deployment}/chat/completions?api-version={$this->apiVersion}";
 
             $log->debug('[LLM ROUTER] Calling Azure OpenAI', [
                 'url' => $url,
@@ -128,11 +133,12 @@ class GuidelineRouterService
                     'max_completion_tokens' => 150,
                 ]);
 
-            if (!$response->successful()) {
+            if (! $response->successful()) {
                 $log->error('LLM routing failed', [
                     'status' => $response->status(),
                     'body' => $response->body(),
                 ]);
+
                 return [];
             }
 
@@ -148,10 +154,11 @@ class GuidelineRouterService
 
             return $selected;
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $log->error('LLM routing exception', [
                 'error' => $e->getMessage(),
             ]);
+
             return [];
         }
     }
@@ -202,7 +209,8 @@ PROMPT;
 
             if (isset($decoded['selected']) && is_array($decoded['selected'])) {
                 $validKeys = $this->getValidGuidelineKeys();
-                return array_values(array_filter($decoded['selected'], fn($k) => in_array($k, $validKeys)));
+
+                return array_values(array_filter($decoded['selected'], fn ($k) => in_array($k, $validKeys)));
             }
         } catch (\JsonException $e) {
             Log::channel('retrieval')->warning('Failed to parse LLM routing response', [
@@ -230,11 +238,11 @@ PROMPT;
 
     /**
      * Parallel LLM calls for guideline routing and query expansion.
-     * 
-     * @param string $routingQuery Query for guideline selection (question only, no patient context)
-     * @param int $maxGuidelines Maximum guidelines to select
-     * @param string|null $expansionQuery Optional separate query for expansion (can include patient context)
-     * @param array|null $documentAnalysis Optional document analysis with extracted entities and guideline scores
+     *
+     * @param  string  $routingQuery  Query for guideline selection (question only, no patient context)
+     * @param  int  $maxGuidelines  Maximum guidelines to select
+     * @param  string|null  $expansionQuery  Optional separate query for expansion (can include patient context)
+     * @param  array|null  $documentAnalysis  Optional document analysis with extracted entities and guideline scores
      */
     public function selectAndExpand(string $routingQuery, int $maxGuidelines = 3, ?string $expansionQuery = null, ?array $documentAnalysis = null): array
     {
@@ -246,16 +254,18 @@ PROMPT;
 
         // NEW: Always expand abbreviations first (matches routeQuery behavior)
         if (config('router_abbreviations.enabled', true)) {
+            $beforeExpansion = $routingQuery;
             $routingQuery = $this->expandQuery($routingQuery);
-            if ($routingQuery !== ($expansionQuery ?? $routingQuery)) {
+            if ($routingQuery !== $beforeExpansion) {
                 $log->info('[ROUTING] Query expanded via regex', ['query' => $routingQuery]);
             }
         }
 
         // If not configured for LLM, use document analysis only
-        if (!$this->isConfigured) {
+        if (! $this->isConfigured) {
             $log->warning('[ROUTER] Azure OpenAI not configured, using document analysis only');
             $selected = $this->mergeDocumentAndQuestionRouting([], $documentAnalysis, $log, $maxGuidelines);
+
             return ['selected' => $selected, 'expanded' => $queryForExpansion, 'scores' => [], 'routing_method' => 'document_only'];
         }
 
@@ -266,7 +276,7 @@ PROMPT;
         $routingPrompt = $this->buildPrompt($routingQuery, $guidelineList, $maxGuidelines);
         $expansionPrompt = $this->buildExpansionPrompt($queryForExpansion);
 
-        $url = rtrim($this->endpoint, '/') . "/openai/deployments/{$this->deployment}/chat/completions?api-version={$this->apiVersion}";
+        $url = rtrim($this->endpoint, '/')."/openai/deployments/{$this->deployment}/chat/completions?api-version={$this->apiVersion}";
 
         $log->info('[PARALLEL LLM] Starting routing + expansion', [
             'routing_query_preview' => substr($routingQuery, 0, 80),
@@ -276,7 +286,7 @@ PROMPT;
         try {
             // DISABLED: Parallel LLM expansion - causes keyword stuffing
             // Only run routing now, skip expansion
-            $responses = Http::pool(fn($pool) => [
+            $responses = Http::pool(fn ($pool) => [
                 $pool->as('routing')
                     ->timeout(10)
                     ->withHeaders(['api-key' => $this->apiKey, 'Content-Type' => 'application/json'])
@@ -291,9 +301,15 @@ PROMPT;
             ]);
 
             $llmSelected = [];
-            if ($responses['routing']->successful()) {
-                $content = $responses['routing']->json('choices.0.message.content', '');
+            $routing = $responses['routing'] ?? null;
+            if ($routing instanceof \Illuminate\Http\Client\Response && $routing->successful()) {
+                $content = $routing->json('choices.0.message.content', '');
                 $llmSelected = $this->parseResponse($content);
+            } else {
+                $log->warning('[PARALLEL LLM] Routing request failed; using fallbacks', [
+                    'error' => $routing instanceof \Throwable ? $routing->getMessage() : null,
+                    'status' => $routing instanceof \Illuminate\Http\Client\Response ? $routing->status() : null,
+                ]);
             }
 
             // Use regex-based abbreviation expansion for retrieval queries
@@ -313,9 +329,10 @@ PROMPT;
 
             return ['selected' => $selected, 'expanded' => $expanded, 'scores' => [], 'routing_method' => 'llm'];
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $log->error('[PARALLEL LLM] Exception', ['error' => $e->getMessage()]);
             $selected = $this->mergeDocumentAndQuestionRouting([], $documentAnalysis, $log, $maxGuidelines);
+
             return ['selected' => $selected, 'expanded' => $queryForExpansion, 'scores' => [], 'routing_method' => 'fallback'];
         }
     }
@@ -346,11 +363,12 @@ PROMPT;
                 $expander = app(\App\Services\Routing\QueryExpander::class);
                 $result = $expander->expand($question);
 
-                if (!empty($result->appliedExpansions)) {
+                if (! empty($result->appliedExpansions)) {
                     $question = $result->expandedQuery;
                     $log->info('[QUERY EXPANSION] Regex applied, skipping LLM for focus', [
-                        'expansions' => $result->appliedExpansions
+                        'expansions' => $result->appliedExpansions,
                     ]);
+
                     return $question; // Return early to avoid signal dilution with too many LLM synonyms
                 }
             } catch (\Exception $e) {
@@ -361,6 +379,7 @@ PROMPT;
         // DISABLED: LLM expansion causes keyword stuffing and poor semantic retrieval
         // For now, only use regex-based abbreviation expansion above
         $log->info('[QUERY EXPANSION] LLM expansion disabled, using original/regex-expanded query only');
+
         return $question;
     }
 
@@ -371,6 +390,7 @@ PROMPT;
 
         if (empty($docRecommended) && empty($llmSelected)) {
             $log->info('[MERGE ROUTING] No routing from LLM or document analysis');
+
             return [];
         }
 
@@ -382,6 +402,7 @@ PROMPT;
             $log->info('[MERGE ROUTING] Using document-based routing only', [
                 'doc_recommended' => $docRecommended,
             ]);
+
             return array_slice($docRecommended, 0, $maxGuidelines);
         }
 
@@ -390,6 +411,7 @@ PROMPT;
         usort($merged, function ($a, $b) use ($docScores, $llmSelected) {
             $scoreA = ($docScores[$a] ?? 0) + (in_array($a, $llmSelected) ? 10 : 0);
             $scoreB = ($docScores[$b] ?? 0) + (in_array($b, $llmSelected) ? 10 : 0);
+
             return $scoreB - $scoreA;
         });
 
@@ -403,6 +425,7 @@ PROMPT;
 
         return $result;
     }
+
     /**
      * Context-aware routing wrapper.
      * Rewrites ambiguous follow-up questions using history before routing.
@@ -413,7 +436,7 @@ PROMPT;
         $fused = $question;
 
         // Only fuse if we have history and it looks like a follow-up
-        if (!empty($history) && $this->isLikelyFollowUp($question)) {
+        if (! empty($history) && $this->isLikelyFollowUp($question)) {
             $historyCount = count($history);
             $log->info("[CONTEXT] Detected potential follow-up, attempting fusion (history turns: $historyCount)", ['query' => $question]);
             $fused = $this->fuseContext($question, $history);
@@ -421,7 +444,7 @@ PROMPT;
                 $log->info('[CONTEXT] Fused query result', [
                     'original' => $question,
                     'fused' => $fused,
-                    'delta' => $fused === $question ? 'None' : 'Modified'
+                    'delta' => $fused === $question ? 'None' : 'Modified',
                 ]);
             } else {
                 $log->info('[CONTEXT] Fusion returned original query (no changes)');
@@ -437,37 +460,43 @@ PROMPT;
         $question = trim($question);
 
         // Very short queries are likely follow-ups (e.g. "why?", "and for women?")
-        if (strlen($question) < 15)
+        if (strlen($question) < 15) {
             return true;
+        }
 
         // Check for pronouns/connectors at start
-        if (preg_match('/^(and|but|so|or|what about|how about|does it|is it|can (i|we)|if)/i', $question))
+        if (preg_match('/^(and|but|so|or|what about|how about|does it|is it|can (i|we)|if)/i', $question)) {
             return true;
+        }
 
         // Check for specific pronouns indicating dependency
-        if (preg_match('/\b(it|they|this|that|these|those|he|she)\b/i', $question))
+        if (preg_match('/\b(it|they|this|that|these|those|he|she)\b/i', $question)) {
             return true;
+        }
 
         return false;
     }
 
     protected function fuseContext(string $question, array $history): string
     {
-        if (empty($history) || !$this->isConfigured)
+        if (empty($history) || ! $this->isConfigured) {
             return $question;
+        }
 
         $log = Log::channel('retrieval');
 
         // Filter out empty strings and ensure strings
-        $history = array_filter($history, fn($h) => is_string($h) && !empty($h));
+        $history = array_filter($history, fn ($h) => is_string($h) && ! empty($h));
 
         $recentHistory = array_slice($history, -2); // Only last 2 turns to avoid confusion
-        if (empty($recentHistory))
+        if (empty($recentHistory)) {
             return $question;
+        }
 
         // Strip control characters and truncate each history entry to prevent prompt injection
         $sanitized = array_map(function (string $h): string {
             $h = preg_replace('/[\x00-\x1F\x7F]/u', ' ', $h);
+
             return mb_substr(trim($h), 0, 500);
         }, $recentHistory);
 
@@ -485,7 +514,7 @@ Return ONLY the rewritten text.
 PROMPT;
 
         try {
-            $url = rtrim($this->endpoint, '/') . "/openai/deployments/{$this->deployment}/chat/completions?api-version={$this->apiVersion}";
+            $url = rtrim($this->endpoint, '/')."/openai/deployments/{$this->deployment}/chat/completions?api-version={$this->apiVersion}";
 
             $response = Http::timeout(4) // Fast timeout for context fusion
                 ->withHeaders([
@@ -502,11 +531,11 @@ PROMPT;
 
             if ($response->successful()) {
                 $rewritten = trim($response->json('choices.0.message.content', ''));
-                if (!empty($rewritten)) {
+                if (! empty($rewritten)) {
                     return $rewritten;
                 }
             }
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $log->warning('[CONTEXT] Fusion failed', ['error' => $e->getMessage()]);
         }
 
@@ -517,22 +546,21 @@ PROMPT;
      * Normalize non-English or mixed-language clinical queries into a compact English retrieval query.
      * This is for retrieval only (not final answering).
      *
-     * @param string $question
-     * @param array|null $guidelineKeys Optional selected/forced guideline keys to bias terminology
+     * @param  array|null  $guidelineKeys  Optional selected/forced guideline keys to bias terminology
      * @return array|null ['normalized_query' => string, 'language' => string, 'changed' => bool, 'intent' => ?string, 'question_type' => ?string, 'key_terms' => array]
      */
     public function normalizeForRetrieval(string $question, ?array $guidelineKeys = null): ?array
     {
         $question = trim($question);
-        if ($question === '' || !$this->isConfigured) {
+        if ($question === '' || ! $this->isConfigured) {
             return null;
         }
 
         $log = Log::channel('retrieval');
-        $guidelineKeys = array_values(array_filter($guidelineKeys ?? [], fn($k) => is_string($k) && $k !== ''));
+        $guidelineKeys = array_values(array_filter($guidelineKeys ?? [], fn ($k) => is_string($k) && $k !== ''));
         $guidelineHintText = empty($guidelineKeys)
             ? 'No guideline preselection.'
-            : ('Selected guideline hints: ' . implode(', ', $guidelineKeys));
+            : ('Selected guideline hints: '.implode(', ', $guidelineKeys));
 
         $prompt = <<<PROMPT
 Task: Convert the user's query into a concise English medical retrieval query for ESVS vascular guideline search.
@@ -559,7 +587,7 @@ Example output:
 PROMPT;
 
         try {
-            $url = rtrim($this->endpoint, '/') . "/openai/deployments/{$this->deployment}/chat/completions?api-version={$this->apiVersion}";
+            $url = rtrim($this->endpoint, '/')."/openai/deployments/{$this->deployment}/chat/completions?api-version={$this->apiVersion}";
 
             $response = Http::timeout(5)
                 ->withHeaders([
@@ -574,10 +602,11 @@ PROMPT;
                     'max_completion_tokens' => 220,
                 ]);
 
-            if (!$response->successful()) {
+            if (! $response->successful()) {
                 $log->warning('[QUERY NORMALIZATION] Azure call failed', [
                     'status' => $response->status(),
                 ]);
+
                 return null;
             }
 
@@ -591,8 +620,9 @@ PROMPT;
             }
 
             $decoded = json_decode($content, true);
-            if (!is_array($decoded)) {
+            if (! is_array($decoded)) {
                 $log->warning('[QUERY NORMALIZATION] JSON parse failed', ['content' => $content]);
+
                 return null;
             }
 
@@ -601,13 +631,13 @@ PROMPT;
             $intent = trim((string) ($decoded['intent'] ?? ''));
             $questionType = trim((string) ($decoded['question_type'] ?? ''));
             $keyTerms = $decoded['key_terms'] ?? [];
-            if (!is_array($keyTerms)) {
+            if (! is_array($keyTerms)) {
                 $keyTerms = [];
             }
             $keyTerms = array_values(array_filter(array_map(
-                fn($v) => trim((string) $v),
+                fn ($v) => trim((string) $v),
                 $keyTerms
-            ), fn($v) => $v !== ''));
+            ), fn ($v) => $v !== ''));
             if ($normalized === '') {
                 return null;
             }
@@ -620,10 +650,11 @@ PROMPT;
                 'question_type' => $questionType !== '' ? $questionType : null,
                 'key_terms' => array_slice($keyTerms, 0, 8),
             ];
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $log->warning('[QUERY NORMALIZATION] Exception', [
                 'error' => $e->getMessage(),
             ]);
+
             return null;
         }
     }
@@ -705,7 +736,7 @@ PROMPT;
             return 'complex_case';
         }
         // Knowledge wins unless there is an unambiguous patient-case signal.
-        if ($isKnowledge && !$isStrongPatient) {
+        if ($isKnowledge && ! $isStrongPatient) {
             return 'knowledge';
         }
         // Patient case without complex signals
@@ -731,34 +762,36 @@ Reply with one word only: knowledge, single_case, or complex_case
 PROMPT;
 
         $result = $this->callAzureOpenAI($prompt, 5);
-        $type   = strtolower(trim($result));
+        $type = strtolower(trim($result));
+
         return in_array($type, ['knowledge', 'single_case', 'complex_case'])
             ? $type : 'single_case'; // safe default
     }
 
     private function callAzureOpenAI(string $prompt, int $maxTokens = 150): string
     {
-        if (!$this->isConfigured) {
+        if (! $this->isConfigured) {
             return '';
         }
         try {
-            $url = rtrim($this->endpoint, '/') . "/openai/deployments/{$this->deployment}/chat/completions?api-version={$this->apiVersion}";
+            $url = rtrim($this->endpoint, '/')."/openai/deployments/{$this->deployment}/chat/completions?api-version={$this->apiVersion}";
             $response = Http::timeout(8)
                 ->withHeaders([
-                    'api-key'      => $this->apiKey,
+                    'api-key' => $this->apiKey,
                     'Content-Type' => 'application/json',
                 ])
                 ->post($url, [
-                    'messages'    => [
+                    'messages' => [
                         ['role' => 'user', 'content' => $prompt],
                     ],
-                    'max_completion_tokens'  => $maxTokens,
+                    'max_completion_tokens' => $maxTokens,
                 ]);
-            if (!$response->successful()) {
+            if (! $response->successful()) {
                 return '';
             }
+
             return (string) $response->json('choices.0.message.content', '');
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             return '';
         }
     }
