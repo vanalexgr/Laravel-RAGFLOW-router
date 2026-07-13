@@ -13,8 +13,13 @@ return [
             'api_version' => env('AZURE_OPENAI_VERSION', '2024-12-01-preview'),
         ],
         'openai' => [
-            'url' => env('OPENAI_URL', 'https://api.openai.com/v1'),
-            'api_key' => env('OPENAI_API_KEY', ''),
+            'url' => env(
+                'OPENAI_URL',
+                ($endpoint = rtrim((string) env('AZURE_OPENAI_ENDPOINT', ''), '/')) !== ''
+                    ? $endpoint.'/openai/v1'
+                    : 'https://api.openai.com/v1'
+            ),
+            'api_key' => env('OPENAI_API_KEY', env('AZURE_OPENAI_API_KEY', '')),
             'organization' => env('OPENAI_ORGANIZATION', null),
             'project' => env('OPENAI_PROJECT', null),
         ],

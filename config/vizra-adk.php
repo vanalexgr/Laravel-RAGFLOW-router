@@ -12,8 +12,8 @@ return [
             'traces' => true,
         ],
     ],
-    'default_provider' => 'azure',
-    'default_model' => env('AZURE_OPENAI_DEPLOYMENT', 'gpt-5-chat'),
+    'default_provider' => env('VIZRA_ADK_DEFAULT_PROVIDER', 'openai'),
+    'default_model' => env('VIZRA_ADK_DEFAULT_MODEL', env('AZURE_OPENAI_DEPLOYMENT', 'gpt-5-chat')),
     'default_generation_params' => [
         'temperature' => null, 'max_tokens' => null, 'top_p' => null,
     ],
@@ -25,7 +25,23 @@ return [
             'deployment' => env('AZURE_OPENAI_DEPLOYMENT'),
             'api_version' => env('AZURE_OPENAI_VERSION', '2024-12-01-preview'),
         ],
-        'openai' => ['api_key' => env('AZURE_OPENAI_API_KEY')],
+        'openai' => [
+            'url' => env(
+                'OPENAI_URL',
+                ($endpoint = rtrim((string) env('AZURE_OPENAI_ENDPOINT', ''), '/')) !== ''
+                    ? $endpoint.'/openai/v1'
+                    : 'https://api.openai.com/v1'
+            ),
+            'api_key' => env('OPENAI_API_KEY', env('AZURE_OPENAI_API_KEY', '')),
+            'organization' => env('OPENAI_ORGANIZATION', null),
+            'project' => env('OPENAI_PROJECT', null),
+        ],
+    ],
+    'agents' => [
+        'vascular_consult' => [
+            'provider' => env('VASCULAR_AGENT_PROVIDER', env('VIZRA_ADK_DEFAULT_PROVIDER', 'openai')),
+            'model' => env('VASCULAR_AGENT_MODEL', env('VIZRA_ADK_DEFAULT_MODEL', env('AZURE_OPENAI_DEPLOYMENT', 'gpt-5-chat'))),
+        ],
     ],
     'max_delegation_depth' => 5,
     'tables' => [

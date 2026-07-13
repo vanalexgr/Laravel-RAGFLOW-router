@@ -228,7 +228,7 @@ class VascularMcpAdapterHeuristicTests(unittest.TestCase):
             "Checking whether the new detail changes the stored retrieval...\n"
             + ("Important clinical summary sentence. " * 90)
             + "\n\n🖼️ Figures / Tables\n"
-            + ("[![Example](https://example.com/x.png)](https://example.com/x.png)\n[Full-size](https://example.com/x.png)\n" * 20)
+            + ("![Example](https://example.com/x-thumb.png)\n[Full-size](https://example.com/x.png)\n" * 20)
         )
         messages = [
             {"role": "user", "content": "What surveillance imaging is needed after CEA?"},
