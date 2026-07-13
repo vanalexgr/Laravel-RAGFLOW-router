@@ -244,7 +244,7 @@ PROMPT;
                         ['role' => 'system', 'content' => 'You extract clinical concepts for retrieval. Return ONLY JSON.'],
                         ['role' => 'user', 'content' => $prompt],
                     ],
-                    'max_tokens' => 260,
+                    'max_completion_tokens' => 260,
                     'temperature' => 0,
                 ]);
 

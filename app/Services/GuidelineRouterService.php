@@ -125,7 +125,7 @@ class GuidelineRouterService
                         ['role' => 'system', 'content' => 'You are a medical guideline router. Return ONLY valid JSON.'],
                         ['role' => 'user', 'content' => $prompt],
                     ],
-                    'max_tokens' => 150,
+                    'max_completion_tokens' => 150,
                     'temperature' => 0,
                 ]);
 
@@ -286,7 +286,7 @@ PROMPT;
                             ['role' => 'system', 'content' => 'You are a medical guideline router. Return ONLY valid JSON.'],
                             ['role' => 'user', 'content' => $routingPrompt],
                         ],
-                        'max_tokens' => 150,
+                        'max_completion_tokens' => 150,
                         'temperature' => 0,
                     ]),
                 // Expansion call REMOVED - use original query instead
@@ -499,7 +499,7 @@ PROMPT;
                         ['role' => 'system', 'content' => 'You are a helpful assistant that clarifies ambiguous questions. Return ONLY the rewritten question.'],
                         ['role' => 'user', 'content' => $prompt],
                     ],
-                    'max_tokens' => 100,
+                    'max_completion_tokens' => 100,
                     'temperature' => 0,
                 ]);
 
@@ -574,7 +574,7 @@ PROMPT;
                         ['role' => 'system', 'content' => 'You normalize multilingual vascular clinical queries for retrieval. Return ONLY valid JSON.'],
                         ['role' => 'user', 'content' => $prompt],
                     ],
-                    'max_tokens' => 220,
+                    'max_completion_tokens' => 220,
                     'temperature' => 0,
                 ]);
 
@@ -756,7 +756,7 @@ PROMPT;
                     'messages'    => [
                         ['role' => 'user', 'content' => $prompt],
                     ],
-                    'max_tokens'  => $maxTokens,
+                    'max_completion_tokens'  => $maxTokens,
                     'temperature' => 0,
                 ]);
             if (!$response->successful()) {
