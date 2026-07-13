@@ -54,7 +54,8 @@ final class RetrievalPlan
 
     private static function strings(mixed $values): array
     {
-        return array_values(array_filter((array) $values, static fn ($value) => is_string($value) && trim($value) !== ''));
+        if (!is_array($values)) return [];
+        return array_values(array_filter($values, static fn ($value) => is_string($value) && trim($value) !== ''));
     }
 
     private static function scores(mixed $scores): array
