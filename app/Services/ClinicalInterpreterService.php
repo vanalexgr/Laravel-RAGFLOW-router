@@ -86,7 +86,7 @@ PROMPT;
                         ['role' => 'system', 'content' => 'Return ONLY valid JSON.'],
                         ['role' => 'user', 'content' => $prompt],
                     ],
-                    'max_tokens' => 220,
+                    'max_completion_tokens' => 220,
                     'temperature' => 0.2,
                 ]);
 
