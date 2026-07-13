@@ -46,7 +46,7 @@ class AzureOpenAiLlmClient implements LlmClient
                         'content' => $prompt,
                     ],
                 ],
-                'max_tokens' => $maxTokens,
+                'max_completion_tokens' => $maxTokens,
                 'temperature' => $temperature,
             ]);
 
