@@ -35,15 +35,22 @@ class HttpLogging
         $logData = [
             'timestamp' => now()->toIso8601String(),
             'method' => $request->method(),
-            'url' => $request->fullUrl(),
-            'path' => $request->path(),
-            'query_params' => $request->query(),
+            'url' => $this->sanitizeStateIdentifier($request->fullUrl()),
+            'path' => $this->sanitizeStateIdentifier($request->path()),
+            'query_params' => $this->isStateRequest($request)
+                ? ['keys' => array_keys($request->query())]
+                : $request->query(),
             'headers' => $this->sanitizeHeaders($request->headers->all()),
             'request_body' => $this->getRequestBody($request),
             'response' => [
                 'status' => $response->getStatusCode(),
                 'headers' => $this->sanitizeHeaders($response->headers->all()),
-                'body' => $this->getResponseBody($response),
+                'body' => $this->isStateRequest($request)
+                    ? [
+                        'status' => $response->getStatusCode(),
+                        'byte_length' => strlen($response->getContent()),
+                    ]
+                    : $this->getResponseBody($response),
             ],
             'duration_ms' => $durationMs,
             'client_ip' => $request->ip(),
@@ -71,6 +78,21 @@ class HttpLogging
 
     private function getRequestBody(Request $request): mixed
     {
+        if ($this->isStateRequest($request)) {
+            $body = $request->all();
+
+            return [
+                'keys' => array_keys($body),
+                'provisional_diagnosis_length' => mb_strlen((string) ($body['provisional_diagnosis'] ?? '')),
+                'retrieval_query_length' => mb_strlen((string) ($body['retrieval_query'] ?? '')),
+                'confirmation_message_length' => mb_strlen((string) ($body['confirmation_message'] ?? '')),
+                'guidelines_count' => is_array($body['guidelines'] ?? null) ? count($body['guidelines']) : 0,
+                'clarification_questions_count' => is_array($body['clarification_questions'] ?? null)
+                    ? count($body['clarification_questions'])
+                    : 0,
+            ];
+        }
+
         if (! config('logging.http_log_bodies', false)) {
             $body = $request->all();
 
@@ -98,6 +120,21 @@ class HttpLogging
         }
 
         return null;
+    }
+
+    private function isStateRequest(Request $request): bool
+    {
+        return $request->is('api/v1/case-state/*')
+            || $request->is('api/v1/pending-case-state/*');
+    }
+
+    private function sanitizeStateIdentifier(string $value): string
+    {
+        return (string) preg_replace_callback(
+            '#((?:^|/)api/v1/(?:pending-)?case-state/)([^/?]+)#',
+            static fn (array $matches): string => $matches[1].'sha1:'.substr(sha1(rawurldecode($matches[2])), 0, 8),
+            $value,
+        );
     }
 
     private function getResponseBody(Response $response): mixed
