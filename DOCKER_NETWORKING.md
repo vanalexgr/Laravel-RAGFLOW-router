@@ -12,7 +12,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  Azure VM (Host)                                        │
+│  Host VM (Hetzner) (Host)                                        │
 │                                                         │
 │  ┌──────────────────┐      ┌──────────────────────┐   │
 │  │  SSH Session     │      │  Docker Network      │   │
@@ -36,7 +36,7 @@
 
 ## The Solution
 
-### **For Testing on Azure VM (SSH Session)**
+### **For Testing on Host VM (Hetzner) (SSH Session)**
 
 SSH runs on the **host**, outside Docker. Must use `localhost`:
 
@@ -58,7 +58,7 @@ RAGFLOW_BRIDGE_URL=http://ragflow-bridge:8000
 
 ## Quick Reference Commands
 
-### **Before Testing (on Azure VM via SSH)**
+### **Before Testing (on Host VM (Hetzner) via SSH)**
 ```bash
 cd /var/www/laravel-ragflow
 

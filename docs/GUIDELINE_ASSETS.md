@@ -83,7 +83,11 @@ GUIDELINE_ASSET_URL_PREFIX=/storage
 
 This is useful when the Laravel app and the chat UI live on different hostnames and the asset URLs must resolve through the chat-facing domain.
 
-## Using Azure Blob Storage
+## Using Azure Blob Storage (legacy/optional)
+
+> Production serves assets from the **local `public` disk** (the recommended
+> pattern above) — assets were localized onto the Hetzner VM. This section is an
+> optional alternative, kept for reference only.
 
 Set:
 - `GUIDELINE_ASSET_DISK=azure`

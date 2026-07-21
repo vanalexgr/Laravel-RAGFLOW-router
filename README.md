@@ -4,10 +4,20 @@ A Laravel 12 API that routes clinical questions to ESVS (European Society for
 Vascular Surgery) guideline documents in RAGFlow, retrieves graded evidence
 chunks, and returns structured clinical responses for synthesis by an LLM.
 
-> **Orientation:** [`CLAUDE.md`](CLAUDE.md) is the working session guide (infra,
-> key files, tuning). Model providers and how to change them:
-> [`docs/PROVIDER_MIGRATION.md`](docs/PROVIDER_MIGRATION.md). Running fully
-> self-hosted/local: [`docs/SELF_HOSTED_MODELS.md`](docs/SELF_HOSTED_MODELS.md).
+### Documentation map
+
+| Doc | What it covers |
+|---|---|
+| [`docs/SYSTEM_ARCHITECTURE.md`](docs/SYSTEM_ARCHITECTURE.md) | Components, deployment topology, request lifecycle, services & endpoints |
+| [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) | Every env var and config file |
+| [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | Deploy, restart matrix, logs, troubleshooting, backups |
+| [`docs/SYSTEM_PIPELINE.md`](docs/SYSTEM_PIPELINE.md) | Retrieval pipeline internals (planner, dual retrieval, gap detection) |
+| [`docs/VASCULAR_MCP_ADAPTER.md`](docs/VASCULAR_MCP_ADAPTER.md) | The production OpenWebUI tool (gate, query rewrite, templates) |
+| [`docs/PROVIDER_MIGRATION.md`](docs/PROVIDER_MIGRATION.md) | Model providers and how to change them |
+| [`docs/SELF_HOSTED_MODELS.md`](docs/SELF_HOSTED_MODELS.md) | Going fully local (vLLM/Ollama/TEI) — for the ISI deployment |
+| [`docs/HIPAA_COMPLIANCE.md`](docs/HIPAA_COMPLIANCE.md) | PHI de-identification, safeguards, BAA requirements |
+| [`docs/GUIDELINE_ASSETS.md`](docs/GUIDELINE_ASSETS.md) | Figure/table asset attachment |
+| [`CLAUDE.md`](CLAUDE.md) | Condensed working guide (infra, key files, tuning) |
 
 ---
 
