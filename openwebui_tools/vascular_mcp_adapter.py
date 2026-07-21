@@ -1,11 +1,13 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.53
+version: 1.5.54
 """
 import html
 import httpx
 import asyncio
+import hashlib
+import json
 import time
 import re
 from pydantic import BaseModel, Field
@@ -183,6 +185,10 @@ class Tools:
         EMIT_STATUS_EVENTS: bool = Field(
             default=False,
             description='Also emit OpenWebUI status events (can appear in collapsible status UI).',
+        )
+        LOG_TURN_DECISIONS: bool = Field(
+            default=True,
+            description='Emit one PHI-safe structured decision log for each consultation turn.',
         )
 
     def __init__(self):
@@ -427,6 +433,44 @@ class Tools:
                 if value:
                     return f"chat:{value}"
         return f"user:{self._get_user_id(user)}"
+
+    def _log_turn(self, **fields) -> None:
+        """Emit a single PHI-safe structured turn record."""
+        if not self.valves.LOG_TURN_DECISIONS:
+            return
+        record = {"evt": "turn", "ts": round(time.time(), 3)}
+        record.update(fields)
+        print(json.dumps(record, separators=(",", ":"), sort_keys=True))
+
+    def _classify_turn_for_log(
+        self,
+        question: str,
+        messages: Optional[list],
+        session: Optional[dict],
+        case_ctx: Optional[dict],
+    ) -> tuple[str, str]:
+        """Describe current routing without changing its pre-B1 behavior."""
+        pending_gate = self._can_reuse_pending_gate(question, messages)
+        guardrail_type = None if pending_gate else self._guardrail_type(question, messages)
+        if guardrail_type is not None:
+            return "GUARDRAIL", guardrail_type
+        if session and self._is_answer_only_turn(question):
+            return "GATE_REPLY", "answer_only"
+        if session and self._EXPLICIT_NEW_CASE_RE.search(question or ""):
+            return "EXPLICIT_NEW_CASE", "explicit_new_case_re"
+        if session and self._should_treat_as_new_query(question, session):
+            if self._is_raw_guideline_knowledge_query(question, []):
+                return "KNOWLEDGE", "raw_guideline_knowledge_re"
+            return "NEW_CASE", "fresh_case_intro_re"
+        if case_ctx and self._is_vague_management_followup(question):
+            return "FOLLOWUP_VAGUE", "vague_mgmt_re"
+        if session or case_ctx or pending_gate:
+            return "FOLLOWUP_SUBSTANTIVE", "same_case_context"
+        if self._is_raw_guideline_knowledge_query(question, messages or []):
+            return "KNOWLEDGE", "raw_guideline_knowledge_re"
+        if self._EXPLICIT_NEW_CASE_RE.search(question or ""):
+            return "EXPLICIT_NEW_CASE", "explicit_new_case_re"
+        return "NEW_CASE", "no_prior_context"
 
     def _extract_history(self, messages: Optional[list], current_question: str = "") -> list:
         history = []
@@ -2330,6 +2374,23 @@ class Tools:
         history = self._extract_history(__messages__, question)
         session_key = self._get_session_key(__user__, __metadata__)
         session = self._get_session(session_key)
+        had_session_at_start = session is not None
+        case_ctx_at_start = self._get_case_context(session_key)
+        turn_class, turn_reason = self._classify_turn_for_log(
+            question, __messages__, session, case_ctx_at_start
+        )
+        turn_started = time.perf_counter()
+        latency_ms = {"pre_retrieval": 0, "change_detection": 0, "retrieval": 0}
+        turn_phase = "gate" if not session else "confirm"
+        change_decision = None
+
+        async def timed_call(bucket: str, awaitable):
+            started = time.perf_counter()
+            try:
+                return await awaitable
+            finally:
+                latency_ms[bucket] += round((time.perf_counter() - started) * 1000)
+
         try:
             can_reuse_pending_gate = self._can_reuse_pending_gate(question, __messages__)
             guardrail_type = None if can_reuse_pending_gate else self._guardrail_type(question, __messages__)
@@ -2355,7 +2416,11 @@ class Tools:
                         emitter,
                         "Retrieving guideline evidence for follow-up question...",
                     )
-                    data = await self._call_consult_backend(rewritten, history, effective_guidelines)
+                    turn_phase = "followup"
+                    data = await timed_call(
+                        "retrieval",
+                        self._call_consult_backend(rewritten, history, effective_guidelines),
+                    )
                     self._store_case_context(session_key, case_ctx)  # refresh TTL
                     # Pass the stored retrieval_query as confirmed_details so pathway
                     # detection uses the case-specific procedure info rather than the
@@ -2385,20 +2450,28 @@ class Tools:
                         "Checking whether the new detail changes the stored retrieval...",
                     )
                     cached_payload = recovered.get("retrieval_payload") if isinstance(recovered.get("retrieval_payload"), dict) else None
-                    phase2 = await self._call_confirmation_phase(
-                        question,
-                        recovered["confirmation_history"],
-                        pre_result,
-                        cached_payload=cached_payload,
+                    turn_phase = "confirm"
+                    phase2 = await timed_call(
+                        "change_detection",
+                        self._call_confirmation_phase(
+                            question,
+                            recovered["confirmation_history"],
+                            pre_result,
+                            cached_payload=cached_payload,
+                        ),
                     )
+                    change_decision = "reuse" if phase2.get("reused") else "requery"
 
                     if phase2.get("reused"):
                         data = phase2.get("retrieval_payload") or cached_payload
                         if not isinstance(data, dict):
-                            data = await self._call_consult_backend(
-                                str(pre_result.get("retrieval_query") or recovered["original_question"]),
-                                recovered["retrieval_history"],
-                                effective_guidelines,
+                            data = await timed_call(
+                                "retrieval",
+                                self._call_consult_backend(
+                                    str(pre_result.get("retrieval_query") or recovered["original_question"]),
+                                    recovered["retrieval_history"],
+                                    effective_guidelines,
+                                ),
                             )
                         self._store_case_context(session_key, pre_result)
                         return await self._build_response_from_payload(
@@ -2450,7 +2523,11 @@ class Tools:
                         self._await_session_payload(session_key, session, emitter)
                     )
                     try:
-                        phase2 = await self._call_confirmation_phase(question, history, pre_result)
+                        phase2 = await timed_call(
+                            "change_detection",
+                            self._call_confirmation_phase(question, history, pre_result),
+                        )
+                        change_decision = "reuse" if phase2.get("reused") else "requery"
                     except httpx.TimeoutException:
                         # Confirmation phase timed out — fall back to the background retrieval
                         # payload rather than surfacing "Request timed out" to the user.
@@ -2458,10 +2535,13 @@ class Tools:
                         data = await _prefetch
                         if isinstance(data, dict) and data.get("error"):
                             await self._emit_status(emitter, "Stored retrieval failed; retrying search...")
-                            data = await self._call_consult_backend(
-                                str(pre_result.get("retrieval_query") or question),
-                                history,
-                                effective_guidelines,
+                            data = await timed_call(
+                                "retrieval",
+                                self._call_consult_backend(
+                                    str(pre_result.get("retrieval_query") or question),
+                                    history,
+                                    effective_guidelines,
+                                ),
                             )
                         self._store_case_context(session_key, pre_result)
                         self._clear_session(session_key)
@@ -2477,10 +2557,13 @@ class Tools:
                         data = await _prefetch  # likely already done
                         if isinstance(data, dict) and data.get("error"):
                             await self._emit_status(emitter, "Stored retrieval failed; retrying search...")
-                            data = await self._call_consult_backend(
-                                str(pre_result.get("retrieval_query") or question),
-                                history,
-                                effective_guidelines,
+                            data = await timed_call(
+                                "retrieval",
+                                self._call_consult_backend(
+                                    str(pre_result.get("retrieval_query") or question),
+                                    history,
+                                    effective_guidelines,
+                                ),
                             )
                         self._store_case_context(session_key, pre_result)
                         self._clear_session(session_key)
@@ -2515,7 +2598,11 @@ class Tools:
                     )
 
             await self._emit_status(emitter, "Interpreting the clinical question before retrieval...")
-            phase1 = await self._call_pre_retrieval(question, history, guidelines)
+            turn_phase = "gate"
+            phase1 = await timed_call(
+                "pre_retrieval",
+                self._call_pre_retrieval(question, history, guidelines),
+            )
 
             guardrail = phase1.get("guardrail") or {}
             if guardrail.get("short_circuited"):
@@ -2561,3 +2648,19 @@ class Tools:
         except Exception as e:
             await self._emit_status(emitter, f"Error: {str(e)[:50]}", done=True)
             return f"Error: {str(e)}"
+        finally:
+            latency_ms["total"] = round((time.perf_counter() - turn_started) * 1000)
+            self._log_turn(
+                session_key_hash=hashlib.sha1(session_key.encode("utf-8")).hexdigest()[:8],
+                chat_scoped=session_key.startswith("chat:"),
+                turn_class=turn_class,
+                reason=turn_reason,
+                had_session=had_session_at_start,
+                had_case_ctx=case_ctx_at_start is not None,
+                phase=turn_phase,
+                change_decision=change_decision,
+                guidelines=guidelines,
+                question_len=len(question or ""),
+                question_sha1=hashlib.sha1((question or "").encode("utf-8")).hexdigest()[:8],
+                latency_ms=latency_ms,
+            )

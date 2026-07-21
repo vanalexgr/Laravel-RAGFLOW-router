@@ -1,6 +1,9 @@
+import io
+import json
 import sys
 import types
 import unittest
+from contextlib import redirect_stdout
 
 
 if "httpx" not in sys.modules:
@@ -200,9 +203,8 @@ class VascularMcpAdapterHeuristicTests(unittest.TestCase):
             has_assets=True,
         )
 
-        self.assertIn("## Bottom Line", blueprint)
-        self.assertIn("## Key Case Factors", blueprint)
-        self.assertIn("## Guideline-Based Options", blueprint)
+        self.assertIn("## Clinical Decision", blueprint)
+        self.assertIn("## What is NOT indicated (if relevant)", blueprint)
         self.assertIn("## Clinical Decision Summary", blueprint)
         self.assertIn("## Evidence Used", blueprint)
         self.assertIn("## 🖼️ Figures / Tables", blueprint)
@@ -271,6 +273,55 @@ class VascularMcpAdapterHeuristicTests(unittest.TestCase):
 
 
 class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_consult_emits_exactly_one_phi_safe_structured_turn_log(self):
+        tool = Tools()
+        question = "Who is Donald Trump?"
+        output = io.StringIO()
+
+        with redirect_stdout(output):
+            result = await tool.consult_vascular_guidelines(
+                question=question,
+                guideline_1="asymptomatic_pad",
+                __user__={"id": "sensitive-user-id"},
+                __metadata__={"chat_id": "sensitive-chat-id"},
+                __messages__=[{"role": "user", "content": question}],
+                __event_emitter__=None,
+            )
+
+        records = [json.loads(line) for line in output.getvalue().splitlines()]
+        turn_records = [record for record in records if record.get("evt") == "turn"]
+        self.assertIn("APP_CAPABILITIES_GUIDANCE_ONLY", result)
+        self.assertEqual(1, len(turn_records))
+        record = turn_records[0]
+        self.assertEqual("GUARDRAIL", record["turn_class"])
+        self.assertEqual("out_of_scope", record["reason"])
+        self.assertTrue(record["chat_scoped"])
+        self.assertEqual(len(question), record["question_len"])
+        self.assertEqual(8, len(record["question_sha1"]))
+        self.assertEqual(8, len(record["session_key_hash"]))
+        self.assertEqual(
+            {"pre_retrieval", "change_detection", "retrieval", "total"},
+            set(record["latency_ms"]),
+        )
+        serialized = json.dumps(record)
+        self.assertNotIn(question, serialized)
+        self.assertNotIn("sensitive-user-id", serialized)
+        self.assertNotIn("sensitive-chat-id", serialized)
+
+    async def test_turn_decision_logging_can_be_disabled(self):
+        tool = Tools()
+        tool.valves.LOG_TURN_DECISIONS = False
+        output = io.StringIO()
+
+        with redirect_stdout(output):
+            await tool.consult_vascular_guidelines(
+                question="Who is Donald Trump?",
+                guideline_1="asymptomatic_pad",
+                __event_emitter__=None,
+            )
+
+        self.assertEqual("", output.getvalue())
+
     async def test_explain_app_capabilities_returns_wrapped_guidance(self):
         tool = Tools()
 
@@ -391,7 +442,7 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
             async def _emit_status(self, emitter, description: str, done: bool = False):
                 self.calls.append(("status", description, done))
 
-            async def _call_confirmation_phase(self, question: str, history: list, pre_result: dict) -> dict:
+            async def _call_confirmation_phase(self, question: str, history: list, pre_result: dict, **kwargs) -> dict:
                 self.calls.append(("confirm", question, tuple(history), pre_result["retrieval_query"]))
                 return {"phase": "complete", "reused": True}
 
@@ -414,7 +465,7 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
                     "assets": [],
                 }
 
-            async def _build_response_from_payload(self, data, emitter, analysis_question: str, guidelines=None) -> str:
+            async def _build_response_from_payload(self, data, emitter, analysis_question: str, guidelines=None, **kwargs) -> str:
                 self.calls.append(("build", analysis_question, tuple(guidelines or [])))
                 return "final answer"
 
@@ -520,7 +571,7 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
                     },
                 }
 
-            async def _call_confirmation_phase(self, question: str, history: list, pre_result: dict) -> dict:
+            async def _call_confirmation_phase(self, question: str, history: list, pre_result: dict, **kwargs) -> dict:
                 self.calls.append(("confirm", question, tuple(history), pre_result["retrieval_query"]))
                 return {
                     "phase": "complete",
@@ -528,7 +579,7 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
                     "decision_reason": "clarification answered",
                 }
 
-            async def _build_response_from_payload(self, data, emitter, analysis_question: str, guidelines=None) -> str:
+            async def _build_response_from_payload(self, data, emitter, analysis_question: str, guidelines=None, **kwargs) -> str:
                 self.calls.append(("build", analysis_question, tuple(guidelines or [])))
                 return "final answer"
 
@@ -613,7 +664,7 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
                     },
                 }
 
-            async def _call_confirmation_phase(self, question: str, history: list, pre_result: dict) -> dict:
+            async def _call_confirmation_phase(self, question: str, history: list, pre_result: dict, **kwargs) -> dict:
                 self.calls.append(("confirm", question, tuple(history), pre_result["retrieval_query"]))
                 return {
                     "phase": "complete",
@@ -621,7 +672,7 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
                     "decision_reason": "clarification answered",
                 }
 
-            async def _build_response_from_payload(self, data, emitter, analysis_question: str, guidelines=None) -> str:
+            async def _build_response_from_payload(self, data, emitter, analysis_question: str, guidelines=None, **kwargs) -> str:
                 self.calls.append(("build", analysis_question, tuple(guidelines or [])))
                 return "final answer"
 
@@ -685,7 +736,7 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
                     "pre_retrieval_result": {},
                 }
 
-            async def _call_confirmation_phase(self, question: str, history: list, pre_result: dict) -> dict:
+            async def _call_confirmation_phase(self, question: str, history: list, pre_result: dict, **kwargs) -> dict:
                 self.calls.append(("confirm", question, tuple(history), pre_result["retrieval_query"]))
                 return {"phase": "complete", "reused": True}
 
@@ -708,7 +759,7 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
                     "assets": [],
                 }
 
-            async def _build_response_from_payload(self, data, emitter, analysis_question: str, guidelines=None) -> str:
+            async def _build_response_from_payload(self, data, emitter, analysis_question: str, guidelines=None, **kwargs) -> str:
                 self.calls.append(("build", analysis_question, tuple(guidelines or [])))
                 return "final answer"
 
