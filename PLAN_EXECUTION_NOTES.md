@@ -4,7 +4,7 @@
 
 - Branch: `codex/conversation-memory-improvements`
 - Phases completed: **Phase 0 (C1–C4) and Phase 1 (A1, B1)**
-- Current stop point: **Phase 2 in progress; B2 and B3 complete**
+- Current stop point: **Phase 2 in progress; B2, B3, and A3 complete**
 - Production deployment: **not performed**
 - Adapter version after B3: `1.5.57`
 - Protected files `openwebui_tools/vascular_expert.py` and `vascular_agent_adapter.py`: unchanged
@@ -98,6 +98,15 @@ B3 confusion matrix (rows expected, columns observed):
 | **Overall** | **80.95% (68/84)** | **100.00% (85/85)** |
 
 B3 representative classifier timing: median 34.07 µs, p95 67.23 µs, max 84.34 µs (local, no I/O). The median delta versus B2 is -4.27 µs and remains microbenchmark noise; Workstream D is deferred by maintainer decision.
+
+### A3 — transcript-recovery fallback
+
+- Both end-to-end recovery scenarios now forcibly clear `_session_store` and `_case_context_store` before exercising the follow-up.
+- The answer-only scenario enters through the public capabilities fallback with no guideline arguments. It reconstructs the guideline set from the checkpoint transcript, regenerates `pre_result`, runs confirmation, and builds the final response with the recovered guidelines.
+- The rewritten substantive scenario proves the same empty-store fallback preserves the three-guideline planner result and retrieval query through confirmation and response construction.
+- No production gap was found, so A3 changes tests and execution notes only; adapter version remains `1.5.57`.
+- Known limitation: transcript recovery depends on the checkpoint marker and a recoverable preceding user turn remaining present in `messages`. If the client truncates both, the adapter safely falls back to a new consultation.
+- Rollback: revert the A3 commit to remove the stronger empty-store recovery assertions; production behavior is unchanged.
 
 ## Classification baseline
 

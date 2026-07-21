@@ -51,7 +51,12 @@ if "pydantic" not in sys.modules:
     sys.modules["pydantic"] = pydantic
 
 
-from openwebui_tools.vascular_mcp_adapter import TTLStore, Tools
+from openwebui_tools.vascular_mcp_adapter import (
+    TTLStore,
+    Tools,
+    _case_context_store,
+    _session_store,
+)
 
 
 class TTLStoreTests(unittest.TestCase):
@@ -307,6 +312,11 @@ class VascularMcpAdapterHeuristicTests(unittest.TestCase):
 
 
 class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        # Recovery tests must prove transcript fallback without process memory.
+        _session_store.clear()
+        _case_context_store.clear()
+
     async def test_consult_emits_exactly_one_phi_safe_structured_turn_log(self):
         tool = Tools()
         question = "Who is Donald Trump?"
@@ -625,6 +635,8 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 return "final answer"
 
         tool = RecoveryTools()
+        self.assertEqual(0, len(_session_store))
+        self.assertEqual(0, len(_case_context_store))
         messages = [
             {"role": "user", "content": "Patient with saphenous thrombosis"},
             {
@@ -642,22 +654,25 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
             {"role": "user", "content": "Superficial, 4cm from SFJ"},
         ]
 
-        result = await tool.consult_vascular_guidelines(
+        result = await tool.explain_app_capabilities(
             question="Superficial, 4cm from SFJ",
-            guideline_1="venous_thrombosis",
-            guideline_2="chronic_venous_disease",
             __user__={"id": "recovery-user"},
             __messages__=messages,
             __event_emitter__=None,
         )
 
         self.assertEqual("final answer", result)
+        self.assertIn(("pre", "Patient with saphenous thrombosis", tuple(), tuple()), tool.calls)
         self.assertIn(("pre", "Patient with saphenous thrombosis", tuple(), ("venous_thrombosis", "chronic_venous_disease")), tool.calls)
         self.assertIn(
             ("confirm", "Superficial, 4cm from SFJ", ("Patient with saphenous thrombosis",), "saphenous vein thrombosis superficial vein thrombosis lower limb"),
             tool.calls,
         )
         self.assertTrue(any(call[0] == "build" for call in tool.calls))
+        self.assertIn(
+            ("build", "saphenous vein thrombosis superficial vein thrombosis lower limb Superficial, 4cm from SFJ", ("venous_thrombosis", "chronic_venous_disease")),
+            tool.calls,
+        )
         self.assertFalse(any(call[:2] == ("pre", "Superficial, 4cm from SFJ") for call in tool.calls))
 
     async def test_missing_session_recovers_pending_gate_for_rewritten_follow_up(self):
@@ -718,6 +733,8 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 return "final answer"
 
         tool = RecoveryTools()
+        self.assertEqual(0, len(_session_store))
+        self.assertEqual(0, len(_case_context_store))
         messages = [
             {"role": "user", "content": "My patient has a dissection just above the left subclavian and also dissected the carotid with thrombus and stroke."},
             {
@@ -756,6 +773,10 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn(
             ("confirm", rewritten, ("My patient has a dissection just above the left subclavian and also dissected the carotid with thrombus and stroke.",), "non a non b dissection thoracic aorta aortic arch left subclavian carotid extension carotid thrombus"),
+            tool.calls,
+        )
+        self.assertIn(
+            ("build", "non a non b dissection thoracic aorta aortic arch left subclavian carotid extension carotid thrombus " + rewritten, ("descending_thoracic_aorta", "aortic_arch", "carotid_vertebral")),
             tool.calls,
         )
         self.assertFalse(any(call[:2] == ("pre", rewritten) for call in tool.calls))
