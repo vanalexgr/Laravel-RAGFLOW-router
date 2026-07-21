@@ -1,12 +1,14 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.54
+version: 1.5.55
 """
 import html
 import httpx
 import asyncio
+from collections import OrderedDict
 import hashlib
+import heapq
 import json
 import time
 import re
@@ -47,12 +49,80 @@ GUIDELINE_NAMES = {
     'vascular_access':           'Vascular Access',
 }
 
-_session_store: dict = {}
 SESSION_TTL = 300
-_case_context_store: dict = {}
 CASE_CONTEXT_TTL = 900  # 15 min — survives after phase 2 completes
+MAX_ENTRIES = 2000
 GATE_CONFIRM_LINE = "Reply to confirm, or add details to refine the search."
 APP_GUIDANCE_HEADER = "=== APP CAPABILITIES GUIDANCE ==="
+
+
+class TTLStore:
+    """Bounded mapping that reclaims expired and oldest entries on writes."""
+
+    def __init__(self, ttl: float, max_entries: int = MAX_ENTRIES, clock=time.time):
+        self.ttl = ttl
+        self.max_entries = max_entries
+        self._clock = clock
+        self._data = OrderedDict()
+        self._expiry_heap = []
+        self._versions = {}
+        self._sequence = 0
+
+    def __len__(self):
+        return len(self._data)
+
+    def __contains__(self, key):
+        return key in self._data
+
+    def get(self, key, default=None):
+        return self._data.get(key, default)
+
+    def pop(self, key, default=None):
+        self._versions.pop(key, None)
+        return self._data.pop(key, default)
+
+    def clear(self):
+        self._data.clear()
+        self._expiry_heap.clear()
+        self._versions.clear()
+
+    def set(self, key, value):
+        self[key] = value
+
+    def __setitem__(self, key, value):
+        self._sequence += 1
+        version = self._sequence
+        self._versions[key] = version
+        self._data[key] = value
+        self._data.move_to_end(key)
+
+        timestamp = self._entry_timestamp(value)
+        heapq.heappush(self._expiry_heap, (timestamp + self.ttl, version, key))
+        self._evict_expired()
+        while len(self._data) > self.max_entries:
+            oldest_key, _ = self._data.popitem(last=False)
+            self._versions.pop(oldest_key, None)
+
+    def _entry_timestamp(self, value):
+        if isinstance(value, dict):
+            try:
+                return float(value.get("ts") or self._clock())
+            except (TypeError, ValueError):
+                pass
+        return self._clock()
+
+    def _evict_expired(self):
+        now = self._clock()
+        while self._expiry_heap and self._expiry_heap[0][0] <= now:
+            _, version, key = heapq.heappop(self._expiry_heap)
+            if self._versions.get(key) != version:
+                continue
+            self._versions.pop(key, None)
+            self._data.pop(key, None)
+
+
+_session_store = TTLStore(SESSION_TTL)
+_case_context_store = TTLStore(CASE_CONTEXT_TTL)
 
 
 class Tools:

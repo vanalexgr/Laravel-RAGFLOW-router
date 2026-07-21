@@ -51,7 +51,41 @@ if "pydantic" not in sys.modules:
     sys.modules["pydantic"] = pydantic
 
 
-from openwebui_tools.vascular_mcp_adapter import Tools
+from openwebui_tools.vascular_mcp_adapter import TTLStore, Tools
+
+
+class TTLStoreTests(unittest.TestCase):
+    def test_expired_entries_are_evicted_on_write(self):
+        now = [100.0]
+        store = TTLStore(ttl=10, max_entries=10, clock=lambda: now[0])
+        store["expired"] = {"value": 1, "ts": 80.0}
+        store["live"] = {"value": 2, "ts": 100.0}
+
+        self.assertNotIn("expired", store)
+        self.assertEqual({"value": 2, "ts": 100.0}, store.get("live"))
+
+    def test_size_never_exceeds_cap_and_oldest_is_evicted(self):
+        store = TTLStore(ttl=100, max_entries=3, clock=lambda: 10.0)
+        for index in range(5):
+            store.set(f"key-{index}", {"value": index, "ts": 10.0})
+
+        self.assertEqual(3, len(store))
+        self.assertNotIn("key-0", store)
+        self.assertNotIn("key-1", store)
+        self.assertIn("key-4", store)
+
+    def test_get_pop_overwrite_and_clear_match_existing_mapping_behavior(self):
+        store = TTLStore(ttl=100, max_entries=3, clock=lambda: 10.0)
+        store["case"] = {"value": "first", "ts": 10.0}
+        store["case"] = {"value": "updated", "ts": 10.0}
+
+        self.assertEqual({"value": "updated", "ts": 10.0}, store.get("case"))
+        self.assertIsNone(store.get("missing"))
+        self.assertEqual({"value": "updated", "ts": 10.0}, store.pop("case"))
+        self.assertEqual("fallback", store.pop("missing", "fallback"))
+        store["other"] = {"ts": 10.0}
+        store.clear()
+        self.assertEqual(0, len(store))
 
 
 class VascularMcpAdapterHeuristicTests(unittest.TestCase):
