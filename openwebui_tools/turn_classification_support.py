@@ -1,6 +1,8 @@
 """Characterize the adapter's pre-B1 turn-routing helpers for evaluation."""
 
 from dataclasses import dataclass
+import json
+from pathlib import Path
 from typing import Optional
 
 from openwebui_tools.vascular_mcp_adapter import Tools
@@ -10,6 +12,28 @@ from openwebui_tools.vascular_mcp_adapter import Tools
 class ObservedTurnDecision:
     turn_class: str
     reason: str
+
+
+DEFAULT_CORPUS_PATH = Path(__file__).parent / "fixtures" / "turn_corpus.jsonl"
+
+
+def load_turn_corpus(path: Optional[Path] = None) -> list[dict]:
+    corpus_path = path or DEFAULT_CORPUS_PATH
+    with corpus_path.open(encoding="utf-8") as handle:
+        return [json.loads(line) for line in handle if line.strip()]
+
+
+def classify_corpus_row(row: dict, tools: Optional[Tools] = None) -> ObservedTurnDecision:
+    messages = list(row.get("messages") or [])
+    question = str(messages[-1].get("content") or "") if messages else ""
+    state = row.get("state", "none")
+    return classify_existing_turn(
+        question,
+        messages,
+        has_session=state == "session",
+        has_case_ctx=state == "case",
+        tools=tools,
+    )
 
 
 def classify_existing_turn(
