@@ -1,356 +1,108 @@
-# Vascular MCP Adapter — Architecture & Layered Responsibilities
+# OpenWebUI Tool — `vascular_mcp_adapter.py`
 
-> **⚠️ Current infra & providers (2026-07-21):** production is a single
-> **Hetzner VM** (`178.105.193.206`) with **OpenAI** (inference + embeddings) and
-> **Cohere** (reranking). Any Azure OpenAI or old Azure-VM
-> (`135.237.148.105`, `48.211.217.69`) references below are **historical** — see
-> [`../CLAUDE.md`](../CLAUDE.md) and [`PROVIDER_MIGRATION.md`](PROVIDER_MIGRATION.md).
+The production client that connects OpenWebUI to the Laravel API. It is the source
+file `openwebui_tools/vascular_mcp_adapter.py`, but the **live copy runs from the
+OpenWebUI database** (`webui.db`, `tool` table, id `vascular_mcp_adapter`) — edits
+to the file take effect only after deploying to the DB (see §6).
 
-Current production state for the March 15, 2026 two-phase clarification flow is documented in `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/docs/SESSION_CHANGES_2026-03-15.md`.
-
-This file is still useful as a layered reference, but parts of the earlier gate description below are now historical because the adapter moved to Laravel-backed pre-retrieval plus confirmation/change-detection orchestration.
-
-This document describes the `vascular_mcp_adapter` OpenWebUI tool introduced in March 2026:
-what it does at each layer (OpenWebUI, Laravel, RAGFlow), how it differs from the production
-`vascular_expert.py` tool, and how to deploy and configure it.
+The chat model (`gpt-5-chat-latest`, the "ESVS expert" workspace model) calls this
+tool; the tool talks to Laravel; the model then synthesises the final answer from
+what the tool returns.
 
 ---
 
-## Overview
-
-The system has two OpenWebUI tools:
-
-| Tool ID | File | Model | Status |
-|---|---|---|---|
-| `vascular_mcp_adapter` | `openwebui_tools/vascular_mcp_adapter.py` | `gpt-5-chat` | **Production** — all new development here |
-| `mcp` | `openwebui_tools/vascular_expert.py` | *(disabled)* | Fallback only — do not modify |
-
-**`vascular_expert.py` is never modified.** All development goes into the adapter.
-Laravel orchestration (ChunkSelectionService, retrieval pipeline) is the source of truth for chunk selection, scoring, and intent — the adapter is a thin consumer of that output.
-
----
-
-## End-to-End Data Flow
+## 1. What the adapter does (per turn)
 
 ```
-User message (OpenWebUI)
-  │
-  ▼
-[1] vascular_mcp_adapter — Context Gap Gate
-      _assess_context_gaps() fires once per case
-      → if gaps: return clarification questions to user (no retrieval)
-      → if no gaps (or raw knowledge query): proceed
-  │
-  ▼
-[2] vascular_mcp_adapter — POST /api/v1/vascular-consult
-      Headers: X-API-Key
-      Body: { question, history[], guidelines[] }
-  │
-  ▼
-[3] Laravel — ToolController (entry point)
-      Validates input (max 2000 chars, history max 20)
-      Guardrail: rejects out-of-scope / onboarding queries
-  │
-  ▼
-[4] Laravel — PHIScrubberService
-      Removes patient identifiers before any external API call
-  │
-  ▼
-[5] Laravel — GuidelineRouterService
-      Azure OpenAI call → selects 1–3 guidelines + expands query
-      Produces: guideline keys[], expanded_query, intent
-  │
-  ▼
-[6] Laravel — RetrievalService (orchestration)
-      ├─ ClinicalInterpreterService → clinical_frame + must_include_terms
-      ├─ GraphRagService → concept expansion (core/related/slots)
-      ├─ retrieveDualChunks() → RAGFlow bridge (port 8000) → RAGFlow API
-      │     Narrative query: base + GraphRAG terms + interpreter terms
-      │     Citation query:  base + core concepts + slot terms
-      ├─ [Optional] Focused Recall — if no non-A/non-B chunk returned
-      ├─ [Optional] Quality Pass — if below min narrative/citation thresholds
-      ├─ GapDetectionService — second pass if missing fields or missing concepts
-      ├─ GuidelineAssetService — attaches figures/tables per guideline
-      └─ ChunkSelectionService::select() → produces 6 tiered chunk keys
-  │
-  ▼
-[7] Laravel — ToolController (response)
-      Returns JSON with all 6 chunk tier keys + assets + query_normalization
-  │
-  ▼
-[8] vascular_mcp_adapter — Response handling
-      Emits per-chunk citation popups (__event_emitter__ type:citation)
-      Emits progress messages (type:message) if EMIT_STATUS_AS_MESSAGES=true
-      Builds llm_output for LLM synthesis (STRICT_TEMPLATE injected by Laravel)
-  │
-  ▼
-[9] OpenWebUI LLM synthesises final answer from llm_output
+1. Decide if this is a patient CASE or a raw KNOWLEDGE question.
+2. CASE GATE — if a case is missing key clinical details, return a clarification
+   request instead of retrieving (once per case, not per turn).
+3. Build compact same-case STATE from prior user turns, answered clarifications,
+   attachments, and previously cited recommendations.
+4. QUERY REWRITE — turn a same-case follow-up ("what about surveillance?") into one
+   standalone retrieval query.
+5. Call POST /api/v1/vascular-consult (Laravel) with the query + history.
+6. Format the returned evidence into `llm_output` using the STRICT_TEMPLATE.
+7. Declare an answer MODE (COMPACT / STANDARD / FULL) to control answer length.
 ```
 
----
-
-## Layer 1 — OpenWebUI (`vascular_mcp_adapter.py`)
-
-### What it does
-
-The adapter is a thin, stateless OpenWebUI tool. It does not maintain conversation state
-between sessions. Its responsibilities are:
-
-1. **Context gap gate** — asks the user for missing clinical parameters before retrieval
-2. **HTTP call** to the Laravel API with the clinical question and chat history
-3. **Citation events** — emits each evidence chunk as a clickable source popup
-4. **Progress feedback** — emits status messages during the request lifecycle
-
-### Context Gap Gate
-
-Before any HTTP call is made, `_assess_context_gaps()` runs:
-
-- **Skips** raw guideline knowledge queries (definitions, thresholds, classification criteria)
-- **Skips** generic population-level questions ("in patients with...")
-- **Fires once per case** — checks assistant message history for `_CASE_GATE_ASSISTANT_RE`
-  to detect whether the gate already fired for this case
-- **9 scenario rules** in `_CONTEXT_GAP_RULES`:
-
-  | Scenario | Triggers on | Asks about |
-  |---|---|---|
-  | `aortic_thrombus` | mural thrombus, aortic thrombus | anticoagulation status, thrombus mobility, stroke aetiology |
-  | `carotid_stenosis` | carotid stenosis, CEA, CAS | symptomatic status, stenosis degree |
-  | `aaa_treatment` | AAA, EVAR, open repair | aneurysm diameter, patient fitness |
-  | `dvt_pe` | DVT, PE, pulmonary embolism | provoking factors, first vs recurrent episode |
-  | `clti` | CLTI, CLI, critical ischaemia | anatomical workup (CTA/duplex), patient fitness |
-  | `svt` | superficial vein thrombosis, SVT | distance from SFJ/SPJ, risk stratification |
-  | `type_b_dissection` | type B dissection, TBAD | complicated vs uncomplicated, phase |
-  | `ali` | acute limb ischaemia, ALI | Rutherford class + duration, thrombotic vs embolic |
-  | `graft_infection` | graft infection, prosthetic infection | clinical signs, prosthesis type + timing |
-
-- **Generic catch-all** — fires for any patient-case query that does not match a specific
-  scenario rule (query < 70 chars with no clinical detail markers)
-
-If gaps are found, the adapter returns the clarification questions directly to the user
-and **does not call the Laravel API**.
-
-### Valves (configuration)
-
-| Valve | Default | Description |
-|---|---|---|
-| `VASCULAR_API_BASE_URL` | `https://lavarel.eastus2.cloudapp.azure.com` | Laravel API base URL |
-| `VASCULAR_API_KEY` | *(secret)* | Passed as `X-API-Key` header |
-| `EMIT_STATUS_AS_MESSAGES` | `true` | Show progress as chat messages |
-| `EMIT_STATUS_EVENTS` | `false` | Show progress as status bar events |
-
-### Citation emission
-
-After a successful response, the adapter loops over `llm_citation_chunks` first, then any
-additional `ui_citation_chunks` not already emitted, and emits each as a `type:citation`
-event. Each popup shows:
-- Source document name + page reference
-- Recommendation class and level of evidence (e.g. Class I, Level A)
-- Full recommendation text (truncated at 500 chars)
-
-### Differences from `vascular_expert.py`
-
-| Feature | `vascular_expert.py` | `vascular_mcp_adapter.py` |
-|---|---|---|
-| State management | Stateful (same-case follow-up rewrite) | Stateless |
-| Query rewrite | Rewrites follow-ups into standalone queries | Sends question as-is |
-| Attachments | Handles uploaded documents as case context | Not supported |
-| Chunk source | Legacy `citation_chunks` / `narrative_chunks` | `llm_citation_chunks` / `llm_narrative_chunks` (tiered) |
-| Context gap gate | Full (with attachment context) | Full (without attachment handling) |
-| MCP transport | N/A | N/A (direct HTTP to Laravel) |
+The heavy retrieval logic lives in Laravel; the adapter handles **conversation
+state, the clinical gate, query shaping, and output formatting**.
 
 ---
 
-## Layer 2 — Laravel API
+## 2. Context gate (`_assess_context_gaps`)
 
-### Entry point: `ToolController`
+Before retrieving, the adapter checks patient-case questions for missing clinical
+parameters and asks for them once.
 
-`POST /api/v1/vascular-consult`
+- Raw knowledge questions (definitions, thresholds, population-level) **skip** the gate.
+- Patient cases **trigger** it; it opens **once per case**, not once per turn.
+- Same-case follow-ups do not reopen it; a clearly different patient/case does.
+- Uploaded documents contribute case context but do not bypass the gate.
 
-- Validates: `question` (max 2000 chars), `history` (array, max 20 items), optional `guidelines`
-- Applies guardrails (rejects out-of-scope or onboarding queries before any LLM call)
-- Calls `RetrievalService::retrieve()`
-- Returns JSON response (see Response Format below)
+Scenario rules (`_CONTEXT_GAP_RULES` — authoritative list in the file):
+`aortic_thrombus`, `carotid_stenosis`, `aaa_treatment`, `dvt_pe`, `clti`, `svt`,
+`type_b_dissection`, `ali`, `graft_infection`, plus a **generic catch-all** that
+asks at least one case-specific question when no scenario matches.
 
-### `PHIScrubberService`
-
-Runs on the scrubbed query before any external call (RAGFlow, Azure OpenAI). Removes:
-- Patient names, ages over 90, dates, locations, provider names, device IDs
-
-Known minor bugs (low risk, not yet fixed):
-- `scrubAgesOver90`: wrong counter key
-- `scrubNames`: token-skip may leave last name unredacted
-- Unhandled null from `preg_replace_callback`
-
-### `GuidelineRouterService`
-
-Azure OpenAI call that:
-1. Selects 1–3 guideline keys from the 14 available ESVS guidelines
-2. Expands the query with clinical terminology
-3. Detects intent and question type
-
-Special rules:
-- `antithrombotic_therapy` is only added when the question explicitly concerns anticoagulation/antithrombotic decisions — not just because stroke or carotid disease is mentioned
-- Laravel prunes low-relevance `antithrombotic_therapy` companions for broad carotid-management questions
-
-### `RetrievalService`
-
-Orchestrates the full retrieval pipeline in order:
-
-1. **`ClinicalInterpreterService`** — pre-retrieval framing: `clinical_frame` + `must_include_terms`
-2. **`GraphRagService`** — concept expansion: `core_concepts`, `related_concepts`, slots (anatomy/pathology/stage/intervention/imaging/complications)
-3. **`retrieveDualChunks()`** — calls RAGFlow bridge for narrative and citation queries separately
-4. **Focused Recall** — if no non-A/non-B evidence returned, reruns with relaxed params
-5. **Quality Pass** — if below `RAGFLOW_QUALITY_PASS_MIN_NARRATIVE` or `_MIN_CITATION` thresholds, runs high-recall hybrid search (`top_k=80`, capped to prevent timeouts)
-6. **`GapDetectionService`** — triggers second-pass retrieval for missing clinical fields or missing GraphRAG concepts
-7. **`GuidelineAssetService`** — attaches relevant figures/tables from `config/guideline_assets.php`
-8. **`ChunkSelectionService::select()`** — post-retrieval chunk ranking and tier splitting
-
-### `ChunkSelectionService` — Chunk Tiers
-
-Produces 6 keys consumed by the adapter:
-
-| Key | Content | Used by |
-|---|---|---|
-| `llm_citation_chunks` | Top citation chunks for LLM synthesis | Adapter (primary) |
-| `llm_narrative_chunks` | Top narrative chunks for LLM synthesis | Adapter (primary) |
-| `ui_citation_chunks` | Broader citation set for display | Adapter (secondary citations) |
-| `ui_narrative_chunks` | Broader narrative set for display | Display only |
-| `must_include_chunk` | Single highest-scored chunk | Forced into LLM context |
-| `intent_profile` | Intent classification dict | Logging / debug |
-
-Tuning parameters in `config/chunk_scoring.php`.
-
-Backward-compat aliases `citation_chunks` → `ui_citation_chunks` and
-`narrative_chunks` → `ui_narrative_chunks` remain in the response for old consumers.
-
-### JSON Response Format
-
-```json
-{
-  "result": "<STRICT_TEMPLATE formatted llm_output>",
-  "narrative_chunks": [...],
-  "citation_chunks": [...],
-  "llm_citation_chunks": [...],
-  "llm_narrative_chunks": [...],
-  "ui_citation_chunks": [...],
-  "ui_narrative_chunks": [...],
-  "must_include_chunk": {...},
-  "intent_profile": {...},
-  "assets": { "figures": [...], "tables": [...] },
-  "query_normalization": { "normalized_query": "...", "intent": "...", "key_terms": [...] }
-}
-```
-
-`result` always contains the STRICT_TEMPLATE narrative (Assessment / Imaging / Indication /
-Treatment options / Follow-up / Evidence used), generated by Laravel before the response
-is returned.
-
-### Security
-
-- API key validated via `config('services.api.key')` — works after `config:cache`
-- `hash_equals()` for timing-safe comparison
-- Proxy trust locked to `127.0.0.1` (Caddy on same host)
-- Rate limit: 60 req/min per IP
+A clarification response is a Markdown string beginning with
+`**Additional information needed**`. The client presents the questions, then calls
+the tool again with the completed info (all prior turns passed in `history`).
 
 ---
 
-## Layer 3 — RAGFlow Bridge + RAGFlow
+## 3. Same-case follow-ups
 
-### RAGFlow Bridge (`ragflow_service/app.py`)
+Follow-up turns are **not** sent to Laravel as raw short questions. The adapter:
+1. builds a compact conversation state,
+2. rewrites the latest follow-up into one standalone retrieval query,
+3. sends that rewritten query to Laravel,
+4. avoids passing the raw chat-history blob as retrieval evidence.
 
-Python FastAPI service on port 8000 of the Laravel VM (135). Acts as a proxy between
-Laravel and the RAGFlow API.
-
-- Route: `POST /retrieve` — `RetrieveRequest { question, dataset_ids[], top_k, size, page }`
-- Clamps `top_k` to 80 (standard) or 128 (high-recall mode) to prevent timeouts
-- Clamps `size` to max 12 chunks per call
-- Optional local FlashRank reranker (if enabled)
-- Health: `GET /health`, `GET /status`
-
-**Important**: The bridge binds `0.0.0.0:8000`. Port 8000 should be firewalled on the 135 VM
-to block external access (verify with `sudo ufw status`).
-
-### RAGFlow
-
-Stores and retrieves ESVS guideline document chunks. Each guideline is a separate dataset.
-The bridge translates Laravel's dataset key names (e.g. `carotid_vertebral`) to RAGFlow
-dataset IDs via `config/ragflow.php`.
-
-Retrieval modes:
-- **Vector search**: `vector_weight=0.5`, `similarity_threshold=0.3`
-- **Hybrid (quality pass)**: `keyword=true`, `vector_weight=0.2`, `similarity_threshold=0.2`
+Intended for turns like *"What about surveillance?"*, *"What if the patient
+mobilises after 10 days?"*, *"CEA or CAS for this patient?"*.
 
 ---
 
-## Deployment
+## 4. STRICT_TEMPLATE (output formatting)
 
-### Deploy adapter to OpenWebUI
+Always on. When retrieval returns chunks, the adapter injects a structured template
+into `llm_output`, so the model’s answer follows a consistent clinical shape:
+**Assessment / Imaging / Indication / Treatment options / Follow-up / Evidence
+used**, plus a **Clinical Decision Summary** and **Perioperative Risk** section when
+the question warrants a management decision.
 
-After any local change to `openwebui_tools/vascular_mcp_adapter.py`:
-
-```bash
-scp -i ~/ragflownew.pem openwebui_tools/vascular_mcp_adapter.py push_adapter.py azureuser@48.211.217.69:/tmp/
-ssh -i ~/ragflownew.pem azureuser@48.211.217.69 "
-  sudo docker cp /tmp/vascular_mcp_adapter.py open-webui:/tmp/ &&
-  sudo docker cp /tmp/push_adapter.py open-webui:/tmp/ &&
-  sudo docker exec open-webui python3 /tmp/push_adapter.py &&
-  sudo docker restart open-webui
-"
-```
-
-`push_adapter.py` runs `INSERT OR REPLACE` into the `tool` table in `/app/backend/data/webui.db`
-with the correct `user_id`, `specs` (JSON schema for `consult_vascular_guidelines`), and
-`valves` (production URL and API key). The container restart is required because OpenWebUI
-caches loaded tool modules in memory.
-
-### Deploy Laravel changes to 135 VM
-
-```bash
-# After PHP file changes:
-ssh -i ~/LAVAREL.pem azureuser@135.237.148.105 "
-  cd /home/azureuser/laravel-ragflow &&
-  git pull &&
-  sudo systemctl restart laravel-api.service
-"
-
-# After .env changes:
-ssh -i ~/LAVAREL.pem azureuser@135.237.148.105 "
-  cd /home/azureuser/laravel-ragflow &&
-  php artisan config:cache &&
-  sudo systemctl restart laravel-api.service
-"
-```
+A scope filter instructs the model not to cite recommendations for a different
+procedure than the case (e.g. no TEVAR recs for a mural-thrombus question).
 
 ---
 
-## Pending / Known Gaps
+## 5. Answer modes
 
-- **Cutover complete**: `vascular_mcp_adapter` is now the production tool on `gpt-5-chat`.
-  `mcp` (vascular_expert.py) is kept disabled as a fallback — do not delete.
-- **No same-case follow-up rewrite**: The adapter sends follow-up questions as-is. Production
-  `vascular_expert.py` rewrites them into standalone retrieval queries.
-- **No attachment handling**: Uploaded documents are not included in the adapter's gate context.
-- **`descending_thoracic_aorta`**: No figures/tables configured in `config/guideline_assets.php`.
-- **3 PHIScrubberService bugs**: Minor, low risk — see Security Notes in CLAUDE.md.
+Every answer self-declares a mode on its first line
+(`**Mode:** COMPACT|STANDARD|FULL — Rule N — reason`), chosen by a 6-rule
+classifier (priority order): true gap → FULL, negative indication → COMPACT, single
+path → COMPACT, restricted → STANDARD, modifier → STANDARD, multi-interaction →
+FULL. This keeps simple questions short and complex management questions complete.
+
+**Synthesis rules** (accumulated from live-case review) enforce clinical
+correctness — e.g. decision-first ordering, dominant-modifier-in-first-sentence,
+urgency/timing, life-threatening priority, and a **clinical sequence rule**
+(anticoagulation before catheter-directed thrombolysis in ALI). The authoritative,
+versioned rule set is in the adapter file’s prompt constants.
 
 ---
 
-## Logs
+## 6. Deploy & versioning
 
-```bash
-# Laravel (135 VM):
-tail -f /home/azureuser/laravel-ragflow/storage/logs/laravel.log
-tail -f /home/azureuser/laravel-ragflow/storage/logs/ragflow-$(date +%Y-%m-%d).log
-tail -f /home/azureuser/laravel-ragflow/storage/logs/retrieval-$(date +%Y-%m-%d).log
+The live tool is in `webui.db`, cached in OpenWebUI’s memory — a restart is
+required after every DB update. Deploy command in
+[`OPERATIONS.md`](OPERATIONS.md#1-deploy) (`push_adapter.py` writes id
+`vascular_mcp_adapter`).
 
-# OpenWebUI (48 VM):
-sudo docker logs open-webui --tail 100 -f
-```
-
-Key log prefixes to watch:
-- `[GRAPHRAG]` — concept expansion and gap detection
-- `[QUALITY PASS]` — high-recall pass running
-- `[FOCUSED RECALL]` — non-A/non-B retry
-- `[GAP DETECTION]` — second-pass retrieval
-- `[CLINICAL INTERPRETER]` — pre-retrieval framing
-- `[CHUNK SELECTION]` — tier splitting decisions
+- **Never** modify `openwebui_tools/vascular_expert.py` (old `mcp`-id fallback) —
+  kept disabled for reference.
+- All new development happens on `vascular_mcp_adapter.py` + the Laravel services.
+- `ChunkSelectionService` (Laravel) is authoritative for chunk selection/scoring;
+  the adapter does not re-rank evidence.

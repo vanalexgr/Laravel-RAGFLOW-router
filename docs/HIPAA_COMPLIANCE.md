@@ -17,7 +17,7 @@ This document describes the Protected Health Information (PHI) de-identification
 
 ### Safe Harbor Method (45 CFR 164.514(b)(2))
 
-The system implements automatic de-identification following the HIPAA Safe Harbor method, which requires removal or generalization of 18 specific identifiers. Our implementation scrubs these identifiers from user queries **before** they are sent to external services (Azure OpenAI, RAGFlow).
+The system implements automatic de-identification following the HIPAA Safe Harbor method, which requires removal or generalization of 18 specific identifiers. Our implementation scrubs these identifiers from user queries **before** they are sent to any external service (**OpenAI** for planner inference + embeddings, **Cohere** for reranking, and RAGFlow). If the deployment is moved to **fully self-hosted local models** ([`SELF_HOSTED_MODELS.md`](SELF_HOSTED_MODELS.md)), no PHI leaves the server at all and scrubbing becomes defense-in-depth rather than the primary barrier.
 
 ### Data Flow
 
@@ -35,7 +35,7 @@ User Query (may contain PHI)
 De-identified Query
     ↓
 ┌─────────────────────────────┐
-│   Azure OpenAI / RAGFlow    │
+│  OpenAI / Cohere / RAGFlow  │
 │   (External services)       │
 │   - Receives only scrubbed  │
 │     de-identified text      │
@@ -110,8 +110,8 @@ Location: `storage/app/phi/common_names.json`
 
 PHI scrubbing is applied at:
 
-1. **Tool Endpoint** (`/api/v1/vascular-consult`): All queries are scrubbed before guideline routing and RAGFlow retrieval
-2. **MCP Tool** (`consult_vascular_guidelines`): Uses the same retrieval service and scrubbing pipeline
+1. **API endpoint** (`/api/v1/vascular-consult` and the other `/api/v1/*` routes): all queries are scrubbed before planning, guideline routing, and RAGFlow retrieval.
+2. **OpenWebUI tool** (`vascular_mcp_adapter`): calls the same Laravel endpoint, so it inherits the same scrubbing pipeline.
 
 ## Audit Trail
 
@@ -204,7 +204,7 @@ This implementation provides **meaningful PHI protection** suitable for:
 2. **Terms of use**: Prohibit entry of patient identifiers in queries
 3. **Consent workflow**: If PHI may be entered, obtain explicit consent
 4. **Incident response**: Procedures for handling PHI exposure incidents
-5. **BAAs**: Obtain Business Associate Agreements from Azure and RAGFlow providers
+5. **BAAs**: Obtain Business Associate Agreements from **OpenAI** and **Cohere** (both offer API BAAs), or eliminate the requirement by moving to **fully self-hosted local models** so no PHI leaves the VM.
 6. **Regular audits**: Review redaction logs and assess residual risk
 
 ## Compliance Checklist
@@ -219,9 +219,9 @@ This implementation provides **meaningful PHI protection** suitable for:
 
 ### Administrative (Organization Responsibility)
 
-- [ ] Obtain BAA from Azure OpenAI (Microsoft offers this)
-- [ ] Obtain BAA from RAGFlow provider (or self-host)
-- [ ] Obtain BAA from hosting provider
+- [ ] Obtain BAA from **OpenAI** (inference + embeddings) — or self-host
+- [ ] Obtain BAA from **Cohere** (reranking) — or self-host / use local reranker
+- [ ] Confirm hosting provider (Hetzner) terms; RAGFlow is self-hosted on the same VM
 - [ ] Implement staff training on HIPAA policies
 - [ ] Establish incident response procedures
 - [ ] Conduct regular security assessments
@@ -237,6 +237,7 @@ This implementation provides **meaningful PHI protection** suitable for:
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-01-11 | Initial de-identification implementation |
+| 1.1 | 2026-07-21 | External providers changed Azure → OpenAI + Cohere (BAA must be re-established, or go self-hosted); infra now a self-managed Hetzner VM behind a default-deny firewall (only 22/80/443 open) |
 
 ## References
 
