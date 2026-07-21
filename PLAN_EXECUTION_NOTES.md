@@ -4,9 +4,9 @@
 
 - Branch: `codex/conversation-memory-improvements`
 - Phases completed: **Phase 0 (C1–C4) and Phase 1 (A1, B1)**
-- Current stop point: **Phase 1 complete; Phase 2 not started**
+- Current stop point: **Phase 2 in progress; B2 and B3 complete**
 - Production deployment: **not performed**
-- Adapter version after Phase 1: `1.5.56`
+- Adapter version after B3: `1.5.57`
 - Protected files `openwebui_tools/vascular_expert.py` and `vascular_agent_adapter.py`: unchanged
 
 ## Phase 0 shipped
@@ -63,6 +63,41 @@ B2 confusion matrix (rows expected, columns observed):
 | **Overall** | **80.95% (68/84)** |
 
 Representative B2 classifier timing: median 38.34 µs, p95 70.96 µs, max 97.50 µs (local, no I/O; Workstream D remains deferred).
+
+### B3 — corpus-driven misroute fixes
+
+- Added `vague_operation_preferred` as a failing characterization before changing production rules. The red run exposed 17 expected-label failures across the 85-case corpus.
+- Extended vague-management recognition for the surfaced English and Greek cues, including a contextual vague cue that formerly fell into the general guardrail.
+- Added Greek gate-answer and explicit-new-case recognition.
+- Classified the current question independently of transcript patient context for standalone guideline-knowledge detection, preserving the pending-gate reorder rule.
+- Extended the existing guideline-knowledge and guardrail patterns only for corpus-demonstrated misses.
+- All expected classes are now green, with no per-class regression from B2 and overall accuracy increased by 19.05 percentage points.
+- Rollback: revert the B3 commit to restore the B2 classifier and adapter version `1.5.56`.
+
+B3 confusion matrix (rows expected, columns observed):
+
+| Expected \ Observed | NEW_CASE | EXPLICIT_NEW_CASE | GATE_REPLY | FOLLOWUP_VAGUE | FOLLOWUP_SUBSTANTIVE | KNOWLEDGE | GUARDRAIL |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| NEW_CASE | 12 | 0 | 0 | 0 | 0 | 0 | 0 |
+| EXPLICIT_NEW_CASE | 0 | 11 | 0 | 0 | 0 | 0 | 0 |
+| GATE_REPLY | 0 | 0 | 12 | 0 | 0 | 0 | 0 |
+| FOLLOWUP_VAGUE | 0 | 0 | 0 | 15 | 0 | 0 | 0 |
+| FOLLOWUP_SUBSTANTIVE | 0 | 0 | 0 | 0 | 14 | 0 | 0 |
+| KNOWLEDGE | 0 | 0 | 0 | 0 | 0 | 11 | 0 |
+| GUARDRAIL | 0 | 0 | 0 | 0 | 0 | 0 | 10 |
+
+| Class | B2 baseline | After B3 |
+|---|---:|---:|
+| NEW_CASE | 100.00% (12/12) | 100.00% (12/12) |
+| EXPLICIT_NEW_CASE | 90.91% (10/11) | 100.00% (11/11) |
+| GATE_REPLY | 91.67% (11/12) | 100.00% (12/12) |
+| FOLLOWUP_VAGUE | 42.86% (6/14) | 100.00% (15/15) |
+| FOLLOWUP_SUBSTANTIVE | 100.00% (14/14) | 100.00% (14/14) |
+| KNOWLEDGE | 81.82% (9/11) | 100.00% (11/11) |
+| GUARDRAIL | 60.00% (6/10) | 100.00% (10/10) |
+| **Overall** | **80.95% (68/84)** | **100.00% (85/85)** |
+
+B3 representative classifier timing: median 34.07 µs, p95 67.23 µs, max 84.34 µs (local, no I/O). The median delta versus B2 is -4.27 µs and remains microbenchmark noise; Workstream D is deferred by maintainer decision.
 
 ## Classification baseline
 
@@ -121,9 +156,10 @@ Real `pre_retrieval`, `change_detection`, `retrieval`, and total latency must be
 
 ```text
 Laravel: 87 tests, 264 assertions — PASS
-Adapter main suite: 38 passed — PASS
-Classification suite: 85 passed — PASS
-Evaluator: 40/42 (95.24%) baseline — completed
+Adapter main suite after B3: 38 passed — PASS
+Classification suite after B3: 171 passed — PASS
+Laravel suite after B3: 87 tests, 264 assertions — PASS
+Evaluator after B3: 85/85 (100.00%) — completed
 ```
 
 The requested `python` executable was absent, so `/usr/bin/python3` was used. PHP was also absent and Docker daemon access was denied; tests ran with a temporary PHP 8.3 static CLI under `/tmp` and the repository's existing Composer dependencies.

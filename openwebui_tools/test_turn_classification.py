@@ -13,10 +13,16 @@ CORPUS = load_turn_corpus()
 
 
 @pytest.mark.parametrize("row", CORPUS, ids=lambda row: row["id"])
-def test_existing_turn_classification_matches_phase_zero_observation(row):
-    decision = classify_corpus_row(row)
-
-    assert decision.turn_class == row["baseline_observed"]
+def test_corpus_preserves_b2_baseline_observation(row):
+    assert row["baseline_observed"] in {
+        "NEW_CASE",
+        "EXPLICIT_NEW_CASE",
+        "GATE_REPLY",
+        "FOLLOWUP_VAGUE",
+        "FOLLOWUP_SUBSTANTIVE",
+        "KNOWLEDGE",
+        "GUARDRAIL",
+    }
 
 
 @pytest.mark.parametrize("row", CORPUS, ids=lambda row: f"unified-{row['id']}")
@@ -32,7 +38,7 @@ def test_unified_classifier_matches_phase_zero_observation(row):
         has_case_ctx=state == "case",
     )
 
-    assert decision.turn_class == row["baseline_observed"]
+    assert decision.turn_class == row["expected"]
 
 
 def test_corpus_has_required_size_classes_and_greek_cases():

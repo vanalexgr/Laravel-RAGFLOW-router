@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.56
+version: 1.5.57
 """
 import html
 import httpx
@@ -166,6 +166,7 @@ class Tools:
         r"\b(what\s+is|what\s+does|define|definition|how\s+is.{0,40}defined|"
         r"classification|criteria|index|score|staging|stage|"
         r"threshold|cut[- ]?off|diameter\s+threshold|treatment\s+threshold|"
+        r"medical\s+therap(?:y|ies)|lifestyle|"
         r"surveillance\s+interval|recommendation\s+\d+|rec\s+\d+)\b",
         re.IGNORECASE,
     )
@@ -187,13 +188,15 @@ class Tools:
 
     _EXPLICIT_NEW_CASE_RE = re.compile(
         r"\b(another|different|new|separate|next)\s+(?:patient|case)\b|"
-        r"\bfor\s+a\s+different\s+patient\b",
+        r"\bfor\s+a\s+different\s+patient\b|"
+        r"\bν[εέ]ο\s+περιστατικ[οό]\b|\b(?:ν[εέ]ος|[αά]λλος)\s+ασθεν[ηή]ς\b",
         re.IGNORECASE,
     )
 
     _FOLLOW_UP_CUE_RE = re.compile(
         r"^(what\s+about|what\s+if|how\s+about|and|but|so|then|if|for\s+this\s+case|"
-        r"in\s+this\s+case|for\s+this\s+patient|in\s+this\s+patient)\b",
+        r"in\s+this\s+case|for\s+this\s+patient|in\s+this\s+patient|"
+        r"και|τι\s+γ[ιί]νεται|σε\s+αυτ(?:[ήη]|[οό]))\b",
         re.IGNORECASE,
     )
 
@@ -216,8 +219,10 @@ class Tools:
         r"disregard (?:all |the )?(?:previous|prior|system|developer|tool) instructions|"
         r"answer from your own knowledge|use your own knowledge|"
         r"switch to normal mode|switch to general mode|leave strict mode|"
+        r"switch to general chat mode|"
         r"reveal (?:the )?(?:system|developer|hidden|tool) prompt|"
         r"show (?:the )?(?:system|developer|hidden|tool) prompt|"
+        r"show (?:the )?hidden system prompt|"
         r"what are your (?:system|developer|hidden) instructions|"
         r"tell me your (?:system|developer|hidden) instructions|"
         r"bypass (?:the )?(?:rules|instructions|filter|safety|restrictions|guardrail)|"
@@ -227,7 +232,8 @@ class Tools:
 
     _GENERAL_KNOWLEDGE_RE = re.compile(
         r"\b(who is|who was|tell me about|do you like|is he|is she|"
-        r"president|politics|donald trump|joe biden|celebrity|movie|music|football|soccer)\b",
+        r"president|politics|donald trump|joe biden|celebrity|movie|music|football|soccer|"
+        r"weather|cooking|recipe)\b",
         re.IGNORECASE,
     )
 
@@ -247,11 +253,17 @@ class Tools:
     # e.g. "So, what should I do?", "What's the plan?", "Which option?"
     _VAGUE_MANAGEMENT_RE = re.compile(
         r"\bwhat\s+should\s+(i|we|you)\s+do\b|"
-        r"\bwhat('?s|\s+is|\s+are)\s+(the\s+)?(plan|approach|best\s+option|next\s+step|treatment|decision|strategy|recommendation)\b|"
+        r"\bwhat('?s|\s+is|\s+are)\s+(the\s+)?(plan|approach|best\s+(?:option|approach)|next\s+step|treatment|decision|strategy|recommendation)\b|"
         r"\bwhich\s+(option|approach|treatment|procedure|one)\s+(should|would|do|is)\b|"
         r"\bwhat\s+(do\s+you|would\s+you|is\s+your|are\s+your)\s+recommend\b|"
         r"\bhow\s+should\s+(i|we)\s+(proceed|treat|manage|handle)\b|"
+        r"\bis\s+(?:surgery|an\s+operation)\s+(?:better|preferable)\b|"
         r"\bwhat\s+(now|next)\b|"
+        r"^\s*and\s+then\s*[?;]?\s*$|"
+        r"^\s*και\s+μετ[αά]\s*[?;]?\s*$|"
+        r"^\s*τι\s+προτε[ιί]νετε\s*[?;]?\s*$|"
+        r"^\s*ποιο\s+ε[ιί]ναι\s+το\s+πλ[αά]νο\s*[?;]?\s*$|"
+        r"^\s*π[ωώ]ς\s+να\s+προχωρ[ηή]σω\s*[?;]?\s*$|"
         r"^\s*so[,\s]+what\b|"
         r"^\s*and\s+(now|so)[,\s]+what\b",
         re.IGNORECASE,
@@ -546,7 +558,8 @@ class Tools:
         """
         history = self._extract_history(messages, question)
         pending_gate = self._can_reuse_pending_gate(question, messages)
-        guardrail_type = None if pending_gate else self._guardrail_type(question, messages)
+        vague_case_followup = has_case_ctx and self._is_vague_management_followup(question)
+        guardrail_type = None if pending_gate or vague_case_followup else self._guardrail_type(question, messages)
 
         # 1. Existing guardrails retain highest routing priority.
         if guardrail_type is not None:
@@ -556,11 +569,15 @@ class Tools:
         if self._EXPLICIT_NEW_CASE_RE.search(question or ""):
             return TurnDecision(TurnClass.EXPLICIT_NEW_CASE, "explicit_new_case_re")
 
-        # 3. Standalone guideline knowledge questions remain knowledge turns.
-        if self._is_raw_guideline_knowledge_query(question, history):
+        # 3. A recognized vague management cue needs its completed-case context.
+        if vague_case_followup:
+            return TurnDecision(TurnClass.FOLLOWUP_VAGUE, "vague_mgmt_re")
+
+        # 4. Standalone guideline knowledge questions remain knowledge turns.
+        if self._is_raw_guideline_knowledge_query(question, []):
             return TurnDecision(TurnClass.KNOWLEDGE, "raw_guideline_knowledge_re")
 
-        # 4. An active gate distinguishes answer-only from substantive replies.
+        # 5. An active gate distinguishes answer-only from substantive replies.
         if has_session:
             if self._is_answer_only_turn(question):
                 return TurnDecision(TurnClass.GATE_REPLY, "answer_only")
@@ -570,17 +587,15 @@ class Tools:
                 return TurnDecision(TurnClass.NEW_CASE, "fresh_case_intro_re")
             return TurnDecision(TurnClass.FOLLOWUP_SUBSTANTIVE, "active_session")
 
-        # 5. A transcript-recovered gate uses the same answer-only predicate.
+        # 6. A transcript-recovered gate uses the same answer-only predicate.
         if pending_gate and self._is_answer_only_turn(question):
             return TurnDecision(TurnClass.GATE_REPLY, "recovered_gate_answer")
 
-        # 6. Completed-case context separates vague from substantive follow-ups.
-        if has_case_ctx and self._is_vague_management_followup(question):
-            return TurnDecision(TurnClass.FOLLOWUP_VAGUE, "vague_mgmt_re")
+        # 7. Other completed-case context means a substantive follow-up.
         if has_case_ctx or pending_gate:
             return TurnDecision(TurnClass.FOLLOWUP_SUBSTANTIVE, "same_case_context")
 
-        # 7. No remembered context means a new case/query.
+        # 8. No remembered context means a new case/query.
         return TurnDecision(TurnClass.NEW_CASE, "no_prior_context")
 
     def _extract_history(self, messages: Optional[list], current_question: str = "") -> list:
@@ -1904,6 +1919,8 @@ class Tools:
             return len(numbered) >= max(1, len(raw_lines) - 1)
         if len(content) > 120:
             return False
+        if re.fullmatch(r"(ναι|[οό]χι|[αά]γνωστο|δεν\s+ξ[εέ]ρω)", content, re.IGNORECASE):
+            return True
         return bool(re.fullmatch(
             r"(yes|no|unknown|n/?a|not sure|symptomatic|asymptomatic|"
             r"\d+(?:\.\d+)?\s*(?:%|mm|cm)?(?:\s*[a-z0-9/\-]+)?|"
