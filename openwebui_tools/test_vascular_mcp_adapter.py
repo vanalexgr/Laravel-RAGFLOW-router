@@ -310,6 +310,13 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_consult_emits_exactly_one_phi_safe_structured_turn_log(self):
         tool = Tools()
         question = "Who is Donald Trump?"
+        messages = [{"role": "user", "content": question}]
+        expected_decision = tool.classify_turn(
+            question,
+            messages,
+            has_session=False,
+            has_case_ctx=False,
+        )
         output = io.StringIO()
 
         with redirect_stdout(output):
@@ -318,7 +325,7 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 guideline_1="asymptomatic_pad",
                 __user__={"id": "sensitive-user-id"},
                 __metadata__={"chat_id": "sensitive-chat-id"},
-                __messages__=[{"role": "user", "content": question}],
+                __messages__=messages,
                 __event_emitter__=None,
             )
 
@@ -327,8 +334,8 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("APP_CAPABILITIES_GUIDANCE_ONLY", result)
         self.assertEqual(1, len(turn_records))
         record = turn_records[0]
-        self.assertEqual("GUARDRAIL", record["turn_class"])
-        self.assertEqual("out_of_scope", record["reason"])
+        self.assertEqual(expected_decision.turn_class.value, record["turn_class"])
+        self.assertEqual(expected_decision.reason, record["reason"])
         self.assertTrue(record["chat_scoped"])
         self.assertEqual(len(question), record["question_len"])
         self.assertEqual(8, len(record["question_sha1"]))

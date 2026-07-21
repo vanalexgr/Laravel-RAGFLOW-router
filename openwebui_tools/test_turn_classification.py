@@ -6,6 +6,7 @@ from openwebui_tools.turn_classification_support import (
     classify_corpus_row,
     load_turn_corpus,
 )
+from openwebui_tools.vascular_mcp_adapter import Tools
 
 
 CORPUS = load_turn_corpus()
@@ -14,6 +15,22 @@ CORPUS = load_turn_corpus()
 @pytest.mark.parametrize("row", CORPUS, ids=lambda row: row["id"])
 def test_existing_turn_classification_matches_phase_zero_observation(row):
     decision = classify_corpus_row(row)
+
+    assert decision.turn_class == row["baseline_observed"]
+
+
+@pytest.mark.parametrize("row", CORPUS, ids=lambda row: f"unified-{row['id']}")
+def test_unified_classifier_matches_phase_zero_observation(row):
+    messages = list(row.get("messages") or [])
+    question = str(messages[-1].get("content") or "")
+    state = row.get("state", "none")
+
+    decision = Tools().classify_turn(
+        question,
+        messages,
+        has_session=state == "session",
+        has_case_ctx=state == "case",
+    )
 
     assert decision.turn_class == row["baseline_observed"]
 

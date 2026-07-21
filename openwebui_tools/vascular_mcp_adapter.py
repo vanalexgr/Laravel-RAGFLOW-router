@@ -1,12 +1,14 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.55
+version: 1.5.56
 """
 import html
 import httpx
 import asyncio
 from collections import OrderedDict
+from dataclasses import dataclass
+from enum import Enum
 import hashlib
 import heapq
 import json
@@ -123,6 +125,22 @@ class TTLStore:
 
 _session_store = TTLStore(SESSION_TTL)
 _case_context_store = TTLStore(CASE_CONTEXT_TTL)
+
+
+class TurnClass(str, Enum):
+    NEW_CASE = "NEW_CASE"
+    EXPLICIT_NEW_CASE = "EXPLICIT_NEW_CASE"
+    GATE_REPLY = "GATE_REPLY"
+    FOLLOWUP_VAGUE = "FOLLOWUP_VAGUE"
+    FOLLOWUP_SUBSTANTIVE = "FOLLOWUP_SUBSTANTIVE"
+    KNOWLEDGE = "KNOWLEDGE"
+    GUARDRAIL = "GUARDRAIL"
+
+
+@dataclass(frozen=True)
+class TurnDecision:
+    turn_class: TurnClass
+    reason: str
 
 
 class Tools:
@@ -512,35 +530,58 @@ class Tools:
         record.update(fields)
         print(json.dumps(record, separators=(",", ":"), sort_keys=True))
 
-    def _classify_turn_for_log(
+    def classify_turn(
         self,
         question: str,
         messages: Optional[list],
-        session: Optional[dict],
-        case_ctx: Optional[dict],
-    ) -> tuple[str, str]:
-        """Describe current routing without changing its pre-B1 behavior."""
+        has_session: bool,
+        has_case_ctx: bool,
+    ) -> TurnDecision:
+        """Classify a turn using the adapter's existing predicates only.
+
+        Priority is deliberately frozen for B1 behavioral equivalence:
+        guardrail, explicit new case, raw knowledge, active-session reply,
+        recovered gate reply, completed-case vague/substantive follow-up,
+        then new case. Phase 2 may change rules only with corpus evidence.
+        """
+        history = self._extract_history(messages, question)
         pending_gate = self._can_reuse_pending_gate(question, messages)
         guardrail_type = None if pending_gate else self._guardrail_type(question, messages)
+
+        # 1. Existing guardrails retain highest routing priority.
         if guardrail_type is not None:
-            return "GUARDRAIL", guardrail_type
-        if session and self._is_answer_only_turn(question):
-            return "GATE_REPLY", "answer_only"
-        if session and self._EXPLICIT_NEW_CASE_RE.search(question or ""):
-            return "EXPLICIT_NEW_CASE", "explicit_new_case_re"
-        if session and self._should_treat_as_new_query(question, session):
-            if self._is_raw_guideline_knowledge_query(question, []):
-                return "KNOWLEDGE", "raw_guideline_knowledge_re"
-            return "NEW_CASE", "fresh_case_intro_re"
-        if case_ctx and self._is_vague_management_followup(question):
-            return "FOLLOWUP_VAGUE", "vague_mgmt_re"
-        if session or case_ctx or pending_gate:
-            return "FOLLOWUP_SUBSTANTIVE", "same_case_context"
-        if self._is_raw_guideline_knowledge_query(question, messages or []):
-            return "KNOWLEDGE", "raw_guideline_knowledge_re"
+            return TurnDecision(TurnClass.GUARDRAIL, guardrail_type)
+
+        # 2. Explicit case boundaries override all remembered context.
         if self._EXPLICIT_NEW_CASE_RE.search(question or ""):
-            return "EXPLICIT_NEW_CASE", "explicit_new_case_re"
-        return "NEW_CASE", "no_prior_context"
+            return TurnDecision(TurnClass.EXPLICIT_NEW_CASE, "explicit_new_case_re")
+
+        # 3. Standalone guideline knowledge questions remain knowledge turns.
+        if self._is_raw_guideline_knowledge_query(question, history):
+            return TurnDecision(TurnClass.KNOWLEDGE, "raw_guideline_knowledge_re")
+
+        # 4. An active gate distinguishes answer-only from substantive replies.
+        if has_session:
+            if self._is_answer_only_turn(question):
+                return TurnDecision(TurnClass.GATE_REPLY, "answer_only")
+            if pending_gate:
+                return TurnDecision(TurnClass.FOLLOWUP_SUBSTANTIVE, "pending_gate_context")
+            if self._should_treat_as_new_query(question, {"pre_result": {}}):
+                return TurnDecision(TurnClass.NEW_CASE, "fresh_case_intro_re")
+            return TurnDecision(TurnClass.FOLLOWUP_SUBSTANTIVE, "active_session")
+
+        # 5. A transcript-recovered gate uses the same answer-only predicate.
+        if pending_gate and self._is_answer_only_turn(question):
+            return TurnDecision(TurnClass.GATE_REPLY, "recovered_gate_answer")
+
+        # 6. Completed-case context separates vague from substantive follow-ups.
+        if has_case_ctx and self._is_vague_management_followup(question):
+            return TurnDecision(TurnClass.FOLLOWUP_VAGUE, "vague_mgmt_re")
+        if has_case_ctx or pending_gate:
+            return TurnDecision(TurnClass.FOLLOWUP_SUBSTANTIVE, "same_case_context")
+
+        # 7. No remembered context means a new case/query.
+        return TurnDecision(TurnClass.NEW_CASE, "no_prior_context")
 
     def _extract_history(self, messages: Optional[list], current_question: str = "") -> list:
         history = []
@@ -2446,8 +2487,11 @@ class Tools:
         session = self._get_session(session_key)
         had_session_at_start = session is not None
         case_ctx_at_start = self._get_case_context(session_key)
-        turn_class, turn_reason = self._classify_turn_for_log(
-            question, __messages__, session, case_ctx_at_start
+        turn_decision = self.classify_turn(
+            question,
+            __messages__,
+            has_session=had_session_at_start,
+            has_case_ctx=case_ctx_at_start is not None,
         )
         turn_started = time.perf_counter()
         latency_ms = {"pre_retrieval": 0, "change_detection": 0, "retrieval": 0}
@@ -2462,22 +2506,24 @@ class Tools:
                 latency_ms[bucket] += round((time.perf_counter() - started) * 1000)
 
         try:
-            can_reuse_pending_gate = self._can_reuse_pending_gate(question, __messages__)
-            guardrail_type = None if can_reuse_pending_gate else self._guardrail_type(question, __messages__)
-            if guardrail_type is not None:
+            if turn_decision.turn_class is TurnClass.GUARDRAIL:
                 await self._emit_status(emitter, "Providing app usage guidance...", done=True)
                 return self._format_capabilities_for_model(
-                    self._capabilities_response(question, guardrail_type)
+                    self._capabilities_response(question, turn_decision.reason)
                 )
 
-            if session and self._should_treat_as_new_query(question, session) and not can_reuse_pending_gate:
+            if session and turn_decision.turn_class in {
+                TurnClass.NEW_CASE,
+                TurnClass.EXPLICIT_NEW_CASE,
+                TurnClass.KNOWLEDGE,
+            }:
                 self._clear_session(session_key, cancel_task=True)
                 session = None
 
             # Vague management follow-up after a completed case (no active session).
             # e.g. "So, what should I do?" / "What's the plan?" / "Which option?"
             # Rewrite using the stored case context so RAGFlow gets a meaningful query.
-            if not session and self._is_vague_management_followup(question):
+            if not session and turn_decision.turn_class is TurnClass.FOLLOWUP_VAGUE:
                 case_ctx = self._get_case_context(session_key)
                 if case_ctx:
                     rewritten = self._rewrite_with_case_context(question, case_ctx)
@@ -2723,8 +2769,8 @@ class Tools:
             self._log_turn(
                 session_key_hash=hashlib.sha1(session_key.encode("utf-8")).hexdigest()[:8],
                 chat_scoped=session_key.startswith("chat:"),
-                turn_class=turn_class,
-                reason=turn_reason,
+                turn_class=turn_decision.turn_class.value,
+                reason=turn_decision.reason,
                 had_session=had_session_at_start,
                 had_case_ctx=case_ctx_at_start is not None,
                 phase=turn_phase,
