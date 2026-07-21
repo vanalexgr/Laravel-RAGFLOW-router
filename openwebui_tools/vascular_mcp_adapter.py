@@ -1,13 +1,20 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.53
+version: 1.5.58
 """
 import html
 import httpx
 import asyncio
+from collections import OrderedDict
+from dataclasses import dataclass
+from enum import Enum
+import hashlib
+import heapq
+import json
 import time
 import re
+from urllib.parse import quote
 from pydantic import BaseModel, Field
 from typing import Literal, Optional, Callable, Awaitable
 
@@ -45,12 +52,96 @@ GUIDELINE_NAMES = {
     'vascular_access':           'Vascular Access',
 }
 
-_session_store: dict = {}
 SESSION_TTL = 300
-_case_context_store: dict = {}
 CASE_CONTEXT_TTL = 900  # 15 min — survives after phase 2 completes
+MAX_ENTRIES = 2000
 GATE_CONFIRM_LINE = "Reply to confirm, or add details to refine the search."
 APP_GUIDANCE_HEADER = "=== APP CAPABILITIES GUIDANCE ==="
+
+
+class TTLStore:
+    """Bounded mapping that reclaims expired and oldest entries on writes."""
+
+    def __init__(self, ttl: float, max_entries: int = MAX_ENTRIES, clock=time.time):
+        self.ttl = ttl
+        self.max_entries = max_entries
+        self._clock = clock
+        self._data = OrderedDict()
+        self._expiry_heap = []
+        self._versions = {}
+        self._sequence = 0
+
+    def __len__(self):
+        return len(self._data)
+
+    def __contains__(self, key):
+        return key in self._data
+
+    def get(self, key, default=None):
+        return self._data.get(key, default)
+
+    def pop(self, key, default=None):
+        self._versions.pop(key, None)
+        return self._data.pop(key, default)
+
+    def clear(self):
+        self._data.clear()
+        self._expiry_heap.clear()
+        self._versions.clear()
+
+    def set(self, key, value):
+        self[key] = value
+
+    def __setitem__(self, key, value):
+        self._sequence += 1
+        version = self._sequence
+        self._versions[key] = version
+        self._data[key] = value
+        self._data.move_to_end(key)
+
+        timestamp = self._entry_timestamp(value)
+        heapq.heappush(self._expiry_heap, (timestamp + self.ttl, version, key))
+        self._evict_expired()
+        while len(self._data) > self.max_entries:
+            oldest_key, _ = self._data.popitem(last=False)
+            self._versions.pop(oldest_key, None)
+
+    def _entry_timestamp(self, value):
+        if isinstance(value, dict):
+            try:
+                return float(value.get("ts") or self._clock())
+            except (TypeError, ValueError):
+                pass
+        return self._clock()
+
+    def _evict_expired(self):
+        now = self._clock()
+        while self._expiry_heap and self._expiry_heap[0][0] <= now:
+            _, version, key = heapq.heappop(self._expiry_heap)
+            if self._versions.get(key) != version:
+                continue
+            self._versions.pop(key, None)
+            self._data.pop(key, None)
+
+
+_session_store = TTLStore(SESSION_TTL)
+_case_context_store = TTLStore(CASE_CONTEXT_TTL)
+
+
+class TurnClass(str, Enum):
+    NEW_CASE = "NEW_CASE"
+    EXPLICIT_NEW_CASE = "EXPLICIT_NEW_CASE"
+    GATE_REPLY = "GATE_REPLY"
+    FOLLOWUP_VAGUE = "FOLLOWUP_VAGUE"
+    FOLLOWUP_SUBSTANTIVE = "FOLLOWUP_SUBSTANTIVE"
+    KNOWLEDGE = "KNOWLEDGE"
+    GUARDRAIL = "GUARDRAIL"
+
+
+@dataclass(frozen=True)
+class TurnDecision:
+    turn_class: TurnClass
+    reason: str
 
 
 class Tools:
@@ -76,6 +167,7 @@ class Tools:
         r"\b(what\s+is|what\s+does|define|definition|how\s+is.{0,40}defined|"
         r"classification|criteria|index|score|staging|stage|"
         r"threshold|cut[- ]?off|diameter\s+threshold|treatment\s+threshold|"
+        r"medical\s+therap(?:y|ies)|lifestyle|"
         r"surveillance\s+interval|recommendation\s+\d+|rec\s+\d+)\b",
         re.IGNORECASE,
     )
@@ -97,13 +189,15 @@ class Tools:
 
     _EXPLICIT_NEW_CASE_RE = re.compile(
         r"\b(another|different|new|separate|next)\s+(?:patient|case)\b|"
-        r"\bfor\s+a\s+different\s+patient\b",
+        r"\bfor\s+a\s+different\s+patient\b|"
+        r"\bν[εέ]ο\s+περιστατικ[οό]\b|\b(?:ν[εέ]ος|[αά]λλος)\s+ασθεν[ηή]ς\b",
         re.IGNORECASE,
     )
 
     _FOLLOW_UP_CUE_RE = re.compile(
         r"^(what\s+about|what\s+if|how\s+about|and|but|so|then|if|for\s+this\s+case|"
-        r"in\s+this\s+case|for\s+this\s+patient|in\s+this\s+patient)\b",
+        r"in\s+this\s+case|for\s+this\s+patient|in\s+this\s+patient|"
+        r"και|τι\s+γ[ιί]νεται|σε\s+αυτ(?:[ήη]|[οό]))\b",
         re.IGNORECASE,
     )
 
@@ -126,8 +220,10 @@ class Tools:
         r"disregard (?:all |the )?(?:previous|prior|system|developer|tool) instructions|"
         r"answer from your own knowledge|use your own knowledge|"
         r"switch to normal mode|switch to general mode|leave strict mode|"
+        r"switch to general chat mode|"
         r"reveal (?:the )?(?:system|developer|hidden|tool) prompt|"
         r"show (?:the )?(?:system|developer|hidden|tool) prompt|"
+        r"show (?:the )?hidden system prompt|"
         r"what are your (?:system|developer|hidden) instructions|"
         r"tell me your (?:system|developer|hidden) instructions|"
         r"bypass (?:the )?(?:rules|instructions|filter|safety|restrictions|guardrail)|"
@@ -137,7 +233,8 @@ class Tools:
 
     _GENERAL_KNOWLEDGE_RE = re.compile(
         r"\b(who is|who was|tell me about|do you like|is he|is she|"
-        r"president|politics|donald trump|joe biden|celebrity|movie|music|football|soccer)\b",
+        r"president|politics|donald trump|joe biden|celebrity|movie|music|football|soccer|"
+        r"weather|cooking|recipe)\b",
         re.IGNORECASE,
     )
 
@@ -157,11 +254,17 @@ class Tools:
     # e.g. "So, what should I do?", "What's the plan?", "Which option?"
     _VAGUE_MANAGEMENT_RE = re.compile(
         r"\bwhat\s+should\s+(i|we|you)\s+do\b|"
-        r"\bwhat('?s|\s+is|\s+are)\s+(the\s+)?(plan|approach|best\s+option|next\s+step|treatment|decision|strategy|recommendation)\b|"
+        r"\bwhat('?s|\s+is|\s+are)\s+(the\s+)?(plan|approach|best\s+(?:option|approach)|next\s+step|treatment|decision|strategy|recommendation)\b|"
         r"\bwhich\s+(option|approach|treatment|procedure|one)\s+(should|would|do|is)\b|"
         r"\bwhat\s+(do\s+you|would\s+you|is\s+your|are\s+your)\s+recommend\b|"
         r"\bhow\s+should\s+(i|we)\s+(proceed|treat|manage|handle)\b|"
+        r"\bis\s+(?:surgery|an\s+operation)\s+(?:better|preferable)\b|"
         r"\bwhat\s+(now|next)\b|"
+        r"^\s*and\s+then\s*[?;]?\s*$|"
+        r"^\s*και\s+μετ[αά]\s*[?;]?\s*$|"
+        r"^\s*τι\s+προτε[ιί]νετε\s*[?;]?\s*$|"
+        r"^\s*ποιο\s+ε[ιί]ναι\s+το\s+πλ[αά]νο\s*[?;]?\s*$|"
+        r"^\s*π[ωώ]ς\s+να\s+προχωρ[ηή]σω\s*[?;]?\s*$|"
         r"^\s*so[,\s]+what\b|"
         r"^\s*and\s+(now|so)[,\s]+what\b",
         re.IGNORECASE,
@@ -183,6 +286,14 @@ class Tools:
         EMIT_STATUS_EVENTS: bool = Field(
             default=False,
             description='Also emit OpenWebUI status events (can appear in collapsible status UI).',
+        )
+        LOG_TURN_DECISIONS: bool = Field(
+            default=True,
+            description='Emit one PHI-safe structured decision log for each consultation turn.',
+        )
+        STATE_BACKEND: Literal['memory', 'laravel'] = Field(
+            default='memory',
+            description='Case context backend; Laravel is opt-in and memory preserves existing behavior.',
         )
 
     def __init__(self):
@@ -427,6 +538,70 @@ class Tools:
                 if value:
                     return f"chat:{value}"
         return f"user:{self._get_user_id(user)}"
+
+    def _log_turn(self, **fields) -> None:
+        """Emit a single PHI-safe structured turn record."""
+        if not self.valves.LOG_TURN_DECISIONS:
+            return
+        record = {"evt": "turn", "ts": round(time.time(), 3)}
+        record.update(fields)
+        print(json.dumps(record, separators=(",", ":"), sort_keys=True))
+
+    def classify_turn(
+        self,
+        question: str,
+        messages: Optional[list],
+        has_session: bool,
+        has_case_ctx: bool,
+    ) -> TurnDecision:
+        """Classify a turn using the adapter's existing predicates only.
+
+        Priority is deliberately frozen for B1 behavioral equivalence:
+        guardrail, explicit new case, raw knowledge, active-session reply,
+        recovered gate reply, completed-case vague/substantive follow-up,
+        then new case. Phase 2 may change rules only with corpus evidence.
+        """
+        history = self._extract_history(messages, question)
+        pending_gate = self._can_reuse_pending_gate(question, messages)
+        vague_case_followup = has_case_ctx and self._is_vague_management_followup(question)
+        guardrail_type = None if pending_gate or vague_case_followup else self._guardrail_type(question, messages)
+
+        # 1. Existing guardrails retain highest routing priority.
+        if guardrail_type is not None:
+            return TurnDecision(TurnClass.GUARDRAIL, guardrail_type)
+
+        # 2. Explicit case boundaries override all remembered context.
+        if self._EXPLICIT_NEW_CASE_RE.search(question or ""):
+            return TurnDecision(TurnClass.EXPLICIT_NEW_CASE, "explicit_new_case_re")
+
+        # 3. A recognized vague management cue needs its completed-case context.
+        if vague_case_followup:
+            return TurnDecision(TurnClass.FOLLOWUP_VAGUE, "vague_mgmt_re")
+
+        # 4. Standalone guideline knowledge questions remain knowledge turns.
+        if self._is_raw_guideline_knowledge_query(question, []):
+            return TurnDecision(TurnClass.KNOWLEDGE, "raw_guideline_knowledge_re")
+
+        # 5. An active gate distinguishes answer-only from substantive replies.
+        if has_session:
+            if self._is_answer_only_turn(question):
+                return TurnDecision(TurnClass.GATE_REPLY, "answer_only")
+            if pending_gate:
+                return TurnDecision(TurnClass.FOLLOWUP_SUBSTANTIVE, "pending_gate_context")
+            if self._should_treat_as_new_query(question, {"pre_result": {}}):
+                return TurnDecision(TurnClass.NEW_CASE, "fresh_case_intro_re")
+            return TurnDecision(TurnClass.FOLLOWUP_SUBSTANTIVE, "active_session")
+
+        # 6. A transcript-recovered gate uses the same answer-only predicate.
+        if pending_gate and self._is_answer_only_turn(question):
+            return TurnDecision(TurnClass.GATE_REPLY, "recovered_gate_answer")
+
+        # 7. Other completed-case context means a substantive follow-up.
+        if has_case_ctx or pending_gate:
+            return TurnDecision(TurnClass.FOLLOWUP_SUBSTANTIVE, "same_case_context")
+
+        # 8. No remembered context means a new case/query.
+        return TurnDecision(TurnClass.NEW_CASE, "no_prior_context")
 
     def _extract_history(self, messages: Optional[list], current_question: str = "") -> list:
         history = []
@@ -798,7 +973,7 @@ class Tools:
             __event_emitter__=emitter,
         )
 
-    def _store_session(
+    async def _store_session(
         self,
         session_key: str,
         payload: Optional[dict] = None,
@@ -806,7 +981,7 @@ class Tools:
         task: Optional[asyncio.Task] = None,
     ):
         self._clear_session(session_key, cancel_task=True)
-        self._clear_case_context(session_key)  # new case supersedes old context
+        await self._clear_case_context(session_key)  # new case supersedes old context
         now = time.time()
         _session_store[session_key] = {
             "payload": payload,
@@ -816,26 +991,91 @@ class Tools:
             "ts": now,
         }
 
-    def _store_case_context(self, session_key: str, pre_result: dict):
-        """Persist minimal case context after phase 2 completes (TTL=900s)."""
-        _case_context_store[session_key] = {
+    def _compact_case_context(self, pre_result: dict) -> dict:
+        return {
             "provisional_diagnosis": str(pre_result.get("provisional_diagnosis") or "").strip(),
             "guidelines": list(pre_result.get("guidelines") or []),
             "retrieval_query": str(pre_result.get("retrieval_query") or "").strip(),
             "ts": time.time(),
         }
 
-    def _get_case_context(self, session_key: str) -> Optional[dict]:
-        entry = _case_context_store.get(session_key)
-        if not entry:
+    def _case_state_chat_id(self, session_key: str) -> Optional[str]:
+        if not session_key.startswith("chat:"):
             return None
-        if time.time() - float(entry.get("ts") or 0) > CASE_CONTEXT_TTL:
-            _case_context_store.pop(session_key, None)
-            return None
-        return entry
+        chat_id = session_key.removeprefix("chat:").strip()
+        return chat_id or None
 
-    def _clear_case_context(self, session_key: str):
+    async def _case_state_request(
+        self,
+        method: str,
+        chat_id: str,
+        payload: Optional[dict] = None,
+    ) -> Optional[dict]:
+        base_url = str(self.valves.VASCULAR_API_BASE_URL).rstrip("/")
+        url = f"{base_url}/api/v1/case-state/{quote(chat_id, safe='')}"
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.request(
+                method,
+                url,
+                json=payload,
+                headers=self._backend_headers(),
+            )
+            if response.status_code == 204:
+                return None
+            response.raise_for_status()
+            data = response.json()
+            return data if isinstance(data, dict) else None
+
+    async def _store_case_context(self, session_key: str, pre_result: dict):
+        """Persist minimal case context after phase 2 completes (TTL=900s)."""
+        record = self._compact_case_context(pre_result)
+        _case_context_store[session_key] = record
+        chat_id = self._case_state_chat_id(session_key)
+        if self.valves.STATE_BACKEND != "laravel" or not chat_id:
+            return
+        try:
+            stored = await self._case_state_request("PUT", chat_id, {
+                "provisional_diagnosis": record["provisional_diagnosis"],
+                "guidelines": record["guidelines"][:6],
+                "retrieval_query": record["retrieval_query"],
+            })
+            if stored:
+                _case_context_store[session_key] = self._compact_case_context(stored)
+        except Exception:
+            # State I/O is best-effort; the local cache and transcript remain fallbacks.
+            return
+
+    async def _get_case_context(self, session_key: str) -> Optional[dict]:
+        entry = _case_context_store.get(session_key)
+        if entry and time.time() - float(entry.get("ts") or 0) <= CASE_CONTEXT_TTL:
+            return entry
+        if entry:
+            _case_context_store.pop(session_key, None)
+
+        chat_id = self._case_state_chat_id(session_key)
+        if self.valves.STATE_BACKEND != "laravel" or not chat_id:
+            return None
+        try:
+            stored = await self._case_state_request("GET", chat_id)
+            if not stored:
+                return None
+            record = self._compact_case_context(stored)
+            _case_context_store[session_key] = record
+            return record
+        except Exception:
+            # A state outage must not fail a clinical turn.
+            return None
+
+    async def _clear_case_context(self, session_key: str):
         _case_context_store.pop(session_key, None)
+        chat_id = self._case_state_chat_id(session_key)
+        if self.valves.STATE_BACKEND != "laravel" or not chat_id:
+            return
+        try:
+            await self._case_state_request("DELETE", chat_id)
+        except Exception:
+            # A state outage must not fail a clinical turn.
+            return
 
     def _is_vague_management_followup(self, question: str) -> bool:
         q = (question or "").strip()
@@ -1749,6 +1989,8 @@ class Tools:
             return len(numbered) >= max(1, len(raw_lines) - 1)
         if len(content) > 120:
             return False
+        if re.fullmatch(r"(ναι|[οό]χι|[αά]γνωστο|δεν\s+ξ[εέ]ρω)", content, re.IGNORECASE):
+            return True
         return bool(re.fullmatch(
             r"(yes|no|unknown|n/?a|not sure|symptomatic|asymptomatic|"
             r"\d+(?:\.\d+)?\s*(?:%|mm|cm)?(?:\s*[a-z0-9/\-]+)?|"
@@ -2330,24 +2572,52 @@ class Tools:
         history = self._extract_history(__messages__, question)
         session_key = self._get_session_key(__user__, __metadata__)
         session = self._get_session(session_key)
+        had_session_at_start = session is not None
+        case_ctx_at_start = await self._get_case_context(session_key)
+        turn_decision = self.classify_turn(
+            question,
+            __messages__,
+            has_session=had_session_at_start,
+            has_case_ctx=case_ctx_at_start is not None,
+        )
+        turn_started = time.perf_counter()
+        latency_ms = {"pre_retrieval": 0, "change_detection": 0, "retrieval": 0}
+        turn_phase = "gate" if not session else "confirm"
+        change_decision = None
+
+        async def timed_call(bucket: str, awaitable):
+            started = time.perf_counter()
+            try:
+                return await awaitable
+            finally:
+                latency_ms[bucket] += round((time.perf_counter() - started) * 1000)
+
         try:
-            can_reuse_pending_gate = self._can_reuse_pending_gate(question, __messages__)
-            guardrail_type = None if can_reuse_pending_gate else self._guardrail_type(question, __messages__)
-            if guardrail_type is not None:
+            if turn_decision.turn_class is TurnClass.GUARDRAIL:
                 await self._emit_status(emitter, "Providing app usage guidance...", done=True)
                 return self._format_capabilities_for_model(
-                    self._capabilities_response(question, guardrail_type)
+                    self._capabilities_response(question, turn_decision.reason)
                 )
 
-            if session and self._should_treat_as_new_query(question, session) and not can_reuse_pending_gate:
+            if turn_decision.turn_class in {
+                TurnClass.NEW_CASE,
+                TurnClass.EXPLICIT_NEW_CASE,
+            }:
+                await self._clear_case_context(session_key)
+
+            if session and turn_decision.turn_class in {
+                TurnClass.NEW_CASE,
+                TurnClass.EXPLICIT_NEW_CASE,
+                TurnClass.KNOWLEDGE,
+            }:
                 self._clear_session(session_key, cancel_task=True)
                 session = None
 
             # Vague management follow-up after a completed case (no active session).
             # e.g. "So, what should I do?" / "What's the plan?" / "Which option?"
             # Rewrite using the stored case context so RAGFlow gets a meaningful query.
-            if not session and self._is_vague_management_followup(question):
-                case_ctx = self._get_case_context(session_key)
+            if not session and turn_decision.turn_class is TurnClass.FOLLOWUP_VAGUE:
+                case_ctx = await self._get_case_context(session_key)
                 if case_ctx:
                     rewritten = self._rewrite_with_case_context(question, case_ctx)
                     effective_guidelines = case_ctx.get("guidelines") or guidelines
@@ -2355,8 +2625,12 @@ class Tools:
                         emitter,
                         "Retrieving guideline evidence for follow-up question...",
                     )
-                    data = await self._call_consult_backend(rewritten, history, effective_guidelines)
-                    self._store_case_context(session_key, case_ctx)  # refresh TTL
+                    turn_phase = "followup"
+                    data = await timed_call(
+                        "retrieval",
+                        self._call_consult_backend(rewritten, history, effective_guidelines),
+                    )
+                    await self._store_case_context(session_key, case_ctx)  # refresh TTL
                     # Pass the stored retrieval_query as confirmed_details so pathway
                     # detection uses the case-specific procedure info rather than the
                     # Laravel-boosted retrieval query (which always includes "or endovascular").
@@ -2385,22 +2659,30 @@ class Tools:
                         "Checking whether the new detail changes the stored retrieval...",
                     )
                     cached_payload = recovered.get("retrieval_payload") if isinstance(recovered.get("retrieval_payload"), dict) else None
-                    phase2 = await self._call_confirmation_phase(
-                        question,
-                        recovered["confirmation_history"],
-                        pre_result,
-                        cached_payload=cached_payload,
+                    turn_phase = "confirm"
+                    phase2 = await timed_call(
+                        "change_detection",
+                        self._call_confirmation_phase(
+                            question,
+                            recovered["confirmation_history"],
+                            pre_result,
+                            cached_payload=cached_payload,
+                        ),
                     )
+                    change_decision = "reuse" if phase2.get("reused") else "requery"
 
                     if phase2.get("reused"):
                         data = phase2.get("retrieval_payload") or cached_payload
                         if not isinstance(data, dict):
-                            data = await self._call_consult_backend(
-                                str(pre_result.get("retrieval_query") or recovered["original_question"]),
-                                recovered["retrieval_history"],
-                                effective_guidelines,
+                            data = await timed_call(
+                                "retrieval",
+                                self._call_consult_backend(
+                                    str(pre_result.get("retrieval_query") or recovered["original_question"]),
+                                    recovered["retrieval_history"],
+                                    effective_guidelines,
+                                ),
                             )
-                        self._store_case_context(session_key, pre_result)
+                        await self._store_case_context(session_key, pre_result)
                         return await self._build_response_from_payload(
                             data,
                             emitter,
@@ -2418,7 +2700,7 @@ class Tools:
                     requery_pre = dict(pre_result)
                     if phase2.get("decision_reason"):
                         requery_pre["retrieval_query"] = phase2.get("retrieval_payload", {}).get("query_normalization", {}).get("normalized_query", pre_result.get("retrieval_query", ""))
-                    self._store_case_context(session_key, requery_pre)
+                    await self._store_case_context(session_key, requery_pre)
                     return await self._build_response_from_payload(
                         data,
                         emitter,
@@ -2450,7 +2732,11 @@ class Tools:
                         self._await_session_payload(session_key, session, emitter)
                     )
                     try:
-                        phase2 = await self._call_confirmation_phase(question, history, pre_result)
+                        phase2 = await timed_call(
+                            "change_detection",
+                            self._call_confirmation_phase(question, history, pre_result),
+                        )
+                        change_decision = "reuse" if phase2.get("reused") else "requery"
                     except httpx.TimeoutException:
                         # Confirmation phase timed out — fall back to the background retrieval
                         # payload rather than surfacing "Request timed out" to the user.
@@ -2458,12 +2744,15 @@ class Tools:
                         data = await _prefetch
                         if isinstance(data, dict) and data.get("error"):
                             await self._emit_status(emitter, "Stored retrieval failed; retrying search...")
-                            data = await self._call_consult_backend(
-                                str(pre_result.get("retrieval_query") or question),
-                                history,
-                                effective_guidelines,
+                            data = await timed_call(
+                                "retrieval",
+                                self._call_consult_backend(
+                                    str(pre_result.get("retrieval_query") or question),
+                                    history,
+                                    effective_guidelines,
+                                ),
                             )
-                        self._store_case_context(session_key, pre_result)
+                        await self._store_case_context(session_key, pre_result)
                         self._clear_session(session_key)
                         return await self._build_response_from_payload(
                             data,
@@ -2477,12 +2766,15 @@ class Tools:
                         data = await _prefetch  # likely already done
                         if isinstance(data, dict) and data.get("error"):
                             await self._emit_status(emitter, "Stored retrieval failed; retrying search...")
-                            data = await self._call_consult_backend(
-                                str(pre_result.get("retrieval_query") or question),
-                                history,
-                                effective_guidelines,
+                            data = await timed_call(
+                                "retrieval",
+                                self._call_consult_backend(
+                                    str(pre_result.get("retrieval_query") or question),
+                                    history,
+                                    effective_guidelines,
+                                ),
                             )
-                        self._store_case_context(session_key, pre_result)
+                        await self._store_case_context(session_key, pre_result)
                         self._clear_session(session_key)
                         return await self._build_response_from_payload(
                             data,
@@ -2504,7 +2796,7 @@ class Tools:
                         "New clinical detail changes retrieval — running updated search...",
                     )
                     data = phase2.get("retrieval_payload") or phase2
-                    self._store_case_context(session_key, pre_result)
+                    await self._store_case_context(session_key, pre_result)
                     self._clear_session(session_key, cancel_task=True)
                     return await self._build_response_from_payload(
                         data,
@@ -2515,7 +2807,11 @@ class Tools:
                     )
 
             await self._emit_status(emitter, "Interpreting the clinical question before retrieval...")
-            phase1 = await self._call_pre_retrieval(question, history, guidelines)
+            turn_phase = "gate"
+            phase1 = await timed_call(
+                "pre_retrieval",
+                self._call_pre_retrieval(question, history, guidelines),
+            )
 
             guardrail = phase1.get("guardrail") or {}
             if guardrail.get("short_circuited"):
@@ -2537,7 +2833,7 @@ class Tools:
             background_task = asyncio.create_task(
                 self._run_retrieval_task(retrieval_question, history, retrieval_guidelines)
             )
-            self._store_session(
+            await self._store_session(
                 session_key,
                 payload=None,
                 pre_result=pre_result,
@@ -2561,3 +2857,19 @@ class Tools:
         except Exception as e:
             await self._emit_status(emitter, f"Error: {str(e)[:50]}", done=True)
             return f"Error: {str(e)}"
+        finally:
+            latency_ms["total"] = round((time.perf_counter() - turn_started) * 1000)
+            self._log_turn(
+                session_key_hash=hashlib.sha1(session_key.encode("utf-8")).hexdigest()[:8],
+                chat_scoped=session_key.startswith("chat:"),
+                turn_class=turn_decision.turn_class.value,
+                reason=turn_decision.reason,
+                had_session=had_session_at_start,
+                had_case_ctx=case_ctx_at_start is not None,
+                phase=turn_phase,
+                change_decision=change_decision,
+                guidelines=guidelines,
+                question_len=len(question or ""),
+                question_sha1=hashlib.sha1((question or "").encode("utf-8")).hexdigest()[:8],
+                latency_ms=latency_ms,
+            )

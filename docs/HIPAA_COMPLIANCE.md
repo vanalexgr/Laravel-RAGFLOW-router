@@ -130,6 +130,17 @@ PHI scrubbing is applied at:
 - The actual content that was redacted
 - Any information that could reconstruct the original PHI
 
+## Short-Lived Case State
+
+The optional Laravel case-state backend persists only normalized planner fields
+(`provisional_diagnosis`, up to six guideline keys, `retrieval_query`, and a
+timestamp) in the explicitly configured Redis cache for no more than 900 seconds.
+The two free-text planner fields pass through `PHIScrubberService` again before
+storage. Raw questions, answers, and conversation history are never accepted into
+the stored record. The Redis key is scoped by `chatId`; the full identifier is not
+written to application logs. Deployments retain the in-memory adapter backend by
+default until `STATE_BACKEND=laravel` is deliberately enabled.
+
 ### Example Audit Log Entry
 
 ```json
@@ -214,7 +225,7 @@ This implementation provides **meaningful PHI protection** suitable for:
 - [x] PHI automatically de-identified before external API calls
 - [x] Audit logging of de-identification events
 - [x] Correlation IDs for request tracing
-- [x] No PHI stored in logs or databases
+- [x] No raw PHI stored in logs or databases; optional scrubbed planner state expires within 15 minutes
 - [x] HTTPS encryption in transit
 
 ### Administrative (Organization Responsibility)

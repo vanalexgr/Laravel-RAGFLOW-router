@@ -9,6 +9,7 @@ use App\Services\GapDetectionService;
 use App\Services\GuidelineAssetService;
 use App\Services\PreRetrievalService;
 use App\Services\RetrievalService;
+use App\ValueObjects\ChangeDetectionResult;
 use App\ValueObjects\GapAssessment;
 use App\ValueObjects\PreRetrievalResult;
 use Illuminate\Http\Request;
@@ -75,7 +76,15 @@ class ToolController extends Controller
             }
 
             $original = PreRetrievalResult::fromArray($preRetrievalData);
+            $changeDetectionStarted = hrtime(true);
             $changeResult = $this->changeDetectionService->detect($question, $original);
+            $changeDetectionElapsedMs = (int) round((hrtime(true) - $changeDetectionStarted) / 1_000_000);
+            Log::channel('retrieval')->info('[CHANGE DETECTION]', [
+                'decision' => $changeResult->decision,
+                'reason' => $this->changeDetectionReasonLabel($changeResult),
+                'llm_called' => $changeResult->llmCalled,
+                'elapsed_ms' => $changeDetectionElapsedMs,
+            ]);
 
             if ($changeResult->decision === 'reuse') {
                 $cachedPayload = $request->input('cached_retrieval_payload');
@@ -172,6 +181,24 @@ class ToolController extends Controller
         return $this->jsonApiResponse(
             $this->buildConsultPayload($retrieval['result'], $retrieval['assets'])
         );
+    }
+
+    private function changeDetectionReasonLabel(ChangeDetectionResult $result): string
+    {
+        if ($result->llmCalled) {
+            return match ($result->reason) {
+                'parse failure' => 'parse_failure',
+                'llm failure' => 'llm_failure',
+                default => 'llm_decision',
+            };
+        }
+
+        return match ($result->reason) {
+            'empty reply' => 'empty_reply',
+            'short confirmatory reply' => 'short_confirmatory_reply',
+            'clti clarification changes guideline selection' => 'deterministic_guideline_shift',
+            default => 'deterministic_decision',
+        };
     }
 
     public function preRetrieve(Request $request)

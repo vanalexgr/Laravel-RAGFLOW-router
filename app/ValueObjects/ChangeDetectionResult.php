@@ -9,6 +9,7 @@ class ChangeDetectionResult
         public readonly string $reason,
         public readonly ?string $enrichedQuery,
         public readonly array $updatedGuidelines = [],
+        public readonly bool $llmCalled = false,
     ) {
     }
 
@@ -46,6 +47,7 @@ class ChangeDetectionResult
             reason: trim((string) ($data['reason'] ?? '')),
             enrichedQuery: $enrichedQuery,
             updatedGuidelines: $updatedGuidelines,
+            llmCalled: (bool) ($data['llm_called'] ?? false),
         );
     }
 
@@ -56,6 +58,7 @@ class ChangeDetectionResult
             'reason' => $this->reason,
             'enriched_query' => $this->enrichedQuery,
             'updated_guidelines' => $this->updatedGuidelines,
+            'llm_called' => $this->llmCalled,
         ];
     }
 }

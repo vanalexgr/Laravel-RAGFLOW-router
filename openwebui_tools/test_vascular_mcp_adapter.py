@@ -1,6 +1,10 @@
+import io
+import json
 import sys
 import types
 import unittest
+from contextlib import redirect_stdout
+from unittest.mock import patch
 
 
 if "httpx" not in sys.modules:
@@ -48,7 +52,185 @@ if "pydantic" not in sys.modules:
     sys.modules["pydantic"] = pydantic
 
 
-from openwebui_tools.vascular_mcp_adapter import Tools
+from openwebui_tools.vascular_mcp_adapter import (
+    TTLStore,
+    Tools,
+    _case_context_store,
+    _session_store,
+)
+
+
+class TTLStoreTests(unittest.TestCase):
+    def test_expired_entries_are_evicted_on_write(self):
+        now = [100.0]
+        store = TTLStore(ttl=10, max_entries=10, clock=lambda: now[0])
+        store["expired"] = {"value": 1, "ts": 80.0}
+        store["live"] = {"value": 2, "ts": 100.0}
+
+        self.assertNotIn("expired", store)
+        self.assertEqual({"value": 2, "ts": 100.0}, store.get("live"))
+
+    def test_size_never_exceeds_cap_and_oldest_is_evicted(self):
+        store = TTLStore(ttl=100, max_entries=3, clock=lambda: 10.0)
+        for index in range(5):
+            store.set(f"key-{index}", {"value": index, "ts": 10.0})
+
+        self.assertEqual(3, len(store))
+        self.assertNotIn("key-0", store)
+        self.assertNotIn("key-1", store)
+        self.assertIn("key-4", store)
+
+    def test_get_pop_overwrite_and_clear_match_existing_mapping_behavior(self):
+        store = TTLStore(ttl=100, max_entries=3, clock=lambda: 10.0)
+        store["case"] = {"value": "first", "ts": 10.0}
+        store["case"] = {"value": "updated", "ts": 10.0}
+
+        self.assertEqual({"value": "updated", "ts": 10.0}, store.get("case"))
+        self.assertIsNone(store.get("missing"))
+        self.assertEqual({"value": "updated", "ts": 10.0}, store.pop("case"))
+        self.assertEqual("fallback", store.pop("missing", "fallback"))
+        store["other"] = {"ts": 10.0}
+        store.clear()
+        self.assertEqual(0, len(store))
+
+
+class VascularMcpAdapterStateBackendTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        _session_store.clear()
+        _case_context_store.clear()
+
+    async def test_laravel_backend_round_trips_through_http_endpoints(self):
+        server_state = {}
+        requests = []
+
+        class FakeResponse:
+            def __init__(self, status_code, data=None):
+                self.status_code = status_code
+                self.data = data
+
+            def raise_for_status(self):
+                if self.status_code >= 400:
+                    raise RuntimeError("http failure")
+
+            def json(self):
+                return self.data
+
+        class FakeAsyncClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def request(self, method, url, json=None, headers=None):
+                requests.append((method, url, json))
+                if method == "PUT":
+                    server_state.update(json)
+                    server_state["ts"] = 123
+                    return FakeResponse(200, dict(server_state))
+                if method == "GET":
+                    return FakeResponse(200, dict(server_state))
+                server_state.clear()
+                return FakeResponse(204)
+
+        tool = Tools()
+        tool.valves.STATE_BACKEND = "laravel"
+        state = {
+            "provisional_diagnosis": "Symptomatic carotid stenosis",
+            "guidelines": ["carotid_vertebral"],
+            "retrieval_query": "symptomatic carotid stenosis intervention",
+            "question": "must not be sent",
+        }
+
+        with patch("openwebui_tools.vascular_mcp_adapter.httpx.AsyncClient", FakeAsyncClient):
+            await tool._store_case_context("chat:state-round-trip", state)
+            _case_context_store.clear()  # simulate a different adapter worker
+            recovered = await tool._get_case_context("chat:state-round-trip")
+            await tool._clear_case_context("chat:state-round-trip")
+
+        self.assertEqual("Symptomatic carotid stenosis", recovered["provisional_diagnosis"])
+        self.assertEqual(["carotid_vertebral"], recovered["guidelines"])
+        self.assertEqual(
+            {"provisional_diagnosis", "guidelines", "retrieval_query"},
+            set(requests[0][2]),
+        )
+        self.assertEqual(["PUT", "GET", "DELETE"], [request[0] for request in requests])
+        self.assertTrue(all("/api/v1/case-state/state-round-trip" in request[1] for request in requests))
+
+    async def test_laravel_state_failure_degrades_to_local_or_empty_context(self):
+        class FailingAsyncClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def request(self, method, url, json=None, headers=None):
+                raise RuntimeError("state backend unavailable")
+
+        class GracefulTools(Tools):
+            async def _emit_status(self, emitter, description: str, done: bool = False):
+                return None
+
+            async def _call_pre_retrieval(self, question: str, history: list, guidelines: list) -> dict:
+                return {
+                    "phase": "awaiting_confirmation",
+                    "confirmation_message": "gate message",
+                    "pre_retrieval_result": {
+                        "provisional_diagnosis": "CLTI",
+                        "guidelines": ["clti"],
+                        "retrieval_query": "CLTI limb salvage",
+                    },
+                }
+
+            async def _run_retrieval_task(self, question: str, history: list, guidelines: list) -> dict:
+                return {"result": "retrieval"}
+
+        tool = GracefulTools()
+        tool.valves.STATE_BACKEND = "laravel"
+
+        with patch("openwebui_tools.vascular_mcp_adapter.httpx.AsyncClient", FailingAsyncClient):
+            await tool._store_case_context("chat:state-outage", {
+                "provisional_diagnosis": "CLTI",
+                "guidelines": ["clti"],
+                "retrieval_query": "CLTI limb salvage",
+            })
+            self.assertEqual("CLTI", (await tool._get_case_context("chat:state-outage"))["provisional_diagnosis"])
+            _case_context_store.clear()
+            self.assertIsNone(await tool._get_case_context("chat:state-outage"))
+            await tool._clear_case_context("chat:state-outage")
+            result = await tool.consult_vascular_guidelines(
+                question="Patient with CLTI and rest pain",
+                guideline_1="clti",
+                __metadata__={"chat_id": "state-outage-turn"},
+                __messages__=[{"role": "user", "content": "Patient with CLTI and rest pain"}],
+            )
+
+        self.assertIn("gate message", result)
+        self.assertNotIn("Error:", result)
+
+    async def test_memory_backend_never_calls_http(self):
+        class UnexpectedAsyncClient:
+            def __init__(self, *args, **kwargs):
+                raise AssertionError("memory backend attempted HTTP")
+
+        tool = Tools()
+        self.assertEqual("memory", tool.valves.STATE_BACKEND)
+
+        with patch("openwebui_tools.vascular_mcp_adapter.httpx.AsyncClient", UnexpectedAsyncClient):
+            await tool._store_case_context("chat:memory-only", {
+                "provisional_diagnosis": "AAA",
+                "guidelines": ["abdominal_aortic_aneurysm"],
+                "retrieval_query": "AAA repair threshold",
+            })
+            self.assertIsNotNone(await tool._get_case_context("chat:memory-only"))
+            await tool._clear_case_context("chat:memory-only")
 
 
 class VascularMcpAdapterHeuristicTests(unittest.TestCase):
@@ -200,9 +382,8 @@ class VascularMcpAdapterHeuristicTests(unittest.TestCase):
             has_assets=True,
         )
 
-        self.assertIn("## Bottom Line", blueprint)
-        self.assertIn("## Key Case Factors", blueprint)
-        self.assertIn("## Guideline-Based Options", blueprint)
+        self.assertIn("## Clinical Decision", blueprint)
+        self.assertIn("## What is NOT indicated (if relevant)", blueprint)
         self.assertIn("## Clinical Decision Summary", blueprint)
         self.assertIn("## Evidence Used", blueprint)
         self.assertIn("## 🖼️ Figures / Tables", blueprint)
@@ -271,6 +452,67 @@ class VascularMcpAdapterHeuristicTests(unittest.TestCase):
 
 
 class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        # Recovery tests must prove transcript fallback without process memory.
+        _session_store.clear()
+        _case_context_store.clear()
+
+    async def test_consult_emits_exactly_one_phi_safe_structured_turn_log(self):
+        tool = Tools()
+        question = "Who is Donald Trump?"
+        messages = [{"role": "user", "content": question}]
+        expected_decision = tool.classify_turn(
+            question,
+            messages,
+            has_session=False,
+            has_case_ctx=False,
+        )
+        output = io.StringIO()
+
+        with redirect_stdout(output):
+            result = await tool.consult_vascular_guidelines(
+                question=question,
+                guideline_1="asymptomatic_pad",
+                __user__={"id": "sensitive-user-id"},
+                __metadata__={"chat_id": "sensitive-chat-id"},
+                __messages__=messages,
+                __event_emitter__=None,
+            )
+
+        records = [json.loads(line) for line in output.getvalue().splitlines()]
+        turn_records = [record for record in records if record.get("evt") == "turn"]
+        self.assertIn("APP_CAPABILITIES_GUIDANCE_ONLY", result)
+        self.assertEqual(1, len(turn_records))
+        record = turn_records[0]
+        self.assertEqual(expected_decision.turn_class.value, record["turn_class"])
+        self.assertEqual(expected_decision.reason, record["reason"])
+        self.assertTrue(record["chat_scoped"])
+        self.assertEqual(len(question), record["question_len"])
+        self.assertEqual(8, len(record["question_sha1"]))
+        self.assertEqual(8, len(record["session_key_hash"]))
+        self.assertEqual(
+            {"pre_retrieval", "change_detection", "retrieval", "total"},
+            set(record["latency_ms"]),
+        )
+        serialized = json.dumps(record)
+        self.assertNotIn(question, serialized)
+        self.assertNotIn("sensitive-user-id", serialized)
+        self.assertNotIn("sensitive-chat-id", serialized)
+
+    async def test_turn_decision_logging_can_be_disabled(self):
+        tool = Tools()
+        tool.valves.LOG_TURN_DECISIONS = False
+        output = io.StringIO()
+
+        with redirect_stdout(output):
+            await tool.consult_vascular_guidelines(
+                question="Who is Donald Trump?",
+                guideline_1="asymptomatic_pad",
+                __event_emitter__=None,
+            )
+
+        self.assertEqual("", output.getvalue())
+
     async def test_explain_app_capabilities_returns_wrapped_guidance(self):
         tool = Tools()
 
@@ -298,7 +540,7 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 return "delegated consult"
 
         tool = DelegatingTools()
-        tool._store_session(
+        await tool._store_session(
             "chat:clarification-chat",
             payload=None,
             pre_result={
@@ -391,7 +633,7 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
             async def _emit_status(self, emitter, description: str, done: bool = False):
                 self.calls.append(("status", description, done))
 
-            async def _call_confirmation_phase(self, question: str, history: list, pre_result: dict) -> dict:
+            async def _call_confirmation_phase(self, question: str, history: list, pre_result: dict, **kwargs) -> dict:
                 self.calls.append(("confirm", question, tuple(history), pre_result["retrieval_query"]))
                 return {"phase": "complete", "reused": True}
 
@@ -414,12 +656,12 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
                     "assets": [],
                 }
 
-            async def _build_response_from_payload(self, data, emitter, analysis_question: str, guidelines=None) -> str:
+            async def _build_response_from_payload(self, data, emitter, analysis_question: str, guidelines=None, **kwargs) -> str:
                 self.calls.append(("build", analysis_question, tuple(guidelines or [])))
                 return "final answer"
 
         tool = GuardrailAwareTools()
-        tool._store_session(
+        await tool._store_session(
             "chat:pending-gate-chat",
             payload=None,
             pre_result={
@@ -520,7 +762,7 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
                     },
                 }
 
-            async def _call_confirmation_phase(self, question: str, history: list, pre_result: dict) -> dict:
+            async def _call_confirmation_phase(self, question: str, history: list, pre_result: dict, **kwargs) -> dict:
                 self.calls.append(("confirm", question, tuple(history), pre_result["retrieval_query"]))
                 return {
                     "phase": "complete",
@@ -528,11 +770,13 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
                     "decision_reason": "clarification answered",
                 }
 
-            async def _build_response_from_payload(self, data, emitter, analysis_question: str, guidelines=None) -> str:
+            async def _build_response_from_payload(self, data, emitter, analysis_question: str, guidelines=None, **kwargs) -> str:
                 self.calls.append(("build", analysis_question, tuple(guidelines or [])))
                 return "final answer"
 
         tool = RecoveryTools()
+        self.assertEqual(0, len(_session_store))
+        self.assertEqual(0, len(_case_context_store))
         messages = [
             {"role": "user", "content": "Patient with saphenous thrombosis"},
             {
@@ -550,22 +794,25 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
             {"role": "user", "content": "Superficial, 4cm from SFJ"},
         ]
 
-        result = await tool.consult_vascular_guidelines(
+        result = await tool.explain_app_capabilities(
             question="Superficial, 4cm from SFJ",
-            guideline_1="venous_thrombosis",
-            guideline_2="chronic_venous_disease",
             __user__={"id": "recovery-user"},
             __messages__=messages,
             __event_emitter__=None,
         )
 
         self.assertEqual("final answer", result)
+        self.assertIn(("pre", "Patient with saphenous thrombosis", tuple(), tuple()), tool.calls)
         self.assertIn(("pre", "Patient with saphenous thrombosis", tuple(), ("venous_thrombosis", "chronic_venous_disease")), tool.calls)
         self.assertIn(
             ("confirm", "Superficial, 4cm from SFJ", ("Patient with saphenous thrombosis",), "saphenous vein thrombosis superficial vein thrombosis lower limb"),
             tool.calls,
         )
         self.assertTrue(any(call[0] == "build" for call in tool.calls))
+        self.assertIn(
+            ("build", "saphenous vein thrombosis superficial vein thrombosis lower limb Superficial, 4cm from SFJ", ("venous_thrombosis", "chronic_venous_disease")),
+            tool.calls,
+        )
         self.assertFalse(any(call[:2] == ("pre", "Superficial, 4cm from SFJ") for call in tool.calls))
 
     async def test_missing_session_recovers_pending_gate_for_rewritten_follow_up(self):
@@ -613,7 +860,7 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
                     },
                 }
 
-            async def _call_confirmation_phase(self, question: str, history: list, pre_result: dict) -> dict:
+            async def _call_confirmation_phase(self, question: str, history: list, pre_result: dict, **kwargs) -> dict:
                 self.calls.append(("confirm", question, tuple(history), pre_result["retrieval_query"]))
                 return {
                     "phase": "complete",
@@ -621,11 +868,13 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
                     "decision_reason": "clarification answered",
                 }
 
-            async def _build_response_from_payload(self, data, emitter, analysis_question: str, guidelines=None) -> str:
+            async def _build_response_from_payload(self, data, emitter, analysis_question: str, guidelines=None, **kwargs) -> str:
                 self.calls.append(("build", analysis_question, tuple(guidelines or [])))
                 return "final answer"
 
         tool = RecoveryTools()
+        self.assertEqual(0, len(_session_store))
+        self.assertEqual(0, len(_case_context_store))
         messages = [
             {"role": "user", "content": "My patient has a dissection just above the left subclavian and also dissected the carotid with thrombus and stroke."},
             {
@@ -666,6 +915,10 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
             ("confirm", rewritten, ("My patient has a dissection just above the left subclavian and also dissected the carotid with thrombus and stroke.",), "non a non b dissection thoracic aorta aortic arch left subclavian carotid extension carotid thrombus"),
             tool.calls,
         )
+        self.assertIn(
+            ("build", "non a non b dissection thoracic aorta aortic arch left subclavian carotid extension carotid thrombus " + rewritten, ("descending_thoracic_aorta", "aortic_arch", "carotid_vertebral")),
+            tool.calls,
+        )
         self.assertFalse(any(call[:2] == ("pre", rewritten) for call in tool.calls))
 
     async def test_existing_session_is_not_cleared_for_rewritten_follow_up_after_gate(self):
@@ -685,7 +938,7 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
                     "pre_retrieval_result": {},
                 }
 
-            async def _call_confirmation_phase(self, question: str, history: list, pre_result: dict) -> dict:
+            async def _call_confirmation_phase(self, question: str, history: list, pre_result: dict, **kwargs) -> dict:
                 self.calls.append(("confirm", question, tuple(history), pre_result["retrieval_query"]))
                 return {"phase": "complete", "reused": True}
 
@@ -708,12 +961,12 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
                     "assets": [],
                 }
 
-            async def _build_response_from_payload(self, data, emitter, analysis_question: str, guidelines=None) -> str:
+            async def _build_response_from_payload(self, data, emitter, analysis_question: str, guidelines=None, **kwargs) -> str:
                 self.calls.append(("build", analysis_question, tuple(guidelines or [])))
                 return "final answer"
 
         tool = SessionTools()
-        tool._store_session(
+        await tool._store_session(
             "user:session-user",
             payload=None,
             pre_result={
