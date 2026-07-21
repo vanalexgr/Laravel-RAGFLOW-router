@@ -29,6 +29,41 @@ A1 tests prove expired entries are reclaimed on a subsequent write, capacity nev
 
 B1 characterization tests were added and run red before implementation: all 42 failed solely because `classify_turn` did not yet exist. After implementation, all 42 reproduce `baseline_observed`. An existing rewritten-pending-gate flow test additionally preserved the real orchestration priority that the former shadow logger had mislabeled.
 
+## Phase 2 progress
+
+### B2 — expanded corpus baseline
+
+- Corpus expanded from 42 to **84** labeled turns.
+- New cases are de-identified clinical shapes only. No names, MRNs, dates, contact details, network metadata, or copied session prose were committed.
+- Added Greek new-case, gate-reply, vague-follow-up, and substantive-follow-up shapes.
+- Added both pending-gate reorder shapes: explicit new case and standalone knowledge.
+- Rollback: revert the B2 commit to restore the 42-case corpus and Phase-1 notes.
+
+B2 confusion matrix (rows expected, columns observed):
+
+| Expected \\ Observed | NEW_CASE | EXPLICIT_NEW_CASE | GATE_REPLY | FOLLOWUP_VAGUE | FOLLOWUP_SUBSTANTIVE | KNOWLEDGE | GUARDRAIL |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| NEW_CASE | 12 | 0 | 0 | 0 | 0 | 0 | 0 |
+| EXPLICIT_NEW_CASE | 0 | 10 | 0 | 0 | 1 | 0 | 0 |
+| GATE_REPLY | 0 | 0 | 11 | 0 | 1 | 0 | 0 |
+| FOLLOWUP_VAGUE | 0 | 0 | 0 | 6 | 7 | 0 | 1 |
+| FOLLOWUP_SUBSTANTIVE | 0 | 0 | 0 | 0 | 14 | 0 | 0 |
+| KNOWLEDGE | 2 | 0 | 0 | 0 | 0 | 9 | 0 |
+| GUARDRAIL | 3 | 0 | 0 | 0 | 0 | 1 | 6 |
+
+| Class | B2 accuracy |
+|---|---:|
+| NEW_CASE | 100.00% (12/12) |
+| EXPLICIT_NEW_CASE | 90.91% (10/11) |
+| GATE_REPLY | 91.67% (11/12) |
+| FOLLOWUP_VAGUE | 42.86% (6/14) |
+| FOLLOWUP_SUBSTANTIVE | 100.00% (14/14) |
+| KNOWLEDGE | 81.82% (9/11) |
+| GUARDRAIL | 60.00% (6/10) |
+| **Overall** | **80.95% (68/84)** |
+
+Representative B2 classifier timing: median 38.34 µs, p95 70.96 µs, max 97.50 µs (local, no I/O; Workstream D remains deferred).
+
 ## Classification baseline
 
 Command:

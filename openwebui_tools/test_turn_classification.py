@@ -38,7 +38,7 @@ def test_unified_classifier_matches_phase_zero_observation(row):
 def test_corpus_has_required_size_classes_and_greek_cases():
     expected_counts = Counter(row["expected"] for row in CORPUS)
 
-    assert len(CORPUS) >= 40
+    assert len(CORPUS) >= 80
     assert set(expected_counts) == {
         "NEW_CASE",
         "EXPLICIT_NEW_CASE",
@@ -53,3 +53,7 @@ def test_corpus_has_required_size_classes_and_greek_cases():
         any("ασθεν" in str(message.get("content", "")).lower() for message in row["messages"])
         for row in CORPUS
     ) >= 2
+
+    rows_by_id = {row["id"]: row for row in CORPUS}
+    assert rows_by_id["explicit_pending_gate_reorder"]["expected"] == "EXPLICIT_NEW_CASE"
+    assert rows_by_id["knowledge_pending_gate_reorder"]["expected"] == "KNOWLEDGE"
