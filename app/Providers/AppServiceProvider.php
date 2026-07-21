@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Contracts\LlmClient;
 use App\Services\AzureOpenAiLlmClient;
+use App\Services\OpenAiLlmClient;
 use App\Services\BridgeRerankService;
 use App\Services\ChunkSelectionService;
 use App\Services\ClinicalInterpreterService;
@@ -21,7 +22,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->app->bind(LlmClient::class, AzureOpenAiLlmClient::class);
+        $this->app->bind(LlmClient::class, OpenAiLlmClient::class);
 
         // PHIScrubberService resets state per call; this binding is not safe under Octane concurrency.
         $this->app->singleton(PHIScrubberService::class);

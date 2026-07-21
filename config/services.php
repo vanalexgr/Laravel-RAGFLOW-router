@@ -2,6 +2,16 @@
 
 return [
 
+    'openai' => [
+        'url' => env('OPENAI_URL', 'https://api.openai.com/v1'),
+        'api_key' => env('OPENAI_API_KEY'),
+        'model' => env('OPENAI_MODEL', env('VASCULAR_AGENT_MODEL', 'gpt-5-mini')),
+        'supports_temperature' => env('OPENAI_SUPPORTS_TEMPERATURE', false),
+        'timeout' => (int) env('OPENAI_TIMEOUT', 30),
+        'reasoning_effort' => env('OPENAI_REASONING_EFFORT', 'minimal'),
+    ],
+
+
     /*
     |--------------------------------------------------------------------------
     | Third Party Services

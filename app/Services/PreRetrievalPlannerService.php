@@ -105,8 +105,50 @@ final class PreRetrievalPlannerService
     {
         $clean = trim((string) preg_replace('/```(?:json)?|```/i', '', $raw));
         if ($clean === '') return null;
-        if (preg_match('/\{[\s\S]*\}/u', $clean, $match)) $clean = $match[0];
+        $start = strpos($clean, '{');
+        if ($start === false) return null;
+        $clean = substr($clean, $start);
+
         $decoded = json_decode($clean, true);
+        if (is_array($decoded)) return $decoded;
+
+        // Some models (e.g. gpt-5-mini) occasionally truncate trailing closing
+        // brackets; repair the structure and retry before giving up.
+        $decoded = json_decode($this->closeUnbalanced($clean), true);
         return is_array($decoded) ? $decoded : null;
+    }
+
+    /** Append any unclosed strings/objects/arrays so a lightly-truncated JSON payload can still decode. */
+    private function closeUnbalanced(string $s): string
+    {
+        $stack = [];
+        $inStr = false;
+        $esc = false;
+        $len = strlen($s);
+        for ($i = 0; $i < $len; $i++) {
+            $ch = $s[$i];
+            if ($inStr) {
+                if ($esc) {
+                    $esc = false;
+                } elseif ($ch === '\\') {
+                    $esc = true;
+                } elseif ($ch === '"') {
+                    $inStr = false;
+                }
+                continue;
+            }
+            if ($ch === '"') {
+                $inStr = true;
+            } elseif ($ch === '{' || $ch === '[') {
+                $stack[] = $ch;
+            } elseif ($ch === '}' || $ch === ']') {
+                array_pop($stack);
+            }
+        }
+        $suffix = $inStr ? '"' : '';
+        for ($i = count($stack) - 1; $i >= 0; $i--) {
+            $suffix .= $stack[$i] === '{' ? '}' : ']';
+        }
+        return $s.$suffix;
     }
 }
