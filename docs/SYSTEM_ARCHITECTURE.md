@@ -1,5 +1,12 @@
 # Vascular Guidelines System — Architecture & Operations
 
+> **⚠️ Current infra & providers (2026-07-21):** production is a single
+> **Hetzner VM** (`178.105.193.206`) with **OpenAI** (inference + embeddings) and
+> **Cohere** (reranking). References below to Azure OpenAI or the old Azure VMs
+> (`135.237.148.105`, `48.211.217.69`) are **historical** — see
+> [`../CLAUDE.md`](../CLAUDE.md) and [`PROVIDER_MIGRATION.md`](PROVIDER_MIGRATION.md)
+> for the authoritative current state.
+
 **Stack:** Laravel 12 API · RAGFlow · OpenWebUI · Azure OpenAI
 **Purpose:** Clinical decision-support for vascular surgeons. Retrieves evidence from ESVS guidelines and returns structured, citation-backed answers.
 

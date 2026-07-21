@@ -8,31 +8,30 @@ A Laravel 12 API that acts as a clinical decision-support router: it receives qu
 
 ## Infrastructure
 
+**Production is a single all-in-one Hetzner VM.** (The old Azure VMs `135.237.148.105` and `48.211.217.69` are **decommissioned** — do not use.)
+
 | Component | Location | Access |
 |---|---|---|
-| Laravel API | Azure VM `135.237.148.105` | `ssh -i ~/LAVAREL.pem azureuser@135.237.148.105` |
-| OpenWebUI + RAGFlow | Azure VM `48.211.217.69` | `ssh -i ~/ragflownew.pem azureuser@48.211.217.69` |
-| Laravel app root | `/home/azureuser/laravel-ragflow/` | on 135 VM |
-| OpenWebUI container | `open-webui` (Docker) | on 48 VM |
-| OpenWebUI DB | `/app/backend/data/webui.db` (SQLite, inside container) | |
-| RAGFlow bridge | `localhost:8000` on 135 VM | Python FastAPI in `/home/azureuser/laravel-ragflow/ragflow_service/app.py` |
+| Hetzner VM | `178.105.193.206` | `ssh -i ~/.ssh/id_ed25519 root@178.105.193.206` |
+| Laravel app root | `/opt/cg/laravel/app/` | on Hetzner |
+| Laravel API | `127.0.0.1:8001` (fronted by Caddy on :80/:443) | PHP-FPM |
+| RAGFlow bridge | `127.0.0.1:8000` — FastAPI in `ragflow_service/app.py` | `ragflow-bridge.service` (reads `ragflow_service/.env`) |
+| RAGFlow | container `docker-ragflow-cpu-1` (v0.25.5, HTTP API `:9380`) | Docker |
+| RAGFlow DB | container `docker-mysql-1` (MySQL, db `rag_flow`) | Docker |
+| RAGFlow cache/queue | container `docker-redis-1` (valkey) | Docker |
+| OpenWebUI | container `open-webui`, DB `/app/backend/data/webui.db` | Docker |
 
-### Services
+### Services (on Hetzner)
 ```bash
-# Laravel API
-sudo systemctl status laravel-api.service
-sudo systemctl restart laravel-api.service
-
-# After any .env change
-php artisan config:cache     # from /home/azureuser/laravel-ragflow/
-
-# OpenWebUI
-sudo docker ps
-sudo docker restart open-webui
-
-# Bridge (RAGFlow proxy)
-# Runs as part of laravel-api.service or a separate process; check with:
-sudo systemctl status ragflow-bridge.service
+# After an .env change (config is cached):
+php artisan config:cache && systemctl reload php8.5-fpm.service   # from /opt/cg/laravel/app
+# After a PHP class/code change (opcache does NOT hot-reload classes):
+systemctl restart php8.5-fpm.service
+# Bridge (RAGFlow proxy) — after ragflow_service/.env change:
+systemctl restart ragflow-bridge.service
+# RAGFlow / OpenWebUI:
+docker restart docker-ragflow-cpu-1
+docker restart open-webui
 ```
 
 ---
@@ -69,13 +68,13 @@ sudo systemctl status ragflow-bridge.service
 
 **IMPORTANT**: The live tool runs from the SQLite DB, not from the filesystem. After editing `vascular_mcp_adapter.py` locally, always push to the DB:
 ```bash
-scp -i ~/ragflownew.pem openwebui_tools/vascular_mcp_adapter.py azureuser@48.211.217.69:/tmp/vascular_expert_new.py
-ssh -i ~/ragflownew.pem azureuser@48.211.217.69 "
-  sudo docker cp /tmp/vascular_expert_new.py open-webui:/tmp/vascular_expert_new.py &&
-  sudo docker cp $(pwd)/openwebui_tools/push_adapter.py /tmp/push_adapter.py &&
-  sudo docker cp /tmp/push_adapter.py open-webui:/tmp/push_adapter.py &&
-  sudo docker exec open-webui python3 /tmp/push_adapter.py &&
-  sudo docker restart open-webui
+scp -i ~/.ssh/id_ed25519 openwebui_tools/vascular_mcp_adapter.py root@178.105.193.206:/tmp/vascular_expert_new.py
+scp -i ~/.ssh/id_ed25519 openwebui_tools/push_adapter.py root@178.105.193.206:/tmp/push_adapter.py
+ssh -i ~/.ssh/id_ed25519 root@178.105.193.206 "
+  docker cp /tmp/vascular_expert_new.py open-webui:/tmp/vascular_expert_new.py &&
+  docker cp /tmp/push_adapter.py open-webui:/tmp/push_adapter.py &&
+  docker exec open-webui python3 /tmp/push_adapter.py &&
+  docker restart open-webui
 "
 ```
 `push_adapter.py` writes to **id=`vascular_mcp_adapter`** (the active production tool).
@@ -212,13 +211,13 @@ This improves retrieval of the defer-intervention recommendation in severe post-
 ## Logs
 
 ```bash
-# On 135 VM:
-tail -f /home/azureuser/laravel-ragflow/storage/logs/laravel.log
-tail -f /home/azureuser/laravel-ragflow/storage/logs/ragflow-$(date +%Y-%m-%d).log
-tail -f /home/azureuser/laravel-ragflow/storage/logs/retrieval-$(date +%Y-%m-%d).log
+# On the Hetzner VM (/opt/cg/laravel/app):
+tail -f storage/logs/laravel.log
+tail -f storage/logs/ragflow-$(date +%Y-%m-%d).log
+tail -f storage/logs/retrieval-$(date +%Y-%m-%d).log
 
-# On 48 VM (OpenWebUI):
-sudo docker logs open-webui --tail 100 -f
+# OpenWebUI (same VM):
+docker logs open-webui --tail 100 -f
 ```
 
 ### Reading recent queries from OpenWebUI DB
@@ -244,7 +243,7 @@ conn.close()
 - `hash_equals()` used for timing-safe comparison
 - Proxy trust locked to `127.0.0.1` (Caddy on same host)
 - History sanitized before LLM injection (prompt injection prevention)
-- PHI scrubbed before any external API call (RAGFlow, Azure OpenAI)
+- PHI scrubbed before any external API call (RAGFlow, OpenAI, Cohere)
 - Rate limit: 60 req/min per IP on `/api/v1/vascular-consult`
 
 ---

@@ -1,5 +1,13 @@
 # RAGFlow & Vascular Expert Configuration Guide
 
+> **⚠️ Current infra & providers (2026-07-21):** production runs on a single
+> **Hetzner VM** (`178.105.193.206`, Laravel at `/opt/cg/laravel/app`) using
+> **OpenAI** (planner inference `gpt-5-mini` + embeddings) and **Cohere**
+> (reranking `rerank-english-v3.0`). Any `AZURE_OPENAI_*` variables or Azure-VM
+> hosts (`135.237.148.105`, `48.211.217.69`) mentioned below are **historical** —
+> for the authoritative current provider config see
+> [`PROVIDER_MIGRATION.md`](PROVIDER_MIGRATION.md) and [`../CLAUDE.md`](../CLAUDE.md).
+
 This document explains all configurable settings for the medical guidelines consultation system.
 
 ## Environment Variables

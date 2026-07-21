@@ -1,79 +1,60 @@
 # Laravel RAGFlow Router — ESVS Vascular Guidelines API
 
-A Laravel 12 API that routes clinical questions to ESVS (European Society for Vascular Surgery) guideline documents in RAGFlow, retrieves graded evidence chunks, and returns structured clinical responses for synthesis by an LLM.
+A Laravel 12 API that routes clinical questions to ESVS (European Society for
+Vascular Surgery) guideline documents in RAGFlow, retrieves graded evidence
+chunks, and returns structured clinical responses for synthesis by an LLM.
+
+> **Orientation:** [`CLAUDE.md`](CLAUDE.md) is the working session guide (infra,
+> key files, tuning). Model providers and how to change them:
+> [`docs/PROVIDER_MIGRATION.md`](docs/PROVIDER_MIGRATION.md). Running fully
+> self-hosted/local: [`docs/SELF_HOSTED_MODELS.md`](docs/SELF_HOSTED_MODELS.md).
 
 ---
 
 ## Architecture
 
 ```
-Client (OpenWebUI / Codex / API)
-  └─ MCP server (FastMCP, port 8080, 135 VM)
-       └─ POST /api/v1/vascular-consult (Laravel, 135 VM)
-            ├─ PHI scrubbing
-            ├─ Guideline router (Azure OpenAI → selects dataset + expands query)
-            ├─ RAGFlow retrieval (bridge on port 8000)
-            ├─ Gap detection (optional second pass)
-            └─ Returns: citation_chunks, narrative_chunks, assets, query_normalization
+OpenWebUI (user chat, "ESVS expert" model = gpt-5-chat-latest)
+  └─ Tool: openwebui_tools/vascular_mcp_adapter.py  (stored in webui.db, id=vascular_mcp_adapter)
+       ├─ context gate — asks for missing clinical details on patient cases before retrieval
+       └─ POST /api/v1/vascular-consult  (Laravel)
+            ├─ ValidateApiKey + PHI scrubbing
+            ├─ Pre-retrieval planner (1 LLM call: normalize + route + interpret + expand)
+            ├─ RAGFlow retrieval via the bridge (127.0.0.1:8000 → RAGFlow :9380)
+            ├─ Reranking (Cohere, RAGFlow-side)
+            ├─ Gap detection (optional second pass) + guideline asset mapping
+            └─ Returns: narrative_chunks, citation_chunks, assets, query_normalization
+  └─ LLM synthesises the final clinical answer from the returned evidence
 ```
 
-### VMs
+**Model providers** (migrated off Azure — see `docs/PROVIDER_MIGRATION.md`):
+- Embeddings: OpenAI `text-embedding-3-large` / `ada-002` (in RAGFlow)
+- Reranking: Cohere `rerank-english-v3.0` (RAGFlow-side)
+- Planner inference: OpenAI `gpt-5-mini` (Laravel `OpenAiLlmClient`)
+- Synthesis: OpenAI `gpt-5-chat-latest` (OpenWebUI)
 
-| Component | Host | SSH |
-|---|---|---|
-| Laravel API + MCP server | `135.237.148.105` | `ssh -i ~/LAVAREL.pem azureuser@135.237.148.105` |
-| OpenWebUI + RAGFlow | `48.211.217.69` | `ssh -i ~/ragflownew.pem azureuser@48.211.217.69` |
+**Infrastructure:** single all-in-one **Hetzner VM** `178.105.193.206`
+(`ssh -i ~/.ssh/id_ed25519 root@178.105.193.206`). Laravel at
+`/opt/cg/laravel/app`; RAGFlow / MySQL / valkey / OpenWebUI run as Docker
+containers on the same host. See `CLAUDE.md` for the full component/port map.
+The old Azure VMs (`135.237.148.105`, `48.211.217.69`) are decommissioned.
 
 ---
 
-## MCP Server
+## The production tool
 
-Located at `/home/azureuser/vascular-mcp/` on the 135 VM. Served at port 8080 via systemd; Caddy proxies `/mcp*` → 8080.
+The live client is the OpenWebUI tool **`vascular_mcp_adapter.py`** (DB id
+`vascular_mcp_adapter`). It runs from the `webui.db` `tool` table, not the
+filesystem — after editing it locally you must push to the DB (deploy command in
+`CLAUDE.md`). The context gate is **built into** the adapter: for patient cases
+missing clinical details it returns a clarification request (a Markdown string
+starting with `**Additional information needed**`) instead of retrieving; the
+model presents the questions, then calls again with the completed info (prior
+turns passed in `history`).
 
-### Tools
-
-| Tool | Purpose |
-|---|---|
-| `vascular_consult_guidelines` | **Primary tool.** Retrieves ESVS evidence. Includes a built-in context gate — for patient cases with missing clinical details it returns clarification questions instead of retrieving; call again with complete info. |
-| `vascular_list_guidelines` | Lists all 14 available guideline datasets with keys, labels, and descriptions. |
-
-`vascular_assess_context_gaps` is an internal Python function that powers the gate inside `vascular_consult_guidelines`. It is **not registered as an MCP tool** and is not visible to clients.
-
----
-
-## Client Configuration: Which Tool Config to Use
-
-This is the most important thing to get right when setting up a new client.
-
-### The problem with two-tool chaining
-
-`vascular_assess_context_gaps` (gate) → `vascular_consult_guidelines` (retrieval) is a two-step sequence. In practice, many LLM clients (including OpenWebUI with GPT-class models) call the gate, receive PROCEED, and then **output the second tool call as plain text** rather than making a real function call. The turn closes with no retrieval and no answer.
-
-### All clients: use `vascular_consult_guidelines` directly
-
-The server exposes **2 tools**. The context gate is built into `vascular_consult_guidelines` — there is no separate gate tool to call first. For every query type:
-
-- **Knowledge questions** (definitions, thresholds, classifications): tool retrieves immediately.
-- **Patient cases with sufficient context**: tool retrieves immediately.
-- **Patient cases with missing context**: tool returns a clarification request (Markdown string beginning with `**Additional information needed**`). Present the questions to the user, then call the tool again with the complete information. Pass all prior turns in the `history` parameter so the gate knows what was already collected.
-
-**Background — why there is no separate gate tool:**
-An earlier design exposed `vascular_assess_context_gaps` as a third MCP tool for explicit two-step gate control. In practice, LLM clients (including GPT-class models in OpenWebUI) called the gate, received a PROCEED response, and then output the next tool call as **plain text** instead of making an actual function call — leaving the turn with no retrieval and no answer. Merging the gate into `vascular_consult_guidelines` eliminates the chaining requirement entirely.
-
-OpenWebUI model: **"Vascular MCP (Agent)"** (`vascular-mcp-agent` in DB, base: `gpt-5-chat`)
-
-### Decision guide
-
-```
-Any client (chat interface, agent, API, Codex):
-  └─ Call vascular_consult_guidelines with the full query.
-     If the response starts with "**Additional information needed**":
-       └─ Present the questions to the user.
-          Call vascular_consult_guidelines again with the complete information.
-          Include prior turns in the history parameter.
-     Otherwise:
-       └─ Synthesise the returned evidence into a clinical response.
-```
+> A standalone FastMCP server also exists under `vascular_mcp/` (alternate
+> interface, **not** the production path — cutover never performed). Treat the
+> OpenWebUI adapter as authoritative.
 
 ---
 
@@ -98,68 +79,26 @@ Any client (chat interface, agent, API, Codex):
 
 ---
 
-## Built-in Context Gate — Covered Scenarios
+## Context Gate — covered scenarios
 
-The gate runs inside `vascular_consult_guidelines` (and optionally via `vascular_assess_context_gaps`). It checks for missing clinical parameters before retrieval and asks clarification questions when needed.
+The gate checks for missing clinical parameters before retrieval and asks
+clarification questions when needed. It fires once per case (not per turn), and
+only when required parameters are absent; a clearly different case reopens it.
+The authoritative rule set lives in `openwebui_tools/vascular_mcp_adapter.py`
+(`_CONTEXT_GAP_RULES`) — a representative subset:
 
-| Scenario | Detects | Asks about |
-|---|---|---|
-| `carotid_stenosis` | carotid stenosis, CEA, CAS | Symptomatic status, stenosis degree (NASCET %) |
-| `aaa_treatment` | AAA, aortic aneurysm | Aneurysm diameter, patient fitness |
-| `dvt_pe` | DVT, PE, VTE | Provoking factors, prior VTE history, DVT location (proximal vs distal) |
-| `ali` | Acute limb ischaemia | Rutherford class + duration, aetiology (thrombotic vs embolic), occlusion level |
-| `clti` | CLTI, critical limb, rest pain, tissue loss | Anatomical workup (duplex/CTA), patient fitness |
-| `type_b_dissection` | Type B aortic dissection | Complicated vs uncomplicated, phase (acute/subacute/chronic) |
-| `graft_infection` | Graft / prosthesis infection | Clinical signs (fever, wound breakdown), prosthesis type + timing |
+| Scenario | Asks about |
+|---|---|
+| `carotid_stenosis` | Symptomatic status, stenosis degree (NASCET %) |
+| `aaa_treatment` | Aneurysm diameter, patient fitness |
+| `dvt_pe` | Provoking factors, first vs recurrent, DVT location (proximal vs distal) |
+| `ali` | Rutherford class + duration, thrombotic vs embolic |
+| `clti` | Anatomical workup (duplex/CTA), patient fitness |
+| `type_b_dissection` | Complicated vs uncomplicated, phase (acute/subacute/chronic) |
+| `graft_infection` | Clinical signs, prosthesis type + timing |
 
-The gate fires only when **two or more** required parameters are absent. A case with partial context (e.g. carotid stenosis with symptomatic status present but no stenosis degree) does not trigger it.
-
----
-
-## Running the Test Suite
-
-```bash
-# On 135 VM:
-cd /home/azureuser/vascular-mcp
-source .env && export LARAVEL_BASE_URL LARAVEL_API_KEY
-.venv/bin/pytest tests/ -v
-
-# Tests require laravel-api.service and vascular-mcp.service running
-```
-
-56 tests: unit gate logic, integration against live Laravel API, MCP protocol compliance.
-
----
-
-## Deployment
-
-### MCP server update
-
-```bash
-scp -i ~/LAVAREL.pem vascular_mcp/server.py azureuser@135.237.148.105:/home/azureuser/vascular-mcp/server.py
-ssh -i ~/LAVAREL.pem azureuser@135.237.148.105 'sudo systemctl restart vascular-mcp.service'
-```
-
-### Laravel backend update
-
-```bash
-# Push changes, then on 135 VM:
-php artisan config:cache
-sudo systemctl restart laravel-api.service
-```
-
-### OpenWebUI tool update
-
-The live tool (`mcp` ID in OpenWebUI DB) runs from SQLite, not from the filesystem:
-
-```bash
-scp -i ~/ragflownew.pem openwebui_tools/vascular_expert.py azureuser@48.211.217.69:/tmp/vascular_expert_new.py
-ssh -i ~/ragflownew.pem azureuser@48.211.217.69 "
-  sudo docker cp /tmp/vascular_expert_new.py open-webui:/tmp/vascular_expert_new.py &&
-  sudo docker exec open-webui python3 /tmp/push_tool_content.py &&
-  sudo docker restart open-webui
-"
-```
+Raw knowledge questions (definitions, thresholds, population-level guideline
+questions) skip the gate and retrieve immediately.
 
 ---
 
@@ -167,19 +106,22 @@ ssh -i ~/ragflownew.pem azureuser@48.211.217.69 "
 
 | File | Purpose |
 |---|---|
-| `vascular_mcp/server.py` | FastMCP server — 3 tools, context gate, narrative formatter, STRICT_TEMPLATE |
-| `vascular_mcp/tests/` | Test suite (unit, integration, MCP protocol) |
-| `openwebui_tools/vascular_expert.py` | Legacy OpenWebUI tool (old two-step pattern, kept for reference) |
+| `openwebui_tools/vascular_mcp_adapter.py` | **Production** OpenWebUI tool (context gate, query rewrite, STRICT_TEMPLATE) |
+| `openwebui_tools/push_adapter.py` | Deploy script — writes the adapter into `webui.db` (id `vascular_mcp_adapter`) |
 | `routes/api.php` | Laravel route: `POST /api/v1/vascular-consult` |
 | `app/Services/RetrievalService.php` | Retrieval pipeline orchestration |
-| `app/Services/GuidelineRouterService.php` | LLM-based guideline selection + query expansion |
+| `app/Services/PreRetrievalPlannerService.php` | Merged pre-retrieval planner (1 LLM call) |
+| `app/Services/OpenAiLlmClient.php` | OpenAI-compatible LLM client (planner inference) |
+| `app/Services/RAGFlow/DatasetResource.php` | `retrieve_dual` calls to the bridge |
+| `ragflow_service/app.py` | Python RAGFlow bridge (FastAPI) |
 | `config/ragflow.php` | Retrieval tuning parameters |
-| `validation/phase3_results.md` | Phase 3 cross-client validation results |
+| `docs/PROVIDER_MIGRATION.md` | How model providers are wired and how to change them |
+| `docs/SELF_HOSTED_MODELS.md` | Going fully local (vLLM/Ollama/TEI) |
 
 ---
 
 ## Known Gaps
 
 - `descending_thoracic_aorta` has no figures/tables in `config/guideline_assets.php`
-- 3 minor bugs in `PHIScrubberService` (low risk, not yet fixed — see `CLAUDE.md`)
-- Codex baseline not yet established (Phase 3 validation pending)
+- 3 minor bugs in `PHIScrubberService` (low risk — see `CLAUDE.md`)
+- Old plaintext secrets remain in git history (pre-redaction); rotate if the repo is shared

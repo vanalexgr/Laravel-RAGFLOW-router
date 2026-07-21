@@ -1,5 +1,11 @@
 # Vascular MCP Server — Deployment Guide
 
+> **⚠️ Not the production path.** Production clients use the OpenWebUI tool
+> `openwebui_tools/vascular_mcp_adapter.py` (see the repo [`README.md`](../README.md)).
+> This standalone FastMCP server is an **alternate interface whose cutover was
+> never performed**. Hosts/providers below may reference the decommissioned Azure
+> VMs — current infra is the Hetzner VM (see [`../CLAUDE.md`](../CLAUDE.md)).
+
 ## Overview
 
 This directory contains the **Vascular MCP Server**: a FastMCP Python service that wraps the
