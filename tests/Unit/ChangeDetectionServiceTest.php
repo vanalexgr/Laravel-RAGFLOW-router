@@ -21,6 +21,7 @@ class ChangeDetectionServiceTest extends TestCase
 
         $this->assertSame('reuse', $result->decision);
         $this->assertNull($result->enrichedQuery);
+        $this->assertFalse($result->llmCalled);
     }
 
     public function test_fitness_clarification_reuses_existing_retrieval(): void
@@ -34,6 +35,7 @@ class ChangeDetectionServiceTest extends TestCase
         $result = $service->detect('patient is fit for surgery', $this->originalResult());
 
         $this->assertSame('reuse', $result->decision);
+        $this->assertTrue($result->llmCalled);
     }
 
     public function test_different_diagnosis_requires_requery(): void
@@ -179,7 +181,7 @@ class ChangeDetectionServiceTest extends TestCase
             'confirmation_message' => 'Searching guidelines...',
         ]);
 
-        $service->detect('Superficial, 4cm from SFJ', $original);
+        $service->detect('The thrombosis is superficial, 4cm from SFJ', $original);
 
         $this->assertStringContainsString('Original clarification questions:', $client->prompt);
         $this->assertStringContainsString(

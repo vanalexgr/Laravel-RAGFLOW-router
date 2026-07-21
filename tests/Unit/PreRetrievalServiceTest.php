@@ -321,7 +321,8 @@ class PreRetrievalServiceTest extends TestCase
         $this->assertSame([], $result->clarificationQuestions);
         $this->assertSame($question, $result->retrievalQuery);
         $this->assertSame('single_guideline', $result->scope);
-        $this->assertSame('Searching guidelines...', $result->confirmationMessage);
+        $this->assertStringContainsString('Clinical Query Checkpoint', $result->confirmationMessage);
+        $this->assertStringContainsString('Carotid & Vertebral', $result->confirmationMessage);
     }
 
     public function test_malformed_json_returns_safe_defaults_without_throwing(): void
@@ -333,7 +334,7 @@ class PreRetrievalServiceTest extends TestCase
 
         $this->assertTrue($result->proceed);
         $this->assertFalse($result->softWarn);
-        $this->assertSame([], $result->guidelines);
+        $this->assertSame(['carotid_vertebral'], $result->guidelines);
         $this->assertSame($question, $result->retrievalQuery);
     }
 

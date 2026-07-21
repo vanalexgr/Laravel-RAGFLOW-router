@@ -38,6 +38,7 @@ class ChangeDetectionService
             return $deterministic;
         }
 
+        $llmCalled = false;
         try {
             $prompt = $this->buildPrompt(
                 $userReply,
@@ -47,32 +48,43 @@ class ChangeDetectionService
                 $original->clarificationQuestions
             );
 
+            $llmCalled = true;
             $raw = $this->llm->complete($prompt, maxTokens: 150, temperature: 0);
             $data = $this->parseJson($raw);
             if ($data === null) {
                 Log::channel('retrieval')->warning('[CHANGE DETECTION] JSON parse failed, defaulting to reuse', [
-                    'reply_preview' => substr($userReply, 0, 120),
-                    'raw_preview' => substr($raw, 0, 240),
+                    ...$this->safeTextMetadata('reply', $userReply),
+                    ...$this->safeTextMetadata('raw', $raw),
                 ]);
 
                 return ChangeDetectionResult::fromArray([
                     'decision' => 'reuse',
                     'reason' => 'parse failure',
+                    'llm_called' => $llmCalled,
                 ]);
             }
 
-            return ChangeDetectionResult::fromArray($data);
+            return ChangeDetectionResult::fromArray([...$data, 'llm_called' => true]);
         } catch (\Throwable $e) {
             Log::channel('retrieval')->warning('[CHANGE DETECTION] LLM call failed, defaulting to reuse', [
-                'reply_preview' => substr($userReply, 0, 120),
-                'error' => $e->getMessage(),
+                ...$this->safeTextMetadata('reply', $userReply),
+                'exception_class' => $e::class,
             ]);
 
             return ChangeDetectionResult::fromArray([
                 'decision' => 'reuse',
                 'reason' => 'llm failure',
+                'llm_called' => $llmCalled,
             ]);
         }
+    }
+
+    private function safeTextMetadata(string $prefix, string $text): array
+    {
+        return [
+            $prefix.'_len' => strlen($text),
+            $prefix.'_sha1' => substr(sha1($text), 0, 8),
+        ];
     }
 
     protected function buildPrompt(

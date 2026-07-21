@@ -8,6 +8,7 @@ use App\Services\GuidelineRouterService;
 use App\Services\PreRetrievalService;
 use App\Services\RetrievalService;
 use App\ValueObjects\ChangeDetectionResult;
+use Illuminate\Support\Facades\Log;
 use Mockery;
 use Tests\TestCase;
 
@@ -16,6 +17,26 @@ class ConfirmationGuidelineRefreshTest extends TestCase
     public function test_confirmation_requery_promotes_clti_when_clarification_adds_tissue_loss_and_rest_pain(): void
     {
         $this->withoutMiddleware();
+        $this->withoutExceptionHandling();
+
+        Log::shouldReceive('info')->zeroOrMoreTimes()->byDefault();
+        Log::shouldReceive('info')
+            ->once()
+            ->with('Tool API Request', Mockery::type('array'));
+        $retrievalLog = Mockery::mock();
+        Log::shouldReceive('channel')
+            ->once()
+            ->with('retrieval')
+            ->andReturn($retrievalLog);
+        $retrievalLog->shouldReceive('info')
+            ->once()
+            ->with('[CHANGE DETECTION]', Mockery::on(function (array $context): bool {
+                return $context['decision'] === 'requery'
+                    && $context['reason'] === 'deterministic_decision'
+                    && $context['llm_called'] === false
+                    && is_int($context['elapsed_ms'])
+                    && $context['elapsed_ms'] >= 0;
+            }));
 
         $retrieval = Mockery::mock(RetrievalService::class);
         $retrieval->shouldReceive('retrieve')
