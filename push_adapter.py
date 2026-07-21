@@ -1,5 +1,5 @@
 # push_adapter.py — runs inside the OpenWebUI container
-import sqlite3, json
+import os, sqlite3, json
 
 content = open('/tmp/vascular_mcp_adapter.py').read()
 
@@ -83,8 +83,8 @@ conn.execute(
 )
 # Set valves to match production mcp tool
 valves = json.dumps({
-    'VASCULAR_API_BASE_URL': 'https://lavarel.eastus2.cloudapp.azure.com',
-    'VASCULAR_API_KEY': '***REMOVED_KEY***',
+    'VASCULAR_API_BASE_URL': os.environ.get('VASCULAR_API_BASE_URL', ''),
+    'VASCULAR_API_KEY': os.environ.get('VASCULAR_API_KEY', ''),
     'EMIT_STATUS_AS_MESSAGES': True,
     'EMIT_STATUS_EVENTS': False,
 })
