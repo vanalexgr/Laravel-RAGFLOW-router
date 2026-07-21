@@ -4,6 +4,7 @@ import sys
 import types
 import unittest
 from contextlib import redirect_stdout
+from unittest.mock import patch
 
 
 if "httpx" not in sys.modules:
@@ -91,6 +92,145 @@ class TTLStoreTests(unittest.TestCase):
         store["other"] = {"ts": 10.0}
         store.clear()
         self.assertEqual(0, len(store))
+
+
+class VascularMcpAdapterStateBackendTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        _session_store.clear()
+        _case_context_store.clear()
+
+    async def test_laravel_backend_round_trips_through_http_endpoints(self):
+        server_state = {}
+        requests = []
+
+        class FakeResponse:
+            def __init__(self, status_code, data=None):
+                self.status_code = status_code
+                self.data = data
+
+            def raise_for_status(self):
+                if self.status_code >= 400:
+                    raise RuntimeError("http failure")
+
+            def json(self):
+                return self.data
+
+        class FakeAsyncClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def request(self, method, url, json=None, headers=None):
+                requests.append((method, url, json))
+                if method == "PUT":
+                    server_state.update(json)
+                    server_state["ts"] = 123
+                    return FakeResponse(200, dict(server_state))
+                if method == "GET":
+                    return FakeResponse(200, dict(server_state))
+                server_state.clear()
+                return FakeResponse(204)
+
+        tool = Tools()
+        tool.valves.STATE_BACKEND = "laravel"
+        state = {
+            "provisional_diagnosis": "Symptomatic carotid stenosis",
+            "guidelines": ["carotid_vertebral"],
+            "retrieval_query": "symptomatic carotid stenosis intervention",
+            "question": "must not be sent",
+        }
+
+        with patch("openwebui_tools.vascular_mcp_adapter.httpx.AsyncClient", FakeAsyncClient):
+            await tool._store_case_context("chat:state-round-trip", state)
+            _case_context_store.clear()  # simulate a different adapter worker
+            recovered = await tool._get_case_context("chat:state-round-trip")
+            await tool._clear_case_context("chat:state-round-trip")
+
+        self.assertEqual("Symptomatic carotid stenosis", recovered["provisional_diagnosis"])
+        self.assertEqual(["carotid_vertebral"], recovered["guidelines"])
+        self.assertEqual(
+            {"provisional_diagnosis", "guidelines", "retrieval_query"},
+            set(requests[0][2]),
+        )
+        self.assertEqual(["PUT", "GET", "DELETE"], [request[0] for request in requests])
+        self.assertTrue(all("/api/v1/case-state/state-round-trip" in request[1] for request in requests))
+
+    async def test_laravel_state_failure_degrades_to_local_or_empty_context(self):
+        class FailingAsyncClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def request(self, method, url, json=None, headers=None):
+                raise RuntimeError("state backend unavailable")
+
+        class GracefulTools(Tools):
+            async def _emit_status(self, emitter, description: str, done: bool = False):
+                return None
+
+            async def _call_pre_retrieval(self, question: str, history: list, guidelines: list) -> dict:
+                return {
+                    "phase": "awaiting_confirmation",
+                    "confirmation_message": "gate message",
+                    "pre_retrieval_result": {
+                        "provisional_diagnosis": "CLTI",
+                        "guidelines": ["clti"],
+                        "retrieval_query": "CLTI limb salvage",
+                    },
+                }
+
+            async def _run_retrieval_task(self, question: str, history: list, guidelines: list) -> dict:
+                return {"result": "retrieval"}
+
+        tool = GracefulTools()
+        tool.valves.STATE_BACKEND = "laravel"
+
+        with patch("openwebui_tools.vascular_mcp_adapter.httpx.AsyncClient", FailingAsyncClient):
+            await tool._store_case_context("chat:state-outage", {
+                "provisional_diagnosis": "CLTI",
+                "guidelines": ["clti"],
+                "retrieval_query": "CLTI limb salvage",
+            })
+            self.assertEqual("CLTI", (await tool._get_case_context("chat:state-outage"))["provisional_diagnosis"])
+            _case_context_store.clear()
+            self.assertIsNone(await tool._get_case_context("chat:state-outage"))
+            await tool._clear_case_context("chat:state-outage")
+            result = await tool.consult_vascular_guidelines(
+                question="Patient with CLTI and rest pain",
+                guideline_1="clti",
+                __metadata__={"chat_id": "state-outage-turn"},
+                __messages__=[{"role": "user", "content": "Patient with CLTI and rest pain"}],
+            )
+
+        self.assertIn("gate message", result)
+        self.assertNotIn("Error:", result)
+
+    async def test_memory_backend_never_calls_http(self):
+        class UnexpectedAsyncClient:
+            def __init__(self, *args, **kwargs):
+                raise AssertionError("memory backend attempted HTTP")
+
+        tool = Tools()
+        self.assertEqual("memory", tool.valves.STATE_BACKEND)
+
+        with patch("openwebui_tools.vascular_mcp_adapter.httpx.AsyncClient", UnexpectedAsyncClient):
+            await tool._store_case_context("chat:memory-only", {
+                "provisional_diagnosis": "AAA",
+                "guidelines": ["abdominal_aortic_aneurysm"],
+                "retrieval_query": "AAA repair threshold",
+            })
+            self.assertIsNotNone(await tool._get_case_context("chat:memory-only"))
+            await tool._clear_case_context("chat:memory-only")
 
 
 class VascularMcpAdapterHeuristicTests(unittest.TestCase):
@@ -400,7 +540,7 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 return "delegated consult"
 
         tool = DelegatingTools()
-        tool._store_session(
+        await tool._store_session(
             "chat:clarification-chat",
             payload=None,
             pre_result={
@@ -521,7 +661,7 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 return "final answer"
 
         tool = GuardrailAwareTools()
-        tool._store_session(
+        await tool._store_session(
             "chat:pending-gate-chat",
             payload=None,
             pre_result={
@@ -826,7 +966,7 @@ class VascularMcpAdapterRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 return "final answer"
 
         tool = SessionTools()
-        tool._store_session(
+        await tool._store_session(
             "user:session-user",
             payload=None,
             pre_result={

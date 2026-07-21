@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.57
+version: 1.5.58
 """
 import html
 import httpx
@@ -14,6 +14,7 @@ import heapq
 import json
 import time
 import re
+from urllib.parse import quote
 from pydantic import BaseModel, Field
 from typing import Literal, Optional, Callable, Awaitable
 
@@ -289,6 +290,10 @@ class Tools:
         LOG_TURN_DECISIONS: bool = Field(
             default=True,
             description='Emit one PHI-safe structured decision log for each consultation turn.',
+        )
+        STATE_BACKEND: Literal['memory', 'laravel'] = Field(
+            default='memory',
+            description='Case context backend; Laravel is opt-in and memory preserves existing behavior.',
         )
 
     def __init__(self):
@@ -968,7 +973,7 @@ class Tools:
             __event_emitter__=emitter,
         )
 
-    def _store_session(
+    async def _store_session(
         self,
         session_key: str,
         payload: Optional[dict] = None,
@@ -976,7 +981,7 @@ class Tools:
         task: Optional[asyncio.Task] = None,
     ):
         self._clear_session(session_key, cancel_task=True)
-        self._clear_case_context(session_key)  # new case supersedes old context
+        await self._clear_case_context(session_key)  # new case supersedes old context
         now = time.time()
         _session_store[session_key] = {
             "payload": payload,
@@ -986,26 +991,91 @@ class Tools:
             "ts": now,
         }
 
-    def _store_case_context(self, session_key: str, pre_result: dict):
-        """Persist minimal case context after phase 2 completes (TTL=900s)."""
-        _case_context_store[session_key] = {
+    def _compact_case_context(self, pre_result: dict) -> dict:
+        return {
             "provisional_diagnosis": str(pre_result.get("provisional_diagnosis") or "").strip(),
             "guidelines": list(pre_result.get("guidelines") or []),
             "retrieval_query": str(pre_result.get("retrieval_query") or "").strip(),
             "ts": time.time(),
         }
 
-    def _get_case_context(self, session_key: str) -> Optional[dict]:
-        entry = _case_context_store.get(session_key)
-        if not entry:
+    def _case_state_chat_id(self, session_key: str) -> Optional[str]:
+        if not session_key.startswith("chat:"):
             return None
-        if time.time() - float(entry.get("ts") or 0) > CASE_CONTEXT_TTL:
-            _case_context_store.pop(session_key, None)
-            return None
-        return entry
+        chat_id = session_key.removeprefix("chat:").strip()
+        return chat_id or None
 
-    def _clear_case_context(self, session_key: str):
+    async def _case_state_request(
+        self,
+        method: str,
+        chat_id: str,
+        payload: Optional[dict] = None,
+    ) -> Optional[dict]:
+        base_url = str(self.valves.VASCULAR_API_BASE_URL).rstrip("/")
+        url = f"{base_url}/api/v1/case-state/{quote(chat_id, safe='')}"
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.request(
+                method,
+                url,
+                json=payload,
+                headers=self._backend_headers(),
+            )
+            if response.status_code == 204:
+                return None
+            response.raise_for_status()
+            data = response.json()
+            return data if isinstance(data, dict) else None
+
+    async def _store_case_context(self, session_key: str, pre_result: dict):
+        """Persist minimal case context after phase 2 completes (TTL=900s)."""
+        record = self._compact_case_context(pre_result)
+        _case_context_store[session_key] = record
+        chat_id = self._case_state_chat_id(session_key)
+        if self.valves.STATE_BACKEND != "laravel" or not chat_id:
+            return
+        try:
+            stored = await self._case_state_request("PUT", chat_id, {
+                "provisional_diagnosis": record["provisional_diagnosis"],
+                "guidelines": record["guidelines"][:6],
+                "retrieval_query": record["retrieval_query"],
+            })
+            if stored:
+                _case_context_store[session_key] = self._compact_case_context(stored)
+        except Exception:
+            # State I/O is best-effort; the local cache and transcript remain fallbacks.
+            return
+
+    async def _get_case_context(self, session_key: str) -> Optional[dict]:
+        entry = _case_context_store.get(session_key)
+        if entry and time.time() - float(entry.get("ts") or 0) <= CASE_CONTEXT_TTL:
+            return entry
+        if entry:
+            _case_context_store.pop(session_key, None)
+
+        chat_id = self._case_state_chat_id(session_key)
+        if self.valves.STATE_BACKEND != "laravel" or not chat_id:
+            return None
+        try:
+            stored = await self._case_state_request("GET", chat_id)
+            if not stored:
+                return None
+            record = self._compact_case_context(stored)
+            _case_context_store[session_key] = record
+            return record
+        except Exception:
+            # A state outage must not fail a clinical turn.
+            return None
+
+    async def _clear_case_context(self, session_key: str):
         _case_context_store.pop(session_key, None)
+        chat_id = self._case_state_chat_id(session_key)
+        if self.valves.STATE_BACKEND != "laravel" or not chat_id:
+            return
+        try:
+            await self._case_state_request("DELETE", chat_id)
+        except Exception:
+            # A state outage must not fail a clinical turn.
+            return
 
     def _is_vague_management_followup(self, question: str) -> bool:
         q = (question or "").strip()
@@ -2503,7 +2573,7 @@ class Tools:
         session_key = self._get_session_key(__user__, __metadata__)
         session = self._get_session(session_key)
         had_session_at_start = session is not None
-        case_ctx_at_start = self._get_case_context(session_key)
+        case_ctx_at_start = await self._get_case_context(session_key)
         turn_decision = self.classify_turn(
             question,
             __messages__,
@@ -2529,6 +2599,12 @@ class Tools:
                     self._capabilities_response(question, turn_decision.reason)
                 )
 
+            if turn_decision.turn_class in {
+                TurnClass.NEW_CASE,
+                TurnClass.EXPLICIT_NEW_CASE,
+            }:
+                await self._clear_case_context(session_key)
+
             if session and turn_decision.turn_class in {
                 TurnClass.NEW_CASE,
                 TurnClass.EXPLICIT_NEW_CASE,
@@ -2541,7 +2617,7 @@ class Tools:
             # e.g. "So, what should I do?" / "What's the plan?" / "Which option?"
             # Rewrite using the stored case context so RAGFlow gets a meaningful query.
             if not session and turn_decision.turn_class is TurnClass.FOLLOWUP_VAGUE:
-                case_ctx = self._get_case_context(session_key)
+                case_ctx = await self._get_case_context(session_key)
                 if case_ctx:
                     rewritten = self._rewrite_with_case_context(question, case_ctx)
                     effective_guidelines = case_ctx.get("guidelines") or guidelines
@@ -2554,7 +2630,7 @@ class Tools:
                         "retrieval",
                         self._call_consult_backend(rewritten, history, effective_guidelines),
                     )
-                    self._store_case_context(session_key, case_ctx)  # refresh TTL
+                    await self._store_case_context(session_key, case_ctx)  # refresh TTL
                     # Pass the stored retrieval_query as confirmed_details so pathway
                     # detection uses the case-specific procedure info rather than the
                     # Laravel-boosted retrieval query (which always includes "or endovascular").
@@ -2606,7 +2682,7 @@ class Tools:
                                     effective_guidelines,
                                 ),
                             )
-                        self._store_case_context(session_key, pre_result)
+                        await self._store_case_context(session_key, pre_result)
                         return await self._build_response_from_payload(
                             data,
                             emitter,
@@ -2624,7 +2700,7 @@ class Tools:
                     requery_pre = dict(pre_result)
                     if phase2.get("decision_reason"):
                         requery_pre["retrieval_query"] = phase2.get("retrieval_payload", {}).get("query_normalization", {}).get("normalized_query", pre_result.get("retrieval_query", ""))
-                    self._store_case_context(session_key, requery_pre)
+                    await self._store_case_context(session_key, requery_pre)
                     return await self._build_response_from_payload(
                         data,
                         emitter,
@@ -2676,7 +2752,7 @@ class Tools:
                                     effective_guidelines,
                                 ),
                             )
-                        self._store_case_context(session_key, pre_result)
+                        await self._store_case_context(session_key, pre_result)
                         self._clear_session(session_key)
                         return await self._build_response_from_payload(
                             data,
@@ -2698,7 +2774,7 @@ class Tools:
                                     effective_guidelines,
                                 ),
                             )
-                        self._store_case_context(session_key, pre_result)
+                        await self._store_case_context(session_key, pre_result)
                         self._clear_session(session_key)
                         return await self._build_response_from_payload(
                             data,
@@ -2720,7 +2796,7 @@ class Tools:
                         "New clinical detail changes retrieval — running updated search...",
                     )
                     data = phase2.get("retrieval_payload") or phase2
-                    self._store_case_context(session_key, pre_result)
+                    await self._store_case_context(session_key, pre_result)
                     self._clear_session(session_key, cancel_task=True)
                     return await self._build_response_from_payload(
                         data,
@@ -2757,7 +2833,7 @@ class Tools:
             background_task = asyncio.create_task(
                 self._run_retrieval_task(retrieval_question, history, retrieval_guidelines)
             )
-            self._store_session(
+            await self._store_session(
                 session_key,
                 payload=None,
                 pre_result=pre_result,

@@ -3,10 +3,10 @@
 ## Scope and status
 
 - Branch: `codex/conversation-memory-improvements`
-- Phases completed: **Phase 0 (C1–C4) and Phase 1 (A1, B1)**
-- Current stop point: **Phase 2 in progress; B2, B3, and A3 complete**
+- Phases completed: **Phase 0 (C1–C4), Phase 1 (A1, B1), and Phase 2 (B2, B3, A3, A2)**
+- Current stop point: **Phase 2 complete; stopped for maintainer review before Phase 3**
 - Production deployment: **not performed**
-- Adapter version after B3: `1.5.57`
+- Adapter version after A2: `1.5.58`
 - Protected files `openwebui_tools/vascular_expert.py` and `vascular_agent_adapter.py`: unchanged
 
 ## Phase 0 shipped
@@ -108,6 +108,27 @@ B3 representative classifier timing: median 34.07 µs, p95 67.23 µs, max 84.34 
 - Known limitation: transcript recovery depends on the checkpoint marker and a recoverable preceding user turn remaining present in `messages`. If the client truncates both, the adapter safely falls back to a new consultation.
 - Rollback: revert the A3 commit to remove the stronger empty-store recovery assertions; production behavior is unchanged.
 
+### A2 — Laravel-owned durable case state
+
+- Added `CaseStateService`, explicitly backed by `Cache::store('redis')`, using `casestate:{chatId}` keys and a 900-second TTL.
+- Only `provisional_diagnosis`, up to six guideline keys, `retrieval_query`, and server-generated `ts` are persisted. Unknown request fields are discarded, and both free-text planner fields pass through `PHIScrubberService` before storage.
+- Added authenticated, rate-limited GET/PUT/DELETE `/api/v1/case-state/{chatId}` endpoints. GET returns 204 when absent; DELETE is idempotent.
+- Added `STATE_BACKEND` (`memory` or `laravel`, default `memory`) to adapter version `1.5.58`. Memory mode performs no state HTTP. Laravel mode uses the local 900-second `TTLStore` as a write-through cache, retrieves durable state on a local miss, and clears durable state when a new case supersedes it.
+- State HTTP errors are swallowed without logging request/state text. A full consultation test proves an unavailable state backend does not surface an error to the turn; transcript recovery and fresh retrieval remain available.
+- Added the 15-minute scrubbed-planner-state posture to `docs/HIPAA_COMPLIANCE.md`.
+- Rollback: set `STATE_BACKEND=memory`; the new endpoints remain unused. Revert A2 to remove the endpoints and adapter integration.
+
+A2 verification:
+
+| Suite | Before A2 | After A2 |
+|---|---:|---:|
+| Adapter | 38 passed | 41 passed |
+| Classification | 171 passed | 171 passed |
+| Laravel | 87 tests / 264 assertions | 92 tests / 290 assertions |
+| Corpus accuracy | 85/85 (100.00%) | 85/85 (100.00%) |
+
+The A2 representative classifier timing was median 32.18 µs, p95 65.27 µs, max 129.87 µs, versus B3 median 34.07 µs / p95 67.23 µs / max 84.34 µs. Classification has no state I/O, so the small distribution change is local microbenchmark noise. Laravel state-request latency was not benchmarked because Workstream D is explicitly deferred and no staging or production calls were made.
+
 ## Classification baseline
 
 Command:
@@ -164,11 +185,10 @@ Real `pre_retrieval`, `change_detection`, `retrieval`, and total latency must be
 ## Verification
 
 ```text
-Laravel: 87 tests, 264 assertions — PASS
-Adapter main suite after B3: 38 passed — PASS
-Classification suite after B3: 171 passed — PASS
-Laravel suite after B3: 87 tests, 264 assertions — PASS
-Evaluator after B3: 85/85 (100.00%) — completed
+Adapter main suite after A2: 41 passed — PASS
+Classification suite after A2: 171 passed — PASS
+Laravel suite after A2: 92 tests, 290 assertions — PASS
+Evaluator after A2: 85/85 (100.00%) — completed
 ```
 
 The requested `python` executable was absent, so `/usr/bin/python3` was used. PHP was also absent and Docker daemon access was denied; tests ran with a temporary PHP 8.3 static CLI under `/tmp` and the repository's existing Composer dependencies.
@@ -178,6 +198,8 @@ The requested `python` executable was absent, so `/usr/bin/python3` was used. PH
 - The workspace root was `/home/vga/LAVAREL`, but the repository and brief were nested under `/home/vga/LAVAREL/Laravel-RAGFLOW-router`.
 - The plan's adapter orchestration line estimate had drifted: `consult_vascular_guidelines` began at line 2232 before Phase-0 edits, not around line 2330.
 - After A1/B1, `TTLStore`, `classify_turn`, and `consult_vascular_guidelines` are at approximately lines 61, 533, and 2387 respectively; the plan's original anchors no longer apply.
+- After Phase 2, `STATE_BACKEND`, the async case-context methods, and `consult_vascular_guidelines` are at approximately lines 294, 1029–1069, and 2474. The revised A2 brief named files and behavior rather than stale line anchors.
+- Workstream D (D1–D4) was deferred by maintainer decision and was not implemented.
 - The supplied improvement brief is untracked and intentionally excluded from task commits.
 - Untouched `main` began with eight stale test failures across the adapter and Laravel suites. Test-only signatures/expectations were aligned with behavior already present on `main`; no production behavior was changed for those repairs.
 - The Phase-0 corpus is synthetic and PHI-free. It contains 42 cases and Greek-language coverage, but it is not yet the ≥80-case, sanitized real-usage corpus planned for B2.
