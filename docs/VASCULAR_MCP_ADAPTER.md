@@ -1,5 +1,11 @@
 # Vascular MCP Adapter — Architecture & Layered Responsibilities
 
+> **⚠️ Current infra & providers (2026-07-21):** production is a single
+> **Hetzner VM** (`178.105.193.206`) with **OpenAI** (inference + embeddings) and
+> **Cohere** (reranking). Any Azure OpenAI or old Azure-VM
+> (`135.237.148.105`, `48.211.217.69`) references below are **historical** — see
+> [`../CLAUDE.md`](../CLAUDE.md) and [`PROVIDER_MIGRATION.md`](PROVIDER_MIGRATION.md).
+
 Current production state for the March 15, 2026 two-phase clarification flow is documented in `/Users/vga/LARAVEL/Laravel-RAGFLOW-router/docs/SESSION_CHANGES_2026-03-15.md`.
 
 This file is still useful as a layered reference, but parts of the earlier gate description below are now historical because the adapter moved to Laravel-backed pre-retrieval plus confirmation/change-detection orchestration.

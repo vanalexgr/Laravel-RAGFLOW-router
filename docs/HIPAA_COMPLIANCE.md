@@ -1,5 +1,14 @@
 # HIPAA Compliance Documentation
 
+> **⚠️ Provider change (2026-07-21):** the system migrated off **Azure OpenAI** to
+> **OpenAI** (inference + embeddings) and **Cohere** (reranking), all now on a
+> self-managed **Hetzner VM**. Any Business Associate Agreement (BAA) / data-
+> processing terms described below that reference Azure **no longer apply** — a BAA
+> must be (re)established with OpenAI and Cohere, or the deployment moved to
+> **fully self-hosted local models** (no PHI leaves the box) per
+> [`SELF_HOSTED_MODELS.md`](SELF_HOSTED_MODELS.md). Treat the sections below as
+> requiring review against the current providers.
+
 ## Overview
 
 This document describes the Protected Health Information (PHI) de-identification measures implemented in the ESVS Vascular Guidelines Consultation System. These measures follow the HIPAA Safe Harbor method for de-identification, enabling the system to process clinical queries while protecting patient privacy.
