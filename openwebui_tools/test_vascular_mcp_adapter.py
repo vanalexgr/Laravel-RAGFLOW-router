@@ -1,3 +1,4 @@
+import asyncio
 import io
 import json
 import sys
@@ -231,6 +232,209 @@ class VascularMcpAdapterStateBackendTests(unittest.IsolatedAsyncioTestCase):
             })
             self.assertIsNotNone(await tool._get_case_context("chat:memory-only"))
             await tool._clear_case_context("chat:memory-only")
+
+    async def test_pending_pre_result_survives_restart_and_completes_confirmation(self):
+        pending_state = {}
+        requests = []
+
+        class FakeResponse:
+            def __init__(self, status_code, data=None):
+                self.status_code = status_code
+                self.data = data
+
+            def raise_for_status(self):
+                if self.status_code >= 400:
+                    raise RuntimeError("http failure")
+
+            def json(self):
+                return self.data
+
+        class FakeAsyncClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def request(self, method, url, json=None, headers=None):
+                requests.append((method, url, json))
+                if "/pending-case-state/" in url:
+                    if method == "PUT":
+                        pending_state.clear()
+                        pending_state.update(json)
+                        pending_state["ts"] = 123
+                        return FakeResponse(200, dict(pending_state))
+                    if method == "GET":
+                        return FakeResponse(200, dict(pending_state)) if pending_state else FakeResponse(204)
+                    pending_state.clear()
+                    return FakeResponse(204)
+                if method == "PUT":
+                    return FakeResponse(200, {**json, "ts": 456})
+                return FakeResponse(204)
+
+        class RestartTools(Tools):
+            def __init__(self):
+                super().__init__()
+                self.pre_calls = 0
+                self.confirmed_pre_result = None
+
+            async def _emit_status(self, emitter, description: str, done: bool = False):
+                return None
+
+            async def _call_pre_retrieval(self, question: str, history: list, guidelines: list) -> dict:
+                self.pre_calls += 1
+                return {
+                    "phase": "awaiting_confirmation",
+                    "confirmation_message": "gate message",
+                    "pre_retrieval_result": {
+                        "proceed": True,
+                        "soft_warn": True,
+                        "clarification_questions": ["Is tissue loss present?"],
+                        "provisional_diagnosis": "Chronic limb-threatening ischemia",
+                        "guidelines": ["clti", "antithrombotic_therapy"],
+                        "retrieval_query": "CLTI limb salvage antithrombotic therapy",
+                        "scope": "multi_guideline",
+                        "confirmation_message": "gate message",
+                    },
+                }
+
+            async def _run_retrieval_task(self, question: str, history: list, guidelines: list) -> dict:
+                return {"result": "background retrieval"}
+
+            async def _call_confirmation_phase(self, question: str, history: list, pre_result: dict, **kwargs) -> dict:
+                self.confirmed_pre_result = dict(pre_result)
+                return {
+                    "phase": "complete",
+                    "reused": False,
+                    "retrieval_payload": {"result": "confirmed retrieval"},
+                }
+
+            async def _build_response_from_payload(self, data, emitter, analysis_question: str, **kwargs) -> str:
+                return "final answer"
+
+        tool = RestartTools()
+        tool.valves.STATE_BACKEND = "laravel"
+        metadata = {"chat_id": "restart-gate"}
+
+        with patch("openwebui_tools.vascular_mcp_adapter.httpx.AsyncClient", FakeAsyncClient):
+            gate = await tool.consult_vascular_guidelines(
+                question="Patient with CLTI and rest pain",
+                guideline_1="clti",
+                guideline_2="antithrombotic_therapy",
+                __metadata__=metadata,
+                __messages__=[{"role": "user", "content": "Patient with CLTI and rest pain"}],
+            )
+            await asyncio.sleep(0)
+            _session_store.clear()  # open-webui process restart
+            _case_context_store.clear()
+            result = await tool.consult_vascular_guidelines(
+                question="yes",
+                guideline_1="clti",
+                __metadata__=metadata,
+                __messages__=[{"role": "user", "content": "yes"}],
+            )
+
+        self.assertIn("gate message", gate)
+        self.assertEqual("final answer", result)
+        self.assertEqual(1, tool.pre_calls, "confirmation must not restart pre-retrieval after recovery")
+        self.assertEqual(
+            "CLTI limb salvage antithrombotic therapy",
+            tool.confirmed_pre_result["retrieval_query"],
+        )
+        pending_put = next(
+            request for request in requests
+            if request[0] == "PUT" and "/pending-case-state/" in request[1]
+        )
+        self.assertEqual({
+            "proceed",
+            "soft_warn",
+            "clarification_questions",
+            "provisional_diagnosis",
+            "guidelines",
+            "retrieval_query",
+            "scope",
+            "confirmation_message",
+        }, set(pending_put[2]))
+        self.assertNotIn("question", pending_put[2])
+        self.assertNotIn("history", pending_put[2])
+        self.assertFalse(pending_state, "completed confirmation must clear pending state")
+
+    async def test_confirmation_phase_never_posts_an_empty_pre_result(self):
+        class GuardTools(Tools):
+            def __init__(self):
+                super().__init__()
+                self.posts = []
+
+            async def _post_backend(self, path: str, payload: dict, timeout: float = 120.0) -> dict:
+                self.posts.append((path, payload))
+                return {"phase": "complete"}
+
+        tool = GuardTools()
+
+        for missing in ({}, None):
+            result = await tool._call_confirmation_phase("yes", [], missing)
+            self.assertTrue(result["missing_pre_result"])
+
+        self.assertEqual([], tool.posts)
+
+    async def test_empty_session_pre_result_falls_through_to_fresh_gate(self):
+        class GuardFlowTools(Tools):
+            def __init__(self):
+                super().__init__()
+                self.pre_calls = 0
+                self.confirmation_posts = 0
+
+            async def _emit_status(self, emitter, description: str, done: bool = False):
+                return None
+
+            async def _call_pre_retrieval(self, question: str, history: list, guidelines: list) -> dict:
+                self.pre_calls += 1
+                return {
+                    "phase": "awaiting_confirmation",
+                    "confirmation_message": "fresh gate",
+                    "pre_retrieval_result": {
+                        "proceed": True,
+                        "soft_warn": False,
+                        "clarification_questions": [],
+                        "provisional_diagnosis": "Peripheral arterial disease",
+                        "guidelines": ["asymptomatic_pad"],
+                        "retrieval_query": "peripheral arterial disease management",
+                        "scope": "single_guideline",
+                        "confirmation_message": "fresh gate",
+                    },
+                }
+
+            async def _call_confirmation_phase(self, question: str, history: list, pre_result: dict, **kwargs) -> dict:
+                self.confirmation_posts += 1
+                return await super()._call_confirmation_phase(question, history, pre_result, **kwargs)
+
+            async def _run_retrieval_task(self, question: str, history: list, guidelines: list) -> dict:
+                return {"result": "retrieval"}
+
+        tool = GuardFlowTools()
+        now = 100.0
+        _session_store["chat:empty-pre-result"] = {
+            "payload": None,
+            "pre_result": {},
+            "task": None,
+            "started_at": now,
+            "ts": now,
+        }
+
+        with patch("openwebui_tools.vascular_mcp_adapter.time.time", return_value=now):
+            result = await tool.consult_vascular_guidelines(
+                question="yes",
+                guideline_1="asymptomatic_pad",
+                __metadata__={"chat_id": "empty-pre-result"},
+                __messages__=[{"role": "user", "content": "yes"}],
+            )
+
+        self.assertIn("fresh gate", result)
+        self.assertEqual(1, tool.pre_calls)
+        self.assertEqual(0, tool.confirmation_posts)
 
 
 class VascularMcpAdapterHeuristicTests(unittest.TestCase):

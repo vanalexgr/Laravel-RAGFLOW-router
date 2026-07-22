@@ -27,4 +27,10 @@ Route::prefix('v1')->middleware([ValidateApiKey::class, 'throttle:60,1'])->group
         ->where('chatId', '[A-Za-z0-9._:-]{1,255}');
     Route::delete('/case-state/{chatId}', [App\Http\Controllers\CaseStateController::class, 'destroy'])
         ->where('chatId', '[A-Za-z0-9._:-]{1,255}');
+    Route::get('/pending-case-state/{chatId}', [App\Http\Controllers\PendingCaseStateController::class, 'show'])
+        ->where('chatId', '[A-Za-z0-9._:-]{1,255}');
+    Route::put('/pending-case-state/{chatId}', [App\Http\Controllers\PendingCaseStateController::class, 'update'])
+        ->where('chatId', '[A-Za-z0-9._:-]{1,255}');
+    Route::delete('/pending-case-state/{chatId}', [App\Http\Controllers\PendingCaseStateController::class, 'destroy'])
+        ->where('chatId', '[A-Za-z0-9._:-]{1,255}');
 });

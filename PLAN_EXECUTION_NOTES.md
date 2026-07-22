@@ -2,11 +2,11 @@
 
 ## Scope and status
 
-- Branch: `codex/conversation-memory-improvements`
-- Phases completed: **Phase 0 (C1–C4), Phase 1 (A1, B1), and Phase 2 (B2, B3, A3, A2)**
-- Current stop point: **Phase 2 complete; stopped for maintainer review before Phase 3**
+- Branch: `codex/a5-pre-result-durability`
+- Phases completed: **Phase 0 (C1–C4), Phase 1 (A1, B1), Phase 2 (B2, B3, A3, A2), and Phase 3 task A5**
+- Current stop point: **A5 complete; stopped for maintainer review**
 - Production deployment: **not performed**
-- Adapter version after A2: `1.5.58`
+- Adapter version after A5: `1.5.59`
 - Protected files `openwebui_tools/vascular_expert.py` and `vascular_agent_adapter.py`: unchanged
 
 ## Phase 0 shipped
@@ -129,6 +129,30 @@ A2 verification:
 
 The A2 representative classifier timing was median 32.18 µs, p95 65.27 µs, max 129.87 µs, versus B3 median 34.07 µs / p95 67.23 µs / max 84.34 µs. Classification has no state I/O, so the small distribution change is local microbenchmark noise. Laravel state-request latency was not benchmarked because Workstream D is explicitly deferred and no staging or production calls were made.
 
+### A5 — gate-pending `pre_result` durability
+
+- Added a separate Redis record `pending:{chatId}` with a 300-second TTL, matching the adapter session lifetime. Authenticated, rate-limited GET/PUT/DELETE endpoints live at `/api/v1/pending-case-state/{chatId}`.
+- The record contains only the eight serializable `PreRetrievalResult` fields plus server `ts`: `proceed`, `soft_warn`, `clarification_questions`, `provisional_diagnosis`, `guidelines`, `retrieval_query`, `scope`, and `confirmation_message`.
+- Laravel re-scrubs diagnosis, retrieval query, every clarification question, and the confirmation message. Guideline keys are filtered against configured guidelines, scope is constrained to its three normalized enum labels, and raw `question`/`history` fields are discarded.
+- With `STATE_BACKEND=laravel`, showing a gate writes the pending result. A cold adapter fetches it before transcript recovery, including when only a terse confirmation remains in `messages`. Completion or explicit/new-case supersession deletes the pending record. Every pending-state request is best-effort.
+- `_call_confirmation_phase` now refuses missing, empty, or unusable planner state without issuing an HTTP request. Both corrupt in-memory state and a durable-state miss fall through to fresh pre-retrieval, making the Laravel 422 path unreachable from the adapter.
+- `STATE_BACKEND=memory` remains the default and performs no pending-state HTTP calls. The existing corpus and adapter behavior remain green.
+- The global HTTP logger now hashes `{chatId}` in both state-route URLs/paths and always records state request bodies as keys, lengths, and counts—even if full body logging is enabled.
+- Rollback: set `STATE_BACKEND=memory`; pending endpoints remain unused. Revert A5 to remove the new Redis record and defensive integration.
+
+A5 verification:
+
+| Suite | Before A5 | After A5 |
+|---|---:|---:|
+| Adapter | 41 passed | 44 passed |
+| Classification | 171 passed | 171 passed |
+| Laravel | 92 tests / 290 assertions | 99 tests / 336 assertions |
+| Corpus accuracy | 85/85 (100.00%) | 85/85 (100.00%) |
+
+A5 representative classifier timing was median 33.61 µs, p95 65.33 µs, max 90.09 µs, versus A2 median 32.18 µs / p95 65.27 µs / max 129.87 µs. Classification performs no state I/O; no staging, production, or real Redis latency was measured.
+
+Known limitation: only serializable planner state is durable. The in-flight `asyncio.Task` and any prefetched retrieval payload remain process-local, so a cold confirmation can rerun retrieval after change detection. This is intentional and does not reintroduce the 422.
+
 ## Classification baseline
 
 Command:
@@ -185,10 +209,10 @@ Real `pre_retrieval`, `change_detection`, `retrieval`, and total latency must be
 ## Verification
 
 ```text
-Adapter main suite after A2: 41 passed — PASS
-Classification suite after A2: 171 passed — PASS
-Laravel suite after A2: 92 tests, 290 assertions — PASS
-Evaluator after A2: 85/85 (100.00%) — completed
+Adapter main suite after A5: 44 passed — PASS
+Classification suite after A5: 171 passed — PASS
+Laravel suite after A5: 99 tests, 336 assertions — PASS
+Evaluator after A5: 85/85 (100.00%) — completed
 ```
 
 The requested `python` executable was absent, so `/usr/bin/python3` was used. PHP was also absent and Docker daemon access was denied; tests ran with a temporary PHP 8.3 static CLI under `/tmp` and the repository's existing Composer dependencies.
@@ -199,6 +223,7 @@ The requested `python` executable was absent, so `/usr/bin/python3` was used. PH
 - The plan's adapter orchestration line estimate had drifted: `consult_vascular_guidelines` began at line 2232 before Phase-0 edits, not around line 2330.
 - After A1/B1, `TTLStore`, `classify_turn`, and `consult_vascular_guidelines` are at approximately lines 61, 533, and 2387 respectively; the plan's original anchors no longer apply.
 - After Phase 2, `STATE_BACKEND`, the async case-context methods, and `consult_vascular_guidelines` are at approximately lines 294, 1029–1069, and 2474. The revised A2 brief named files and behavior rather than stale line anchors.
+- For A5, the observed Laravel guard was at `ToolController.php:74`, not approximately line 72. After A5 edits, pending-state helpers begin around adapter line 1040, the defensive confirmation helper around line 1284, and orchestration around line 2576.
 - Workstream D (D1–D4) was deferred by maintainer decision and was not implemented.
 - The supplied improvement brief is untracked and intentionally excluded from task commits.
 - Untouched `main` began with eight stale test failures across the adapter and Laravel suites. Test-only signatures/expectations were aligned with behavior already present on `main`; no production behavior was changed for those repairs.

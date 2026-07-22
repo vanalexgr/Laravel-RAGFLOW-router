@@ -1,7 +1,7 @@
 """
 title: Vascular MCP Adapter
 author: open-webui
-version: 1.5.58
+version: 1.5.59
 """
 import html
 import httpx
@@ -940,7 +940,12 @@ class Tools:
         metadata: Optional[dict] = None,
         emitter=None,
     ) -> Optional[str]:
-        if not self._can_reuse_pending_gate(question, messages):
+        can_reuse_transcript = self._can_reuse_pending_gate(question, messages)
+        can_reuse_durable = (
+            self.valves.STATE_BACKEND == "laravel"
+            and self._is_answer_only_turn(question)
+        )
+        if not can_reuse_transcript and not can_reuse_durable:
             return None
 
         session_key = self._get_session_key(user, metadata)
@@ -950,6 +955,11 @@ class Tools:
         if session:
             pre_result = session.get("pre_result") or {}
             if isinstance(pre_result, dict):
+                guidelines = list(pre_result.get("guidelines") or [])
+
+        if not guidelines:
+            pre_result = await self._get_pending_pre_result(session_key)
+            if self._has_usable_pre_result(pre_result):
                 guidelines = list(pre_result.get("guidelines") or [])
 
         if not guidelines:
@@ -990,6 +1000,7 @@ class Tools:
             "started_at": now,
             "ts": now,
         }
+        await self._store_pending_pre_result(session_key, pre_result)
 
     def _compact_case_context(self, pre_result: dict) -> dict:
         return {
@@ -1025,6 +1036,92 @@ class Tools:
             response.raise_for_status()
             data = response.json()
             return data if isinstance(data, dict) else None
+
+    async def _pending_state_request(
+        self,
+        method: str,
+        chat_id: str,
+        payload: Optional[dict] = None,
+    ) -> Optional[dict]:
+        base_url = str(self.valves.VASCULAR_API_BASE_URL).rstrip("/")
+        url = f"{base_url}/api/v1/pending-case-state/{quote(chat_id, safe='')}"
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.request(
+                method,
+                url,
+                json=payload,
+                headers=self._backend_headers(),
+            )
+            if response.status_code == 204:
+                return None
+            response.raise_for_status()
+            data = response.json()
+            return data if isinstance(data, dict) else None
+
+    def _compact_pending_pre_result(self, pre_result: dict) -> dict:
+        return {
+            "proceed": bool(pre_result.get("proceed", True)),
+            "soft_warn": bool(pre_result.get("soft_warn", False)),
+            "clarification_questions": list(pre_result.get("clarification_questions") or [])[:6],
+            "provisional_diagnosis": str(pre_result.get("provisional_diagnosis") or "").strip(),
+            "guidelines": list(pre_result.get("guidelines") or [])[:6],
+            "retrieval_query": str(pre_result.get("retrieval_query") or "").strip(),
+            "scope": str(pre_result.get("scope") or "single_guideline").strip(),
+            "confirmation_message": str(pre_result.get("confirmation_message") or "").strip(),
+        }
+
+    def _has_usable_pre_result(self, pre_result: Optional[dict]) -> bool:
+        if not isinstance(pre_result, dict) or not pre_result:
+            return False
+        guidelines = pre_result.get("guidelines")
+        anchor = str(
+            pre_result.get("retrieval_query")
+            or pre_result.get("provisional_diagnosis")
+            or ""
+        ).strip()
+        return isinstance(guidelines, list) and bool(guidelines) and bool(anchor)
+
+    async def _store_pending_pre_result(
+        self,
+        session_key: str,
+        pre_result: Optional[dict],
+    ) -> None:
+        chat_id = self._case_state_chat_id(session_key)
+        if (
+            self.valves.STATE_BACKEND != "laravel"
+            or not chat_id
+            or not self._has_usable_pre_result(pre_result)
+        ):
+            return
+        try:
+            await self._pending_state_request(
+                "PUT",
+                chat_id,
+                self._compact_pending_pre_result(pre_result),
+            )
+        except Exception:
+            return
+
+    async def _get_pending_pre_result(self, session_key: str) -> Optional[dict]:
+        chat_id = self._case_state_chat_id(session_key)
+        if self.valves.STATE_BACKEND != "laravel" or not chat_id:
+            return None
+        try:
+            stored = await self._pending_state_request("GET", chat_id)
+            if not self._has_usable_pre_result(stored):
+                return None
+            return self._compact_pending_pre_result(stored)
+        except Exception:
+            return None
+
+    async def _clear_pending_pre_result(self, session_key: str) -> None:
+        chat_id = self._case_state_chat_id(session_key)
+        if self.valves.STATE_BACKEND != "laravel" or not chat_id:
+            return
+        try:
+            await self._pending_state_request("DELETE", chat_id)
+        except Exception:
+            return
 
     async def _store_case_context(self, session_key: str, pre_result: dict):
         """Persist minimal case context after phase 2 completes (TTL=900s)."""
@@ -1191,6 +1288,11 @@ class Tools:
         pre_result: dict,
         cached_payload: Optional[dict] = None,
     ) -> dict:
+        if not self._has_usable_pre_result(pre_result):
+            return {
+                "phase": "pre_retrieval_required",
+                "missing_pre_result": True,
+            }
         payload = {
             "question": question,
             "history": history[-20:],
@@ -1231,7 +1333,7 @@ class Tools:
         prior_history = list(context.get("prior_history") or [])
         phase1 = await self._call_pre_retrieval(original_question, prior_history, guidelines)
         pre_result = phase1.get("pre_retrieval_result")
-        if not isinstance(pre_result, dict):
+        if not self._has_usable_pre_result(pre_result):
             return None
 
         return {
@@ -2572,7 +2674,13 @@ class Tools:
         history = self._extract_history(__messages__, question)
         session_key = self._get_session_key(__user__, __metadata__)
         session = self._get_session(session_key)
-        had_session_at_start = session is not None
+        pending_pre_result = None
+        if not session and (
+            self._is_answer_only_turn(question)
+            or self._can_reuse_pending_gate(question, __messages__)
+        ):
+            pending_pre_result = await self._get_pending_pre_result(session_key)
+        had_session_at_start = session is not None or self._has_usable_pre_result(pending_pre_result)
         case_ctx_at_start = await self._get_case_context(session_key)
         turn_decision = self.classify_turn(
             question,
@@ -2604,6 +2712,7 @@ class Tools:
                 TurnClass.EXPLICIT_NEW_CASE,
             }:
                 await self._clear_case_context(session_key)
+                await self._clear_pending_pre_result(session_key)
 
             if session and turn_decision.turn_class in {
                 TurnClass.NEW_CASE,
@@ -2644,7 +2753,21 @@ class Tools:
                     )
 
             if not session:
-                recovered = await self._recover_pre_result_from_history(question, __messages__, guidelines)
+                recovered = None
+                if self._has_usable_pre_result(pending_pre_result):
+                    recovered = {
+                        "original_question": "",
+                        "pre_result": pending_pre_result,
+                        "retrieval_payload": None,
+                        "confirmation_history": history[-20:],
+                        "retrieval_history": (history + [question])[-20:],
+                    }
+                if recovered is None:
+                    recovered = await self._recover_pre_result_from_history(
+                        question,
+                        __messages__,
+                        guidelines,
+                    )
                 if recovered:
                     pre_result = recovered["pre_result"]
                     analysis_question = (
@@ -2683,6 +2806,7 @@ class Tools:
                                 ),
                             )
                         await self._store_case_context(session_key, pre_result)
+                        await self._clear_pending_pre_result(session_key)
                         return await self._build_response_from_payload(
                             data,
                             emitter,
@@ -2701,6 +2825,7 @@ class Tools:
                     if phase2.get("decision_reason"):
                         requery_pre["retrieval_query"] = phase2.get("retrieval_payload", {}).get("query_normalization", {}).get("normalized_query", pre_result.get("retrieval_query", ""))
                     await self._store_case_context(session_key, requery_pre)
+                    await self._clear_pending_pre_result(session_key)
                     return await self._build_response_from_payload(
                         data,
                         emitter,
@@ -2710,8 +2835,9 @@ class Tools:
 
             if session:
                 pre_result = session.get("pre_result") or {}
-                if not isinstance(pre_result, dict):
+                if not self._has_usable_pre_result(pre_result):
                     self._clear_session(session_key, cancel_task=True)
+                    await self._clear_pending_pre_result(session_key)
                     session = None
                 else:
                     analysis_question = (
@@ -2753,6 +2879,7 @@ class Tools:
                                 ),
                             )
                         await self._store_case_context(session_key, pre_result)
+                        await self._clear_pending_pre_result(session_key)
                         self._clear_session(session_key)
                         return await self._build_response_from_payload(
                             data,
@@ -2775,6 +2902,7 @@ class Tools:
                                 ),
                             )
                         await self._store_case_context(session_key, pre_result)
+                        await self._clear_pending_pre_result(session_key)
                         self._clear_session(session_key)
                         return await self._build_response_from_payload(
                             data,
@@ -2797,6 +2925,7 @@ class Tools:
                     )
                     data = phase2.get("retrieval_payload") or phase2
                     await self._store_case_context(session_key, pre_result)
+                    await self._clear_pending_pre_result(session_key)
                     self._clear_session(session_key, cancel_task=True)
                     return await self._build_response_from_payload(
                         data,
@@ -2824,7 +2953,7 @@ class Tools:
                 return self._format_capabilities_for_model(message)
 
             pre_result = phase1.get("pre_retrieval_result")
-            if not isinstance(pre_result, dict):
+            if not self._has_usable_pre_result(pre_result):
                 await self._emit_status(emitter, "Invalid pre-retrieval response", done=True)
                 return "Error: Invalid pre-retrieval response"
 

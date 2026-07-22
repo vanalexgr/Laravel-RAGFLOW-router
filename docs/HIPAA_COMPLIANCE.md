@@ -132,12 +132,18 @@ PHI scrubbing is applied at:
 
 ## Short-Lived Case State
 
-The optional Laravel case-state backend persists only normalized planner fields
-(`provisional_diagnosis`, up to six guideline keys, `retrieval_query`, and a
-timestamp) in the explicitly configured Redis cache for no more than 900 seconds.
-The two free-text planner fields pass through `PHIScrubberService` again before
-storage. Raw questions, answers, and conversation history are never accepted into
-the stored record. The Redis key is scoped by `chatId`; the full identifier is not
+The optional Laravel state backend uses two explicitly configured Redis records:
+
+- Completed-case context stores only `provisional_diagnosis`, up to six configured
+  guideline keys, `retrieval_query`, and a timestamp for no more than 900 seconds.
+- Gate-pending context stores the normalized `PreRetrievalResult` booleans and
+  labels plus its diagnosis, retrieval query, clarification questions, and
+  confirmation message for no more than 300 seconds.
+
+Every free-text field passes through `PHIScrubberService` again before storage;
+guideline values are restricted to configured keys and scope to its three known
+enum labels. Raw questions, answers, and conversation history are never accepted
+into either record. Redis keys are scoped by `chatId`; the full identifier is not
 written to application logs. Deployments retain the in-memory adapter backend by
 default until `STATE_BACKEND=laravel` is deliberately enabled.
 
