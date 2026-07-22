@@ -165,9 +165,20 @@ Add `openwebui_tools/eval_turn_classification.py` that replays the corpus and pr
 **DoD:** corpus-driven tests pass with stores disabled; any behavioral gap is either fixed or recorded as a known limitation.
 **Risk:** low/medium.
 
-### A4 — Document & enforce the worker assumption (Phase 3)
-**Change:** add a module docstring stating the in-memory backend assumes a single worker; if `STATE_BACKEND=memory` and the server reports >1 worker, log a startup warning. (Detection best-effort.)
-**DoD:** warning emitted under a simulated multi-worker env var. **Risk:** trivial.
+### A4 — Multi-worker safety: startup guard + session-affinity fallback (Phase 3) — full spec
+**Problem:** After A2 + A5, the *durable* state (completed-case context, gate-pending `pre_result`) lives in Laravel/Redis. What remains per-process in the adapter is `_session_store` — the **active** session holding the non-serializable `asyncio` background-retrieval task. Under a single OpenWebUI worker (current prod) this is fine. Under >1 uvicorn worker, a follow-up turn can land on a worker whose `_session_store` lacks that chat's entry → the in-memory fast path misses. It won't 422 (A5's guard + durable fetch + transcript recovery all cover it), but it silently loses the prefetched background retrieval and re-retrieves — a latency/cost regression that would be invisible without a signal.
+
+**Change (two parts):**
+1. **Startup guard + docstring.** Add a module-level docstring on `_session_store` stating it assumes a single worker and that durable continuity for multi-worker requires `STATE_BACKEND=laravel`. At tool import/first-call, best-effort detect the worker count (env such as `WEB_CONCURRENCY`/`UVICORN_WORKERS`, else `os.environ`); if >1 **and** `STATE_BACKEND != 'laravel'`, emit one structured warning log `{"evt":"config_warning","reason":"multi_worker_memory_backend"}` (once per process, not per turn). Detection is best-effort — never raise.
+2. **Observable affinity miss.** In the confirmation path, when there is durable/pending state for the chat but **no** in-memory `_session_store` entry (i.e. the turn landed cold — restart *or* a different worker), add the field `session_affinity_miss: true` to the C1 turn log. This turns the otherwise-invisible re-retrieval into a countable metric, so a multi-worker rollout can be measured before/after.
+
+**Non-goal:** do NOT try to share the `asyncio` task across workers (impossible). The durable `pre_result` (A5) + re-retrieval already make a cold turn correct; A4 only makes the single-worker assumption explicit and the cold-turn cost measurable.
+
+**DoD:**
+- Unit test: with a simulated `WEB_CONCURRENCY=2` + `STATE_BACKEND=memory`, exactly one `config_warning` is emitted; with `STATE_BACKEND=laravel` or single worker, none.
+- Test: a confirmation turn with durable/pending state present but `_session_store` empty logs `session_affinity_miss: true` and still completes (no 422, correct answer).
+- `STATE_BACKEND=memory`, single worker → byte-identical to today (no new logs on the happy path).
+**Risk:** trivial (logging + docstring only; no behavior change on the hot path). **Rollback:** revert the commit.
 
 ### A5 — Gate-pending `pre_result` durability (Phase 3, added 2026-07-22 post-deploy)
 **Problem (observed in prod):** A2 made the *completed-case context* durable in Laravel, but the **gate-pending session** — the `pre_result` awaiting the user's confirmation reply, held in the adapter's in-memory `_session_store` — is still per-process. An `open-webui` restart (e.g. a deploy) during the seconds/minutes between the gate and the "Ok" confirmation wipes it; the follow-up then sends `confirmation_mode=true` with no `pre_retrieval_result` and Laravel returns **422** (`ToolController@consult`, "confirmation_mode requires pre_retrieval_result"). Transcript-recovery (A3) covers most cold-start cases but not the exact restart instant. Observed as a single non-recurring 422 on 2026-07-22; low frequency but real.
@@ -211,9 +222,23 @@ Using the confusion matrix, fix the top misroute classes. Known suspects to chec
 **Each fix:** add the failing corpus case first (red), then fix, then green. **Never** regress another class — the whole corpus must stay green.
 **DoD:** overall accuracy improves vs B2 baseline with zero per-class regressions.
 
-### B4 — Optional low-confidence LLM tiebreaker (Phase 3)
-**Change:** only when `classify_turn` returns a low-confidence `reason` (e.g. a generic catch-all), fall back to a single cheap LLM classification call (reuse the planner client / `gpt-5-mini`). Gate behind Valve `LLM_TURN_TIEBREAK` (default `False`). Measure accuracy delta and added latency on the corpus before recommending default-on.
-**DoD:** measurable accuracy gain on ambiguous subset; latency cost quantified. **Risk:** medium (cost/latency) — stays off by default.
+### B4 — Low-confidence LLM tiebreaker for turn classification (Phase 3) — full spec
+**Problem:** `classify_turn` is deterministic regex/predicate logic. It scores 100% on the curated corpus, but real turns include paraphrases and language variants it can't all anticipate (recall: B3's Greek vague-management cues are phrase-anchored and will miss `τι θα προτείνατε;`-style rewordings; English has the same long tail). The riskiest misroutes are **new-case vs same-case follow-up** (wrong → either loses case context or wrongly reuses it) and **vague vs substantive follow-up**. A cheap LLM check on the *ambiguous minority* of turns can catch these without touching the 95%+ that classify deterministically.
+
+**Design (architecture-consistent):** classification runs in the adapter, but the adapter has no direct LLM access — it goes through Laravel. So add a **new Laravel endpoint** rather than an adapter-side model call.
+1. **Confidence signal.** Extend `TurnDecision` with a `confidence: 'high' | 'low'` (or a `low_confidence: bool`). Mark `low` for the genuinely ambiguous branches only — e.g. the catch-all `no_prior_context` NEW_CASE *when* a case context/pending state exists, the vague-vs-substantive boundary, and answer-only-vs-new near the length threshold. Everything else (explicit new case, guardrail, clear knowledge query, clean gate reply) stays `high` and never calls the LLM.
+2. **Laravel `POST /api/v1/classify-turn`** (under `ValidateApiKey`+throttle). Input: PHI-scrubbed `{question, recent_role_labels[], has_case_ctx, has_pending, candidate_class}` — **labels/booleans + the (scrubbed) current question only; never raw history**. It runs a single `OpenAiLlmClient` (`gpt-5-mini`, `reasoning_effort=minimal`, tiny `max_tokens`, temperature 0) with a tight prompt that must return exactly one `TurnClass` value; parse strictly, and on any parse/timeout failure **return the adapter's `candidate_class` unchanged** (never worse than deterministic).
+3. **Adapter wiring.** Behind Valve `LLM_TURN_TIEBREAK` (default `False`): when `classify_turn` returns `low` confidence, call `/api/v1/classify-turn` (short timeout, best-effort); use its result only if it's a valid `TurnClass`, else keep the deterministic class. Log both `classifier_class` and `final_class` (+ `tiebreak_used: true`) in the C1 turn log so overrides are auditable. When the valve is off, behavior is identical to today.
+
+**Measurement (required before recommending default-on):** build a small **"hard cases" corpus** (paraphrases + Greek/English variants + genuinely ambiguous turns, distinct from the deterministic corpus). Report: deterministic-only accuracy vs tiebreaker accuracy on that set, the % of turns that hit the LLM (should be small), and the added p50/p95 latency of the extra round-trip. Put the numbers in `PLAN_EXECUTION_NOTES.md`.
+
+**DoD:**
+- Laravel: `ClassifyTurnController`/service + unit test (valid class parsed; malformed LLM output → falls back to `candidate_class`; PHI: no raw history in the prompt) + Feature test (auth, throttle).
+- Adapter: with `LLM_TURN_TIEBREAK=False`, byte-identical to today (deterministic corpus still 100%, no LLM calls). With it on, a mocked-LLM test proves a low-confidence turn is overridden and a high-confidence turn never calls the endpoint.
+- Hard-cases accuracy + latency + hit-rate table recorded.
+**Risk:** medium (adds cost + a hot-path round-trip on ambiguous turns) — **stays off by default**; only flip on if the measured accuracy gain justifies the latency. **Rollback:** Valve `LLM_TURN_TIEBREAK=False`.
+
+> **Priority note:** both A4 and B4 are genuinely optional. A4 only matters if you plan to run OpenWebUI with >1 worker (not currently). B4 only pays off if real-world misroutes (especially non-English) show up in the C1 turn logs now flowing in prod — **let that data decide.** Recommend: leave both parked until the turn logs surface an actual need.
 
 ---
 
