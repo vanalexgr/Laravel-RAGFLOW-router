@@ -103,3 +103,75 @@ orchestration; Critic must see snippets; discrete decision; structured `evidence
 - Delete scratch/test files off Hetzner after use (keep prod == deployed).
 - If reality contradicts the plan (e.g. Ollama not on Hetzner, laravel/ai dependency conflict), stop and
   report rather than working around it silently.
+
+---
+
+# UNATTENDED WORK BACKLOG (autonomous mode)
+
+Work this backlog top-to-bottom without waiting for input. Keep going for the whole session.
+
+## Autonomy rules (read every time)
+
+- **Progress log:** maintain `docs/CODEX_PROGRESS.md` — append a dated entry per backlog item: what you
+  did, files touched, test/scorecard output, and any blocker. This is the human's review log; keep it current.
+- **Commit often:** after each coherent unit, commit to `claude/prototyping-summary-d597c2` with a clear
+  `wip(gate-v2): …` message. `git pull` at the start.
+- **Verify before committing:** run the eval runner / tests you added and paste results into the progress
+  log. Do not commit code you have not exercised at least once.
+- **On a ⛔HUMAN blocker** (a decision only the human can make — see plan §0 "Still needs a human call"):
+  leave a `TODO(human): …` marker + a safe default/placeholder, log it, and **continue to the next item**.
+  Do NOT resolve it yourself.
+- **On a CONFLICT** (dependency conflict, missing infra/data, plan contradicts reality): log it and **skip
+  to the next INDEPENDENT item**; do not work around it silently. Only fully stop if nothing can proceed.
+- **Never:** touch `main`; deploy to production; push the adapter to the OpenWebUI DB; `git push --force`;
+  delete branches; **fabricate clinical content or guideline text** (use retrieval or flag a gap).
+- **Cloud only** for models (ISI/Ollama deferred). Use the cloud provider via `laravel/ai`.
+
+## Backlog (ordered; each item lists acceptance criteria = "done when")
+
+1. **Eval harness + scenarios.** Scenario schema + `eval/scenarios/*.json`: the AAA benchmark (from
+   `eval/benchmarks/aaa_evolving_context.md`), the 6 adversarial scenarios (plan §9 / migration review
+   §5), and the 15 batch cases (content in `vascular_batch_validation_suite_v_1.md`, `expected.baseline_grade`
+   from `eval/baseline/15_case_baseline.md`). Build `php artisan gate:eval`: loads scenarios, calls the
+   system-under-test, judges with an **external cloud judge** (never the SUT itself), maps to
+   {FAIL, PASS_WITH_MINOR, PASS}, asserts **no downward move** vs baseline, emits a scorecard, stores
+   `stage_trace`s. **Done when:** runner executes end-to-end against a stub SUT and prints a scorecard;
+   all scenarios validate against the schema.
+
+2. **Install `laravel/ai` (cloud).** On Hetzner: `composer require laravel/ai --dry-run` first (coexist
+   with prism v0.92 + vizra v0.0.42 — CONFLICT → log & skip). Then require, publish `config/ai.php`,
+   configure the OpenAI provider (gpt-5-mini is already wired), bump composer.json php `^8.2`→`^8.3`,
+   `config:cache`. **Done when:** a smoke artisan command gets valid structured JSON from the cloud provider.
+
+3. **Agent rework per plan §10 + migration review.** Merge `TriageAgent`→`OrientAgent` (full mode taxonomy
+   + `same_case` + delta-merge + provenance + `changed_fields` + `open_questions`); deterministic pre-Orient
+   guard (injection/meta/capabilities/out_of_scope); remove agentic tool-loops from Pathway/Knowledge →
+   deterministic PHP retrieve→"relevant?/better-query?" calls + `retrieval_uncertain`; Probe consumes
+   `patient_model`+snippets only, structured `evidence_status` object, two frames; Critic receives snippet
+   digests + never-re-ask; deterministic tail (discrete decision, no confidence float) + dose-lint +
+   hedging-lint + fixed non-ESVS banner. **Done when:** an artisan probe command runs each agent on a
+   canned input and prints valid structured output via the cloud provider.
+
+4. **S0 — AnswerAssembly** (plan §8, migration review Q1/Q2). Deterministic PHP section skeletons
+   (`_response_mode` variants + gap taxonomy + canned strings + assets) + **one** schema-constrained fill
+   call on the cloud model, behind a `SYNTHESIS_OWNER=adapter|laravel` valve, consuming the EXISTING
+   planner/retrieval/gap_assessment. **Done when:** it emits house-template `answer_markdown`, and
+   `gate:eval` on the 15-case + gap-taxonomy scenarios shows **no grade drop** + verbatim ≥98% (log the
+   scorecard). Old path stays intact at `=adapter`.
+
+5. **Audited snippet library (candidate).** ⛔HUMAN. Extract the blueprint's hardcoded clinical assertions
+   into `eval/audited_snippets.md` as CANDIDATES, each tagged `UNVERIFIED — clinician sign-off required`;
+   wire AnswerAssembly to read them behind a flag defaulting **OFF**. Do NOT invent assertions. **Done
+   when:** extraction exists, flag off, `TODO(human)` logged.
+
+6. **Routing prep (concerns F + P) — NO contract flip.** Migrate the 14-guideline reference + selection
+   rules into Orient's routing; add the adapter regex predicates as deterministic priors; **unify the
+   Laravel-side prunes** (antithrombotic prune, disabling-stroke boost) into Orient's routing layer.
+   Scaffold the routing proof-harness (log-replay → Orient-vs-live by turn class). Do NOT change the tool
+   contract (that's S5, gated). **Done when:** Orient routes on the eval scenarios with routing accuracy
+   reported; the proof-harness runs against a sample log.
+
+7. **Consolidate + report.** Update plan §10/§11 status; write a `docs/CODEX_PROGRESS.md` summary: done /
+   ⛔HUMAN-blocked / recommended next human decisions. Ensure the branch is clean and pushed.
+
+Items 5 (sign-off), plus plan §0's one-tool/decommission/PHI/audit calls, are ⛔HUMAN — flag, don't resolve.
