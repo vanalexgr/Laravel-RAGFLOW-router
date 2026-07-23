@@ -67,10 +67,12 @@ orchestration; Critic must see snippets; discrete decision; structured `evidence
 
 1. **Build the eval harness + scenario files** (plan §9) — the binding launch gate; model-independent.
    JSON scenario files with **cumulative** `must_include_facts` (turn N inherits 1..N-1). Cover: the AAA
-   benchmark (plan §1), Fable's **6 adversarial scenarios** (case-switch chimera, correction flip,
-   declined-question persistence, duplicate delivery, knowledge interleave, retrieval trap — see the
-   migration review §5 / plan §9), plus a port of the existing 15-case suite (source in `app/Agents/`
-   batch-validation history / the batch suite). Scenario schema (plan §9):
+   benchmark (full transcript + expectations in **`eval/benchmarks/aaa_evolving_context.md`**), Fable's
+   **6 adversarial scenarios** (case-switch chimera, correction flip, declined-question persistence,
+   duplicate delivery, knowledge interleave, retrieval trap — migration review §5 / plan §9), plus the
+   existing **15-case suite**: case content is in repo-root **`vascular_batch_validation_suite_v_1.md`**
+   and the binding per-case baseline grades (for "no grade drop") are in
+   **`eval/baseline/15_case_baseline.md`** (note the S4 content-gap caveat there). Scenario schema (plan §9):
    `{id, tags[], turns:[{user, attachments?, expected:{mode, same_case, guideline_keys[],
    must_include_facts[], must_not_include[], expected_questions_semantic[], max_questions,
    evidence_status}}]}`. Build one artisan runner + an **external strong-model judge** (a strong cloud

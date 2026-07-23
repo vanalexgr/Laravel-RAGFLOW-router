@@ -38,7 +38,7 @@ scheduled); S0/S1 fill-call → **cloud gpt-5-mini** temporarily.
 ## 1. Problem & commitments
 
 Retire the closed-whitelist gate (`PreRetrievalService` SOFT WARN + adapter `_assess_context_gaps`).
-Beat the **AAA evolving-context benchmark** (`memory/benchmark_aaa_evolving_context.md`): state loss
+Beat the **AAA evolving-context benchmark** (`eval/benchmarks/aaa_evolving_context.md`): state loss
 across turns (FU1 1/10, stayed "infrarenal"), router drift (FU2 pulled the Thoracic guideline),
 overconfident first answer.
 
