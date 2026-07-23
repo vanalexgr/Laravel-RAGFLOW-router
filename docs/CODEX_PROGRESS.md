@@ -63,3 +63,63 @@ Files: `docs/CODEX_PROGRESS.md`.
 Blocker: decide/authorize the Composer platform target (minimum safe proposal: `8.3.x`) and rerun the
 dry-run before installing. Items whose acceptance criteria require live `laravel/ai` calls cannot be
 completed until this is resolved.
+
+## 2026-07-24 — Item 3: agent rework
+
+Result: **BLOCKED BY ITEM 2 — skipped.**
+
+The acceptance criterion requires every agent to produce schema-valid structured output through the
+cloud provider. `laravel/ai` is not installable under the current Composer platform pin, so reworking
+the scaffolds now would create unexercised code and violate the backlog's verify-before-commit rule.
+No agent files were changed.
+
+Blocker: resolve item 2, then rework and run the agents as one coherent tested unit.
+
+## 2026-07-24 — Item 4: S0 AnswerAssembly
+
+Result: **BLOCKED BY ITEM 2 — skipped.**
+
+S0 requires a schema-constrained cloud fill call through `laravel/ai`; the SDK conflict prevents the
+required end-to-end execution and 15-case scorecard. A safe default valve is established in
+`config/gate-v2.php` as `SYNTHESIS_OWNER=adapter`, so no incomplete Laravel synthesis path can become
+active. No adapter or production path was changed.
+
+Blockers:
+
+- Resolve item 2 and complete item 3.
+- ⛔ HUMAN: clinician sign-off is still required before candidate clinical assertions can be enabled.
+
+## 2026-07-24 — Item 5: audited snippet library candidate
+
+Implemented:
+
+- Extracted four existing adapter assertions into `eval/audited_snippets.md`; no assertion was
+  invented or promoted to guideline evidence.
+- Marked every item `UNVERIFIED — clinician sign-off required` with its adapter source lines.
+- Added `AuditedSnippetLibrary` and a flag defaulting OFF:
+  `GATE_V2_AUDITED_SNIPPETS_ENABLED=false`.
+- Added `TODO(human)` markers in config, service, and candidate file.
+
+Files:
+
+- `eval/audited_snippets.md`
+- `app/Ai/Gate/AuditedSnippetLibrary.php`
+- `config/gate-v2.php`
+- `tests/Unit/GateEval/AuditedSnippetLibraryTest.php`
+
+Verification (disposable Hetzner checkout):
+
+```text
+php -l app/Ai/Gate/AuditedSnippetLibrary.php
+No syntax errors detected
+php -l config/gate-v2.php
+No syntax errors detected
+
+Runtime smoke:
+flag default: false
+library with flag OFF: []
+candidate count with temporary in-process flag ON: 4
+```
+
+⛔ HUMAN blocker: a named clinician must verify sources/content and approve each record before the
+flag may be enabled. Safe placeholder remains OFF.
