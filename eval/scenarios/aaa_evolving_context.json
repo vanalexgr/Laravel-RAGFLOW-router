@@ -1,0 +1,45 @@
+{
+  "id": "aaa_evolving_context",
+  "tags": ["aaa", "multi_turn", "hard_bar", "state", "routing"],
+  "turns": [
+    {
+      "user": "A 74-year-old man has an asymptomatic 5.8 cm abdominal aortic aneurysm discovered on ultrasound. He is an active smoker with hypertension and dyslipidaemia. What management would you recommend?",
+      "expected": {
+        "mode": "case_new",
+        "same_case": null,
+        "guideline_keys": ["abdominal_aortic_aneurysm"],
+        "must_include_facts": ["74-year-old man", "asymptomatic 5.8 cm AAA", "active smoker", "hypertension", "dyslipidaemia", "fitness assessment"],
+        "must_not_include": [],
+        "expected_questions_semantic": [],
+        "max_questions": 2,
+        "evidence_status": {"coverage": "covered"}
+      }
+    },
+    {
+      "user": "CTA now shows that this is a juxtarenal aneurysm with an inadequate infrarenal neck for standard EVAR. His eGFR is 28 mL/min/1.73 m². How does this change your recommendation?",
+      "expected": {
+        "mode": "case_followup_substantive",
+        "same_case": true,
+        "guideline_keys": ["abdominal_aortic_aneurysm"],
+        "must_include_facts": ["74-year-old man", "asymptomatic 5.8 cm AAA", "active smoker", "hypertension", "dyslipidaemia", "fitness assessment", "juxtarenal aneurysm", "inadequate infrarenal neck", "standard EVAR unsuitable", "FEVAR or open options", "eGFR 28", "contrast-nephropathy caution"],
+        "must_not_include": [],
+        "expected_questions_semantic": [],
+        "max_questions": 2,
+        "evidence_status": {"coverage": ["covered", "partial_principles"]}
+      }
+    },
+    {
+      "user": "He also has severe COPD, reduced functional capacity, and significant frailty, but remains independent in basic daily activities. Should he still undergo repair, and how would you choose between open repair, FEVAR, and conservative management?",
+      "expected": {
+        "mode": "case_followup_substantive",
+        "same_case": true,
+        "guideline_keys": ["abdominal_aortic_aneurysm"],
+        "must_include_facts": ["74-year-old man", "asymptomatic 5.8 cm AAA", "active smoker", "hypertension", "dyslipidaemia", "fitness assessment", "juxtarenal aneurysm", "inadequate infrarenal neck", "standard EVAR unsuitable", "FEVAR or open options", "eGFR 28", "contrast-nephropathy caution", "severe COPD", "reduced functional capacity", "significant frailty", "independent in basic daily activities", "shared decision across open repair, FEVAR, and conservative management"],
+        "must_not_include": ["descending thoracic aorta guideline"],
+        "expected_questions_semantic": [],
+        "max_questions": 2,
+        "evidence_status": {"coverage": ["covered", "partial_principles"]}
+      }
+    }
+  ]
+}

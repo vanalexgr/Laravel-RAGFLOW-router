@@ -1,0 +1,92 @@
+[
+  {
+    "id": "batch_c1_proximal_dvt_simple",
+    "tags": ["non_regression_15", "compact", "venous"],
+    "rubric": {"expected_mode": "COMPACT", "core_answer": ["Anticoagulation alone", "DOAC for 3 months", "No thrombolysis", "No IVC filter"], "failure_risks": ["F3", "F5", "F7"]},
+    "turns": [{"user": "Patient with proximal femoral DVT, no severe symptoms, no cancer, no bleeding risk. Should this patient receive anticoagulation alone, undergo thrombolysis, or have an IVC filter?", "expected": {"mode": "case_new", "same_case": null, "guideline_keys": ["venous_thrombosis"], "must_include_facts": ["proximal femoral DVT", "no severe symptoms", "no cancer", "no bleeding risk"], "must_not_include": [], "expected_questions_semantic": [], "max_questions": 0, "evidence_status": {"coverage": "covered"}, "baseline_grade": "PASS"}}]
+  },
+  {
+    "id": "batch_c2_brachial_vein_compression",
+    "tags": ["non_regression_15", "compact", "venous"],
+    "rubric": {"expected_mode": "COMPACT", "core_answer": ["No anticoagulation without confirmed thrombosis", "Manage underlying compression", "Monitor for DVT"], "failure_risks": ["F3", "F5", "F7"]},
+    "turns": [{"user": "Patient with tumor compressing the brachial vein. No thrombosis. Symptomatic swelling. Should he take anticoagulation?", "expected": {"mode": "case_new", "same_case": null, "guideline_keys": ["venous_thrombosis"], "must_include_facts": ["tumor compressing brachial vein", "no thrombosis", "symptomatic swelling"], "must_not_include": [], "expected_questions_semantic": [], "max_questions": 0, "evidence_status": {"coverage": ["covered", "partial_principles"]}, "baseline_grade": "PASS"}}]
+  },
+  {
+    "id": "batch_c3_carotid_near_occlusion_criteria",
+    "tags": ["non_regression_15", "compact", "knowledge"],
+    "rubric": {"expected_mode": "COMPACT", "core_answer": ["Definition-based answer", "Distal ICA collapse or reduced calibre", "Severe proximal stenosis", "Comparison to contralateral side", "No unnecessary management branch"], "failure_risks": ["F5", "F7"]},
+    "turns": [{"user": "Give the criteria of carotid near-occlusion.", "expected": {"mode": "knowledge", "same_case": null, "guideline_keys": ["carotid_vertebral"], "must_include_facts": ["carotid near-occlusion criteria requested"], "must_not_include": [], "expected_questions_semantic": [], "max_questions": 0, "evidence_status": {"coverage": ["not_covered", "retrieval_uncertain", "partial_principles"]}, "baseline_grade": "PASS_WITH_MINOR"}}]
+  },
+  {
+    "id": "batch_s1_asymptomatic_carotid_stenosis",
+    "tags": ["non_regression_15", "standard", "carotid"],
+    "rubric": {"expected_mode": "STANDARD", "core_answer": ["Continue best medical therapy alone", "No routine intervention", "CEA only in selected high-risk-feature cases", "CAS only if CEA unsuitable or selected context"], "failure_risks": ["F3", "F5", "F7"]},
+    "turns": [{"user": "Patient with asymptomatic carotid stenosis 75%, age 72, on best medical therapy, no prior stroke/TIA, unilateral disease, CTA confirmed, low surgical risk. Should this patient undergo CEA, CAS, or medical therapy only?", "expected": {"mode": "case_new", "same_case": null, "guideline_keys": ["carotid_vertebral"], "must_include_facts": ["asymptomatic carotid stenosis 75%", "age 72", "best medical therapy", "no prior stroke or TIA", "unilateral disease", "CTA confirmed", "low surgical risk"], "must_not_include": [], "expected_questions_semantic": [], "max_questions": 0, "evidence_status": {"coverage": "covered"}, "baseline_grade": "PASS_WITH_MINOR"}}]
+  },
+  {
+    "id": "batch_s2_post_vein_bypass_antithrombotics",
+    "tags": ["non_regression_15", "standard", "pad", "antithrombotic"],
+    "rubric": {"expected_mode": "STANDARD", "core_answer": ["After infrainguinal vein bypass: aspirin 75–100 mg daily plus rivaroxaban 2.5 mg BID if bleeding risk acceptable", "Avoid prolonged clopidogrel addition beyond 30 days", "Alternative single antiplatelet if bleeding risk high or rivaroxaban unsuitable"], "failure_risks": ["F1", "F3", "F4", "F5"]},
+    "turns": [{"user": "What is the recommended antithrombotic therapy after lower limb revascularization for peripheral arterial disease? Clarifications: vein BK bypass, rest pain pre-op, no high bleeding risk.", "expected": {"mode": "case_new", "same_case": null, "guideline_keys": ["clti", "antithrombotic_therapy"], "must_include_facts": ["vein below-knee bypass", "rest pain pre-operatively", "no high bleeding risk"], "must_not_include": [], "expected_questions_semantic": [], "max_questions": 0, "evidence_status": {"coverage": "covered"}, "baseline_grade": "PASS"}}]
+  },
+  {
+    "id": "batch_s3_post_endovascular_antithrombotics_itp",
+    "tags": ["non_regression_15", "standard", "pad", "antithrombotic"],
+    "rubric": {"expected_mode": "STANDARD", "core_answer": ["Standard post-endovascular options: aspirin plus rivaroxaban or short-course DAPT", "Only if bleeding risk acceptable", "ITP modifies recommendation early", "Consider de-escalation if platelet count or bleeding risk unfavorable"], "failure_risks": ["F2", "F4", "F7"]},
+    "turns": [{"user": "What is the recommended antithrombotic therapy after lower limb revascularization for peripheral arterial disease? Clarifications: endovascular tibial angioplasty DEB, symptomatic IC/CLTI, ITP.", "expected": {"mode": "case_new", "same_case": null, "guideline_keys": ["clti", "antithrombotic_therapy"], "must_include_facts": ["endovascular tibial angioplasty with DEB", "symptomatic IC or CLTI", "ITP bleeding modifier"], "must_not_include": [], "expected_questions_semantic": ["platelet count and current bleeding status"], "max_questions": 2, "evidence_status": {"coverage": ["covered", "partial_principles"]}, "baseline_grade": "PASS"}}]
+  },
+  {
+    "id": "batch_s4_symptomatic_carotid_web",
+    "tags": ["non_regression_15", "standard", "carotid", "content_gap"],
+    "rubric": {"expected_mode": "STANDARD", "core_answer": ["Offer revascularisation", "CEA generally preferred in young fit patient unless reasons for CAS", "Acknowledge limited evidence or Class IIb style support"], "failure_risks": ["F5", "F7"], "content_gap_caveat": "No dedicated carotid-web recommendation in the current RAGFlow corpus; honest absence plus principles is required."},
+    "turns": [{"user": "How to treat symptomatic carotid web in a 40-year-old patient? Clarifications: symptoms 1 week ago, 70% stenosis, no prior history.", "expected": {"mode": "case_new", "same_case": null, "guideline_keys": ["carotid_vertebral"], "must_include_facts": ["symptomatic carotid web", "40-year-old patient", "symptoms one week ago", "70% stenosis", "no prior history"], "must_not_include": [], "expected_questions_semantic": [], "max_questions": 0, "evidence_status": {"coverage": ["not_covered", "retrieval_uncertain", "partial_principles"]}, "baseline_grade": "FAIL"}}]
+  },
+  {
+    "id": "batch_s5_iliofemoral_dvt_recent_surgery",
+    "tags": ["non_regression_15", "standard", "venous"],
+    "rubric": {"expected_mode": "STANDARD", "core_answer": ["Anticoagulation alone", "Thrombolysis or thrombectomy not favored due to recent major surgery and no limb threat", "Filter only if anticoagulation impossible"], "failure_risks": ["F3", "F5", "F7"]},
+    "turns": [{"user": "Patient with acute iliofemoral DVT extending into the common femoral vein, severe swelling and pain (phlegmasia alba), recent major abdominal surgery 5 days ago. Stable Hb, no phlegmasia cerulea, no other contraindications. Should this patient receive anticoagulation alone, catheter-directed thrombolysis, or surgical thrombectomy? How should bleeding risk influence the decision?", "expected": {"mode": "case_new", "same_case": null, "guideline_keys": ["venous_thrombosis"], "must_include_facts": ["acute iliofemoral DVT into common femoral vein", "severe swelling and pain", "phlegmasia alba", "major abdominal surgery five days ago", "stable haemoglobin", "no phlegmasia cerulea"], "must_not_include": [], "expected_questions_semantic": [], "max_questions": 0, "evidence_status": {"coverage": "covered"}, "baseline_grade": "PASS"}}]
+  },
+  {
+    "id": "batch_s6_urgent_cea_af_apixaban",
+    "tags": ["non_regression_15", "standard", "carotid", "antithrombotic"],
+    "rubric": {"expected_mode": "STANDARD", "core_answer": ["CEA still urgent", "Stop DOAC perioperatively with no routine bridging for AF", "Use antiplatelet therapy for CEA", "Avoid prolonged combination strategies"], "failure_risks": ["F2", "F3", "F7"]},
+    "turns": [{"user": "Patient with symptomatic carotid stenosis (80%) scheduled for urgent CEA is found to have AF on apixaban. Recent TIA 10 days ago. Persistent AF. How should anticoagulation be managed perioperatively, and should antiplatelet therapy be added?", "expected": {"mode": "case_new", "same_case": null, "guideline_keys": ["carotid_vertebral", "antithrombotic_therapy"], "must_include_facts": ["symptomatic carotid stenosis 80%", "urgent CEA", "persistent AF", "apixaban", "TIA ten days ago"], "must_not_include": [], "expected_questions_semantic": [], "max_questions": 0, "evidence_status": {"coverage": ["covered", "interaction_gap"]}, "baseline_grade": "PASS_WITH_MINOR"}}]
+  },
+  {
+    "id": "batch_f1_clti_aps_warfarin",
+    "tags": ["non_regression_15", "full", "clti", "antithrombotic"],
+    "rubric": {"expected_mode": "FULL", "core_answer": ["Guideline support for conduit and post-bypass strategies exists", "No APS-specific ESVS perioperative protocol", "High-risk APS often bridged in practice", "Routine combined therapy not automatic and depends on bleeding versus graft thrombosis risk"], "failure_risks": ["F2", "F6", "F7"]},
+    "turns": [{"user": "Patient with CLTI undergoing infrainguinal bypass has antiphospholipid syndrome on warfarin. Should anticoagulation be bridged perioperatively, and should antiplatelet therapy be added postoperatively?", "expected": {"mode": "case_new", "same_case": null, "guideline_keys": ["clti", "antithrombotic_therapy"], "must_include_facts": ["CLTI", "infrainguinal bypass", "antiphospholipid syndrome", "warfarin"], "must_not_include": [], "expected_questions_semantic": [], "max_questions": 2, "evidence_status": {"coverage": "interaction_gap"}, "baseline_grade": "PASS"}}]
+  },
+  {
+    "id": "batch_f2_clti_itp_after_bypass",
+    "tags": ["non_regression_15", "full", "clti", "antithrombotic"],
+    "rubric": {"expected_mode": "FULL", "core_answer": ["Standard aspirin plus rivaroxaban recommendation only if bleeding risk acceptable", "ITP may place patient outside standard group", "Modify therapy dynamically by platelet count or bleeding status", "Stepwise or delayed escalation reasonable"], "failure_risks": ["F2", "F6", "F7"]},
+    "turns": [{"user": "Post-op management of CLTI patient with ITP submitted to bypass surgery.", "expected": {"mode": "case_new", "same_case": null, "guideline_keys": ["clti", "antithrombotic_therapy"], "must_include_facts": ["post-operative CLTI", "ITP", "bypass surgery"], "must_not_include": [], "expected_questions_semantic": ["platelet count and bleeding status"], "max_questions": 2, "evidence_status": {"coverage": "interaction_gap"}, "baseline_grade": "PASS"}}]
+  },
+  {
+    "id": "batch_f3_aaa_clti_sequencing",
+    "tags": ["non_regression_15", "full", "aaa", "clti", "sequencing"],
+    "rubric": {"expected_mode": "FULL", "core_answer": ["Both conditions are guideline-covered individually", "No ESVS sequencing rule", "Limb revascularisation usually prioritised first in stable asymptomatic AAA", "Explicit sequencing decision required"], "failure_risks": ["F3", "F6", "F7"]},
+    "turns": [{"user": "Patient with a 5.8 cm infrarenal AAA and concomitant CLTI (Rutherford 5, tissue loss). Which should be treated first — aneurysm repair or limb revascularisation? Clarifications: asymptomatic AAA, stable.", "expected": {"mode": "case_new", "same_case": null, "guideline_keys": ["abdominal_aortic_aneurysm", "clti"], "must_include_facts": ["5.8 cm infrarenal AAA", "CLTI Rutherford 5", "tissue loss", "AAA asymptomatic and stable"], "must_not_include": [], "expected_questions_semantic": [], "max_questions": 0, "evidence_status": {"coverage": "interaction_gap"}, "baseline_grade": "PASS"}}]
+  },
+  {
+    "id": "batch_f4_aaa_clti_sepsis_anticoagulation",
+    "tags": ["non_regression_15", "full", "aaa", "clti", "antithrombotic"],
+    "rubric": {"expected_mode": "FULL", "core_answer": ["Sepsis or source control first", "Limb surgery before AAA repair if AAA stable", "Stop rivaroxaban perioperatively with no routine bridging for standard AF", "Restart when haemostasis and infection control allow"], "failure_risks": ["F2", "F6", "F7"]},
+    "turns": [{"user": "Patient with 6.5 cm infrarenal AAA and concomitant CLTI (Rutherford 6, wet gangrene with sepsis) on rivaroxaban for AF. Should you prioritise aneurysm repair, limb surgery, or infection control first? How should anticoagulation and antiplatelet therapy be managed perioperatively? Clarifications: AAA asymptomatic, stable.", "expected": {"mode": "case_new", "same_case": null, "guideline_keys": ["abdominal_aortic_aneurysm", "clti", "antithrombotic_therapy"], "must_include_facts": ["6.5 cm infrarenal AAA", "CLTI Rutherford 6", "wet gangrene with sepsis", "rivaroxaban for AF", "AAA asymptomatic and stable"], "must_not_include": [], "expected_questions_semantic": [], "max_questions": 0, "evidence_status": {"coverage": "interaction_gap"}, "baseline_grade": "PASS"}}]
+  },
+  {
+    "id": "batch_f5_urgent_cea_af_recent_gi_bleed",
+    "tags": ["non_regression_15", "full", "carotid", "antithrombotic"],
+    "rubric": {"expected_mode": "FULL or high-end STANDARD", "core_answer": ["Urgent CEA still indicated within days", "Stop apixaban perioperatively with no routine bridging for AF", "Antiplatelet still needed with bleeding modifier front-loaded", "Avoid triple therapy or overaggressive combination"], "failure_risks": ["F2", "F3", "F6", "F7"]},
+    "turns": [{"user": "75-year-old with TIA 2 days ago, 80% symptomatic carotid stenosis, AF on apixaban, recent upper GI bleed 7 days ago now stable. Proceed to urgent CEA or delay? How should apixaban and antiplatelet therapy be managed?", "expected": {"mode": "case_new", "same_case": null, "guideline_keys": ["carotid_vertebral", "antithrombotic_therapy"], "must_include_facts": ["75-year-old", "TIA two days ago", "80% symptomatic carotid stenosis", "AF on apixaban", "upper GI bleed seven days ago now stable"], "must_not_include": [], "expected_questions_semantic": [], "max_questions": 0, "evidence_status": {"coverage": "interaction_gap"}, "baseline_grade": "PASS"}}]
+  },
+  {
+    "id": "batch_f6_aps_clti_bypass_vs_amputation",
+    "tags": ["non_regression_15", "full", "clti", "antithrombotic"],
+    "rubric": {"expected_mode": "FULL-borderline or STANDARD with modifier", "core_answer": ["Offer bypass rather than primary amputation", "APS modifies perioperative management, not limb-salvage indication", "Avoid false gap on bypass versus amputation decision"], "failure_risks": ["F2", "F3", "F6", "F7"]},
+    "turns": [{"user": "Patient with CLTI and antiphospholipid syndrome on Sintrom. Should he be offered below-knee bypass surgery or primary amputation? Clarifications: Rutherford 4, suitable distal target, good functional status.", "expected": {"mode": "case_new", "same_case": null, "guideline_keys": ["clti", "antithrombotic_therapy"], "must_include_facts": ["CLTI", "antiphospholipid syndrome", "Sintrom", "Rutherford 4", "suitable distal target", "good functional status"], "must_not_include": [], "expected_questions_semantic": [], "max_questions": 0, "evidence_status": {"coverage": ["covered", "interaction_gap"]}, "baseline_grade": "PASS"}}]
+  }
+]

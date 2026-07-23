@@ -1,0 +1,166 @@
+[
+  {
+    "id": "adversarial_case_switch_chimera",
+    "tags": ["adversarial", "multi_turn", "state", "new_case"],
+    "turns": [
+      {
+        "user": "A 68-year-old woman had a TIA yesterday and has 75% left carotid stenosis. What should we do?",
+        "expected": {
+          "mode": "case_new", "same_case": null, "guideline_keys": ["carotid_vertebral"],
+          "must_include_facts": ["68-year-old woman", "TIA yesterday", "75% left carotid stenosis"],
+          "must_not_include": [], "expected_questions_semantic": [], "max_questions": 2,
+          "evidence_status": {"coverage": "covered"}
+        }
+      },
+      {
+        "user": "She is functionally independent and the event was non-disabling.",
+        "expected": {
+          "mode": "case_followup_substantive", "same_case": true, "guideline_keys": ["carotid_vertebral"],
+          "must_include_facts": ["68-year-old woman", "TIA yesterday", "75% left carotid stenosis", "functionally independent", "non-disabling event"],
+          "must_not_include": [], "expected_questions_semantic": [], "max_questions": 2,
+          "evidence_status": {"coverage": "covered"}
+        }
+      },
+      {
+        "user": "New patient: a 76-year-old man with an asymptomatic 6.0 cm infrarenal AAA. How should he be assessed?",
+        "expected": {
+          "mode": "case_new", "same_case": false, "guideline_keys": ["abdominal_aortic_aneurysm"],
+          "must_include_facts": ["76-year-old man", "asymptomatic 6.0 cm infrarenal AAA"],
+          "must_not_include": ["68-year-old woman", "TIA yesterday", "75% left carotid stenosis", "functionally independent", "non-disabling event"],
+          "expected_questions_semantic": [], "max_questions": 2,
+          "evidence_status": {"coverage": "covered"}
+        }
+      }
+    ]
+  },
+  {
+    "id": "adversarial_correction_flip",
+    "tags": ["adversarial", "multi_turn", "state", "correction"],
+    "turns": [
+      {
+        "user": "The patient has symptomatic 70% carotid stenosis.",
+        "expected": {
+          "mode": "case_new", "same_case": null, "guideline_keys": ["carotid_vertebral"],
+          "must_include_facts": ["symptomatic carotid stenosis", "70% stenosis"],
+          "must_not_include": [], "expected_questions_semantic": [], "max_questions": 2,
+          "evidence_status": {"coverage": "covered"}
+        }
+      },
+      {
+        "user": "Correction: the patient is asymptomatic and the stenosis is 50–69%, not 70%.",
+        "expected": {
+          "mode": "case_followup_substantive", "same_case": true, "guideline_keys": ["carotid_vertebral"],
+          "must_include_facts": ["asymptomatic carotid stenosis", "50–69% stenosis", "correction provenance retained"],
+          "must_not_include": ["symptomatic carotid stenosis", "70% stenosis"],
+          "expected_questions_semantic": [], "max_questions": 2,
+          "evidence_status": {"coverage": "covered"}
+        }
+      }
+    ]
+  },
+  {
+    "id": "adversarial_declined_question_persistence",
+    "tags": ["adversarial", "multi_turn", "state", "never_reask"],
+    "turns": [
+      {
+        "user": "A patient has intermittent claudication and asks about management.",
+        "expected": {
+          "mode": "case_new", "same_case": null, "guideline_keys": ["asymptomatic_pad"],
+          "must_include_facts": ["intermittent claudication"],
+          "must_not_include": [], "expected_questions_semantic": ["current smoking status"], "max_questions": 2,
+          "evidence_status": {"coverage": "covered"}
+        }
+      },
+      {
+        "user": "I decline to discuss smoking status. Please proceed with an explicit assumption.",
+        "expected": {
+          "mode": "gate_reply", "same_case": true, "guideline_keys": ["asymptomatic_pad"],
+          "must_include_facts": ["intermittent claudication", "smoking status declined", "explicit assumption recorded"],
+          "must_not_include": [], "expected_questions_semantic": [], "max_questions": 0,
+          "evidence_status": {"coverage": "covered"}
+        }
+      },
+      {
+        "user": "What should follow-up focus on?",
+        "expected": {
+          "mode": "case_followup_substantive", "same_case": true, "guideline_keys": ["asymptomatic_pad"],
+          "must_include_facts": ["intermittent claudication", "smoking status declined", "explicit assumption recorded"],
+          "must_not_include": ["current smoking status"], "expected_questions_semantic": [], "max_questions": 0,
+          "evidence_status": {"coverage": "covered"}
+        }
+      }
+    ]
+  },
+  {
+    "id": "adversarial_duplicate_delivery",
+    "tags": ["adversarial", "multi_turn", "state", "idempotency"],
+    "turns": [
+      {
+        "user": "Message-ID dup-001: CTA shows a 5.9 cm juxtarenal AAA.",
+        "expected": {
+          "mode": "case_new", "same_case": null, "guideline_keys": ["abdominal_aortic_aneurysm"],
+          "must_include_facts": ["5.9 cm juxtarenal AAA", "message dup-001 merged once"],
+          "must_not_include": [], "expected_questions_semantic": [], "max_questions": 2,
+          "evidence_status": {"coverage": "covered"}
+        }
+      },
+      {
+        "user": "Message-ID dup-001: CTA shows a 5.9 cm juxtarenal AAA.",
+        "expected": {
+          "mode": "case_followup_substantive", "same_case": true, "guideline_keys": ["abdominal_aortic_aneurysm"],
+          "must_include_facts": ["5.9 cm juxtarenal AAA", "message dup-001 merged once"],
+          "must_not_include": [], "expected_questions_semantic": [], "max_questions": 2,
+          "evidence_status": {"coverage": "covered"}
+        }
+      }
+    ]
+  },
+  {
+    "id": "adversarial_knowledge_interleave",
+    "tags": ["adversarial", "multi_turn", "state", "fast_path"],
+    "turns": [
+      {
+        "user": "A 72-year-old man has an asymptomatic 5.7 cm infrarenal AAA and CKD.",
+        "expected": {
+          "mode": "case_new", "same_case": null, "guideline_keys": ["abdominal_aortic_aneurysm"],
+          "must_include_facts": ["72-year-old man", "asymptomatic 5.7 cm infrarenal AAA", "CKD"],
+          "must_not_include": [], "expected_questions_semantic": [], "max_questions": 2,
+          "evidence_status": {"coverage": "covered"}
+        }
+      },
+      {
+        "user": "As a general knowledge question, what diameter threshold does ESVS use in women?",
+        "expected": {
+          "mode": "knowledge", "same_case": true, "guideline_keys": ["abdominal_aortic_aneurysm"],
+          "must_include_facts": ["72-year-old man", "asymptomatic 5.7 cm infrarenal AAA", "CKD"],
+          "must_not_include": [], "expected_questions_semantic": [], "max_questions": 0,
+          "evidence_status": {"coverage": "covered"}
+        }
+      },
+      {
+        "user": "Back to this patient: renal function has worsened. How does that affect planning?",
+        "expected": {
+          "mode": "case_followup_substantive", "same_case": true, "guideline_keys": ["abdominal_aortic_aneurysm"],
+          "must_include_facts": ["72-year-old man", "asymptomatic 5.7 cm infrarenal AAA", "CKD", "renal function worsened"],
+          "must_not_include": [], "expected_questions_semantic": [], "max_questions": 2,
+          "evidence_status": {"coverage": ["covered", "partial_principles"]}
+        }
+      }
+    ]
+  },
+  {
+    "id": "adversarial_retrieval_trap",
+    "tags": ["adversarial", "routing", "retrieval", "reretrieve"],
+    "turns": [
+      {
+        "user": "A patient has an infrarenal abdominal aortic mural thrombus with distal embolisation. Which ESVS pathway should ground the assessment?",
+        "expected": {
+          "mode": "case_new", "same_case": null, "guideline_keys": ["abdominal_aortic_aneurysm"],
+          "must_include_facts": ["infrarenal abdominal aortic mural thrombus", "distal embolisation", "queries tried show recovery from off-target retrieval"],
+          "must_not_include": ["descending thoracic aorta used as final grounding"], "expected_questions_semantic": [], "max_questions": 2,
+          "evidence_status": {"coverage": ["covered", "partial_principles", "retrieval_uncertain"]}
+        }
+      }
+    ]
+  }
+]
