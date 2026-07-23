@@ -228,3 +228,10 @@ routing proof:
 sample log 8/8 (100.0%)
 eval scenarios 32/32 (100.0%)
 ```
+
+Cleanup:
+
+- Removed the disposable Hetzner checkout `/tmp/codex-gate-v2`; production was never modified.
+- Preserved the unrelated `CLAUDE.md` edit that predated this run in stash
+  `pre-existing CLAUDE.md edit before gate-v2 unattended run`, allowing the requested clean branch
+  without committing another owner's change.
