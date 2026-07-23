@@ -58,14 +58,16 @@ keep them as cheap deterministic safety.
 First-party `laravel/ai` (v0.10.1, PHP ^8.3 — Hetzner 8.5). **`OllamaProvider`** with `format`=JSON
 schema. Deterministic orchestration in PHP; agents are single structured calls, not tool-loops.
 
-**No Laravel update needed (verified against `composer.lock`, 2026-07-24):** framework is already
-**v12.63.0** ≥ the `illuminate/json-schema ^12.62` that `laravel/ai` requires — no version bump.
-`laravel/prompts` (v0.3.21) and `laravel/serializable-closure` (v2.0.13) are already present and
-compatible. Required work is an **add, not an upgrade**: `composer require laravel/ai` (pulls the new
-`illuminate/json-schema`), publish `config/ai.php`, `config:cache`. Bump `composer.json` `php ^8.2`→
-`^8.3` (cosmetic; runtime is 8.5). Run `composer require laravel/ai --dry-run` on Hetzner first to
-confirm coexistence with the installed `prism-php/prism` v0.92 + `vizra/vizra-adk` v0.0.42. None of
-this is needed for the capability spike (standalone Python); only from **S0**.
+**Dependency conflict discovered (2026-07-24 unattended pass):** the live Hetzner vendor tree reports
+framework **v12.63.0**, but committed `composer.lock` resolves **v12.49.0** and `composer.json`
+emulates PHP **8.2.30** via `config.platform` (actual runtime PHP 8.5.4). The required first
+`composer require laravel/ai --dry-run` stops on the PHP pin before it can test Prism/Vizra
+coexistence. The prior claim that the lock already contained framework 12.63 was incorrect.
+
+Do not install until the Composer target is explicitly reconciled: authorize a PHP platform ≥8.3,
+determine whether updating the locked framework to ≥12.62 is acceptable for
+`illuminate/json-schema ^12.62`, then repeat the dry-run against prism-php/prism v0.92 +
+vizra/vizra-adk v0.0.42. This is no longer proven to be an add-only operation.
 
 ---
 
@@ -292,6 +294,19 @@ The scaffolded agents encode the *right roles* but need rework before wiring:
 - **Deterministic tail**: discrete ask/proceed rule; dose-lint; fixed banner; versioned state commit.
 - **`GateProgress`**: keep; drive the two-POST coarse status.
 
+**Implementation status (2026-07-24 unattended pass):**
+
+- Eval foundation is implemented: 22 scenarios, `gate:eval`, external-judge boundary, no-grade-drop
+  enforcement, verbatim scoring, and replayable stage traces.
+- Routing **preparation** for F+P is implemented in `OrientRoutingPriorService`: the 14-guideline
+  reference, deterministic turn priors, antithrombotic pruning, disabling-stroke boost, two-candidate
+  cap, and `gate:routing-proof`. This is not the S4 shadow cutover and the tool contract is unchanged.
+- The blueprint's four identified hardcoded clinical assertions are quarantined as unverified
+  candidates behind a default-OFF flag. Clinician sign-off remains a ⛔ HUMAN gate.
+- The agent rework and AnswerAssembly remain unwired because the required first `laravel/ai` dry-run
+  exposed Composer conflicts: `config.platform.php=8.2.30` vs SDK PHP `^8.3`, plus committed framework
+  12.49 vs live 12.63 / the SDK's Illuminate ≥12.62 requirement.
+
 ---
 
 ## 11. Adapter behavior inventory — full migration coverage (gap analysis 2026-07-24)
@@ -307,7 +322,7 @@ Every one must land somewhere in v2 or be a conscious drop.
 | C | **Capabilities/onboarding** — `explain_app_capabilities`, `APP_GUIDANCE_HEADER`, "yes/ok after nonclinical" | fast deterministic path (Laravel or thin adapter static) | **MISSING** |
 | D | **Response-mode template variants** — `_response_mode` → management\|knowledge\|surveillance\|diagnostic\|case; `_requires_clinical_decision_summary` (adds Clinical Decision Summary + Perioperative Risk) | Laravel answer assembly | **MISSING** (plan assumed one template) |
 | E | **Two-layer blueprint** — `_build_two_layer_blueprint`/`_build_answer_blueprint` (~300 lines): DECISIVENESS RULE, ARTIFACT RULE, FORBIDDEN hedging phrases, section order (🩺 Clinical Synthesis…), gap taxonomy `total_gap`/`question_gap`/`core_question_covered∈{none,partial}`, interaction-gap vs sequencing vs perioperative-drug sub-structures | Laravel ProbeAgent's writing contract | **understated** — this *is* the bulk of the v1.5.x intelligence; migration is large |
-| F | **Guideline-selection rules** — SELECTION RULES + 14-guideline GUIDELINE REFERENCE currently in the *tool docstring* (read by the OWUI model to pick guideline_1/2/3) | Orient routing prompt/knowledge; **tool contract changes** — model stops selecting guidelines, just passes the question | **MISSING** (routing table must move) |
+| F | **Guideline-selection rules** — SELECTION RULES + 14-guideline GUIDELINE REFERENCE currently in the *tool docstring* (read by the OWUI model to pick guideline_1/2/3) | Orient routing prompt/knowledge; **tool contract changes** — model stops selecting guidelines, just passes the question | **PREPARED** in `OrientRoutingPriorService`; live contract intentionally unchanged until S5 |
 | G | **Assets** — `_format_assets_markdown`, `_format_rec_popup`, `has_assets` (figures/tables/rec popups) | Laravel returns asset refs; render in answer | **MISSING** from two-frame answer |
 | H | **Confirmation-mode + change-detection** — `_call_confirmation_phase`, `_call_pre_retrieval`, `change_decision`, store/get `pending_pre_result`: after a clarify, detect whether the reply changed retrieval enough vs reuse the stored pre_result | Laravel gate + state (extends Gap 3/5) | **partially** covered; the change-detection step is a specific mechanic to keep |
 | I | **Three state objects** — session (active gate) / case_context (completed case) / pending_pre_result, over in-memory TTLStore **and** STATE_BACKEND (Redis DB5) | single Laravel brain (§4) must absorb all three roles | **partially** — plan named only patient_model |
@@ -379,7 +394,12 @@ framing/sequencing were fixed:
 
 ## 12. What exists / what's next
 - **Exists:** scaffolded agents + tool + progress contract (`app/Ai/Gate/`), v1 baseline
-  (`AgenticGateService`, `gate:probe`), this plan, Fable's review.
-- **Next:** (1) capability spike on Ollama; (2) if GO, rework agents per §10 + build `gate:probe2`;
-  (3) eval harness + AAA/adversarial scenarios; (4) shadow → valves → cutover. Resolve the two human
-  policy calls (PHI-at-rest, audit commitment) before launch.
+  (`AgenticGateService`, `gate:probe`), the binding eval harness/scenarios, routing-prep/proof harness,
+  and a default-OFF unverified snippet-candidate library.
+- **Blocked engineering prerequisite:** reconcile committed lock vs live vendor, authorize a Composer
+  platform target compatible with PHP `^8.3`, rerun the `laravel/ai` dry-run, and verify Prism/Vizra
+  coexistence. Then complete the §10 agent rework and S0 AnswerAssembly on the cloud provider.
+- **Deferred:** Ollama capability spike until representative ISI GPU hardware exists; it gates S1,
+  not current cloud work.
+- **Human gates:** clinician snippet sign-off, one-tool decision, decommission interval, PHI-at-rest,
+  and clinician audit cadence.

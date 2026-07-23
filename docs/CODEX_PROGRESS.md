@@ -58,6 +58,11 @@ requirement but does not authorize changing the platform-emulation pin after a f
 No dependency files, provider config, or production files were changed. Prism/Vizra coexistence was
 not reached and therefore remains unverified.
 
+A later disposable `composer install` exposed a second conflict: committed `composer.lock` resolves
+Laravel **v12.49.0**, while the live vendor tree reports **v12.63.0**. The plan's statement that the
+lock was already 12.63 is false; satisfying the SDK's Illuminate ≥12.62 dependency may require a
+framework lock update, not merely adding a package.
+
 Files: `docs/CODEX_PROGRESS.md`.
 
 Blocker: decide/authorize the Composer platform target (minimum safe proposal: `8.3.x`) and rerun the
@@ -162,3 +167,64 @@ Overall: 32/32 (100.0%)
 
 Blockers: none for preparation. Live shadow disagreement judging remains an S4 activity and requires
 real production-shaped logs plus the cloud Orient agent after item 2 is resolved.
+
+## 2026-07-24 — Item 7: consolidation and unattended summary
+
+Plan/status updates:
+
+- Updated plan §10 with implementation status and §11 concern F as prepared but not flipped.
+- Replaced stale §12 next steps with the cloud-development state, concrete Composer prerequisite,
+  deferred Ollama gate, and outstanding human decisions.
+
+### Done
+
+- Binding eval foundation: 22 scenarios / 32 turns; stub end-to-end scorecard; external judge boundary;
+  per-case no-grade-drop; verbatim metric; stage-trace artifacts.
+- Default-OFF audited-snippet candidate extraction with four source-tagged, unverified records.
+- Routing preparation/proof harness: 8/8 sample replay and 32/32 eval replay.
+- Four small review commits; no production deployment, adapter push, tool-contract flip, or main-branch
+  change.
+
+### Engineering-blocked
+
+- `laravel/ai` installation: Composer emulates PHP 8.2.30 although Hetzner runs PHP 8.5.4; SDK requires
+  PHP ^8.3. Prism/Vizra coexistence remains untested because resolution stopped at the platform gate.
+- Agent rework and S0 AnswerAssembly: correctly skipped because their required cloud structured-output
+  runs cannot be performed without the SDK.
+
+### ⛔ HUMAN-blocked / recommended next decisions
+
+1. Authorize the Composer `config.platform.php` target (recommended minimum compatible family: 8.3)
+   and reconcile committed Laravel 12.49 vs live 12.63 so the dry-run can proceed; this is an
+   engineering prerequisite, not a clinical decision.
+2. Assign clinician sign-off for all four candidates in `eval/audited_snippets.md`; keep the flag OFF
+   until signed.
+3. Resolve plan §0 decisions: one tool vs two, S7 stability interval, PHI-at-rest policy, and clinician
+   audit owner/rate/cadence.
+
+### Recommended next engineering sequence after platform authorization
+
+1. Repeat the dependency dry-run and verify Prism/Vizra coexistence; install/publish cloud config.
+2. Rework and cloud-probe the agents per §10.
+3. Implement S0 behind `SYNTHESIS_OWNER=adapter|laravel`, keep the adapter default, then run the real
+   external-judge 15-case/gap-taxonomy checkpoint.
+
+No independently actionable backlog item remains after the dependency conflict and human-gated
+snippet activation.
+
+### Final verification
+
+Focused tests ran in the disposable Hetzner checkout using the committed lock state:
+
+```text
+Tests: 5 passed, 4 deprecated (13 assertions)
+Deprecations originate during application boot under the committed dependency set.
+
+gate:eval stub scorecard:
+22 scenarios | 32 turns | PASS 28 | MINOR 3 | FAIL 1
+Routing 100.0% | no grade drop YES | verbatim 100.0%
+
+routing proof:
+sample log 8/8 (100.0%)
+eval scenarios 32/32 (100.0%)
+```
