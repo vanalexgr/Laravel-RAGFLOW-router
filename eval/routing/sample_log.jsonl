@@ -1,0 +1,8 @@
+{"turn_class":"knowledge","serialized_patient_model":"Give the criteria of carotid near-occlusion.","expected_guideline_keys":["carotid_vertebral"],"live_guideline_keys":["carotid_vertebral"]}
+{"turn_class":"case_new","serialized_patient_model":"management of graft infection after TEVAR","expected_guideline_keys":["vascular_graft_infections"],"live_guideline_keys":["vascular_graft_infections"]}
+{"turn_class":"case_new","serialized_patient_model":"type B aortic dissection with visceral malperfusion","expected_guideline_keys":["descending_thoracic_aorta"],"live_guideline_keys":["descending_thoracic_aorta"]}
+{"turn_class":"case_new","serialized_patient_model":"motorcycle crash with acute limb ischaemia","expected_guideline_keys":["vascular_trauma"],"live_guideline_keys":["vascular_trauma"]}
+{"turn_class":"case_new","serialized_patient_model":"infected dialysis access fistula","expected_guideline_keys":["vascular_access"],"live_guideline_keys":["vascular_access"]}
+{"turn_class":"case_new","serialized_patient_model":"symptomatic carotid stenosis major disabling stroke mRS 4","expected_guideline_keys":["carotid_vertebral"],"live_guideline_keys":["carotid_vertebral"]}
+{"turn_class":"case_new","serialized_patient_model":"post EVAR antiplatelet and anticoagulation decision","expected_guideline_keys":["abdominal_aortic_aneurysm","antithrombotic_therapy"],"live_guideline_keys":["abdominal_aortic_aneurysm","antithrombotic_therapy"]}
+{"turn_class":"case_new","serialized_patient_model":"AAA with CLTI Rutherford 5 tissue loss","expected_guideline_keys":["abdominal_aortic_aneurysm","clti"],"live_guideline_keys":["abdominal_aortic_aneurysm","clti"]}

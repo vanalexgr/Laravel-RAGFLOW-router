@@ -123,3 +123,42 @@ candidate count with temporary in-process flag ON: 4
 
 ⛔ HUMAN blocker: a named clinician must verify sources/content and approve each record before the
 flag may be enabled. Safe placeholder remains OFF.
+
+## 2026-07-24 — Item 6: routing preparation (F + P; no contract flip)
+
+Implemented:
+
+- Added `OrientRoutingPriorService` with the canonical 14-guideline reference migrated from the
+  adapter, anatomy/acuity selection rules, and deterministic adapter-style turn signals.
+- Unified the two named Laravel routing concerns into this one Orient-side layer:
+  antithrombotic pruning/companion selection and the disabling-stroke carotid boost.
+- Enforced the locked maximum of two candidates and the CLTI-over-claudication pathway rule.
+- Added `gate:routing-proof` for JSONL live-route replay and full eval-scenario replay, broken down by
+  turn class with verbose disagreement output.
+- Added a representative eight-row replay fixture and focused unit coverage.
+- Did **not** change `consult_vascular_guidelines`, the adapter docstring, or any production contract.
+
+Files:
+
+- `app/Ai/Gate/Routing/OrientRoutingPriorService.php`
+- `app/Console/Commands/GateRoutingProofCommand.php`
+- `eval/routing/sample_log.jsonl`
+- `tests/Unit/GateEval/OrientRoutingPriorServiceTest.php`
+
+Verification (disposable Hetzner checkout):
+
+```text
+php artisan gate:routing-proof eval/routing/sample_log.jsonl -v
+knowledge 1/1; case_new 7/7
+Overall: 8/8 (100.0%)
+
+php artisan gate:routing-proof --scenarios -v
+case_new 22/22
+case_followup_substantive 7/7
+gate_reply 1/1
+knowledge 2/2
+Overall: 32/32 (100.0%)
+```
+
+Blockers: none for preparation. Live shadow disagreement judging remains an S4 activity and requires
+real production-shaped logs plus the cloud Orient agent after item 2 is resolved.
