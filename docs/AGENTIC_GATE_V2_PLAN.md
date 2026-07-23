@@ -18,6 +18,7 @@ Fable's review (`docs/AGENTIC_GATE_V2_REVIEW.md`) + the human decisions below.
 | Spike model | **`qwen2.5:14b-instruct`** | Target for the capability spike (stronger JSON/instruction-following). |
 | Embedded clinical assertions | **Audited snippet library** | Extract the blueprint's hardcoded medicine into a clinician-signed-off static library ("audited data"), not model-generated. Gates S0 skeletons. |
 | S0/S1 fill-call engine | **Cloud (gpt-5-mini), temporary** | Run answer-assembly on cloud first to isolate the port from the local-model bet; swap to local at S1. Accepted widening of cloud dependence during migration. |
+| **Dev/test environment** | **Cloud providers** (2026-07-24) | ISI local migration has **not happened**; there is no representative local-model host yet (Hetzner is CPU + prod). Develop and validate on **cloud** (OpenAI / OpenAI-compatible) via `laravel/ai`'s provider abstraction; the eventual Ollama swap is a config change. **The Ollama capability spike is DEFERRED** until ISI GPU hardware exists — it gates the local commitment, not current progress. Keep the design provider-agnostic and local-faithful (sequential pathways, deterministic orchestration, structured `format`/`response_format` JSON) so the swap is clean. *(Spike attempt 2026-07-24 returned BLOCKED — Ollama not installed on Hetzner; correct outcome, not a model NO-GO.)* |
 
 **Decided (above):** clinical assertions → **audited snippet library** (clinician sign-off still to be
 scheduled); S0/S1 fill-call → **cloud gpt-5-mini** temporarily.
