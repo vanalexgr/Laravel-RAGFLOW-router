@@ -38,3 +38,28 @@ not available there. The end-to-end Artisan command and syntax checks ran succes
 be installed only in the disposable checkout when dependency work begins.
 
 Blockers: none.
+
+## 2026-07-24 — Item 2: install `laravel/ai` on cloud
+
+Result: **CONFLICT — skipped per unattended autonomy rule.**
+
+The required first dry-run was executed in the disposable Hetzner checkout:
+
+```text
+composer require laravel/ai --dry-run --no-interaction
+Cannot use laravel/ai v0.10.1: requires php ^8.3.
+Composer platform is overridden to 8.2.30; actual runtime is PHP 8.5.4.
+DRY_RUN_EXIT=1
+```
+
+`composer.json` contains both `"require": {"php": "^8.2"}` and
+`"config": {"platform": {"php": "8.2.30"}}`. The backlog explicitly calls for bumping the package
+requirement but does not authorize changing the platform-emulation pin after a failed dry-run.
+No dependency files, provider config, or production files were changed. Prism/Vizra coexistence was
+not reached and therefore remains unverified.
+
+Files: `docs/CODEX_PROGRESS.md`.
+
+Blocker: decide/authorize the Composer platform target (minimum safe proposal: `8.3.x`) and rerun the
+dry-run before installing. Items whose acceptance criteria require live `laravel/ai` calls cannot be
+completed until this is resolved.
