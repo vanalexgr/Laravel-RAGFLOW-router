@@ -1321,3 +1321,36 @@ A1 is **started, not complete**. The service is not yet wired to the live existi
 controller path, and the dedicated Laravel-synthesis 15-case + gap-taxonomy external-judge checkpoint
 does not yet exist. The adapter path remains intact and default; no production or adapter change was
 made.
+
+## 2026-07-24 — Run 3 / A2: legacy test-failure investigation
+
+Investigated the three legacy failures instead of deleting their coverage or changing live behavior.
+All three were stale test inputs/expectations:
+
+- `ChangeDetectionServiceTest` used a four-token answer while asserting the LLM prompt contract.
+  The intentional short-confirmation fast path, added after the test, bypasses the LLM for answers of
+  four tokens or fewer. The fixture now uses a five-token equivalent so it exercises the contract it
+  names.
+- The two `PreRetrievalServiceTest` failure-path cases expected the old raw empty-guideline fallback.
+  Production intentionally normalizes both model exceptions and malformed JSON through deterministic
+  safe routing. For the fixture question, that means `carotid_vertebral` plus the full Clinical Query
+  Checkpoint. The tests now assert that safer current contract.
+
+No production code changed. Broad Pint on these two legacy files reports pre-existing whole-file
+formatting debt; this small behavioral-test correction deliberately avoids mixing a mechanical
+file-wide reformat into the review.
+
+Verification on the Hetzner disposable checkout:
+
+```text
+Focused: 21 passed (75 assertions)
+Full suite: 123 passed (324 assertions), 0 failures
+
+gate:eval:
+22 scenarios | 32 turns | PASS 28 | MINOR 3 | FAIL 1
+Routing 100.0% | no grade drop YES | verbatim 100.0%
+Artifact: gate-eval/runs/20260724_161756_964004.json
+
+gate:routing-proof --scenarios:
+32/32 (100.0%)
+```

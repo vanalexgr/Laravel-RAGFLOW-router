@@ -179,7 +179,9 @@ class ChangeDetectionServiceTest extends TestCase
             'confirmation_message' => 'Searching guidelines...',
         ]);
 
-        $service->detect('Superficial, 4cm from SFJ', $original);
+        // Use more than four tokens so this prompt-contract test exercises the
+        // LLM path rather than the intentional short-confirmation fast path.
+        $service->detect('It is superficial, 4cm from SFJ', $original);
 
         $this->assertStringContainsString('Original clarification questions:', $client->prompt);
         $this->assertStringContainsString(
