@@ -3,21 +3,28 @@
 namespace App\Http\Controllers;
 
 use App\Agents\VascularConsultAgent;
+use App\Http\Middleware\ValidateApiKey;
+use App\Services\ConsultSessionIdentityService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use RuntimeException;
 use Vizra\VizraADK\Services\StateManager;
 
 class AgentConsultController extends Controller
 {
-    public function __construct(private readonly StateManager $stateManager)
-    {
+    public function __construct(
+        private readonly StateManager $stateManager,
+        private readonly ConsultSessionIdentityService $sessionIdentity,
+    ) {
     }
 
     public function __invoke(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'question' => 'required|string|max:2000',
-            'session_key' => 'required|string|max:64',
+            // An opaque handle, not an address: bounded and structureless so it
+            // cannot carry a path, a separator, or another session's identifier.
+            'session_key' => ['required', 'string', 'regex:/^[A-Za-z0-9_-]{8,64}$/'],
             'guidelines' => 'nullable|array|max:3',
             'guidelines.*' => 'string',
             'history' => 'nullable|array|max:20',
@@ -25,7 +32,27 @@ class AgentConsultController extends Controller
         ]);
 
         $question = trim($validated['question']);
-        $sessionKey = $validated['session_key'];
+        $clientHandle = $validated['session_key'];
+        // Never address agent state by a caller-supplied value: derive the id
+        // under a server secret, scoped to the credential that authenticated.
+        try {
+            $sessionKey = $this->sessionIdentity->resolve(
+                $clientHandle,
+                (string) $request->attributes->get(ValidateApiKey::CALLER_ATTRIBUTE, ''),
+            );
+        } catch (RuntimeException $exception) {
+            // Misconfiguration (no APP_KEY, or the endpoint exposed without the
+            // auth middleware). Refuse rather than fall back to a shared scope.
+            report($exception);
+
+            return response()->json([
+                'error' => [
+                    'message' => 'Session isolation is not configured on this server.',
+                    'type' => 'server_error',
+                    'code' => 'session_scope_unavailable',
+                ],
+            ], 503);
+        }
         $guidelines = array_values(array_slice($validated['guidelines'] ?? [], 0, 3));
         $history = array_values(array_slice($validated['history'] ?? [], -20));
 
@@ -37,7 +64,8 @@ class AgentConsultController extends Controller
                 'assets' => [],
                 'gap_assessment' => [],
                 'mode' => 'CLARIFY',
-                'session_key' => $sessionKey,
+                // Echo the caller's own handle; the derived id stays server-side.
+                'session_key' => $clientHandle,
             ]);
         }
 
@@ -63,7 +91,8 @@ class AgentConsultController extends Controller
             'assets' => $toolResult['assets'] ?? [],
             'gap_assessment' => $toolResult['gap_assessment'] ?? [],
             'mode' => $this->extractMode($responseText),
-            'session_key' => $sessionKey,
+            // Echo the caller's own handle; the derived id stays server-side.
+            'session_key' => $clientHandle,
         ]);
     }
 

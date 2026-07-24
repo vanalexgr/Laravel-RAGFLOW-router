@@ -8,6 +8,9 @@ use Symfony\Component\HttpFoundation\Response;
 
 class ValidateApiKey
 {
+    /** Request attribute holding the authenticated caller's credential fingerprint. */
+    public const CALLER_ATTRIBUTE = 'api_caller_fingerprint';
+
     public function handle(Request $request, Closure $next): Response
     {
         $apiKey = config('services.api.key');
@@ -33,6 +36,11 @@ class ValidateApiKey
                 ],
             ], 401);
         }
+
+        // Publish a non-reversible fingerprint of the credential that authenticated
+        // this request, so downstream code can scope per-caller state without
+        // handling the key itself. Credential handling stays in this one place.
+        $request->attributes->set(self::CALLER_ATTRIBUTE, hash('sha256', $providedKey));
 
         return $next($request);
     }
