@@ -36,6 +36,35 @@ deferred to production/ISI hardware.
    before/after table; confirm p95 ≤ 90s and no overruns, or document the residual retrieval floor.
    Keep the sequential + full-pipeline paths reachable by config (eventual Ollama target).
 
+## Part 1b — Reranker A/B: the likely dominant latency cost (config-only, no code change)
+
+**Hypothesis (grounded in code, not measured):** the deep-turn latency is dominated by **reranking
+inside the RAGFlow call**, not gate design. Default `RAGFLOW_RERANK_ID=Cohere-rerank-v4.0-pro___OpenAI-API`
+(`config/ragflow.php:30`) makes RAGFlow rerank the **whole `top_k` candidate pool via a synchronous
+Cohere network call**, inside the retrieve call that R4.1 wraps. Rerank cost scales with `top_k`, which
+Run-13 *raised* (lean 20→64, base 60→80, single_case 40→96) — so the 2.5s–32.7s/call spread in Run 3 is
+the signature of a remote reranker over a large pool. The quality pass is worst: code-default `top_k`
+is **256** (`config/ragflow.php:110`). The escape hatches already exist and are OFF:
+- **Local FlashRank** (`ragflow_service/app.py:19-25`, `ms-marco-TinyBERT-L-2-v2`, ~4MB, in-process,
+  **no network hop**) engages when `rerank_id == "local"` (`app.py:145` skips forwarding to RAGFlow).
+- **Bridge-side Cohere rerank** (`config/ragflow.php:149`) — comment: *"to avoid RAGFlow rerank latency"*;
+  network call but only over the final `top_n`, not RAGFlow's full pool.
+
+8. **R4.8 Reranker A/B (measured, config-only).** On a host with access, run the four-turn latency
+   harness + `gate:eval` under `RAGFLOW_RERANK_ID=local` (FlashRank) vs the current Cohere default.
+   Record **both** per-stage p50/p95 **and** the eval grade side by side.
+   - *First confirm* the live Hetzner `.env` isn't already overriding `RAGFLOW_RERANK_ID` (CLAUDE.md
+     shows it overrides several retrieval vars) — measure against what actually runs, not the code default.
+   - This is complementary to R4.1, not redundant: the timeout bounds the **worst case** (a rerank that
+     hangs); switching the reranker lowers the **typical** case. Both belong in the before/after table.
+   - **Quality is the binding constraint, not speed.** FlashRank TinyBERT is a weaker reranker than
+     Cohere v4-pro; this is a clinical retrieval system, so a `gate:eval` grade drop (below 28/3/1 or
+     verbatim <100%) **fails** the A/B regardless of the latency win. *Done when:* the A/B table is
+     recorded and one of — (a) `local` holds the grade → recommend it as the dev-hardware default; or
+     (b) `local` drops the grade → keep Cohere, and instead evaluate lowering the quality-pass `top_k`
+     (256→80) and/or enabling bridge-side rerank as the residual-floor mitigation. No default is changed
+     without the human's call; report the recommendation.
+
 ## Part 2 — Retrieval-trap quality reframe (no forcing)
 
 4. **R4.4 Drop the "reroute must win" hard bar.** Update any acceptance text/tests that asserted it.
