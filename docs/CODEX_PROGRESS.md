@@ -1194,3 +1194,76 @@ Neither is acceptable. This is recorded as a literal acceptance failure, not hid
 
 All performance configurations retained the binding 28/3/1 eval scorecard. The hard bar cannot be
 claimed from this environment/provider combination.
+
+## 2026-07-24 — Run 3 / L6: final AAA and adversarial replay
+
+The complete generated answers and every stage-trace entry are versioned for review:
+
+- `eval/latency/run3/aaa_and_retrieval_final.json`
+- `eval/latency/run3/retrieval_trap_three_iterations.json`
+- `eval/latency/run3/remaining_adversarial.json`
+
+These artifacts are the full transcripts; they include the user scenario/turn identifier, complete
+two-frame `answer_markdown`, mode, decision, winning Critic metadata, error (if any), and raw
+`stage_trace`. The final two artifacts also retain routes, queries, and iteration metadata added
+during L5.
+
+### AAA + retrieval-trap final replay
+
+```text
+scenario / turn              total ms  mode                         score  result
+AAA T1                          49,480  case_new                      1.00  approved after Ground revision
+AAA T2                          74,679  case_followup_substantive     0.89  revised, disapproved
+AAA T3                         108,465  case_followup_substantive     0.70  revision cloud overrun
+retrieval trap                  56,563  case_new                      0.65  corrected reroute lost
+
+TOTAL/TURN p50 56,563 ms | p95 108,465 ms
+```
+
+The focused three-iteration retrieval-trap trace completed in 60,330 ms and showed the candidate
+sequence `0.90 initial → 0.85 Probe revision → 0.50 Orient reroute`; the ledger retained 0.90.
+
+### Remaining adversarial replay
+
+```text
+scenario / turn                         total ms  mode                         score  outcome
+case-switch chimera T1                    64,483  case_new                      0.70  scored
+case-switch chimera T2                    57,041  case_followup_substantive     0.80  scored
+case-switch chimera T3                    64,682  —                                —  no scored candidate
+correction flip T1                        17,213  case_new                      1.00  approved
+correction flip T2                        50,670  case_followup_substantive     1.00  approved
+declined persistence T1                   70,403  case_new                      0.95  scored
+declined persistence T2                   89,623  case_followup_vague           0.80  scored
+declined persistence T3                   73,510  case_followup_substantive     0.80  scored
+duplicate delivery T1                     81,273  case_new                      0.77  scored
+duplicate delivery T2                     89,667  case_followup_substantive     0.80  scored
+knowledge interleave T1                   86,453  case_new                      0.85  scored
+knowledge interleave T2                   25,238  knowledge                        —  fast path
+knowledge interleave T3                   72,646  case_followup_substantive     0.88  case resumed
+
+13-turn TOTAL/TURN p50 70,403 ms | p95 89,667 ms
+retrieve p50 9,230 ms | p95 33,054 ms
+pathway p50 2,961 ms | p95 9,837 ms
+probe p50 5,137 ms | p95 11,048 ms
+critic p50 4,059 ms | p95 8,945 ms
+```
+
+Quality observations from the full transcripts:
+
+- correction flip is a clean pass: both turns approved, and Turn 2 contains the corrected
+  asymptomatic 50–69% state without presenting the old symptomatic 70% state as current;
+- knowledge interleave preserves the active AAA/renal case around the knowledge turn and resumes it
+  as `case_followup_substantive`;
+- case-switch Turn 3 failed before a scored candidate and therefore returned no clinical answer;
+- declined-question and duplicate-delivery candidates completed but remained Critic-disapproved;
+  their raw answers/traces are retained rather than promoted as passes.
+
+Final binding eval:
+
+```text
+22 scenarios | 32 turns | PASS 28 | MINOR 3 | FAIL 1
+Routing 100.0% | no grade drop YES | verbatim 100.0%
+Artifact: gate-eval/runs/20260724_155601_274028.json
+```
+
+L6 conclusion: correctness scorecard stayed green, but the hard latency/reroute bar remains blocked.

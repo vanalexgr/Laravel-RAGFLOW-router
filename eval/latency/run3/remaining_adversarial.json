@@ -1,0 +1,2690 @@
+{
+    "created_at": "2026-07-24T16:11:50+00:00",
+    "configuration": {
+        "provider": "openai",
+        "model": "gpt-5-mini",
+        "deadline_seconds": 90,
+        "scenarios": [
+            "adversarial_case_switch_chimera",
+            "adversarial_correction_flip",
+            "adversarial_declined_question_persistence",
+            "adversarial_duplicate_delivery",
+            "adversarial_knowledge_interleave"
+        ],
+        "repeat": 1
+    },
+    "summary": {
+        "turn_count": 13,
+        "total": {
+            "count": 13,
+            "p50_ms": 70403,
+            "p95_ms": 89667,
+            "max_ms": 89667
+        },
+        "stages": {
+            "critic": {
+                "count": 22,
+                "p50_ms": 4059,
+                "p95_ms": 8945,
+                "max_ms": 13795
+            },
+            "ground_parallel": {
+                "count": 1,
+                "p50_ms": 19906,
+                "p95_ms": 19906,
+                "max_ms": 19906
+            },
+            "knowledge": {
+                "count": 1,
+                "p50_ms": 6084,
+                "p95_ms": 6084,
+                "max_ms": 6084
+            },
+            "orient": {
+                "count": 21,
+                "p50_ms": 4048,
+                "p95_ms": 7314,
+                "max_ms": 13102
+            },
+            "orient_retrieval_parallel": {
+                "count": 13,
+                "p50_ms": 9435,
+                "p95_ms": 33264,
+                "max_ms": 33264
+            },
+            "pathway": {
+                "count": 38,
+                "p50_ms": 2961,
+                "p95_ms": 9837,
+                "max_ms": 10450
+            },
+            "probe": {
+                "count": 24,
+                "p50_ms": 5137,
+                "p95_ms": 11048,
+                "max_ms": 17898
+            },
+            "retrieve": {
+                "count": 38,
+                "p50_ms": 9230,
+                "p95_ms": 33054,
+                "max_ms": 33214
+            }
+        }
+    },
+    "turns": [
+        {
+            "run": 1,
+            "scenario": "adversarial_case_switch_chimera",
+            "turn": 1,
+            "total_ms": 64483,
+            "mode": "case_new",
+            "decision": "ask",
+            "best_score": 0.7,
+            "critic_approved": false,
+            "critic": {
+                "approved": false,
+                "score": 0.7,
+                "revise_stage": "orient_route",
+                "issues": [
+                    {
+                        "invariant": "state_completeness",
+                        "problem": "The patient_model lacks relevant information about the patient's surgical/anaesthetic fitness, imaging detail beyond stenosis percentage, and comorbidities, which are critical for decision-making regarding suitability for CEA or CAS. The 'fitness' and 'imaging' fields are set to 'unknown', but this leaves major decision-defining clinical facts unspecified when some are always available at triage (e.g., basic clinical stability, neurological deficit).",
+                        "fix": "Explicitly state in the patient_model that key factors like surgical/anaesthetic risk, anatomical suitability for intervention, and basic clinical stability are unknown or need assessment at this stage. Gather or restate any baseline data typically available at triage."
+                    },
+                    {
+                        "invariant": "routing_validity",
+                        "problem": "The guideline routing only includes 'carotid_vertebral'. While this is the correct focus for carotid artery stenosis, the interaction gap in the retrieval indicates that there may be a missing or incomplete linkage to guideline recommendations on intervention (CEA/CAS) for symptomatic 70-99% stenosis in eligible patients, which is a central tenet of ESVS carotid guidelines. The retrieval only found secondary medical management advice, not the primary guidance on urgent revascularization for eligible patients.",
+                        "fix": "Ensure pathway queries specifically request ESVS guidance on revascularization (CEA, CAS) for recently symptomatic patients with high-grade (70-99%) carotid stenosis, not just medical therapy indications. Route/re-retrieve for the guideline's main intervention recommendation and ensure its presence or confirm absence."
+                    }
+                ],
+                "candidate_summary": "The answer recognizes the core management dilemma (intervention vs. medical therapy), correctly grounds antiplatelet therapy per ESVS for patients not having intervention, and appropriately identifies the critical unknown relating to intervention suitability. However, the patient model omits baseline triage clinical facts, and the retrieval/routing step did not surface or specifically seek the ESVS's first-line recommendation for timely CEA in eligible, recently symptomatic patients—there is an interaction gap where the guideline does actually provide direct guidance, not just for 'not considered for intervention'. Only partial guideline coverage was documented, missing opportunities for complete, high-impact clinical management advice."
+            },
+            "iterations": 2,
+            "routed_guidelines": [
+                "carotid_vertebral"
+            ],
+            "queries_tried": {
+                "carotid_vertebral": [
+                    "Decision at issue: A 68-year-old woman had a TIA yesterday and has 75% left carotid stenosis. What should we do?\nPatient model: []",
+                    "Management recommendations for a 68-year-old woman with symptomatic 75% left carotid stenosis (TIA yesterday) according to ESVS carotid artery guidelines"
+                ]
+            },
+            "error": null,
+            "answer_markdown": "## ESVS-grounded answer\n\nThe ESVS guidelines recommend short-term dual antiplatelet therapy (aspirin plus clopidogrel for 21 days followed by clopidogrel monotherapy, or long-term aspirin plus modified-release dipyridamole) for symptomatic carotid stenosis patients who are not being considered for carotid endarterectomy or stenting after a transient ischaemic attack or minor ischaemic stroke. The definition of recently symptomatic carotid stenosis includes events within the past six months. No specific recommendation was retrieved regarding revascularization (CEA or CAS) in the context of this patient profile; only principles of medical therapy for patients not undergoing intervention were found.\n\n## Interpretation\n\nNon-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nFor a 68-year-old woman with a TIA yesterday and 75% left carotid stenosis, the central management question is whether to consider carotid endarterectomy (CEA) or carotid artery stenting (CAS), in addition to optimal medical therapy. ESVS guidelines promote urgent consideration of revascularization in recently symptomatic patients with significant carotid stenosis, provided they are otherwise suitable. However, the guideline snippet retrieved only covers antiplatelet therapy for those not proceeding to intervention, so further assessment (e.g., surgical fitness, imaging findings) is critical to determine revascularization eligibility. In the absence of information on surgical/anaesthetic fitness or local anatomical factors on imaging, medical therapy is supported, but this may be superseded by guideline-based intervention if those unknowns favor CEA or CAS.",
+            "stage_trace": [
+                {
+                    "stage": "orient_retrieval_parallel",
+                    "iteration": 0,
+                    "duration_ms": 8535,
+                    "elapsed_ms": 8535,
+                    "detail": {
+                        "guidelines": [
+                            "carotid_vertebral"
+                        ]
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 0,
+                    "duration_ms": 3637,
+                    "elapsed_ms": 8535,
+                    "detail": {
+                        "prefetched_retrieval": true
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 8328,
+                    "elapsed_ms": 19930,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 1,
+                        "full_pipeline": false,
+                        "top_k": 12,
+                        "snippet_count": 0,
+                        "retrieval_ms": 8326,
+                        "prefetched": true
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 2214,
+                    "elapsed_ms": 19930,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 1,
+                        "relevant": false,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 5906,
+                    "elapsed_ms": 19930,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 2,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 2,
+                        "retrieval_ms": 5906,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 3275,
+                    "elapsed_ms": 19930,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 2,
+                        "relevant": true,
+                        "coverage": "partial"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 0,
+                    "duration_ms": 4753,
+                    "elapsed_ms": 24683,
+                    "detail": {
+                        "questions": 1,
+                        "coverage": "interaction_gap"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 1,
+                    "duration_ms": 7315,
+                    "elapsed_ms": 31998,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.7,
+                        "revise_stage": "orient_route"
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 1,
+                    "duration_ms": 5939,
+                    "elapsed_ms": 37937,
+                    "detail": {
+                        "mode": "case_new",
+                        "guidelines": [
+                            "carotid_vertebral"
+                        ]
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 1,
+                    "duration_ms": 9442,
+                    "elapsed_ms": 53151,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 1,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 10,
+                        "retrieval_ms": 9442,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 1,
+                    "duration_ms": 5772,
+                    "elapsed_ms": 53151,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 1,
+                        "relevant": true,
+                        "coverage": "partial"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 1,
+                    "duration_ms": 6086,
+                    "elapsed_ms": 59237,
+                    "detail": {
+                        "questions": 1,
+                        "coverage": "interaction_gap"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 2,
+                    "duration_ms": 5246,
+                    "elapsed_ms": 64483,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.7,
+                        "revise_stage": "orient_route"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 2,
+                    "duration_ms": 0,
+                    "elapsed_ms": 64483,
+                    "detail": {
+                        "reason": "oscillation_detected",
+                        "stage": "orient_route"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 2,
+                    "duration_ms": 0,
+                    "elapsed_ms": 64483,
+                    "detail": {
+                        "decision": "ask",
+                        "best_score": 0.7,
+                        "iterations": 2
+                    }
+                }
+            ]
+        },
+        {
+            "run": 1,
+            "scenario": "adversarial_case_switch_chimera",
+            "turn": 2,
+            "total_ms": 57041,
+            "mode": "case_followup_substantive",
+            "decision": "ask",
+            "best_score": 0.8,
+            "critic_approved": false,
+            "critic": {
+                "approved": false,
+                "score": 0.8,
+                "candidate_summary": "Strong, accurate state update and relevant extraction of ESVS guidance, but the guideline-grounded_answer includes a recommendation (endarterectomy over stenting for ≥70 years) that does not strictly apply to the patient's age (68 years), representing a subtle frame integrity and grounding issue requiring tighter separation of what the guidelines actually say vs. what is inferred.",
+                "revise_stage": "ground",
+                "issues": [
+                    {
+                        "invariant": "grounding",
+                        "problem": "In guideline_grounded_answer, the claim \"carotid endarterectomy is recommended over carotid stenting for those aged ≥70 years\" is stated as generally applicable, but the guideline text is clearly delimited to patients aged ≥70. The candidate is 68, so this should be specified as an adjacent, not as the relevant, recommendation.",
+                        "fix": "Clarify in the guideline_grounded_answer that the strong recommendation for endarterectomy over stenting is for patients aged ≥70, and that for those under 70, the guideline does not specify an equally strong preference."
+                    },
+                    {
+                        "invariant": "frame_integrity",
+                        "problem": "The guideline_grounded_answer blurs guideline fact and expert interpretation by not explicitly delimiting what is covered for this specific age (68), potentially overstating the ESVS's stance for this patient subset.",
+                        "fix": "Limit guideline_grounded_answer to only what is supported verbatim from ESVS for age 68; defer interpretive bridging (e.g., that a 68-year-old is near threshold and principles may extrapolate) solely to interpretive_frame."
+                    }
+                ]
+            },
+            "iterations": 2,
+            "routed_guidelines": [
+                "carotid_vertebral"
+            ],
+            "queries_tried": {
+                "carotid_vertebral": [
+                    "Decision at issue: She is functionally independent and the event was non-disabling.\nPatient model: {\"demographics\":\"68-year-old woman\",\"symptom_status\":\"transient ischemic attack (TIA) yesterday\",\"lesion\":\"75% left carotid stenosis\",\"other_findings\":[],\"timing\":\"yesterday\",\"fitness\":\"unknown\",\"imaging\":\"unknown\",\"comorbidities\":[],\"medications\":[],\"prior_interventions\":[]}",
+                    "Management of 75% left carotid stenosis in a 68-year-old woman with a non-disabling transient ischemic attack (TIA) yesterday and functionally independent status, focusing on carotid revascularization versus medical therapy."
+                ]
+            },
+            "error": null,
+            "answer_markdown": "## ESVS-grounded answer\n\nAccording to ESVS 2023 guidelines, in patients presenting within 6 months of a non-disabling TIA and with ipsilateral 50–99% carotid stenosis, carotid endarterectomy is recommended over carotid stenting for those aged ≥70 years. Carotid revascularisation is also recommended before elective non-cardiac surgery in such patients. For those with newly diagnosed or known atrial fibrillation and 50–99% stenosis, a multidisciplinary team (MDT) review is advised to determine need for urgent revascularisation versus anticoagulation alone.\n\n## Interpretation\n\nNon-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nThis patient is 68 years old and functionally independent, so the strong recommendation for endarterectomy over stenting for patients aged ≥70 does not strictly apply, but she is just below this threshold. As her TIA was non-disabling and recent, and stenosis is severe, revascularisation would be generally considered unless she is at elevated surgical risk or has unfavorable anatomy. If any significant perioperative risks or comorbidities exist, this may shift management away from surgery. The absence of atrial fibrillation somewhat simplifies decision-making in favor of carotid intervention if anatomically and medically suitable.",
+            "stage_trace": [
+                {
+                    "stage": "orient_retrieval_parallel",
+                    "iteration": 0,
+                    "duration_ms": 9354,
+                    "elapsed_ms": 9355,
+                    "detail": {
+                        "guidelines": [
+                            "carotid_vertebral"
+                        ]
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 0,
+                    "duration_ms": 6445,
+                    "elapsed_ms": 9355,
+                    "detail": {
+                        "prefetched_retrieval": true
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 9148,
+                    "elapsed_ms": 28276,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 1,
+                        "full_pipeline": false,
+                        "top_k": 12,
+                        "snippet_count": 0,
+                        "retrieval_ms": 9146,
+                        "prefetched": true
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 2170,
+                    "elapsed_ms": 28276,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 1,
+                        "relevant": false,
+                        "coverage": "retrieval_uncertain"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 6301,
+                    "elapsed_ms": 28276,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 2,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 6,
+                        "retrieval_ms": 6301,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 10450,
+                    "elapsed_ms": 28276,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 2,
+                        "relevant": true,
+                        "coverage": "partial"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 0,
+                    "duration_ms": 4220,
+                    "elapsed_ms": 32497,
+                    "detail": {
+                        "questions": 1,
+                        "coverage": "partial_principles"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 1,
+                    "duration_ms": 3250,
+                    "elapsed_ms": 35747,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.8,
+                        "revise_stage": "ground"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 1,
+                    "duration_ms": 11509,
+                    "elapsed_ms": 49972,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 1,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 0,
+                        "retrieval_ms": 11508,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 1,
+                    "duration_ms": 2717,
+                    "elapsed_ms": 49972,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 1,
+                        "relevant": false,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 1,
+                    "duration_ms": 3919,
+                    "elapsed_ms": 53891,
+                    "detail": {
+                        "questions": 1,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 2,
+                    "duration_ms": 3150,
+                    "elapsed_ms": 57041,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.7,
+                        "revise_stage": "ground"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 2,
+                    "duration_ms": 0,
+                    "elapsed_ms": 57041,
+                    "detail": {
+                        "reason": "bounce_budget_exhausted",
+                        "stage": "ground"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 2,
+                    "duration_ms": 0,
+                    "elapsed_ms": 57041,
+                    "detail": {
+                        "decision": "ask",
+                        "best_score": 0.8,
+                        "iterations": 2
+                    }
+                }
+            ]
+        },
+        {
+            "run": 1,
+            "scenario": "adversarial_case_switch_chimera",
+            "turn": 3,
+            "total_ms": 64682,
+            "mode": null,
+            "decision": null,
+            "best_score": null,
+            "critic_approved": null,
+            "critic": null,
+            "iterations": null,
+            "routed_guidelines": null,
+            "queries_tried": null,
+            "error": "RuntimeException: No candidate completed Critic scoring before the deadline.",
+            "answer_markdown": null,
+            "stage_trace": [
+                {
+                    "stage": "orient_retrieval_parallel",
+                    "iteration": 0,
+                    "duration_ms": 33264,
+                    "elapsed_ms": 33264,
+                    "detail": {
+                        "guidelines": [
+                            "abdominal_aortic_aneurysm",
+                            "carotid_vertebral"
+                        ]
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 0,
+                    "duration_ms": 3994,
+                    "elapsed_ms": 33264,
+                    "detail": {
+                        "prefetched_retrieval": true
+                    }
+                },
+                {
+                    "stage": "ground_parallel",
+                    "iteration": 0,
+                    "duration_ms": 19906,
+                    "elapsed_ms": 53170,
+                    "detail": {
+                        "guidelines": [
+                            "abdominal_aortic_aneurysm",
+                            "carotid_vertebral"
+                        ]
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 33054,
+                    "elapsed_ms": 53170,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "full_pipeline": false,
+                        "top_k": 12,
+                        "snippet_count": 0,
+                        "retrieval_ms": 33052,
+                        "prefetched": true
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 2961,
+                    "elapsed_ms": 53170,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "relevant": false,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 10523,
+                    "elapsed_ms": 53170,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 2,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 10,
+                        "retrieval_ms": 10523,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 5935,
+                    "elapsed_ms": 53170,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 2,
+                        "relevant": true,
+                        "coverage": "covered"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 14530,
+                    "elapsed_ms": 53170,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 1,
+                        "full_pipeline": false,
+                        "top_k": 12,
+                        "snippet_count": 0,
+                        "retrieval_ms": 14528,
+                        "prefetched": true
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 4707,
+                    "elapsed_ms": 53170,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 1,
+                        "relevant": false,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 12527,
+                    "elapsed_ms": 53170,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 2,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 0,
+                        "retrieval_ms": 12527,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 2458,
+                    "elapsed_ms": 53170,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 2,
+                        "relevant": false,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 0,
+                    "duration_ms": 9504,
+                    "elapsed_ms": 62675,
+                    "detail": {
+                        "questions": 1,
+                        "coverage": "partial_principles"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 1,
+                    "duration_ms": 0,
+                    "elapsed_ms": 64682,
+                    "detail": {
+                        "reason": "critic_or_deadline_failure",
+                        "error": "cURL error 28: Operation timed out after 2002 milliseconds with 0 bytes received (see https://curl.se/libcurl/c/libcurl-errors.html) for https://api.openai.com/v1/responses"
+                    }
+                }
+            ]
+        },
+        {
+            "run": 1,
+            "scenario": "adversarial_correction_flip",
+            "turn": 1,
+            "total_ms": 17213,
+            "mode": "case_new",
+            "decision": "ask",
+            "best_score": 1,
+            "critic_approved": true,
+            "critic": {
+                "approved": true,
+                "score": 1,
+                "revise_stage": "none",
+                "issues": [],
+                "candidate_summary": "All stated clinical facts are fully and consistently reflected in the patient model. The guideline routed (carotid_vertebral) is exactly appropriate to the case of symptomatic 70% carotid stenosis. The answer is directly grounded in the provided ESVS source text. Retrieval is exhaustive and queries are correctly reformulated. Both unknowns targeted by follow-up questions (timing of last symptom and 30-day predicted surgical risk) are decision-determining and not present in the model. The grounded answer is entirely guideline-based, and the interpretive frame appropriately provides a practical clinical summary without introducing unsupported claims. Evidence status is correctly handled. No calibration, frame integrity, or question value violations."
+            },
+            "iterations": 1,
+            "routed_guidelines": [
+                "carotid_vertebral"
+            ],
+            "queries_tried": {
+                "carotid_vertebral": [
+                    "Decision at issue: The patient has symptomatic 70% carotid stenosis.\nPatient model: []"
+                ]
+            },
+            "error": null,
+            "answer_markdown": "## ESVS-grounded answer\n\nAccording to ESVS guidelines, for patients with carotid territory symptoms within the preceding six months and 70–99% carotid stenosis, carotid endarterectomy is recommended provided the 30-day risk of death or stroke is less than 6%.\n\n## Interpretation\n\nNon-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nKey management hinges on confirming that symptoms are recent (within 6 months) and that the patient’s predicted 30-day perioperative risk is under the 6% threshold. Management cannot be clearly recommended until both criteria are met. Assessment of timing of symptoms and a formal perioperative risk evaluation (considering age, comorbidities, anatomy, and surgical expertise) are necessary before proceeding.",
+            "stage_trace": [
+                {
+                    "stage": "orient_retrieval_parallel",
+                    "iteration": 0,
+                    "duration_ms": 5089,
+                    "elapsed_ms": 5089,
+                    "detail": {
+                        "guidelines": [
+                            "carotid_vertebral"
+                        ]
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 0,
+                    "duration_ms": 3000,
+                    "elapsed_ms": 5089,
+                    "detail": {
+                        "prefetched_retrieval": true
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 4891,
+                    "elapsed_ms": 9589,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 1,
+                        "full_pipeline": false,
+                        "top_k": 12,
+                        "snippet_count": 6,
+                        "retrieval_ms": 4888,
+                        "prefetched": true
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 4500,
+                    "elapsed_ms": 9589,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 1,
+                        "relevant": true,
+                        "coverage": "covered"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 0,
+                    "duration_ms": 4470,
+                    "elapsed_ms": 14059,
+                    "detail": {
+                        "questions": 2,
+                        "coverage": "covered"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 1,
+                    "duration_ms": 3154,
+                    "elapsed_ms": 17213,
+                    "detail": {
+                        "approved": true,
+                        "score": 1,
+                        "revise_stage": "none"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 1,
+                    "duration_ms": 0,
+                    "elapsed_ms": 17213,
+                    "detail": {
+                        "decision": "ask",
+                        "best_score": 1,
+                        "iterations": 1
+                    }
+                }
+            ]
+        },
+        {
+            "run": 1,
+            "scenario": "adversarial_correction_flip",
+            "turn": 2,
+            "total_ms": 50670,
+            "mode": "case_followup_substantive",
+            "decision": "proceed",
+            "best_score": 1,
+            "critic_approved": true,
+            "critic": {
+                "approved": true,
+                "score": 1,
+                "candidate_summary": "All material facts have been updated: the patient model correctly reflects the patient is now asymptomatic with 50–69% carotid stenosis. The appropriate ESVS guideline has been routed. Queries are genuinely reformulated, with explicit attention to ESVS phrasing for the stenosis range. All grounded claims are strictly supported by retrieved digests, with appropriate clarification that '50–69%' is not verbatim from ESVS for asymptomatic patients, but instead derived from broader '50–99%' recommendations. No non-ESVS content has leaked into the grounded answer; interpretive reasoning is properly cordoned in the interpretive_frame, and the interaction gap is accurately logged. There are no open or redundant questions, and assumptions and confidence are appropriate.",
+                "revise_stage": "none",
+                "issues": []
+            },
+            "iterations": 2,
+            "routed_guidelines": [
+                "carotid_vertebral"
+            ],
+            "queries_tried": {
+                "carotid_vertebral": [
+                    "Decision at issue: Correction: the patient is asymptomatic and the stenosis is 50–69%, not 70%.\nPatient model: {\"symptom_status\":\"asymptomatic\",\"lesion\":\"50–69% carotid stenosis\"}\nCritic retrieval issues: [{\"invariant\":\"grounding\",\"problem\":\"While the source snippets support management of '>50% asymptomatic carotid stenosis' and explicitly list 'asymptomatic 50-99%' in some recommendations, the first-line grounded answer refers to 'asymptomatic 50\\u201369%' as if this exact range is spelled out, which is not verbatim from the ESVS text in the digests. Therefore, the pathway should clarify that recommendations for '>50%' or '50\\u201399%' are being applied to the 50\\u201369% range specifically for this patient.\",\"fix\":\"Explicitly ground the numeric range (50\\u201369%) to the actual language of the guideline\\u2014either state that ESVS uses '>50%' or '50\\u201399%', and clarify that is taken to subsume the 50\\u201369% group for this case, rather than imply that '50\\u201369%' is a verbatim ESVS recommendation.\"}]"
+                ]
+            },
+            "error": null,
+            "answer_markdown": "## ESVS-grounded answer\n\nThe ESVS guideline does not provide a unique recommendation specifically for '50–69%' asymptomatic carotid stenosis. The recommendations relevant to this patient are for asymptomatic patients with '50–99%' carotid stenosis. For asymptomatic patients with 50–99% stenosis undergoing major non-cardiac surgery, prophylactic carotid endarterectomy or stenting is not recommended (Class III, Level B).\n\n## Interpretation\n\nNon-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nThere is an interaction gap: while ESVS gives strong recommendations for symptomatic patients with 50–69% and for asymptomatic patients with 50–99% stenosis, it does not specifically address asymptomatic patients with only 50–69% stenosis outside the surgical context. In clinical practice, most experts apply the absence of an intervention recommendation for asymptomatic 50–99% stenosis to all subranges, including 50–69%, unless future evidence or guideline revisions specify otherwise.",
+            "stage_trace": [
+                {
+                    "stage": "orient_retrieval_parallel",
+                    "iteration": 0,
+                    "duration_ms": 8960,
+                    "elapsed_ms": 8960,
+                    "detail": {
+                        "guidelines": [
+                            "carotid_vertebral"
+                        ]
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 0,
+                    "duration_ms": 4337,
+                    "elapsed_ms": 8960,
+                    "detail": {
+                        "prefetched_retrieval": true
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 8757,
+                    "elapsed_ms": 18728,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 1,
+                        "full_pipeline": false,
+                        "top_k": 12,
+                        "snippet_count": 0,
+                        "retrieval_ms": 8755,
+                        "prefetched": true
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 1809,
+                    "elapsed_ms": 18728,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 1,
+                        "relevant": false,
+                        "coverage": "retrieval_uncertain"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 1928,
+                    "elapsed_ms": 18728,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 2,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 9,
+                        "retrieval_ms": 1927,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 6031,
+                    "elapsed_ms": 18728,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 2,
+                        "relevant": true,
+                        "coverage": "covered"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 0,
+                    "duration_ms": 4211,
+                    "elapsed_ms": 22940,
+                    "detail": {
+                        "questions": 0,
+                        "coverage": "covered"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 1,
+                    "duration_ms": 8945,
+                    "elapsed_ms": 31885,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.9,
+                        "revise_stage": "ground"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 1,
+                    "duration_ms": 8052,
+                    "elapsed_ms": 43273,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 1,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 3,
+                        "retrieval_ms": 8052,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 1,
+                    "duration_ms": 3335,
+                    "elapsed_ms": 43273,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 1,
+                        "relevant": true,
+                        "coverage": "partial"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 1,
+                    "duration_ms": 5142,
+                    "elapsed_ms": 48415,
+                    "detail": {
+                        "questions": 0,
+                        "coverage": "interaction_gap"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 2,
+                    "duration_ms": 2254,
+                    "elapsed_ms": 50670,
+                    "detail": {
+                        "approved": true,
+                        "score": 1,
+                        "revise_stage": "none"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 2,
+                    "duration_ms": 0,
+                    "elapsed_ms": 50670,
+                    "detail": {
+                        "decision": "proceed",
+                        "best_score": 1,
+                        "iterations": 2
+                    }
+                }
+            ]
+        },
+        {
+            "run": 1,
+            "scenario": "adversarial_declined_question_persistence",
+            "turn": 1,
+            "total_ms": 70403,
+            "mode": "case_new",
+            "decision": "ask",
+            "best_score": 0.95,
+            "critic_approved": false,
+            "critic": {
+                "approved": false,
+                "score": 0.95,
+                "candidate_summary": "The candidate correctly identifies that management of intermittent claudication is covered by the guideline, focuses recommendations on first-line supervised exercise, and points out key discriminating variables determining progression to invasive therapies. The patient model is complete for given information, the guideline routed is correct, retrieval is broad and rich, and all claims in frames are grounded. Two decision-changing questions are posed, both tightly targeted and not previously asked. The only minor concern is that the candidate's summary 'guideline_grounded_answer' includes risk factor management (mentioned in guideline pathway but not verbatim in any one snippet), although that step is justified by the stepwise guideline logic and thus weakly supported.",
+                "revise_stage": "ground",
+                "issues": [
+                    {
+                        "invariant": "grounding",
+                        "problem": "Guideline_grounded_answer mentions 'risk factor management' and 'appropriate medical therapy' as first line, but while the stepwise approach mentions 'risk factor management, best medical treatment, and exercise therapy as a first step,' risk factor management is not verbatim in the supporting snippet for strictly 'first-line' therapy (supervised exercise).",
+                        "fix": "Reword to state that supervised exercise is explicitly stated as first-line; add that stepwise approach includes risk factor management and medical therapy per the stepwise guideline recommendation."
+                    }
+                ]
+            },
+            "iterations": 3,
+            "routed_guidelines": [
+                "asymptomatic_pad"
+            ],
+            "queries_tried": {
+                "asymptomatic_pad": [
+                    "Decision at issue: A patient has intermittent claudication and asks about management.\nPatient model: []"
+                ]
+            },
+            "error": null,
+            "answer_markdown": "## ESVS-grounded answer\n\nThe guidelines recommend that first-line management of intermittent claudication is a supervised exercise programme, along with risk factor management and appropriate medical therapy. Revascularisation decisions should be individualised and made with shared decision-making, considering the degree of disability, response to non-invasive therapies, comorbidities, procedural risks, and expected long-term benefit. Use of patient reported outcome measures and a six-minute walk test is recommended to assess functional status and guide decision-making.\n\n## Interpretation\n\nNon-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nWhether to proceed beyond supervised exercise and medical management depends centrally on the severity of the patient's functional limitation and their response to an adequate trial of non-invasive therapies. The details around lesion location and comorbidities become important only when considering revascularisation, which is not first-line for most claudicants. Answering the two key questions above is crucial to determine if the patient should advance to consideration for revascularisation or continue/optimize conservative treatment.",
+            "stage_trace": [
+                {
+                    "stage": "orient_retrieval_parallel",
+                    "iteration": 0,
+                    "duration_ms": 7244,
+                    "elapsed_ms": 7244,
+                    "detail": {
+                        "guidelines": [
+                            "asymptomatic_pad"
+                        ]
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 0,
+                    "duration_ms": 5507,
+                    "elapsed_ms": 7244,
+                    "detail": {
+                        "prefetched_retrieval": true
+                    }
+                },
+                {
+                    "stage": "orient_fallback",
+                    "iteration": 0,
+                    "duration_ms": 0,
+                    "elapsed_ms": 7244,
+                    "detail": {
+                        "field": "response_mode"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 7035,
+                    "elapsed_ms": 11639,
+                    "detail": {
+                        "guideline": "asymptomatic_pad",
+                        "attempt": 1,
+                        "full_pipeline": false,
+                        "top_k": 12,
+                        "snippet_count": 8,
+                        "retrieval_ms": 7033,
+                        "prefetched": true
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 4395,
+                    "elapsed_ms": 11639,
+                    "detail": {
+                        "guideline": "asymptomatic_pad",
+                        "attempt": 1,
+                        "relevant": true,
+                        "coverage": "covered"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 0,
+                    "duration_ms": 10582,
+                    "elapsed_ms": 22221,
+                    "detail": {
+                        "questions": 2,
+                        "coverage": "covered"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 1,
+                    "duration_ms": 3815,
+                    "elapsed_ms": 26035,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.95,
+                        "revise_stage": "ground"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 1,
+                    "duration_ms": 10666,
+                    "elapsed_ms": 41077,
+                    "detail": {
+                        "guideline": "asymptomatic_pad",
+                        "attempt": 1,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 3,
+                        "retrieval_ms": 10666,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 1,
+                    "duration_ms": 4375,
+                    "elapsed_ms": 41077,
+                    "detail": {
+                        "guideline": "asymptomatic_pad",
+                        "attempt": 1,
+                        "relevant": true,
+                        "coverage": "covered"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 1,
+                    "duration_ms": 4452,
+                    "elapsed_ms": 45529,
+                    "detail": {
+                        "questions": 0,
+                        "coverage": "covered"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 2,
+                    "duration_ms": 3145,
+                    "elapsed_ms": 48674,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.85,
+                        "revise_stage": "orient_route"
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 2,
+                    "duration_ms": 2780,
+                    "elapsed_ms": 51454,
+                    "detail": {
+                        "mode": "case_new",
+                        "guidelines": [
+                            "asymptomatic_pad"
+                        ]
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 2,
+                    "duration_ms": 10426,
+                    "elapsed_ms": 64393,
+                    "detail": {
+                        "guideline": "asymptomatic_pad",
+                        "attempt": 1,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 0,
+                        "retrieval_ms": 10426,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 2,
+                    "duration_ms": 2513,
+                    "elapsed_ms": 64393,
+                    "detail": {
+                        "guideline": "asymptomatic_pad",
+                        "attempt": 1,
+                        "relevant": false,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 2,
+                    "duration_ms": 3446,
+                    "elapsed_ms": 67839,
+                    "detail": {
+                        "questions": 0,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 3,
+                    "duration_ms": 2563,
+                    "elapsed_ms": 70403,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.5,
+                        "revise_stage": "orient_route"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 3,
+                    "duration_ms": 0,
+                    "elapsed_ms": 70403,
+                    "detail": {
+                        "reason": "oscillation_detected",
+                        "stage": "orient_route"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 3,
+                    "duration_ms": 0,
+                    "elapsed_ms": 70403,
+                    "detail": {
+                        "decision": "ask",
+                        "best_score": 0.95,
+                        "iterations": 3
+                    }
+                }
+            ]
+        },
+        {
+            "run": 1,
+            "scenario": "adversarial_declined_question_persistence",
+            "turn": 2,
+            "total_ms": 89623,
+            "mode": "case_followup_vague",
+            "decision": "proceed",
+            "best_score": 0.8,
+            "critic_approved": false,
+            "critic": {
+                "approved": false,
+                "score": 0.8,
+                "revise_stage": "orient_route",
+                "candidate_summary": "The candidate presents a clear answer with well-organized frames, coherently assuming active smoking status due to the user declining that detail. ESVS-backed recommendations for smoking cessation, pharmacotherapy, and structured exercise are grounded to the text. Treatment alternatives are distinguished by smoking status, with sound interpretive frame logic, and all guideline claims are grounded. Structured evidence_status captures the interaction gap and the role of assumptions. However, there are two critical issues: 1) The guideline routed ('asymptomatic_pad') is for both asymptomatic PAD and intermittent claudication, but the nomenclature is potentially misleading as the patient is symptomatic. The answer is appropriate, but clarity is needed. 2) The patient model is incomplete: it does not import the 'declined' status of comorbidities and risk factors or reflect pending questions on medications, interventions, and functional status (these are known decision-impacting unknowns).",
+                "issues": [
+                    {
+                        "invariant": "state_completeness",
+                        "problem": "The patient_model in orient does not reflect the explicitly declined answer for comorbidities/risk factors or include all actively pending unknowns (current medications, prior interventions, functional status, and lesion details). Missing these facts impairs the completeness and later answer tailoring.",
+                        "fix": "Expand patient_model to include declined status for comorbidities/risk factors, and enumerate all high-impact unknowns (medications, prior interventions, functional status, lesion details) as currently unknown."
+                    },
+                    {
+                        "invariant": "routing_validity",
+                        "problem": "The routed guideline key is labeled 'asymptomatic_pad', which could imply coverage only for asymptomatic cases. The body of recommendations applied is correct for intermittent claudication (the patient's actual state), but the label may confuse. This ambiguity could misdirect future routing in more complex cases.",
+                        "fix": "Clarify, both in the guideline_key and routing logic, that the cited guideline encompasses both asymptomatic PAD and intermittent claudication, or, if possible, select a key or label directly matching symptomatic claudication."
+                    }
+                ]
+            },
+            "iterations": 2,
+            "routed_guidelines": [
+                "asymptomatic_pad"
+            ],
+            "queries_tried": {
+                "asymptomatic_pad": [
+                    "Decision at issue: I decline to discuss smoking status. Please proceed with an explicit assumption.\nPatient model: {\"symptom_status\":\"intermittent claudication\",\"lesion\":\"unknown\",\"timing\":\"unknown\",\"imaging\":\"unknown\",\"comorbidities\":[],\"medications\":[],\"prior_interventions\":[],\"other_findings\":[],\"demographics\":\"unknown\",\"fitness\":\"unknown\"}",
+                    "Management of patient with intermittent claudication assuming active smoking status, no lesion or imaging data available, no comorbidities or prior interventions."
+                ]
+            },
+            "error": null,
+            "answer_markdown": "## ESVS-grounded answer\n\nFor a patient with intermittent claudication, structured exercise therapy (including both low- and moderate-pain approaches) and pharmacotherapy such as cilostazol or naftidrofuryl oxalate are evidence-based treatments to improve walking distance and function, with minimal serious adverse effects. If the patient is actively smoking, both behavioural and pharmacological smoking cessation interventions are strongly recommended.\n\n## Interpretation\n\nNon-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nBecause smoking status is withheld, assume active smoking for maximal guideline applicability. If the patient is not a smoker, omit smoking cessation therapy. The primary management for intermittent claudication remains structured exercise and potentially pharmacotherapy such as naftidrofuryl oxalate or cilostazol, as per ESVS guidance. Exercise and drug therapy should be considered regardless of smoking status. In practice, explicitly document the assumption about smoking for ongoing care.",
+            "stage_trace": [
+                {
+                    "stage": "orient_retrieval_parallel",
+                    "iteration": 0,
+                    "duration_ms": 9435,
+                    "elapsed_ms": 9435,
+                    "detail": {
+                        "guidelines": [
+                            "asymptomatic_pad"
+                        ]
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 0,
+                    "duration_ms": 4255,
+                    "elapsed_ms": 9435,
+                    "detail": {
+                        "prefetched_retrieval": true
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 9230,
+                    "elapsed_ms": 23842,
+                    "detail": {
+                        "guideline": "asymptomatic_pad",
+                        "attempt": 1,
+                        "full_pipeline": false,
+                        "top_k": 12,
+                        "snippet_count": 0,
+                        "retrieval_ms": 9227,
+                        "prefetched": true
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 2122,
+                    "elapsed_ms": 23842,
+                    "detail": {
+                        "guideline": "asymptomatic_pad",
+                        "attempt": 1,
+                        "relevant": false,
+                        "coverage": "retrieval_uncertain"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 7755,
+                    "elapsed_ms": 23842,
+                    "detail": {
+                        "guideline": "asymptomatic_pad",
+                        "attempt": 2,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 5,
+                        "retrieval_ms": 7754,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 4531,
+                    "elapsed_ms": 23842,
+                    "detail": {
+                        "guideline": "asymptomatic_pad",
+                        "attempt": 2,
+                        "relevant": true,
+                        "coverage": "partial"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 0,
+                    "duration_ms": 5137,
+                    "elapsed_ms": 28980,
+                    "detail": {
+                        "questions": 0,
+                        "coverage": "interaction_gap"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 1,
+                    "duration_ms": 5024,
+                    "elapsed_ms": 34004,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.8,
+                        "revise_stage": "orient_route"
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 1,
+                    "duration_ms": 13102,
+                    "elapsed_ms": 47106,
+                    "detail": {
+                        "mode": "case_followup_vague",
+                        "guidelines": [
+                            "asymptomatic_pad"
+                        ]
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 1,
+                    "duration_ms": 19927,
+                    "elapsed_ms": 68718,
+                    "detail": {
+                        "guideline": "asymptomatic_pad",
+                        "attempt": 1,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 0,
+                        "retrieval_ms": 19927,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 1,
+                    "duration_ms": 1685,
+                    "elapsed_ms": 68718,
+                    "detail": {
+                        "guideline": "asymptomatic_pad",
+                        "attempt": 1,
+                        "relevant": false,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 1,
+                    "duration_ms": 17898,
+                    "elapsed_ms": 86617,
+                    "detail": {
+                        "questions": 2,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 2,
+                    "duration_ms": 0,
+                    "elapsed_ms": 89622,
+                    "detail": {
+                        "reason": "critic_or_deadline_failure",
+                        "error": "cURL error 28: Operation timed out after 3002 milliseconds with 0 bytes received (see https://curl.se/libcurl/c/libcurl-errors.html) for https://api.openai.com/v1/responses"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 2,
+                    "duration_ms": 0,
+                    "elapsed_ms": 89623,
+                    "detail": {
+                        "decision": "proceed",
+                        "best_score": 0.8,
+                        "iterations": 2
+                    }
+                }
+            ]
+        },
+        {
+            "run": 1,
+            "scenario": "adversarial_declined_question_persistence",
+            "turn": 3,
+            "total_ms": 73510,
+            "mode": "case_followup_substantive",
+            "decision": "ask",
+            "best_score": 0.8,
+            "critic_approved": false,
+            "critic": {
+                "approved": false,
+                "score": 0.8,
+                "candidate_summary": "Generally sound: the guideline_grounded_answer accurately reflects ESVS recommendations regarding follow-up for intermittent claudication, including key elements such as risk factor management, monitoring statin adherence, assessment of quality indicators, and adjustments for post-revascularisation/prior smoking cessation attempt. However, the patient model and probe stage both contain minor but correctable issues regarding completeness, and one small breach of frame integrity.",
+                "revise_stage": "orient_route",
+                "issues": [
+                    {
+                        "invariant": "state_completeness",
+                        "problem": "The patient_model does not include all relevant clinically material facts from prior turns, such as whether prior interventions (e.g., revascularisation) or smoking cessation attempts have been made.",
+                        "fix": "Explicitly note in the patient_model that revascularisation status and smoking cessation attempt status are currently unknown based on available data. Also confirm that no comorbidity or prior therapy details have been supplied."
+                    },
+                    {
+                        "invariant": "frame_integrity",
+                        "problem": "The guideline_grounded_answer includes a conditional: \"If revascularisation has taken place...\" and \"If there has been a recent attempt at smoking cessation...\". Purely guideline-grounded frames should state only what the guideline says, leaving user-specific branches for the interpretive frame. The branching logic belongs entirely in the interpretive_frame, while the grounded_answer should state the requirements as per the guideline, not as a conditional instruction.",
+                        "fix": "Move all conditional/branching statements (e.g., 'If revascularisation has taken place...') to the interpretive_frame. The guideline_grounded_answer should present the actual guideline mandates in direct, non-conditional form, with branching logic in interpretation."
+                    }
+                ]
+            },
+            "iterations": 2,
+            "routed_guidelines": [
+                "asymptomatic_pad"
+            ],
+            "queries_tried": {
+                "asymptomatic_pad": [
+                    "Decision at issue: What should follow-up focus on?\nPatient model: {\"symptom_status\":\"intermittent claudication\"}",
+                    "Follow-up recommendations for a patient with intermittent claudication due to peripheral arterial disease according to ESVS guidelines"
+                ]
+            },
+            "error": null,
+            "answer_markdown": "## ESVS-grounded answer\n\nFollow-up for patients with intermittent claudication should focus on: (1) regular assessment of risk factor management, best medical treatment, and exercise therapy as first-line measures; (2) ensuring statin therapy is prescribed and long-term adherence to statin therapy is monitored; (3) continuous assessment of quality indicators, including survival, functional status, complications, and major adverse cardiovascular and limb events; (4) if revascularisation has taken place, initiation or continuation of supervised exercise therapy to improve walking capacity and quality of life, and to reduce the likelihood of needing secondary procedures. If there has been a recent attempt at smoking cessation, follow-up contact within 2–4 weeks to monitor adherence, treatment response, and adverse events is also recommended.\n\n## Interpretation\n\nNon-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nIf the patient has not undergone revascularisation, the focus should remain on maximal medical, risk factor, and exercise therapy, surveillance of quality indicators, and medical adherence. If the patient has had a revascularisation procedure, active supervised exercise therapy is a recommended adjunct. Without recent smoking cessation attempts, that component can be omitted from the follow-up plan. Assessing functional improvement/failure of therapy, tolerance, and patient goals should be incorporated into ongoing follow-up as per standard practice.",
+            "stage_trace": [
+                {
+                    "stage": "orient_retrieval_parallel",
+                    "iteration": 0,
+                    "duration_ms": 14489,
+                    "elapsed_ms": 14489,
+                    "detail": {
+                        "guidelines": [
+                            "asymptomatic_pad"
+                        ]
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 0,
+                    "duration_ms": 3728,
+                    "elapsed_ms": 14489,
+                    "detail": {
+                        "prefetched_retrieval": true
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 14292,
+                    "elapsed_ms": 33207,
+                    "detail": {
+                        "guideline": "asymptomatic_pad",
+                        "attempt": 1,
+                        "full_pipeline": false,
+                        "top_k": 12,
+                        "snippet_count": 0,
+                        "retrieval_ms": 14290,
+                        "prefetched": true
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 3341,
+                    "elapsed_ms": 33207,
+                    "detail": {
+                        "guideline": "asymptomatic_pad",
+                        "attempt": 1,
+                        "relevant": false,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 5540,
+                    "elapsed_ms": 33207,
+                    "detail": {
+                        "guideline": "asymptomatic_pad",
+                        "attempt": 2,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 10,
+                        "retrieval_ms": 5540,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 9837,
+                    "elapsed_ms": 33207,
+                    "detail": {
+                        "guideline": "asymptomatic_pad",
+                        "attempt": 2,
+                        "relevant": true,
+                        "coverage": "covered"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 0,
+                    "duration_ms": 6519,
+                    "elapsed_ms": 39726,
+                    "detail": {
+                        "questions": 1,
+                        "coverage": "covered"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 1,
+                    "duration_ms": 4910,
+                    "elapsed_ms": 44636,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.8,
+                        "revise_stage": "orient_route"
+                    }
+                },
+                {
+                    "stage": "orient_fallback",
+                    "iteration": 1,
+                    "duration_ms": 0,
+                    "elapsed_ms": 51950,
+                    "detail": {
+                        "field": "response_mode"
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 1,
+                    "duration_ms": 7314,
+                    "elapsed_ms": 51950,
+                    "detail": {
+                        "mode": "case_followup_substantive",
+                        "guidelines": [
+                            "asymptomatic_pad"
+                        ]
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 1,
+                    "duration_ms": 9642,
+                    "elapsed_ms": 63108,
+                    "detail": {
+                        "guideline": "asymptomatic_pad",
+                        "attempt": 1,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 0,
+                        "retrieval_ms": 9642,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 1,
+                    "duration_ms": 1516,
+                    "elapsed_ms": 63108,
+                    "detail": {
+                        "guideline": "asymptomatic_pad",
+                        "attempt": 1,
+                        "relevant": false,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 1,
+                    "duration_ms": 4445,
+                    "elapsed_ms": 67553,
+                    "detail": {
+                        "questions": 1,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 2,
+                    "duration_ms": 5956,
+                    "elapsed_ms": 73510,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.7,
+                        "revise_stage": "orient_route"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 2,
+                    "duration_ms": 0,
+                    "elapsed_ms": 73510,
+                    "detail": {
+                        "reason": "insufficient_revision_budget",
+                        "stage": "orient_route",
+                        "remaining_seconds": 16,
+                        "required_seconds": 25
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 2,
+                    "duration_ms": 0,
+                    "elapsed_ms": 73510,
+                    "detail": {
+                        "decision": "ask",
+                        "best_score": 0.8,
+                        "iterations": 2
+                    }
+                }
+            ]
+        },
+        {
+            "run": 1,
+            "scenario": "adversarial_duplicate_delivery",
+            "turn": 1,
+            "total_ms": 81273,
+            "mode": "case_new",
+            "decision": "ask",
+            "best_score": 0.77,
+            "critic_approved": false,
+            "critic": {
+                "approved": false,
+                "score": 0.77,
+                "candidate_summary": "The candidate gives an appropriate summary of ESVS indications for AAA repair at ≥55mm, notes the juxtarenal position, and correctly frames fitness and anatomy as discriminants. However, there are some leakage and completeness issues, as well as inappropriate implicit assumptions about gender and elective setting.",
+                "revise_stage": "ground",
+                "issues": [
+                    {
+                        "invariant": "grounding",
+                        "problem": "The guideline-grounded answer includes the claim: 'Endovascular repair is generally preferred in anatomically suitable cases with reasonable life expectancy.' This is accurate for standard AAAs, but no retrieved snippet in your digest directly supports this class/level for juxtarenal AAA or covers the need for complex EVAR—there is no juxtarenal-specific ESVS statement retrieved. Also, 'preference for endovascular repair' is formulated without recognizing the juxtarenal complexity and lack of direct guideline basis from the digest.",
+                        "fix": "Reword the guideline-grounded answer to clarify that, per retrieved ESVS recommendations, men with aneurysms ≥55 mm should be considered for repair, and that patient fitness is required, but the specific preferences/approaches for juxtarenal AAA and anatomical suitability are not directly covered in the retrieved recommendations."
+                    },
+                    {
+                        "invariant": "grounding",
+                        "problem": "The statement 'men with an abdominal aortic aneurysm (AAA) ≥55 mm should be considered for elective repair' is correct and supported by Recommendation 22, but the text makes an ASSUMPTION that the patient is male when demographics are stated as unknown.",
+                        "fix": "Avoid assuming gender; restate as 'patients with an abdominal aortic aneurysm ≥55 mm' unless the case specifically provides the patient's gender."
+                    },
+                    {
+                        "invariant": "grounding",
+                        "problem": "The interpretive_frame veers into expert extrapolation that is not flagged as interpretive, e.g., analysis of repair approach for juxtarenal aneurysms (complex/open repair) is not covered by retrieved guideline snippets, and thus must be explicitly separated as non-ESVS interpretive insight.",
+                        "fix": "Explicitly preface or parenthetically mark these as interpretive insights not directly recommended by ESVS within the interpretive_frame."
+                    },
+                    {
+                        "invariant": "state_completeness",
+                        "problem": "Assumes an 'elective (non-ruptured) context' and that the patient is male, but neither fact is known. These are listed as assumptions but should be carefully flagged as uncertain, as these materially affect management.",
+                        "fix": "Do not speculate on context or gender beyond what is stated — note these as critical missing data affecting the pathway choice."
+                    }
+                ]
+            },
+            "iterations": 2,
+            "routed_guidelines": [
+                "abdominal_aortic_aneurysm"
+            ],
+            "queries_tried": {
+                "abdominal_aortic_aneurysm": [
+                    "Decision at issue: Message-ID dup-001: CTA shows a 5.9 cm juxtarenal AAA.\nPatient model: []",
+                    "What is the recommended management for a patient with a 5.9 cm juxtarenal abdominal aortic aneurysm detected on CT angiography?"
+                ]
+            },
+            "error": null,
+            "answer_markdown": "## ESVS-grounded answer\n\nAccording to ESVS guidelines, men with an abdominal aortic aneurysm (AAA) greater than or equal to 55 mm should be considered for elective repair. Endovascular repair is generally preferred in anatomically suitable cases with reasonable life expectancy. However, endovascular or open surgical repair is not recommended for patients unfit for intervention due to severe comorbidities, frailty, limited life expectancy, or those who decline intervention. The guidelines do not specifically address the interaction of juxtarenal location, fitness, and anatomical suitability in a single recommendation.\n\n## Interpretation\n\nNon-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nIn this scenario, elective repair is indicated by size criteria alone (5.9 cm), but two key unknowns critically affect management: whether the patient is symptomatic and their fitness for repair. Furthermore, the suitability of the aortic anatomy for endovascular repair is essential given the juxtarenal location, which often complicates standard EVAR and may require complex or open approaches. Without information on patient symptom status, fitness/comorbidities, and anatomic suitability for EVAR versus open repair, a definitive pathway cannot be chosen. If the patient is unfit, repair (open or EVAR) may be inappropriate; if fit and anatomy permits, EVAR is standard, while unsuitable anatomy may necessitate open or complex endovascular options.",
+            "stage_trace": [
+                {
+                    "stage": "orient_retrieval_parallel",
+                    "iteration": 0,
+                    "duration_ms": 11636,
+                    "elapsed_ms": 11636,
+                    "detail": {
+                        "guidelines": [
+                            "abdominal_aortic_aneurysm"
+                        ]
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 0,
+                    "duration_ms": 4048,
+                    "elapsed_ms": 11636,
+                    "detail": {
+                        "prefetched_retrieval": true
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 11437,
+                    "elapsed_ms": 27527,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "full_pipeline": false,
+                        "top_k": 12,
+                        "snippet_count": 0,
+                        "retrieval_ms": 11435,
+                        "prefetched": true
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 1589,
+                    "elapsed_ms": 27527,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "relevant": false,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 7302,
+                    "elapsed_ms": 27527,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 2,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 10,
+                        "retrieval_ms": 7302,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 7000,
+                    "elapsed_ms": 27527,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 2,
+                        "relevant": true,
+                        "coverage": "partial"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 0,
+                    "duration_ms": 11048,
+                    "elapsed_ms": 38575,
+                    "detail": {
+                        "questions": 2,
+                        "coverage": "interaction_gap"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 1,
+                    "duration_ms": 6872,
+                    "elapsed_ms": 45447,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.77,
+                        "revise_stage": "ground"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 1,
+                    "duration_ms": 18785,
+                    "elapsed_ms": 66375,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 0,
+                        "retrieval_ms": 18784,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 1,
+                    "duration_ms": 2144,
+                    "elapsed_ms": 66375,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "relevant": false,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 1,
+                    "duration_ms": 7439,
+                    "elapsed_ms": 73814,
+                    "detail": {
+                        "questions": 2,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 2,
+                    "duration_ms": 7458,
+                    "elapsed_ms": 81272,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.7,
+                        "revise_stage": "orient_route"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 2,
+                    "duration_ms": 0,
+                    "elapsed_ms": 81273,
+                    "detail": {
+                        "reason": "insufficient_revision_budget",
+                        "stage": "orient_route",
+                        "remaining_seconds": 8,
+                        "required_seconds": 25
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 2,
+                    "duration_ms": 0,
+                    "elapsed_ms": 81273,
+                    "detail": {
+                        "decision": "ask",
+                        "best_score": 0.77,
+                        "iterations": 2
+                    }
+                }
+            ]
+        },
+        {
+            "run": 1,
+            "scenario": "adversarial_duplicate_delivery",
+            "turn": 2,
+            "total_ms": 89667,
+            "mode": "case_followup_substantive",
+            "decision": "ask",
+            "best_score": 0.8,
+            "critic_approved": false,
+            "critic": {
+                "approved": false,
+                "score": 0.8,
+                "candidate_summary": "The candidate provides a thorough, mostly guideline-grounded response, accurately reflecting the size threshold for repair in men, corrects for absence of explicit ESVS guidance for juxtarenal AAAs, retrieves relevant snippets, and poses two critical decision-making questions. Structured evidence status appropriately flags an interaction gap. However, a minor but material state completeness issue exists: sex is assumed male without case evidence, which can affect management. Additionally, the query history could be improved for showing more genuine re-retrieval for the juxtarenal/complex anatomy aspect.",
+                "revise_stage": "orient_route",
+                "issues": [
+                    {
+                        "invariant": "state_completeness",
+                        "problem": "Patient sex is assumed to be male in both grounding and pathway queries, but the case does not state sex. This affects diameter thresholds (ESVS threshold is 50 mm for women and 55 mm for men).",
+                        "fix": "Explicitly record patient sex as unknown in the patient model and in ALL queries and branching. Update coverage and interpretation to acknowledge that management would differ if patient is female, and pose a high-impact question accordingly if appropriate."
+                    },
+                    {
+                        "invariant": "retrieval_sufficiency",
+                        "problem": "The queries focus on general AAA repair thresholds and management for a juxtarenal AAA, but do not make a distinct attempt to explore whether ESVS specifically addresses juxtarenal location or complex endovascular options in detail, beyond generic cutoffs and technical points.",
+                        "fix": "Add at least one targeted retrieval query asking directly about 'ESVS recommendations on management or repair of juxtarenal abdominal aortic aneurysm,' and/or for 'fenestrated/branched EVAR' indications, to ensure the guideline's silence is credible."
+                    }
+                ]
+            },
+            "iterations": 1,
+            "routed_guidelines": [
+                "abdominal_aortic_aneurysm"
+            ],
+            "queries_tried": {
+                "abdominal_aortic_aneurysm": [
+                    "Decision at issue: Message-ID dup-001: CTA shows a 5.9 cm juxtarenal AAA.\nPatient model: {\"lesion\":\"5.9 cm juxtarenal abdominal aortic aneurysm\",\"imaging\":\"CT angiography (CTA)\",\"timing\":\"unknown\",\"symptom_status\":\"unknown\",\"comorbidities\":[],\"medications\":[],\"prior_interventions\":[],\"other_findings\":[],\"demographics\":\"unknown\",\"fitness\":\"unknown\"}",
+                    "Management recommendations for a 5.9 cm juxtarenal abdominal aortic aneurysm detected by CT angiography in an asymptomatic patient"
+                ]
+            },
+            "error": null,
+            "answer_markdown": "## ESVS-grounded answer\n\nAccording to ESVS recommendations, elective repair is NOT recommended for men with asymptomatic abdominal aortic aneurysm (AAA) less than 55 mm. There is no specific ESVS recommendation in the supplied snippets regarding management for aneurysms larger than this threshold, juxtarenal location, patient anatomical suitability, or operative fitness. For patients with limited life expectancy, elective AAA repair (open or endovascular) is not recommended (Class III, B). Technical recommendations exist for open and endovascular repair approaches, but there is no explicit ESVS directive on when to choose between them for juxtarenal AAA.\n\n## Interpretation\n\nNon-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nThe guideline supports repair consideration at 5.9 cm for most men based on size threshold, but does not specify operative strategy for juxtarenal location or decision-making in the presence of fitness or anatomic constraints. In practice, the next step depends critically on patient operative fitness (including comorbidities, frailty, and expected survival) as well as anatomical suitability for either open or complex endovascular repair. Both of these are crucial before proceeding: fitness determines candidacy for repair versus conservative management; anatomy informs whether open or endovascular approach is feasible. Without these, it is not possible to finalize management or recommend a technique. Therefore, senior review would focus immediately on clarifying fitness and anatomical suitability to select the optimal pathway.",
+            "stage_trace": [
+                {
+                    "stage": "orient_retrieval_parallel",
+                    "iteration": 0,
+                    "duration_ms": 11306,
+                    "elapsed_ms": 11306,
+                    "detail": {
+                        "guidelines": [
+                            "abdominal_aortic_aneurysm"
+                        ]
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 0,
+                    "duration_ms": 3782,
+                    "elapsed_ms": 11306,
+                    "detail": {
+                        "prefetched_retrieval": true
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 11112,
+                    "elapsed_ms": 50446,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "full_pipeline": false,
+                        "top_k": 12,
+                        "snippet_count": 0,
+                        "retrieval_ms": 11111,
+                        "prefetched": true
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 4010,
+                    "elapsed_ms": 50446,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "relevant": false,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 33214,
+                    "elapsed_ms": 50446,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 2,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 6,
+                        "retrieval_ms": 33214,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 1916,
+                    "elapsed_ms": 50446,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 2,
+                        "relevant": false,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 0,
+                    "duration_ms": 8720,
+                    "elapsed_ms": 59166,
+                    "detail": {
+                        "questions": 2,
+                        "coverage": "interaction_gap"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 1,
+                    "duration_ms": 4059,
+                    "elapsed_ms": 63225,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.8,
+                        "revise_stage": "orient_route"
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 1,
+                    "duration_ms": 3417,
+                    "elapsed_ms": 66643,
+                    "detail": {
+                        "mode": "case_followup_substantive",
+                        "guidelines": [
+                            "abdominal_aortic_aneurysm"
+                        ]
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 1,
+                    "duration_ms": 14568,
+                    "elapsed_ms": 83660,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 0,
+                        "retrieval_ms": 14568,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 1,
+                    "duration_ms": 2450,
+                    "elapsed_ms": 83660,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "relevant": false,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 1,
+                    "duration_ms": 0,
+                    "elapsed_ms": 89666,
+                    "detail": {
+                        "reason": "revision_or_deadline_failure",
+                        "stage": "orient_route",
+                        "error": "cURL error 28: Operation timed out after 6002 milliseconds with 0 bytes received (see https://curl.se/libcurl/c/libcurl-errors.html) for https://api.openai.com/v1/responses"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 1,
+                    "duration_ms": 0,
+                    "elapsed_ms": 89666,
+                    "detail": {
+                        "decision": "ask",
+                        "best_score": 0.8,
+                        "iterations": 1
+                    }
+                }
+            ]
+        },
+        {
+            "run": 1,
+            "scenario": "adversarial_knowledge_interleave",
+            "turn": 1,
+            "total_ms": 86453,
+            "mode": "case_new",
+            "decision": "ask",
+            "best_score": 0.85,
+            "critic_approved": false,
+            "critic": {
+                "approved": false,
+                "score": 0.85,
+                "revise_stage": "orient_route",
+                "candidate_summary": "The submission captures the essential facts from the case, routes correctly to the ESVS AAA guideline, provides guideline-supported recommendations, and documents the interaction gap regarding CKD. Frame integrity and retrieval sufficiency are satisfactory. Only one, high-impact decision question is proposed. However, the handling of CKD and lesion complexity as potential discriminators in the guideline pathway logic requires slight tightening to be fully compliant with state completeness and routing validity.",
+                "issues": [
+                    {
+                        "invariant": "state_completeness",
+                        "problem": "The patient_model does not clearly state that there is no information on aneurysm anatomical complexity, despite this being a potentially decision-altering variable in ESVS recommendations (especially for the complex AAA pathway). Similarly, fitness for repair is not explicitly marked as unknown in the initial model, even though it is material under the guideline framework.",
+                        "fix": "Add 'aneurysm anatomical complexity: unknown' and 'fitness for repair: unknown' to the initial patient_model to show all guideline-relevant unknowns are tracked from the start."
+                    },
+                    {
+                        "invariant": "routing_validity",
+                        "problem": "The candidate includes complex AAA pathways in the pathway logic, but the case states only 'infrarenal' with no information about complexity. Unless complexity is 'unknown,' complex pathways should not be routed. If complexity is unknown, this uncertainty needs to be reflected clearly from the patient_model onward.",
+                        "fix": "Explicitly justify the inclusion of the complex AAA pathway by stating that complexity is unknown, or omit this pathway if information currently points to a standard, non-complex anatomy."
+                    }
+                ]
+            },
+            "iterations": 3,
+            "routed_guidelines": [
+                "abdominal_aortic_aneurysm"
+            ],
+            "queries_tried": {
+                "abdominal_aortic_aneurysm": [
+                    "Decision at issue: A 72-year-old man has an asymptomatic 5.7 cm infrarenal AAA and CKD.\nPatient model: []",
+                    "Management recommendations for a 72-year-old man with an asymptomatic infrarenal abdominal aortic aneurysm measuring 5.7 cm and chronic kidney disease, including considerations for elective repair and fitness assessment."
+                ]
+            },
+            "error": null,
+            "answer_markdown": "## ESVS-grounded answer\n\nAccording to the ESVS 2024 guidelines, men with an asymptomatic abdominal aortic aneurysm (AAA) ≥ 55 mm should be considered for elective repair (Class IIa, Level C). For men with an asymptomatic AAA < 55 mm, elective repair is not recommended (Class III, Level A). For patients with complex AAAs ≥ 55 mm, consideration of elective repair should take into account fitness for repair, aneurysm anatomy, and patient preferences. There is no ESVS guidance directly addressing the interaction between chronic kidney disease and decision-making for elective repair of asymptomatic AAA at this threshold.\n\n## Interpretation\n\nNon-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nThe patient's aneurysm meets the threshold for consideration of elective repair under ESVS, but chronic kidney disease (CKD) introduces additional complexity, particularly regarding perioperative risk and suitability for endovascular versus open repair. The guidelines do not specify how CKD interacts with size or fitness-based recommendations, so multidisciplinary assessment (involving anaesthetics, nephrology, and vascular surgery) is appropriate. In practice, CKD makes careful preoperative planning and risk–benefit discussion crucial, potentially influencing the choice of repair method or even prompting surveillance if overall risk is prohibitive.",
+            "stage_trace": [
+                {
+                    "stage": "orient_retrieval_parallel",
+                    "iteration": 0,
+                    "duration_ms": 5746,
+                    "elapsed_ms": 5746,
+                    "detail": {
+                        "guidelines": [
+                            "abdominal_aortic_aneurysm"
+                        ]
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 0,
+                    "duration_ms": 4309,
+                    "elapsed_ms": 5746,
+                    "detail": {
+                        "prefetched_retrieval": true
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 5534,
+                    "elapsed_ms": 20549,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "full_pipeline": false,
+                        "top_k": 12,
+                        "snippet_count": 6,
+                        "retrieval_ms": 5532,
+                        "prefetched": true
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 3725,
+                    "elapsed_ms": 20549,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "relevant": true,
+                        "coverage": "partial"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 2344,
+                    "elapsed_ms": 20549,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 2,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 6,
+                        "retrieval_ms": 2344,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 8733,
+                    "elapsed_ms": 20549,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 2,
+                        "relevant": true,
+                        "coverage": "covered"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 0,
+                    "duration_ms": 4156,
+                    "elapsed_ms": 24705,
+                    "detail": {
+                        "questions": 1,
+                        "coverage": "interaction_gap"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 1,
+                    "duration_ms": 4788,
+                    "elapsed_ms": 29493,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.85,
+                        "revise_stage": "orient_route"
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 1,
+                    "duration_ms": 5651,
+                    "elapsed_ms": 35144,
+                    "detail": {
+                        "mode": "case_new",
+                        "guidelines": [
+                            "abdominal_aortic_aneurysm"
+                        ]
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 1,
+                    "duration_ms": 4633,
+                    "elapsed_ms": 41870,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 10,
+                        "retrieval_ms": 4633,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 1,
+                    "duration_ms": 2093,
+                    "elapsed_ms": 41870,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "relevant": false,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 1,
+                    "duration_ms": 7999,
+                    "elapsed_ms": 49869,
+                    "detail": {
+                        "questions": 2,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 2,
+                    "duration_ms": 4454,
+                    "elapsed_ms": 54323,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.8,
+                        "revise_stage": "orient_route"
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 2,
+                    "duration_ms": 6143,
+                    "elapsed_ms": 60467,
+                    "detail": {
+                        "mode": "case_new",
+                        "guidelines": [
+                            "abdominal_aortic_aneurysm"
+                        ]
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 2,
+                    "duration_ms": 9105,
+                    "elapsed_ms": 75684,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 0,
+                        "retrieval_ms": 9104,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 2,
+                    "duration_ms": 6112,
+                    "elapsed_ms": 75684,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "relevant": false,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 2,
+                    "duration_ms": 8020,
+                    "elapsed_ms": 83703,
+                    "detail": {
+                        "questions": 2,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 3,
+                    "duration_ms": 2749,
+                    "elapsed_ms": 86452,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.7,
+                        "revise_stage": "probe"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 3,
+                    "duration_ms": 0,
+                    "elapsed_ms": 86452,
+                    "detail": {
+                        "reason": "insufficient_revision_budget",
+                        "stage": "probe",
+                        "remaining_seconds": 3,
+                        "required_seconds": 12
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 3,
+                    "duration_ms": 0,
+                    "elapsed_ms": 86453,
+                    "detail": {
+                        "decision": "ask",
+                        "best_score": 0.85,
+                        "iterations": 3
+                    }
+                }
+            ]
+        },
+        {
+            "run": 1,
+            "scenario": "adversarial_knowledge_interleave",
+            "turn": 2,
+            "total_ms": 25238,
+            "mode": "knowledge",
+            "decision": "proceed",
+            "best_score": null,
+            "critic_approved": null,
+            "critic": null,
+            "iterations": 0,
+            "routed_guidelines": [
+                "abdominal_aortic_aneurysm"
+            ],
+            "queries_tried": {
+                "abdominal_aortic_aneurysm": [
+                    "Decision at issue: As a general knowledge question, what diameter threshold does ESVS use in women?\nPatient model: {\"demographics\":\"72-year-old man\",\"lesion\":\"Asymptomatic 5.7 cm infrarenal abdominal aortic aneurysm\",\"comorbidities\":[\"chronic kidney disease\"],\"symptom_status\":\"asymptomatic\",\"timing\":\"unknown\",\"fitness\":\"unknown\",\"imaging\":\"unknown\",\"medications\":[],\"prior_interventions\":[],\"other_findings\":[]}",
+                    "What is the diameter threshold for elective repair of abdominal aortic aneurysm in women according to the ESVS 2020 guidelines?"
+                ]
+            },
+            "error": null,
+            "answer_markdown": "## ESVS-grounded answer\n\nESVS recommends that women with an abdominal aortic aneurysm ≥ 50 mm may be considered for elective repair (Recommendation 23, Class IIb, Level C). Conversely, women with an asymptomatic AAA < 50 mm are not recommended for elective repair (Recommendation 21, Class III, Level C). The choice should take into account fitness for repair, aneurysm anatomy, and patient preferences.\n\n## Interpretation\n\nNon-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nIn practice this means a lower size threshold is used for women than for men (men: 55 mm standard). The guidance is conditional: individual factors (comorbidities, surgical risk, aneurysm growth rate, anatomy affecting feasibility of repair, and patient values) influence the decision whether to proceed with elective intervention at or above 50 mm. Documentation of shared decision-making and surveillance plans for those below threshold are important parts of management.",
+            "stage_trace": [
+                {
+                    "stage": "orient_retrieval_parallel",
+                    "iteration": 0,
+                    "duration_ms": 9888,
+                    "elapsed_ms": 9889,
+                    "detail": {
+                        "guidelines": [
+                            "abdominal_aortic_aneurysm"
+                        ]
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 0,
+                    "duration_ms": 3296,
+                    "elapsed_ms": 9889,
+                    "detail": {
+                        "prefetched_retrieval": true
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 9680,
+                    "elapsed_ms": 19154,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "full_pipeline": false,
+                        "top_k": 12,
+                        "snippet_count": 0,
+                        "retrieval_ms": 9678,
+                        "prefetched": true
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 2476,
+                    "elapsed_ms": 19154,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "relevant": false,
+                        "coverage": "retrieval_uncertain"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 2071,
+                    "elapsed_ms": 19154,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 2,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 4,
+                        "retrieval_ms": 2071,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 4718,
+                    "elapsed_ms": 19154,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 2,
+                        "relevant": true,
+                        "coverage": "covered"
+                    }
+                },
+                {
+                    "stage": "knowledge",
+                    "iteration": 0,
+                    "duration_ms": 6084,
+                    "elapsed_ms": 25238,
+                    "detail": {
+                        "escalate": false,
+                        "coverage": "covered"
+                    }
+                }
+            ]
+        },
+        {
+            "run": 1,
+            "scenario": "adversarial_knowledge_interleave",
+            "turn": 3,
+            "total_ms": 72646,
+            "mode": "case_followup_substantive",
+            "decision": "ask",
+            "best_score": 0.88,
+            "critic_approved": false,
+            "critic": {
+                "approved": false,
+                "score": 0.88,
+                "revise_stage": "orient_route",
+                "candidate_summary": "State is complete, and routing to the AAA guideline is correct. Retrieval sufficiency is strong, with multiple, targeted queries. Grounding is correct on the negative—no claims in the guideline-grounded frame overstep the guideline's remit. Frame integrity is well-preserved: the interpretive frame provides a usable and appropriately non-ESVS-based summary, and the grounded frame accurately reflects absence of ESVS guidance. The single clarifying question targets imaging which is not yet known and could be decision-changing, especially regarding modality and risk. However, one minor but material state detail is missing in the patient_model: there is no explicit statement of the degree or acuteness of renal deterioration (it simply says 'renal function has worsened'), but the user question strongly suggests a recent and relevant change. This could be flagged in 'other_findings' or a new field (e.g., 'renal_status_recent_change') for clarity, ensuring state completeness.",
+                "issues": [
+                    {
+                        "invariant": "state_completeness",
+                        "problem": "The current patient_model lists 'other_findings': ['renal function has worsened'], but does not explicitly specify the acuteness, degree, or timing of deterioration, which is directly relevant as per the current query.",
+                        "fix": "Add a distinct field (e.g., 'renal_status_recent_change') or update 'other_findings' to specify 'recent, clinically significant deterioration in renal function' to match the user query. This ensures later retrieval or pathway steps can refer to this as a temporally anchored, decision-relevant update."
+                    }
+                ]
+            },
+            "iterations": 3,
+            "routed_guidelines": [
+                "abdominal_aortic_aneurysm"
+            ],
+            "queries_tried": {
+                "abdominal_aortic_aneurysm": [
+                    "Decision at issue: Back to this patient: renal function has worsened. How does that affect planning?\nPatient model: {\"demographics\":\"72-year-old man\",\"lesion\":\"Asymptomatic 5.7 cm infrarenal abdominal aortic aneurysm\",\"comorbidities\":[\"chronic kidney disease\"],\"symptom_status\":\"asymptomatic\",\"timing\":\"unknown\",\"fitness\":\"unknown\",\"imaging\":\"unknown\",\"medications\":[],\"prior_interventions\":[],\"other_findings\":[]}",
+                    "Management of asymptomatic 5.7 cm infrarenal abdominal aortic aneurysm in a 72-year-old man with chronic kidney disease and recent worsening renal function"
+                ]
+            },
+            "error": null,
+            "answer_markdown": "## ESVS-grounded answer\n\nThe ESVS guideline does not provide specific recommendations for planning aneurysm repair in patients with worsening renal function or how it should affect management decisions.\n\n## Interpretation\n\nNon-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nRenal dysfunction complicates both open and endovascular repair: endovascular repair typically requires iodinated contrast, which may worsen renal injury, but is generally associated with lower perioperative risk than open surgery. Worsening renal function may prompt strategies such as minimising contrast, use of adjunctive imaging techniques, nephroprotection, or joint nephrology input. The decision between repair modalities and timing should be tailored to the patient's anatomy (confirmed by imaging), rate of renal deterioration, and overall surgical fitness, with consideration of nonoperative surveillance if risks exceed benefit. Ensure up-to-date imaging is available to assess feasibility and risks.",
+            "stage_trace": [
+                {
+                    "stage": "orient_retrieval_parallel",
+                    "iteration": 0,
+                    "duration_ms": 9909,
+                    "elapsed_ms": 9909,
+                    "detail": {
+                        "guidelines": [
+                            "abdominal_aortic_aneurysm"
+                        ]
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 0,
+                    "duration_ms": 3603,
+                    "elapsed_ms": 9909,
+                    "detail": {
+                        "prefetched_retrieval": true
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 9719,
+                    "elapsed_ms": 22639,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "full_pipeline": false,
+                        "top_k": 12,
+                        "snippet_count": 0,
+                        "retrieval_ms": 9717,
+                        "prefetched": true
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 1940,
+                    "elapsed_ms": 22639,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "relevant": false,
+                        "coverage": "retrieval_uncertain"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 9213,
+                    "elapsed_ms": 22639,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 2,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 0,
+                        "retrieval_ms": 9213,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 1577,
+                    "elapsed_ms": 22639,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 2,
+                        "relevant": false,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 0,
+                    "duration_ms": 4079,
+                    "elapsed_ms": 26718,
+                    "detail": {
+                        "questions": 2,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 1,
+                    "duration_ms": 3689,
+                    "elapsed_ms": 30408,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.8,
+                        "revise_stage": "probe"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 1,
+                    "duration_ms": 4292,
+                    "elapsed_ms": 34699,
+                    "detail": {
+                        "questions": 1,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 2,
+                    "duration_ms": 13795,
+                    "elapsed_ms": 48494,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.88,
+                        "revise_stage": "orient_route"
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 2,
+                    "duration_ms": 2567,
+                    "elapsed_ms": 51061,
+                    "detail": {
+                        "mode": "case_followup_substantive",
+                        "guidelines": [
+                            "abdominal_aortic_aneurysm"
+                        ]
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 2,
+                    "duration_ms": 11183,
+                    "elapsed_ms": 63723,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 0,
+                        "retrieval_ms": 11183,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 2,
+                    "duration_ms": 1478,
+                    "elapsed_ms": 63723,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "relevant": false,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 2,
+                    "duration_ms": 6144,
+                    "elapsed_ms": 69867,
+                    "detail": {
+                        "questions": 1,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 3,
+                    "duration_ms": 2779,
+                    "elapsed_ms": 72646,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.82,
+                        "revise_stage": "orient_route"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 3,
+                    "duration_ms": 0,
+                    "elapsed_ms": 72646,
+                    "detail": {
+                        "reason": "oscillation_detected",
+                        "stage": "orient_route"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 3,
+                    "duration_ms": 0,
+                    "elapsed_ms": 72646,
+                    "detail": {
+                        "decision": "ask",
+                        "best_score": 0.88,
+                        "iterations": 3
+                    }
+                }
+            ]
+        }
+    ]
+}
