@@ -224,9 +224,15 @@ final class GateWorkflowService
             'guideline_reference' => OrientRoutingPriorService::GUIDELINE_REFERENCE,
             'critic_issues' => $issues,
         ]);
-        $response['candidate_guidelines'] = $this->routing->candidates(
+        $response['mode'] = $this->constrainMode(
+            (string) ($response['mode'] ?? 'case_new'),
+            $signals,
+            $priorState,
+        );
+        $response['candidate_guidelines'] = $this->constrainCandidates(
             json_encode($response['patient_model'] ?? []) ?: $turn,
-            array_merge($deterministicCandidates, (array) ($response['candidate_guidelines'] ?? [])),
+            $deterministicCandidates,
+            (array) ($response['candidate_guidelines'] ?? []),
         );
         $this->record('orient', $started, [
             'mode' => $response['mode'] ?? null,
@@ -462,6 +468,36 @@ final class GateWorkflowService
     private function normalizeQuestion(string $question): string
     {
         return mb_strtolower(trim(preg_replace('/\s+/', ' ', $question) ?? $question), 'UTF-8');
+    }
+
+    /**
+     * @param  array<int, string>  $deterministic
+     * @param  array<int, string>  $model
+     * @return array<int, string>
+     */
+    private function constrainCandidates(string $patientModel, array $deterministic, array $model): array
+    {
+        return $this->routing->candidates(
+            $patientModel,
+            $deterministic !== [] ? $deterministic : $model,
+        );
+    }
+
+    /**
+     * @param  array<string, bool>  $signals
+     * @param  array<string, mixed>  $priorState
+     */
+    private function constrainMode(string $modelMode, array $signals, array $priorState): string
+    {
+        if (($signals['specific_patient'] ?? false) && $priorState === []) {
+            return 'case_new';
+        }
+
+        if (($signals['specific_patient'] ?? false) && $modelMode === 'knowledge') {
+            return 'case_followup_substantive';
+        }
+
+        return $modelMode;
     }
 
     /**

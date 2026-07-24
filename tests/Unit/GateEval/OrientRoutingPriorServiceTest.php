@@ -8,6 +8,15 @@ use PHPUnit\Framework\TestCase;
 
 class OrientRoutingPriorServiceTest extends TestCase
 {
+    public function test_infrarenal_mural_thrombus_stays_in_abdominal_territory(): void
+    {
+        $service = new OrientRoutingPriorService;
+        $text = 'A patient has an infrarenal abdominal aortic mural thrombus with distal embolisation.';
+
+        $this->assertTrue($service->turnSignals($text)['specific_patient']);
+        $this->assertSame(['abdominal_aortic_aneurysm'], $service->candidates($text));
+    }
+
     #[DataProvider('routes')]
     public function test_deterministic_priors(string $query, array $expected): void
     {

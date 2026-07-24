@@ -36,6 +36,37 @@ class GateWorkflowServiceTest extends TestCase
         $this->assertSame('pending', $result[1]['status']);
     }
 
+    public function test_model_cannot_expand_beyond_existing_deterministic_anatomy_prior(): void
+    {
+        $method = new \ReflectionMethod(GateWorkflowService::class, 'constrainCandidates');
+        $result = $method->invoke(
+            $this->workflow(),
+            'infrarenal abdominal aortic mural thrombus with distal embolisation',
+            ['abdominal_aortic_aneurysm'],
+            ['descending_thoracic_aorta', 'acute_limb_ischaemia'],
+        );
+
+        $this->assertSame(['abdominal_aortic_aneurysm'], $result);
+    }
+
+    public function test_first_specific_patient_turn_cannot_be_gate_reply_or_knowledge(): void
+    {
+        $method = new \ReflectionMethod(GateWorkflowService::class, 'constrainMode');
+
+        $this->assertSame('case_new', $method->invoke(
+            $this->workflow(),
+            'gate_reply',
+            ['specific_patient' => true],
+            [],
+        ));
+        $this->assertSame('case_new', $method->invoke(
+            $this->workflow(),
+            'knowledge',
+            ['specific_patient' => true],
+            [],
+        ));
+    }
+
     private function workflow(): GateWorkflowService
     {
         $retrieval = new class extends RetrievalService

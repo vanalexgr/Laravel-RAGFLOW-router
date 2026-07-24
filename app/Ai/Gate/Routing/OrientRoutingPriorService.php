@@ -43,6 +43,7 @@ class OrientRoutingPriorService
                 && preg_match('/^(?:yes|no|unknown|not sure|symptomatic|asymptomatic|\d+(?:\.\d+)?\s*(?:%|mm|cm)?|[a-z0-9 .,;:\/()=%-]+)$/iu', $turn) === 1,
             'vague_management_followup' => preg_match('/^(?:so,?\s*)?(?:what (?:now|next)|what should (?:i|we) do|what is the plan|which option|how should (?:i|we) proceed)\??$/iu', $turn) === 1,
             'raw_knowledge' => preg_match('/\b(?:define|definition|criteria|classification|what is the threshold|which guidelines cover)\b/iu', $turn) === 1,
+            'specific_patient' => preg_match('/\b(?:a|the|my|this)\s+patient\b|\bpatient\s+(?:has|with|who)\b|\b\d{1,3}[- ]?(?:year[- ]old|yo)\b/iu', $turn) === 1,
         ];
     }
 
@@ -77,7 +78,7 @@ class OrientRoutingPriorService
             $add($ranked, 'vascular_access');
         }
 
-        if ($this->matches($text, '/\b(type b|tbad|non[- ]?a non[- ]?b|descending thoracic|thoracoabdominal|taaa|tevar|thoracic aortic|mural thrombus)\b/u')) {
+        if ($this->matches($text, '/\b(type b|tbad|non[- ]?a non[- ]?b|descending thoracic|thoracoabdominal|taaa|tevar|thoracic aortic)\b/u')) {
             $add($ranked, 'descending_thoracic_aorta');
         }
         if ($this->matches($text, '/\b(aortic arch|arch aneurysm|zone [0-2]|frozen elephant|supra-aortic|debranching|innominate|subclavian)\b/u')) {
