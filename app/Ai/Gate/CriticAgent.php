@@ -19,18 +19,21 @@ use Laravel\Ai\Promptable;
  * from hardcoded special cases.
  *
  * It is given the full candidate: the accumulated patient_model, the routed
- * guidelines, the grounded pathways (with their retrieved guideline_basis), the
- * unknowns/questions, the provisional_answer and the confidence.
+ * guidelines, grounded pathways, capped source snippet digests, prior question
+ * lifecycle, unknowns/questions, both answer frames, and logging confidence.
  *
  * Capable model (NOT #[UseCheapestModel]) — a weak critic approves bad output.
  */
 final class CriticAgent implements Agent, HasStructuredOutput
 {
+    use Promptable;
+
     public function instructions(): string
     {
         return <<<'TXT'
 You are a vascular surgery attending doing a rigorous review of a colleague's pre-answer work on a
-case. You do NOT re-answer the case. You judge the WHOLE candidate against these invariants, which
+case. You do NOT re-answer the case. The input includes capped SOURCE_SNIPPET_DIGESTS so grounding
+must be checked against actual text, not pathway summaries. Judge the WHOLE candidate against these invariants, which
 apply to EVERY case — reason from first principles, never from memorized case types:
 
 1. STATE COMPLETENESS — the patient_model must reflect EVERY clinically material fact stated across
@@ -49,8 +52,8 @@ apply to EVERY case — reason from first principles, never from memorized case 
    demand re-retrieval with better queries before any "ESVS does not cover this" conclusion stands.
    -> revise_stage: "ground"
 
-4. GROUNDING — every decision pathway must be supported by the retrieved guideline_basis text, not by
-   model memory. Flag any pathway or claim with no basis in the retrieved snippets.  -> revise_stage: "ground"
+4. GROUNDING — every pathway and grounded-frame claim must be entailed by SOURCE_SNIPPET_DIGESTS,
+   not by a model-written guideline_basis or memory. Flag unsupported claims. -> revise_stage: "ground"
 
 5. FRAME INTEGRITY — the answer's two frames must be clean and complete:
    - guideline_grounded_answer may contain ONLY claims supported by retrieved ESVS text; any expert
@@ -59,16 +62,17 @@ apply to EVERY case — reason from first principles, never from memorized case 
    - interpretive_frame must ALWAYS give the user a usable answer, and must read as non-ESVS
      interpretation — especially when evidence_status is "esvs_absent" (the user must never be left
      with nothing just because the guideline is silent).
-   - evidence_status must match the pathways' coverage verdicts.  -> revise_stage: "probe"
+   - structured evidence_status must preserve interaction gaps, partial principles, credible
+     not-covered findings, and retrieval uncertainty. -> revise_stage: "probe"
 
 6. QUESTION VALUE — at most 2 questions; each must target a fact genuinely absent from the
    patient_model AND be decision-changing (its answer flips the first-line choice between grounded
    pathways). Reject redundant, already-answered, or nice-to-know questions. If no HIGH-impact unknown
-   exists, questions must be empty.  -> revise_stage: "probe"
+   exists, questions must be empty. A question previously answered or declined in OPEN_QUESTIONS is
+   always invalid and must never be re-asked. -> revise_stage: "probe"
 
-7. CALIBRATION — confidence must be consistent with the evidence: high confidence is incompatible with
-   an unresolved HIGH-impact unknown or with esvs_absent evidence; low confidence is incompatible with
-   no real unknowns and sufficient evidence.  -> revise_stage: "probe"
+7. CALIBRATION — confidence is logging-only but should describe the evidence honestly. Never use a
+   scalar threshold to recommend ask/proceed. -> revise_stage: "probe"
 
 Approve ONLY when ALL invariants hold. Otherwise list each violation as a concrete, actionable issue
 tagged with the invariant it breaks and the exact fix required, and set revise_stage to the EARLIEST
@@ -87,6 +91,7 @@ TXT;
         return [
             'approved' => $schema->boolean()->required(),
             'score' => $schema->number()->required(),
+            'candidate_summary' => $schema->string()->required(),
             'revise_stage' => $schema->string()
                 ->enum(['none', 'orient_route', 'ground', 'probe'])
                 ->required(),

@@ -9,21 +9,11 @@ use Laravel\Ai\Contracts\HasStructuredOutput;
 use Laravel\Ai\Promptable;
 
 /**
- * ORIENT — stage 1 of the agentic clarification gate.
+ * ORIENT — the only model stage allowed to read raw conversation text.
  *
- * Cheap, fast classification pass. Reads the raw case (+ prior turns) and
- * produces a structured patient model, a short differential, and the set of
- * candidate ESVS guideline keys the case could route to. It does NOT ground in
- * retrieved text and does NOT ask questions — it only frames the problem so the
- * parallel PathwayAgents know which guidelines to pull.
- *
- * Marked #[UseCheapestModel] (the blog's "routing" optimisation): framing a case
- * is a classification task, not a reasoning task, so it runs on the cheapest
- * configured model. On ISI this maps to a small local model.
- *
- * Input (passed by the workflow at prompt() time): a JSON blob of
- *   { "case": string, "history": string[], "guideline_keys": {key: name} }
- * Output: structured array accessible via array offsets on the response.
+ * It absorbs the former TriageAgent and emits a delta-merged patient model.
+ * Downstream stages receive only this model, the current question, and retrieved
+ * snippets, which prevents stale facts in raw history from leaking back in.
  */
 #[UseCheapestModel]
 final class OrientAgent implements Agent, HasStructuredOutput
@@ -33,17 +23,21 @@ final class OrientAgent implements Agent, HasStructuredOutput
     public function instructions(): string
     {
         return <<<'TXT'
-You are a senior vascular surgeon triaging a case before any guideline evidence is retrieved.
-Your ONLY job here is to FRAME the case, not to answer it and not to ask questions.
+You are the ORIENT stage for an ESVS vascular assistant. Frame and route; do not answer.
 
-Given the CASE and any PRIOR CONVERSATION:
-1. Build a structured patient model from what is EXPLICITLY stated. Use "unknown" for anything not stated.
-   Never infer a value that was not given (e.g. do not assume "symptomatic" from the mere mention of stroke).
-2. Give a short differential — the most likely clinical framings, most likely first.
-3. Select the candidate ESVS guideline keys this case could route to, chosen ONLY from the
-   guideline_keys provided in the input. Include a key only if the case plausibly touches it.
-   Do NOT add antithrombotic/anticoagulation guidelines unless the case actually asks about
-   anticoagulation or antithrombotic decisions.
+The input contains CURRENT_TURN verbatim, PRIOR_STATE, deterministic TURN_SIGNALS, and the canonical
+GUIDELINE_REFERENCE. Apply these rules:
+1. Classify mode using the full taxonomy. Deterministic blocked modes cannot be loosened.
+2. Decide same_case against PRIOR_STATE. An explicit new patient/case starts a new case. Otherwise,
+   a short answer or follow-up normally updates the active case.
+3. Delta-merge every explicit fact. Later corrections overwrite earlier values. Preserve unrelated
+   findings in other_findings. Never infer an unstated value; use "unknown".
+4. Record changed_fields and per-field provenance with the current turn index and verbatim source.
+5. Update open_questions: mark answered or declined questions; never silently drop them.
+6. Rank at most two candidate guideline keys, selected only from GUIDELINE_REFERENCE. The supplied
+   deterministic routing priors are constraints/signals, not optional suggestions.
+7. Do not add antithrombotic_therapy unless the turn asks an explicit medication, anticoagulation,
+   antiplatelet, bleeding-risk, or perioperative antithrombotic decision.
 
 Return ONLY the structured object. No prose.
 TXT;
@@ -55,9 +49,26 @@ TXT;
     public function schema(JsonSchema $schema): array
     {
         return [
+            'mode' => $schema->string()->enum([
+                'knowledge',
+                'case_new',
+                'case_followup_substantive',
+                'case_followup_vague',
+                'gate_reply',
+                'capabilities',
+                'out_of_scope',
+                'model_meta',
+                'prompt_injection',
+            ])->required(),
+            'same_case' => $schema->boolean()->required(),
+            'new_case_reason' => $schema->string()->required(),
+            'response_mode' => $schema->string()
+                ->enum(['management', 'knowledge', 'surveillance', 'diagnostic', 'case'])
+                ->required(),
             'patient_model' => $schema->object([
                 'demographics' => $schema->string()->required(),
                 'lesion' => $schema->string()->required(),
+                'other_findings' => $schema->array()->items($schema->string())->required(),
                 'symptom_status' => $schema->string()->required(),
                 'timing' => $schema->string()->required(),
                 'fitness' => $schema->string()->required(),
@@ -66,6 +77,21 @@ TXT;
                 'medications' => $schema->array()->items($schema->string())->required(),
                 'prior_interventions' => $schema->array()->items($schema->string())->required(),
             ])->required(),
+            'changed_fields' => $schema->array()->items($schema->string())->required(),
+            'provenance' => $schema->array()->items(
+                $schema->object([
+                    'field' => $schema->string()->required(),
+                    'turn_index' => $schema->integer()->required(),
+                    'verbatim_source' => $schema->string()->required(),
+                ])
+            )->required(),
+            'open_questions' => $schema->array()->items(
+                $schema->object([
+                    'question' => $schema->string()->required(),
+                    'status' => $schema->string()->enum(['pending', 'answered', 'declined'])->required(),
+                    'answer' => $schema->string()->required(),
+                ])
+            )->required(),
             'differential' => $schema->array()->items($schema->string())->required(),
             'candidate_guidelines' => $schema->array()->items($schema->string())->required(),
         ];

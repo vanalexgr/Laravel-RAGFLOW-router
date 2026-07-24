@@ -326,3 +326,44 @@ failures, not a Laravel AI or framework-upgrade regression:
 
 Phase 0 conclusion: **CLEAN / GO**. Laravel AI structured output is operational against the existing
 cloud provider, with no test-grade drop from the dependency change.
+
+## 2026-07-24 — Milestone A / J1.1: agent contracts and deterministic boundaries
+
+Reworked the scaffold to match plan §10 before workflow wiring:
+
+- removed the standalone `TriageAgent`; `OrientAgent` now owns the full live turn taxonomy,
+  same/new-case decision, delta-merged patient model, changed fields, provenance, question lifecycle,
+  response mode, and at-most-two guideline candidates;
+- removed `HasTools` from `PathwayAgent` and `KnowledgeAnswerAgent`; retrieval attempts are now owned
+  by deterministic PHP, while the agent only judges supplied snippets and proposes a better query;
+- expanded pathway coverage with `retrieval_uncertain`, covered components, and interaction-gap
+  signals;
+- changed Probe and Knowledge output to the structured evidence-status object from plan §7;
+- constrained Probe to patient model/current question/snippets and made confidence logging-only;
+- made Critic explicitly snippet-digest-aware and added the never-re-ask invariant;
+- added a state-aware deterministic pre-Orient guard (prompt injection is always blocked);
+- added one Laravel-owned evidence-status computation and a discrete deterministic tail with
+  declined/answered-question suppression, fixed non-ESVS banner, and dose lint.
+
+Files:
+
+- `app/Ai/Gate/OrientAgent.php`
+- `app/Ai/Gate/PathwayAgent.php`
+- `app/Ai/Gate/ProbeAgent.php`
+- `app/Ai/Gate/CriticAgent.php`
+- `app/Ai/Gate/KnowledgeAnswerAgent.php`
+- `app/Ai/Gate/Guard/PreOrientGuardService.php`
+- `app/Ai/Gate/EvidenceStatusService.php`
+- `app/Ai/Gate/GateDecisionTail.php`
+- `tests/Unit/GateEval/{GateAgentSchema,PreOrientGuardService,EvidenceStatusService,GateDecisionTail}Test.php`
+
+Verification in the disposable Hetzner checkout:
+
+```text
+Pint: 12 changed files PASS
+Gate agent schemas + deterministic services:
+20 tests passed (33 assertions)
+```
+
+The broad `app/Ai/Gate` style scan also found three pre-existing formatting issues in untouched
+files; they were not mixed into this review unit. Blockers: none.

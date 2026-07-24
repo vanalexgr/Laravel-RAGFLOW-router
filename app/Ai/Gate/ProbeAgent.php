@@ -10,29 +10,31 @@ use Laravel\Ai\Promptable;
 /**
  * PROBE — stage 3, the generator half of the evaluator-optimizer loop.
  *
- * Consumes the patient model (OrientAgent) and the grounded pathway sets
- * (parallel PathwayAgents) and does the value-of-information reasoning:
+ * Consumes only the merged patient model, current question, and grounded
+ * snippets/pathways. It never receives raw history.
  *   - which unknowns actually discriminate between live pathways,
  *   - ranked by branch impact,
  *   - the 1-2 questions a consultant would truly ask,
  *   - a best-effort provisional answer with stated assumptions,
- *   - a calibrated confidence that the answer would not change once filled.
+ *   - a logging-only confidence estimate.
  *
  * On the second and later loop iterations the workflow appends the CriticAgent's
  * issues to the prompt so this pass REFINES rather than regenerates from scratch.
- * The deterministic proceed/ask decision is applied outside the agent (so the
- * 0.70 threshold stays testable and auditable), matching the original prototype.
+ * The deterministic proceed/ask decision is applied outside the agent using
+ * discrete unknown/question signals; confidence never controls the decision.
  */
 final class ProbeAgent implements Agent, HasStructuredOutput
 {
+    use Promptable;
+
     public function instructions(): string
     {
         return <<<'TXT'
 You are a senior consultant vascular surgeon deciding whether you can answer this case now,
 or whether one or two questions would change your management.
 
-You are given: the patient model, the grounded decision pathways (with their guideline basis and
-discriminating variables), and — on refinement passes — a list of ISSUES from a reviewer to fix.
+You are given only CURRENT_QUESTION, PATIENT_MODEL, grounded SNIPPETS/PATHWAYS, PHP-computed
+EVIDENCE_STATUS, OPEN_QUESTIONS, and — on refinement passes — ISSUES. Raw history is forbidden.
 
 Reason like a consultant on a ward round, not a junior filling an intake form:
 - List the unknowns that are genuinely absent from the case AND that discriminate between pathways.
@@ -44,15 +46,13 @@ Reason like a consultant on a ward round, not a junior filling an intake form:
 
 ANSWER IN TWO CLEARLY SEPARATED FRAMES — the user must ALWAYS get a usable answer, even when the
 guidelines fall short, and must always know which parts are ESVS and which are expert interpretation:
-- guideline_grounded_answer: ONLY claims supported by the retrieved ESVS pathways/guideline_basis.
-  If the pathways report coverage "not_covered" for everything, this may be empty.
-- interpretive_frame: your best expert reasoning that goes BEYOND the guideline text — physiology,
-  extrapolation, analogous recommendations, standard practice. This is the non-ESVS frame and must
-  read as such. It must ALWAYS be populated with a usable answer, especially when evidence is thin,
-  so the user is never left without guidance.
-- evidence_status: "esvs_sufficient" (guidelines answer the question), "esvs_partial" (guidelines
-  cover some of it), or "esvs_absent" (guidelines do not address it — answer lives in the
-  interpretive frame). Base this on the pathways' coverage verdicts, NOT on a single failed query.
+- guideline_grounded_answer: ONLY claims directly supported by supplied snippets.
+- interpretive_frame: useful reasoning beyond ESVS. Do not write the non-ESVS banner; PHP adds it.
+  Do not introduce drugs, doses, or numeric thresholds absent from snippets and patient facts.
+- evidence_status: copy the supplied structured object exactly. Never collapse interaction_gap,
+  partial_principles, or retrieval_uncertain.
+- Write both frames as content for the supplied HOUSE_SECTIONS/response_mode. Do not add sections
+  that the deterministic renderer owns.
 - assumptions: the assumptions you make to proceed.
 - confidence (0.0-1.0): calibrated probability your overall answer would NOT change if the unknowns
   were filled.
@@ -83,13 +83,21 @@ TXT;
                     'rationale' => $schema->string()->required(),
                 ])
             )->required(),
-            'evidence_status' => $schema->string()
-                ->enum(['esvs_sufficient', 'esvs_partial', 'esvs_absent'])
-                ->required(),
+            'evidence_status' => $schema->object([
+                'coverage' => $schema->string()->enum([
+                    'covered',
+                    'partial_principles',
+                    'interaction_gap',
+                    'not_covered',
+                    'retrieval_uncertain',
+                ])->required(),
+                'core_question' => $schema->string()->required(),
+                'covered_components' => $schema->array()->items($schema->string())->required(),
+                'gap_summary' => $schema->string()->required(),
+            ])->required(),
             'guideline_grounded_answer' => $schema->string()->required(),
             'interpretive_frame' => $schema->string()->required(),
             'assumptions' => $schema->array()->items($schema->string())->required(),
-            'can_answer_now' => $schema->boolean()->required(),
             'confidence' => $schema->number()->required(),
         ];
     }
