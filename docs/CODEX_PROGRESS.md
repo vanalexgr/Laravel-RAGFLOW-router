@@ -1354,3 +1354,21 @@ Artifact: gate-eval/runs/20260724_161756_964004.json
 gate:routing-proof --scenarios:
 32/32 (100.0%)
 ```
+
+## 2026-07-24 — Run 3 / A3: Composer advisory inventory
+
+Documented all four current advisories and their recommended remediation in
+`docs/COMPOSER_ADVISORIES.md`:
+
+```text
+psy/psysh v0.12.18   CVE-2026-25129   MEDIUM
+symfony/yaml v7.4.1  CVE-2026-45304   LOW
+symfony/yaml v7.4.1  CVE-2026-45305   LOW
+symfony/yaml v7.4.1  CVE-2026-45133   LOW
+```
+
+A non-destructive targeted update dry-run on Hetzner resolved cleanly to PsySH `v0.12.24`, Symfony
+YAML `v7.4.14`, and `nikic/php-parser v5.8.0` (three updates, no installs/removals). Per the backlog,
+no upgrade was applied: this needs a separate dependency-maintenance change with full suite/eval,
+cloud structured smoke, and explicit Prism/Vizra coexistence verification. `composer.json` and
+`composer.lock` are unchanged.
