@@ -2,9 +2,17 @@
 
 namespace Tests\Feature;
 
+use PHPUnit\Framework\Attributes\Group;
 use Tests\TestCase;
-use Illuminate\Support\Facades\Http;
 
+/**
+ * Integration tests: these POST to the real /api/v1/vascular-consult, which
+ * reaches the RAGFlow bridge and Azure OpenAI. They are grouped 'external' so
+ * CI can skip them — a host without those services cannot run them, and a red
+ * CI that everyone learns to ignore is worse than no CI. Run them on a host
+ * with access: ./vendor/bin/phpunit --group external
+ */
+#[Group('external')]
 class LeanRetrievalTest extends TestCase
 {
     private string $apiKey;
@@ -22,7 +30,7 @@ class LeanRetrievalTest extends TestCase
     {
         $response = $this->postJson('/api/v1/vascular-consult', [
             'question' => 'What is the recommended diameter threshold for elective AAA repair?',
-            'history'  => [],
+            'history' => [],
         ], ['X-API-Key' => $this->apiKey]);
 
         $response->assertStatus(200);
@@ -41,7 +49,7 @@ class LeanRetrievalTest extends TestCase
     {
         $response = $this->postJson('/api/v1/vascular-consult', [
             'question' => 'What is the recommended diameter threshold for elective AAA repair?',
-            'history'  => [],
+            'history' => [],
         ], ['X-API-Key' => $this->apiKey]);
 
         $response->assertStatus(200);
@@ -57,7 +65,7 @@ class LeanRetrievalTest extends TestCase
     {
         $response = $this->postJson('/api/v1/vascular-consult', [
             'question' => '75-year-old fit man, symptomatic 80% carotid stenosis, TIA 5 days ago. Recommended intervention?',
-            'history'  => [],
+            'history' => [],
         ], ['X-API-Key' => $this->apiKey]);
 
         $response->assertStatus(200);

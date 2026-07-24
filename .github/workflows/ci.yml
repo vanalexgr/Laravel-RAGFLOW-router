@@ -1,0 +1,107 @@
+name: CI
+
+# Runs on every branch, not just PRs: the unattended Codex runs commit directly
+# to long-lived working branches, and that is exactly where drift needs catching.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: PHPUnit + Pint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Needed to diff against the base commit for the style check.
+          fetch-depth: 0
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, dom, curl, libxml, xml, pcntl, bcmath, sqlite3, pdo_sqlite
+          coverage: none
+          tools: composer:v2
+
+      - name: Cache Composer packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache/files
+          key: composer-${{ runner.os }}-php8.3-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-php8.3-
+
+      - name: Validate composer.json against the lock file
+        run: composer validate --no-check-publish
+
+      # Before install: composer's post-autoload-dump boots artisan.
+      - name: Create .env
+        run: cp .env.example .env
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress --no-ansi
+
+      # Several services derive identifiers from APP_KEY (consult session ids
+      # among them) and refuse to run without it. A throwaway key per run.
+      - name: Generate application key
+        run: php artisan key:generate
+
+      # Style is enforced on what this push/PR actually changed.
+      #
+      # 72 files still carry pre-existing Pint violations. Gating the whole repo
+      # would be red on day one and teach everyone to ignore CI; reformatting all
+      # of them at once would bury real diffs under ~2,500 mechanical lines. So
+      # the standard applies to what you touch.
+      #
+      # Consequence to know about: editing a legacy file surfaces that file's
+      # existing violations and turns this step red, even if your change did not
+      # cause them. That is intended — run `./vendor/bin/pint <file>` and commit
+      # the cleanup alongside your change. The debt retires as files are touched.
+      - name: Determine changed PHP files
+        id: changed
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="origin/${{ github.base_ref }}"
+          else
+            # All-zeros on a branch's first push, and stale after a force-push.
+            base="${{ github.event.before }}"
+          fi
+
+          # Whatever the source, fall back to the previous commit if the ref is
+          # missing or unusable, so a style check never fails on plumbing.
+          if [ -z "$base" ] || ! git rev-parse --verify --quiet "$base^{commit}" >/dev/null; then
+            base="$(git rev-parse --verify --quiet HEAD~1 || echo '')"
+          fi
+
+          if [ -z "$base" ]; then
+            files=""
+          else
+            files="$(git diff --name-only --diff-filter=ACMR "$base"...HEAD -- '*.php' | tr '\n' ' ')"
+          fi
+
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+          if [ -z "$files" ]; then
+            echo "No PHP files changed; the style check will be skipped."
+          else
+            echo "Changed PHP files: $files"
+          fi
+
+      - name: Pint (changed files)
+        if: steps.changed.outputs.files != ''
+        run: ./vendor/bin/pint --test ${{ steps.changed.outputs.files }}
+
+      # 'external' covers tests that POST to the real vascular-consult endpoint
+      # and need the RAGFlow bridge plus Azure OpenAI. They cannot pass on a
+      # runner without those services; run them on a host with access via
+      # ./vendor/bin/phpunit --group external
+      - name: PHPUnit
+        run: ./vendor/bin/phpunit --no-coverage --exclude-group external

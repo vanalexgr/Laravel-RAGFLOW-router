@@ -7,11 +7,15 @@ use Illuminate\Support\Facades\Log;
 class PHIScrubberService
 {
     protected array $commonFirstNames = [];
+
     protected array $commonLastNames = [];
+
     protected bool $namesLoaded = false;
+
     protected bool $namesDictionaryAvailable = false;
 
     protected array $redactionCounts = [];
+
     protected array $majorCities = [];
 
     public function __construct()
@@ -44,7 +48,7 @@ class PHIScrubberService
 
     protected function loadMajorCities(): void
     {
-        if (!empty($this->majorCities)) {
+        if (! empty($this->majorCities)) {
             return;
         }
 
@@ -58,7 +62,7 @@ class PHIScrubberService
             $this->majorCities = array_values(array_diff($cities, $excluded));
         } else {
             Log::channel('retrieval')->warning('[PHI SCRUBBER] Major cities file missing.', [
-                'path' => $citiesFile
+                'path' => $citiesFile,
             ]);
             $this->majorCities = [];
         }
@@ -78,7 +82,7 @@ class PHIScrubberService
             $this->namesDictionaryAvailable = $this->commonFirstNames !== [] && $this->commonLastNames !== [];
         } else {
             Log::channel('retrieval')->error('[PHI SCRUBBER] Common names file missing! Name redaction will be limited.', [
-                'path' => $namesFile
+                'path' => $namesFile,
             ]);
         }
         $this->namesLoaded = true;
@@ -130,13 +134,16 @@ class PHIScrubberService
     {
         $pattern = config('phi.patterns.ssn');
         $text = preg_replace_callback($pattern, function ($matches) {
-            if (preg_match('/^\d{3}-\d{2}-\d{4}$/', $matches[0]) || 
+            if (preg_match('/^\d{3}-\d{2}-\d{4}$/', $matches[0]) ||
                 preg_match('/^\d{9}$/', preg_replace('/[-\s]/', '', $matches[0]))) {
                 $this->redactionCounts['ssn']++;
+
                 return '[SSN]';
             }
+
             return $matches[0];
         }, $text);
+
         return $text;
     }
 
@@ -147,9 +154,11 @@ class PHIScrubberService
         foreach ($patterns as $pattern) {
             $text = preg_replace_callback($pattern, function ($matches) {
                 $this->redactionCounts['mrn']++;
+
                 return '[MRN]';
             }, $text);
         }
+
         return $text;
     }
 
@@ -160,9 +169,11 @@ class PHIScrubberService
         foreach ($patterns as $pattern) {
             $text = preg_replace_callback($pattern, function ($matches) {
                 $this->redactionCounts['phone']++;
+
                 return '[PHONE]';
             }, $text);
         }
+
         return $text;
     }
 
@@ -171,8 +182,10 @@ class PHIScrubberService
         $pattern = config('phi.patterns.email');
         $text = preg_replace_callback($pattern, function ($matches) {
             $this->redactionCounts['email']++;
+
             return '[EMAIL]';
         }, $text);
+
         return $text;
     }
 
@@ -181,8 +194,10 @@ class PHIScrubberService
         $pattern = config('phi.patterns.ip_address');
         $text = preg_replace_callback($pattern, function ($matches) {
             $this->redactionCounts['ip_address']++;
+
             return '[IP]';
         }, $text);
+
         return $text;
     }
 
@@ -191,8 +206,10 @@ class PHIScrubberService
         $pattern = config('phi.patterns.url');
         $text = preg_replace_callback($pattern, function ($matches) {
             $this->redactionCounts['url']++;
+
             return '[URL]';
         }, $text);
+
         return $text;
     }
 
@@ -208,24 +225,28 @@ class PHIScrubberService
                 } elseif ($type === 'born') {
                     return 'born [DATE]';
                 }
+
                 return '[DATE]';
             }, $text);
         }
+
         return $text;
     }
 
     protected function scrubAgesOver90(string $text): string
     {
         $patterns = config('phi.patterns.ages_over_90', []);
-        
+
         foreach ($patterns as $pattern) {
             $text = preg_replace_callback($pattern, function ($matches) {
                 // Was 'ages': an undefined key, so every age redaction warned and
                 // was reported under a phantom counter while ages_over_90 stayed 0.
                 $this->redactionCounts['ages_over_90']++;
+
                 return '[AGE>90]';
             }, $text);
         }
+
         return $text;
     }
 
@@ -236,9 +257,11 @@ class PHIScrubberService
         foreach ($patterns as $pattern) {
             $text = preg_replace_callback($pattern, function ($matches) {
                 $this->redactionCounts['device_id']++;
+
                 return '[DEVICE_ID]';
             }, $text);
         }
+
         return $text;
     }
 
@@ -249,9 +272,11 @@ class PHIScrubberService
         foreach ($patterns as $pattern) {
             $text = preg_replace_callback($pattern, function ($matches) {
                 $this->redactionCounts['vehicle_id']++;
+
                 return '[VEHICLE_ID]';
             }, $text);
         }
+
         return $text;
     }
 
@@ -262,9 +287,11 @@ class PHIScrubberService
         foreach ($patterns as $pattern) {
             $text = preg_replace_callback($pattern, function ($matches) {
                 $this->redactionCounts['biometric']++;
+
                 return '[BIOMETRIC]';
             }, $text);
         }
+
         return $text;
     }
 
@@ -275,9 +302,11 @@ class PHIScrubberService
         foreach ($patterns as $pattern) {
             $text = preg_replace_callback($pattern, function ($matches) {
                 $this->redactionCounts['license_number']++;
+
                 return '[LICENSE]';
             }, $text);
         }
+
         return $text;
     }
 
@@ -288,9 +317,11 @@ class PHIScrubberService
         foreach ($patterns as $pattern) {
             $text = preg_replace_callback($pattern, function ($matches) {
                 $this->redactionCounts['account_number']++;
+
                 return '[ACCOUNT]';
             }, $text);
         }
+
         return $text;
     }
 
@@ -301,6 +332,7 @@ class PHIScrubberService
         foreach ($patterns as $pattern) {
             $text = preg_replace_callback($pattern, function ($matches) {
                 $this->redactionCounts['address']++;
+
                 return '[ADDRESS]';
             }, $text);
         }
@@ -308,10 +340,11 @@ class PHIScrubberService
         $states = config('phi.dictionaries.us_states', []);
         $stateAbbrevs = config('phi.dictionaries.us_state_abbreviations', []);
 
-        if (!empty($states) && !empty($stateAbbrevs)) {
-            $statePattern = '/\b(' . implode('|', array_merge($states, $stateAbbrevs)) . '),?\s*\d{5}(-\d{4})?\b/i';
+        if (! empty($states) && ! empty($stateAbbrevs)) {
+            $statePattern = '/\b('.implode('|', array_merge($states, $stateAbbrevs)).'),?\s*\d{5}(-\d{4})?\b/i';
             $text = preg_replace_callback($statePattern, function ($matches) {
                 $this->redactionCounts['address']++;
+
                 return '[LOCATION]';
             }, $text);
         }
@@ -322,12 +355,13 @@ class PHIScrubberService
     protected function scrubGeographicLocations(string $text): string
     {
         $textLower = strtolower($text);
-        
+
         foreach ($this->majorCities as $city) {
             if (stripos($textLower, $city) !== false) {
-                $pattern = '/\b' . preg_quote($city, '/') . '\b/i';
+                $pattern = '/\b'.preg_quote($city, '/').'\b/i';
                 $text = preg_replace_callback($pattern, function ($matches) {
                     $this->redactionCounts['geographic']++;
+
                     return '[CITY]';
                 }, $text);
                 $textLower = strtolower($text);
@@ -338,12 +372,14 @@ class PHIScrubberService
         $text = preg_replace_callback('/\b\d{5}(-\d{4})?\b/', function ($matches) use ($subject) {
             [$value, $offset] = $matches[0];
             if (preg_match('/^\d{5}(-\d{4})?$/', $value)) {
-                $zip = (int)substr($value, 0, 5);
-                if ($zip >= 501 && $zip <= 99950 && !$this->looksLikeMeasurement($subject, $value, $offset)) {
+                $zip = (int) substr($value, 0, 5);
+                if ($zip >= 501 && $zip <= 99950 && ! $this->looksLikeMeasurement($subject, $value, $offset)) {
                     $this->redactionCounts['geographic']++;
+
                     return '[ZIP]';
                 }
             }
+
             return $value;
         }, $text, -1, $count, PREG_OFFSET_CAPTURE) ?? $text;
 
@@ -351,6 +387,7 @@ class PHIScrubberService
         foreach ($countyPatterns as $pattern) {
             $text = preg_replace_callback($pattern, function ($matches) {
                 $this->redactionCounts['geographic']++;
+
                 return '[COUNTY]';
             }, $text);
         }
@@ -387,14 +424,16 @@ class PHIScrubberService
 
         for ($i = 0; $i < count($words); $i++) {
             $word = $words[$i];
-            
+
             if (preg_match('/^\s+$/', $word)) {
                 $result[] = $word;
+
                 continue;
             }
 
             if ($skipNext) {
                 $skipNext = false;
+
                 continue;
             }
 
@@ -403,6 +442,7 @@ class PHIScrubberService
 
             if (strlen($cleanWord) < 2) {
                 $result[] = $word;
+
                 continue;
             }
 
@@ -414,12 +454,13 @@ class PHIScrubberService
                 if ($nextWordIndex < count($words)) {
                     $nextWord = preg_replace('/[^a-zA-Z]/', '', $words[$nextWordIndex]);
                     $nextLower = strtolower($nextWord);
-                    
+
                     if (in_array($nextLower, $this->commonLastNames) && preg_match('/^[A-Z]/', $nextWord)) {
                         $this->redactionCounts['names']++;
                         $result[] = '[NAME]';
                         $skipNext = true;
                         $i += 2;
+
                         continue;
                     }
                 }
@@ -438,7 +479,7 @@ class PHIScrubberService
 
     public function logAudit(string $correlationId, array $scrubResult): void
     {
-        if (!$scrubResult['was_modified']) {
+        if (! $scrubResult['was_modified']) {
             return;
         }
 

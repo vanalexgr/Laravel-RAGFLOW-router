@@ -15,8 +15,7 @@ class AgentConsultController extends Controller
     public function __construct(
         private readonly StateManager $stateManager,
         private readonly ConsultSessionIdentityService $sessionIdentity,
-    ) {
-    }
+    ) {}
 
     public function __invoke(Request $request): JsonResponse
     {

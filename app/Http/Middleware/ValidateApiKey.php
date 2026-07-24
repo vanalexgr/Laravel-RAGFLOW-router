@@ -27,7 +27,7 @@ class ValidateApiKey
 
         $providedKey = $request->bearerToken() ?? $request->header('X-API-Key');
 
-        if (empty($providedKey) || !hash_equals($apiKey, $providedKey)) {
+        if (empty($providedKey) || ! hash_equals($apiKey, $providedKey)) {
             return response()->json([
                 'error' => [
                     'message' => 'Invalid or missing API key. Use Authorization: Bearer YOUR_KEY header.',
