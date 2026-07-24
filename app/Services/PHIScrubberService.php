@@ -9,6 +9,7 @@ class PHIScrubberService
     protected array $commonFirstNames = [];
     protected array $commonLastNames = [];
     protected bool $namesLoaded = false;
+    protected bool $namesDictionaryAvailable = false;
 
     protected array $redactionCounts = [];
     protected array $majorCities = [];
@@ -50,7 +51,11 @@ class PHIScrubberService
         $citiesFile = config('phi.files.major_cities', storage_path('app/phi/major_cities.json'));
         if (file_exists($citiesFile)) {
             $data = json_decode(file_get_contents($citiesFile), true);
-            $this->majorCities = array_map('strtolower', $data['cities'] ?? []);
+            $cities = array_map('strtolower', $data['cities'] ?? []);
+            // Drop city names whose clinical sense dominates in vascular text,
+            // so scrubbing removes identifiers rather than findings.
+            $excluded = array_map('strtolower', (array) config('phi.geographic_exclusions', []));
+            $this->majorCities = array_values(array_diff($cities, $excluded));
         } else {
             Log::channel('retrieval')->warning('[PHI SCRUBBER] Major cities file missing.', [
                 'path' => $citiesFile
@@ -70,6 +75,7 @@ class PHIScrubberService
             $data = json_decode(file_get_contents($namesFile), true);
             $this->commonFirstNames = array_map('strtolower', $data['first_names'] ?? []);
             $this->commonLastNames = array_map('strtolower', $data['last_names'] ?? []);
+            $this->namesDictionaryAvailable = $this->commonFirstNames !== [] && $this->commonLastNames !== [];
         } else {
             Log::channel('retrieval')->error('[PHI SCRUBBER] Common names file missing! Name redaction will be limited.', [
                 'path' => $namesFile
@@ -113,6 +119,10 @@ class PHIScrubberService
             'was_modified' => $wasModified,
             'total_redactions' => $totalRedactions,
             'redaction_counts' => $this->redactionCounts,
+            // Name redaction silently no-ops when the dictionary is absent, which
+            // looks identical to "no names present". Callers that assert Safe
+            // Harbor coverage need to be able to tell those two apart.
+            'names_dictionary_loaded' => $this->namesDictionaryAvailable,
         ];
     }
 
@@ -210,7 +220,9 @@ class PHIScrubberService
         
         foreach ($patterns as $pattern) {
             $text = preg_replace_callback($pattern, function ($matches) {
-                $this->redactionCounts['ages']++;
+                // Was 'ages': an undefined key, so every age redaction warned and
+                // was reported under a phantom counter while ages_over_90 stayed 0.
+                $this->redactionCounts['ages_over_90']++;
                 return '[AGE>90]';
             }, $text);
         }
@@ -322,16 +334,18 @@ class PHIScrubberService
             }
         }
 
-        $text = preg_replace_callback('/\b\d{5}(-\d{4})?\b/', function ($matches) {
-            if (preg_match('/^\d{5}(-\d{4})?$/', $matches[0])) {
-                $zip = (int)substr($matches[0], 0, 5);
-                if ($zip >= 501 && $zip <= 99950) {
+        $subject = $text;
+        $text = preg_replace_callback('/\b\d{5}(-\d{4})?\b/', function ($matches) use ($subject) {
+            [$value, $offset] = $matches[0];
+            if (preg_match('/^\d{5}(-\d{4})?$/', $value)) {
+                $zip = (int)substr($value, 0, 5);
+                if ($zip >= 501 && $zip <= 99950 && !$this->looksLikeMeasurement($subject, $value, $offset)) {
                     $this->redactionCounts['geographic']++;
                     return '[ZIP]';
                 }
             }
-            return $matches[0];
-        }, $text);
+            return $value;
+        }, $text, -1, $count, PREG_OFFSET_CAPTURE) ?? $text;
 
         $countyPatterns = config('phi.patterns.county', []);
         foreach ($countyPatterns as $pattern) {
@@ -342,6 +356,23 @@ class PHIScrubberService
         }
 
         return $text;
+    }
+
+    /**
+     * True when a five-digit number sits in a laboratory/measurement context and
+     * is therefore a clinical value rather than a ZIP code. Offsets index the
+     * pre-replacement subject, which is what preg_replace_callback reports.
+     */
+    protected function looksLikeMeasurement(string $subject, string $value, int $offset): bool
+    {
+        $before = substr($subject, 0, $offset);
+        $after = substr($subject, $offset + strlen($value));
+
+        $trailing = config('phi.zip_suppression.trailing_unit');
+        $leading = config('phi.zip_suppression.leading_measure');
+
+        return ($trailing && preg_match($trailing, $after) === 1)
+            || ($leading && preg_match($leading, $before) === 1);
     }
 
     protected function scrubNames(string $text): string

@@ -11,6 +11,7 @@ use App\Ai\Gate\Progress\NullGateProgress;
 use App\Ai\Gate\Routing\OrientRoutingPriorService;
 use App\Ai\Gate\Tools\RetrieveEsvsSnippetsTool;
 use App\Facades\RAGFlow;
+use App\Services\PHIScrubberService;
 use App\Services\RAGFlow\RAGFlowClient;
 use App\Services\RetrievalService;
 use ReflectionMethod;
@@ -217,6 +218,7 @@ class GateDeadlineBudgetTest extends TestCase
             new GatePathwayWorker(new RetrieveEsvsSnippetsTool($this->neverRuns())),
             new EvidenceStatusService,
             new GateDecisionTail,
+            new PHIScrubberService,
         );
     }
 

@@ -9,6 +9,7 @@ use App\Ai\Gate\Grounding\GatePathwayWorker;
 use App\Ai\Gate\Guard\PreOrientGuardService;
 use App\Ai\Gate\Routing\OrientRoutingPriorService;
 use App\Ai\Gate\Tools\RetrieveEsvsSnippetsTool;
+use App\Services\PHIScrubberService;
 use App\Services\RetrievalService;
 // Laravel's base TestCase, not PHPUnit's: the gate reads config() for its
 // retrieval thresholds, which needs a booted container.
@@ -137,6 +138,7 @@ class GateWorkflowServiceTest extends TestCase
             new GatePathwayWorker(new RetrieveEsvsSnippetsTool($retrieval)),
             new EvidenceStatusService,
             new GateDecisionTail,
+            new PHIScrubberService,
         );
     }
 }

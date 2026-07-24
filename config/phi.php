@@ -113,6 +113,31 @@ return [
         'common_names' => storage_path('app/phi/common_names.json'),
         'major_cities' => storage_path('app/phi/major_cities.json'),
     ],
+
+    /*
+     * City names that carry clinical meaning in vascular text. Redacting these
+     * as geography destroys the finding rather than the identifier: "mobile
+     * thrombus" becomes "[CITY] thrombus", erasing the mobility that drives the
+     * anticoagulation-versus-surgery decision in aortic thrombus cases.
+     *
+     * The trade is deliberate and narrow: a genuine mention of Mobile, Alabama
+     * is no longer redacted by the city rule. Address- and state-adjacent rules
+     * in 'patterns.addresses' still cover it in the forms that identify.
+     */
+    'geographic_exclusions' => ['mobile'],
+
+    /*
+     * A bare five-digit number is treated as a ZIP code. Vascular text is full
+     * of five-digit laboratory values, and "platelet count 45000" redacted to
+     * "[ZIP]" removes the very number the decision turns on. A five-digit number
+     * in either of these contexts is a measurement, not a ZIP.
+     */
+    'zip_suppression' => [
+        // Followed by a unit: "12500 ng/mL", "45000 per microlitre".
+        'trailing_unit' => '/^\s*(?:\/|per\b|ng\b|pg\b|mg\b|mcg\b|iu\b|u\b|k\b|µ|units?\b|cells?\b|mm\b|cm\b|ml\b|dl\b|%)/i',
+        // Preceded by a measurement term: "platelets 45000", "WBC 11000".
+        'leading_measure' => '/(?:platelets?|thrombocytes?|wbc|rbc|leuco|leuko|neutrophils?|d-?dimer|inr|count|cells?|titre|titer|level|value)\W*$/i',
+    ],
     'dictionaries' => [
         'us_states' => [
             'Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California', 'Colorado', 'Connecticut',

@@ -9,7 +9,9 @@ use App\Ai\Gate\Progress\GateProgress;
 use App\Ai\Gate\Progress\NullGateProgress;
 use App\Ai\Gate\Routing\OrientRoutingPriorService;
 use App\Ai\Gate\Tools\RetrieveEsvsSnippetsTool;
+use App\Services\PHIScrubberService;
 use Illuminate\Support\Facades\Concurrency;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Throwable;
 
@@ -38,6 +40,7 @@ final class GateWorkflowService
         private readonly GatePathwayWorker $pathwayWorker,
         private readonly EvidenceStatusService $evidenceStatus,
         private readonly GateDecisionTail $tail,
+        private readonly PHIScrubberService $scrubber,
     ) {}
 
     /**
@@ -65,7 +68,72 @@ final class GateWorkflowService
         $this->iteration = 0;
         $this->reservedRevisionSeconds = 0;
 
+        [$turn, $priorState] = $this->deidentify($turn, $priorState);
+
         return $this->execute($turn, $priorState, $progress ?? new NullGateProgress);
+    }
+
+    /**
+     * HIPAA Safe Harbor de-identification for the whole gate, applied once here.
+     *
+     * Every downstream model call — Orient, Pathway, Probe, Critic, Knowledge,
+     * and Laravel-side synthesis — is reached from this turn and the state it
+     * produces, so scrubbing at the entry point covers all of them and cannot be
+     * bypassed by adding a stage. Scrubbing at each egress instead would mean
+     * running the scrubber over serialized JSON, where a replacement can corrupt
+     * the payload, and would leave every new call site as a fresh way to leak.
+     *
+     * Prior state is scrubbed too: it round-trips through the client between
+     * turns, so it is caller-controlled input rather than something the gate can
+     * assume it already cleaned.
+     *
+     * @param  array<string, mixed>  $priorState
+     * @return array{0: string, 1: array<string, mixed>}
+     */
+    private function deidentify(string $turn, array $priorState): array
+    {
+        $result = $this->scrubber->scrub($turn);
+        $scrubbedTurn = (string) $result['scrubbed_text'];
+        $scrubbedState = $this->scrubStrings($priorState);
+
+        if ($result['was_modified'] || $scrubbedState !== $priorState) {
+            $correlationId = substr(hash('sha256', (string) $this->startedAt), 0, 8);
+            $this->scrubber->logAudit($correlationId, $result);
+            // Counts only — the trace is returned to the caller and logged.
+            $this->record('phi_scrub', 0, [
+                'redaction_counts' => array_filter((array) $result['redaction_counts']),
+                'prior_state_modified' => $scrubbedState !== $priorState,
+            ]);
+        }
+
+        if (($result['names_dictionary_loaded'] ?? false) !== true) {
+            Log::channel('retrieval')->warning(
+                '[PHI SCRUBBER] Name redaction unavailable; gate turn sent to the model without it.',
+                ['dictionary' => config('phi.files.common_names')],
+            );
+        }
+
+        return [$scrubbedTurn, $scrubbedState];
+    }
+
+    /**
+     * Scrub every string in a nested structure, leaving keys and non-strings
+     * alone. Keys are gate-defined, and the numeric fields are counters.
+     *
+     * @param  array<mixed, mixed>  $values
+     * @return array<mixed, mixed>
+     */
+    private function scrubStrings(array $values): array
+    {
+        foreach ($values as $key => $value) {
+            if (is_array($value)) {
+                $values[$key] = $this->scrubStrings($value);
+            } elseif (is_string($value) && $value !== '') {
+                $values[$key] = (string) $this->scrubber->scrub($value)['scrubbed_text'];
+            }
+        }
+
+        return $values;
     }
 
     /**
