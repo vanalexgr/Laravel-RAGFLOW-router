@@ -26,9 +26,9 @@ calendar dates until a start date + capacity are set.
 
 | Job | Type | Depends on | Effort |
 |---|---|---|---|
-| J0.1 Authorize Composer target: `config.platform.php`→≥8.3, `require.php`→^8.3, reconcile locked framework 12.49→≥12.62 | 🧑‍⚖️ | — | decision |
-| J0.2 De-risk spike: `composer require laravel/ai --dry-run` + confirm **prism v0.92 / vizra v0.0.42 coexistence** in a disposable checkout | 🛠️ | J0.1 | 1–2 h |
-| J0.3 Install `laravel/ai`, publish `config/ai.php`, configure cloud provider (gpt-5-mini), smoke-test a structured call | 🛠️ | J0.2 clean | 0.5 d |
+| J0.1 Authorize Composer target: `config.platform.php`→≥8.3, `require.php`→^8.3, reconcile locked framework 12.49→≥12.62 | ✅ | — | done 2026-07-24 |
+| J0.2 De-risk spike: `composer require laravel/ai --dry-run` + confirm **prism v0.92 / vizra v0.0.42 coexistence** in a disposable checkout | ✅ | J0.1 | done 2026-07-24 |
+| J0.3 Install `laravel/ai`, publish `config/ai.php`, configure cloud provider (gpt-5-mini), smoke-test a structured call | ✅ | J0.2 clean | done 2026-07-24 |
 | J0.4 *Contingency:* if J0.2 conflicts → isolate the gate's LLM layer from prism/vizra | 🛠️ | J0.2 conflict | 1–3 d (unknown) |
 
 **Risk fork:** J0.2 is the true unknown — clean install (~½ day) vs a dependency conflict (J0.4, open-ended).
@@ -42,12 +42,14 @@ probe ⇄ critic loop → two-frame answer + stage trace.*
 
 | Job | Type | Depends on | Effort |
 |---|---|---|---|
-| J1.1 Rework the 6 agents per plan §10 (merge Triage→Orient, deterministic orchestration, structured `evidence_status`, snippet-aware Critic, discrete tail) | 🛠️ | Phase 0 | 1–2 d |
-| J1.2 Build `GateWorkflowService` + `gate:probe2` — the loop (bounce budgets, best-so-far, wall-clock deadline, `GateProgress`, `stage_trace`) | 🛠️ | J1.1 | 1–2 d |
-| J1.3 Wire grounding to RAGFlow (`RetrieveEsvsSnippetsTool`→`RetrievalService`) incl. re-retrieval | 🛠️ | J1.1 | 0.5–1 d |
-| J1.4 Run AAA + adversarial through `gate:probe2`; observe + iterate | 🛠️ | J1.2, J1.3 | 0.5 d |
+| J1.1 Rework the 6 agents per plan §10 (merge Triage→Orient, deterministic orchestration, structured `evidence_status`, snippet-aware Critic, discrete tail) | ✅ | Phase 0 | done 2026-07-24 |
+| J1.2 Build `GateWorkflowService` + `gate:probe2` — the loop (bounce budgets, best-so-far, wall-clock deadline, `GateProgress`, `stage_trace`) | ✅ | J1.1 | done 2026-07-24 |
+| J1.3 Wire grounding to RAGFlow (`RetrieveEsvsSnippetsTool`→`RetrievalService`) incl. re-retrieval | ✅ | J1.1 | done 2026-07-24 |
+| J1.4 Run AAA + adversarial through `gate:probe2`; observe + iterate | ⚠️ | J1.2, J1.3 | visible; latency/trap follow-up open |
 
-**⇒ MILESTONE A ≈ 1 week of eng after Phase 0.** First time the gate is visible working (CLI, cloud model).
+**⇒ MILESTONE A reached 2026-07-24:** the CLI/cloud gate is visibly reasoning with real retrieval,
+re-retrieval, critique, two-frame output, and stage traces. It is not launch-ready: first-pass deep
+cases exceed the target latency, and the post-fix retrieval-trap live rerun remains open.
 
 ---
 

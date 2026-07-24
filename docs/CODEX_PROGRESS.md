@@ -496,3 +496,415 @@ decide         0 ms  elapsed 95,335 ms  decision=ask; best_score=0.95; iteration
 Observed latency conflict: the approved deep first pass is 95.3 seconds, above the plan's ≤60-second
 target and just above the normal 90-second deadline. This is logged as a Milestone A performance
 blocker, not hidden. The command still returns a valid best-so-far result at the normal deadline.
+
+## 2026-07-24 — Milestone A / J1.4: AAA and adversarial live transcripts
+
+All runs used the disposable Hetzner checkout, real RAGFlow retrieval, and `gpt-5-mini`. Diagnostic
+caps are stated per run. No production source/config/data was changed.
+
+### AAA evolving-context benchmark — turns 2 and 3
+
+Turn 1 is recorded in full above. The following two turns continued in the same in-memory state.
+
+```text
+USER — TURN 2
+CTA now shows that this is a juxtarenal aneurysm with an inadequate infrarenal neck for standard
+EVAR. His eGFR is 28 mL/min/1.73 m². How does this change your recommendation?
+
+GATE
+mode: case_followup_substantive
+decision: ask
+guidelines: abdominal_aortic_aneurysm
+iterations: 2
+
+## ESVS-grounded answer
+
+The provided ESVS retrieval found no guideline coverage for this specific scenario (juxtarenal AAA
+with inadequate infrarenal neck plus eGFR 28). Therefore no direct ESVS recommendation can be cited
+for selecting between fenestrated/branched EVAR, chimney/snorkel techniques, or open repair in the
+context of moderate-to-severe chronic kidney disease, nor for detailed contrast-management
+strategies in this exact setting.
+
+## Interpretation
+
+Non-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):
+Expert synthesis and recommended next steps (non-guideline advice):
+1) Triage decision depends on two key items: the patient's physiological fitness
+(frailty/ASA/METS) and the precise proximal aneurysm anatomy (renal/visceral involvement and distance
+from lowest renal artery). If the patient is physiologically low-risk and anatomy precludes an
+endovascular proximal seal, open surgical repair remains a definitive option but carries higher
+perioperative morbidity and risk of renal injury. If the patient is higher risk or frail, a complex
+endovascular strategy (fenestrated/branched EVAR if anatomy suitable, or chimney/snorkel as a
+bailout) is usually preferred to avoid open surgery despite limitations.
+2) eGFR 28 increases the risk of contrast-associated acute kidney injury; this affects planning
+rather than absolutely prohibiting endovascular therapy. Mitigation steps to consider: minimize
+contrast volume; use low-contrast CTA protocols for planning; involve nephrology for peri-procedural
+optimization; consider CO2 angiography intra-procedurally where feasible; stage procedures if that
+reduces contrast load; prepare for potential renal replacement therapy if needed. Manufacturing
+time for custom fenestrated devices may delay repair—if urgent repair is required, adjuncts
+(chimney/snorkel or physician-modified stent-grafts) are alternatives but carry higher risk of type
+Ia endoleak and reintervention.
+3) Practical immediate actions: obtain the CTA report details on proximal extent and access vessels,
+assess physiologic risk with anesthesia/cardiac evaluation, discuss case at multidisciplinary aortic
+board including vascular surgery, interventional radiology and nephrology, and then choose between:
+(a) elective customized FEVAR/BEVAR if anatomy appropriate and delay acceptable, with renal
+protection measures; (b) chimney/snorkel EVAR or physician-modified endograft if urgent and anatomy
+allows but accept higher reintervention risk; or (c) open repair if patient is fit and anatomy
+mandates. Also plan intra- and peri-operative contrast-sparing techniques and nephrology support.
+4) If proceeding with any endovascular strategy, explicitly document expected contrast volume,
+obtain informed consent about AKI risk and reintervention probability, and arrange close
+post-procedure renal monitoring.
+Assumptions made: CTA provides adequate arterial-phase imaging but the report lacks detailed
+proximal neck/visceral anatomy; baseline kidney disease is chronic and not rapidly progressive; no
+contraindications to general/regional anesthesia are known; patient preferences unknown.
+Confidence: 0.70
+
+STAGE TRACE — TURN 2
+orient     13,148 ms  elapsed  13,148 ms  case_followup_substantive; AAA
+retrieve   13,972 ms  elapsed  27,120 ms  attempt=1; snippets=0
+pathway     3,461 ms  elapsed  30,581 ms  retrieval_uncertain
+retrieve   11,625 ms  elapsed  42,206 ms  attempt=2; snippets=0
+pathway     2,891 ms  elapsed  45,097 ms  retrieval_uncertain
+retrieve   12,425 ms  elapsed  57,522 ms  attempt=3; full; snippets=0
+pathway     3,629 ms  elapsed  61,151 ms  not_covered
+probe      23,303 ms  elapsed  84,454 ms  questions=2; not_covered
+critic     10,700 ms  elapsed  95,155 ms  approved=false; score=0.40; revise=ground
+retrieve   20,737 ms  elapsed 115,892 ms  bounce attempt=1; snippets=0
+pathway     4,267 ms  elapsed 120,159 ms  retrieval_uncertain
+retrieve    4,498 ms  elapsed 124,658 ms  bounce attempt=2; snippets=10
+pathway     8,342 ms  elapsed 132,999 ms  partial
+retrieve    8,421 ms  elapsed 141,420 ms  bounce attempt=3; full; snippets=9
+pathway    18,345 ms  elapsed 159,765 ms  partial
+probe      18,891 ms  elapsed 178,656 ms  questions=2; interaction_gap
+decide          0 ms  elapsed 179,661 ms  second Critic timed out; retained score=0.40
+
+USER — TURN 3
+He also has severe COPD, reduced functional capacity, and significant frailty, but remains
+independent in basic daily activities. Should he still undergo repair, and how would you choose
+between open repair, FEVAR, and conservative management?
+
+GATE
+mode: case_followup_substantive
+decision: ask
+guidelines: abdominal_aortic_aneurysm
+iterations: 1
+
+## ESVS-grounded answer
+
+• Recommendation 67 (ESVS) states that elective AAA repair is not recommended for patients with
+limited life expectancy; in such patients neither open nor endovascular repair should be performed.
+• For complex (juxtarenal/pararenal) AAAs, the ESVS guidance is that open or endovascular
+(fenestrated/branched) repair should be considered based on patient fitness, anatomy, and patient
+preference.
+• For patients with long life expectancy, open repair is preferred as the elective modality.
+• Device-specific contraindications to f/bEVAR include infection, connective tissue disorders,
+shaggy aorta, extreme angulation, very diseased or stenotic visceral vessels, or early divisions of
+visceral vessels that preclude bridging stents.
+• For urgent/ruptured complex AAAs, off-the-shelf branched devices, PMEG, in situ fenestration or
+parallel grafts are acceptable options when custom-made devices are not available.
+
+## Interpretation
+
+Non-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):
+Practical application to this patient:
+• The decision hinges on two determinations the guideline requires: (1) whether his life expectancy
+is limited such that elective repair would be inappropriate, and (2) whether his CTA anatomy is
+suitable for a fenestrated/branched endovascular solution. Either finding would change the
+recommendation: a determination of limited life expectancy would point to conservative management
+(per Rec.67); if life expectancy is reasonable but anatomy and local expertise permit FEVAR,
+endovascular repair is preferable to open surgery in a patient with severe COPD and frailty because
+it imposes less immediate physiologic stress.
+• Given severe COPD, reduced exercise capacity, frailty and eGFR 28, he is at high perioperative risk
+for open repair and also at higher risk of renal injury from complex endovascular procedures.
+Therefore, if anatomy is suitable for FEVAR and performed in a high-volume specialised centre with
+renal-sparing strategies, FEVAR is the pragmatic preferred option over open repair for elective
+management in a patient considered to have sufficient life expectancy.
+• If anatomy is unsuitable for FEVAR or visceral vessels are hostile (extreme angulation, heavy
+calcification/stenosis or early branch points), the options narrow to open repair (with substantially
+higher physiologic stress and perioperative mortality in a frail COPD patient) or conservative
+management. In a frail, severe-COPD patient, conservative management may be appropriate if formal
+assessment suggests limited life expectancy or inability to tolerate major surgery.
+• Recommend urgent multidisciplinary assessment in a specialised complex aortic centre including
+vascular surgery, anaesthesia/perioperative medicine (CPET/NT-proBNP or DASI as available),
+nephrology for renal-risk counselling, and geriatric medicine/palliative assessment to estimate
+life expectancy and goals of care. If proceeding, optimise COPD and smoking cessation, consider
+renal-protective protocols, and refer for FEVAR if anatomy and centre expertise permit.
+• If the aneurysm becomes urgent/ruptured before a CMD is available, options include off-the-shelf
+branched devices, PMEG or in situ fenestration as per guideline.
+
+STAGE TRACE — TURN 3
+orient     12,911 ms  elapsed  12,911 ms  case_followup_substantive; AAA
+retrieve   10,799 ms  elapsed  23,710 ms  attempt=1; snippets=10
+pathway     9,665 ms  elapsed  33,375 ms  partial
+retrieve    9,334 ms  elapsed  42,710 ms  attempt=2; snippets=9
+pathway    14,407 ms  elapsed  57,116 ms  partial
+retrieve   13,973 ms  elapsed  71,089 ms  attempt=3; full; snippets=7
+pathway    10,447 ms  elapsed  81,536 ms  partial
+probe      19,675 ms  elapsed 101,211 ms  questions=2; interaction_gap
+critic     10,173 ms  elapsed 111,384 ms  approved=false; score=0.85; revise=ground
+retrieve   14,311 ms  elapsed 125,695 ms  bounce attempt=1; snippets=6
+pathway    10,599 ms  elapsed 136,294 ms  partial
+retrieve    3,632 ms  elapsed 139,926 ms  bounce attempt=2; snippets=3
+pathway     6,510 ms  elapsed 146,436 ms  partial
+retrieve   13,540 ms  elapsed 159,976 ms  bounce attempt=3; full; snippets=3
+pathway    12,647 ms  elapsed 172,624 ms  partial
+decide          0 ms  elapsed 179,628 ms  revised Probe timed out; retained score=0.85
+```
+
+AAA result: state/routing hard bars were visibly preserved (AAA only; juxtarenal, eGFR 28, COPD,
+functional capacity, frailty, and independence survive into the answers). Turn 2 retrieval recovered
+from zero snippets after Critic bounce. The 180-second cap prevented re-scoring revised candidates on
+turns 2 and 3, so the first scored candidates were returned. This is a quality/latency blocker.
+
+### Adversarial 1 — correction flip (full transcript)
+
+```text
+USER — TURN 1
+The patient has symptomatic 70% carotid stenosis.
+
+GATE
+mode: case_new
+decision: ask
+guidelines: carotid_vertebral
+iterations: 1
+
+## ESVS-grounded answer
+
+From the supplied ESVS snippets: 1) For patients with recent TIA or minor stroke the highest risk
+period for recurrent stroke is the first 7–14 days and carotid intervention (CEA or CAS) should be
+performed as soon as possible after symptom onset. 2) The guideline text states that carotid
+endarterectomy is preferred to carotid artery stenting when evidence is available. 3) It is
+recommended to commence statin therapy pre-operatively (Class I, Level A). 4) For re-intervention in
+the setting of 50–99% ipsilateral restenosis there is a recommendation to perform redo CEA or CAS.
+The supplied snippets do not provide explicit numeric thresholds for primary intervention in a
+first-time symptomatic patient, nor detailed peri-procedural antiplatelet regimens or a complete list
+of anatomical/fitness criteria that mandate choosing CEA versus CAS.
+
+## Interpretation
+
+Non-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):
+Practical management using the guideline elements plus clinical judgement: if the patient has a
+recent ipsilateral hemispheric TIA or nondisabling ischemic stroke and is surgically fit with
+acceptable neck anatomy, the balance of ESVS evidence supports offering carotid endarterectomy as
+first-line therapy for a symptomatic 70% stenosis, performed urgently. If unfit for surgery or with
+anatomical features making CEA high risk, consider carotid artery stenting. Begin or ensure statin
+therapy pre-procedurally. Because the supplied guidance lacks explicit peri-procedural antiplatelet
+instructions and precise numeric thresholds for first-time symptomatic lesions, document neurologic
+status, obtain definitive imaging, confirm days since symptom onset, and review surgical fitness.
+
+STAGE TRACE — TURN 1
+orient      8,075 ms  elapsed   8,077 ms  case_new; carotid_vertebral
+retrieve   15,575 ms  elapsed  23,653 ms  attempt=1; snippets=2
+pathway     7,145 ms  elapsed  30,797 ms  partial
+retrieve    9,707 ms  elapsed  40,505 ms  attempt=2; snippets=4
+pathway     9,561 ms  elapsed  50,066 ms  partial
+retrieve    9,975 ms  elapsed  60,041 ms  attempt=3; full; snippets=3
+pathway    15,606 ms  elapsed  75,647 ms  partial
+probe      15,519 ms  elapsed  91,166 ms  questions=2; interaction_gap
+critic     11,813 ms  elapsed 102,979 ms  approved=true; score=0.95
+decide          0 ms  elapsed 102,980 ms  ask
+
+USER — TURN 2
+Correction: the patient is asymptomatic and the stenosis is 50–69%, not 70%.
+
+GATE
+mode: case_followup_substantive
+decision: ask
+guidelines: carotid_vertebral
+iterations: 1
+
+## ESVS-grounded answer
+
+From the supplied ESVS snippets: (1) Plaque morphology/biomarkers (e.g. intraplaque haemorrhage,
+large lipid-rich necrotic core, increased plaque burden) are recognised modifiers associated with
+higher risk in asymptomatic carotid disease. (2) The guideline discussion retains the 30-day 6%
+stroke/death threshold for carotid interventions and notes some bodies report lower in-hospital
+thresholds for audit; perioperative risk should be acceptable before offering intervention. (3) For
+patients with asymptomatic 70–99% restenosis after prior CEA, re-intervention may be considered after
+multidisciplinary review. The supplied text did not contain a direct, explicit recommendation for
+management of asymptomatic 50–69% stenosis nor a statement on how plaque modifiers should be applied
+specifically to the 50–69% category.
+
+## Interpretation
+
+Non-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):
+Practical management for an asymptomatic 50–69% carotid stenosis: default to optimal best medical
+therapy (antiplatelet, statin, BP and risk factor control) and surveillance unless there are high-risk
+plaque features or other modifiers that would increase stroke risk. If high-risk plaque features are
+present and the patient is fit with acceptable perioperative risk and reasonable life expectancy,
+consider discussing intervention (usually CEA if surgical risk is low; CAS if anatomical or surgical
+contraindications to CEA). If unfit for surgery, with high operative risk, or local perioperative
+audit outcomes exceed guideline thresholds, continue best medical therapy and surveillance.
+
+STAGE TRACE — TURN 2
+orient      8,917 ms  elapsed   8,917 ms  case_followup_substantive; carotid_vertebral
+retrieve    7,248 ms  elapsed  16,166 ms  attempt=1; snippets=1
+pathway     7,302 ms  elapsed  23,468 ms  partial/off-target
+retrieve    2,690 ms  elapsed  26,158 ms  attempt=2; snippets=2
+pathway    12,037 ms  elapsed  38,195 ms  retrieval_uncertain
+retrieve    7,962 ms  elapsed  46,157 ms  attempt=3; full; snippets=3
+pathway    11,252 ms  elapsed  57,409 ms  retrieval_uncertain
+probe      16,487 ms  elapsed  73,896 ms  questions=2; interaction_gap
+critic      6,413 ms  elapsed  80,308 ms  approved=true; score=0.95
+decide          0 ms  elapsed  80,309 ms  ask
+```
+
+Correction result: PASS on the state-flip behavior. The second answer contains only asymptomatic
+50–69% and does not retain symptomatic/70% as current state.
+
+### Adversarial 2 — retrieval trap (full final transcript)
+
+The first live run exposed `knowledge` + thoracic router drift. General fixes were made to the frozen
+turn pre-signals and routing ownership, with tests and routing proof. A second run correctly entered
+the case path but hit an OpenAI timeout before a complete candidate. The bounded 240-second final run
+below used abdominal-only routing and made the Critic's remaining concern visible.
+
+```text
+USER
+A patient has an infrarenal abdominal aortic mural thrombus with distal embolisation. Which ESVS
+pathway should ground the assessment?
+
+GATE
+mode emitted by first scored candidate: gate_reply
+mode emitted by Critic reroute: case_new
+decision: ask
+guidelines: abdominal_aortic_aneurysm
+iterations: 1
+
+## ESVS-grounded answer
+
+The supplied ESVS snippets do not provide a dedicated pathway for management of non-aneurysmal
+infrarenal aortic mural thrombus with distal embolisation. The only directly relevant text concerns
+mural thrombus limited to the main body of a stent graft (where intervention or escalation of
+antithrombotic therapy is not indicated if asymptomatic and non-obstructive) and general
+observational data on management options for stent-graft thrombotic complications (open
+thrombectomy/extra-anatomical bypass, endovascular repair ± thrombolysis, or conservative management)
+with no evidence of superiority of any option and recommendation to tailor treatment to the patient.
+Therefore, there is no specific ESVS pathway in the provided snippets that directly grounds
+assessment of an infrarenal aortic mural thrombus with distal embolisation.
+
+## Interpretation
+
+Non-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):
+Expert interpretation and practical approach given ESVS gap:
+- First priorities: clarify whether the embolic event is causing acute limb-threatening ischaemia
+  and arrange immediate peripheral assessment and treatment as indicated.
+- Obtain dedicated CT angiography from thoracic aorta to femoral arteries to define thrombus extent,
+  mobility, relation to aneurysm or stent graft, and distal embolic burden.
+- If non-aneurysmal and stable after peripheral management, initial systemic anticoagulation is
+  reasonable while planning definitive therapy; recurrent embolisation or a mobile pedunculated
+  thrombus should prompt consideration of aortic-directed intervention based on anatomy and fitness.
+- If associated with an AAA or stent graft, apply the limited retrieved stent-graft guidance and
+  individualize symptomatic/obstructive complications.
+- Multidisciplinary decision is recommended because the retrieved literature shows no superior
+  option and high recurrence rates.
+
+STAGE TRACE
+orient     15,498 ms  elapsed  15,500 ms  initial model mode=gate_reply; AAA only
+retrieve   10,311 ms  elapsed  25,811 ms  attempt=1; snippets=0
+pathway     7,633 ms  elapsed  33,444 ms  retrieval_uncertain
+retrieve   11,641 ms  elapsed  45,085 ms  attempt=2; snippets=7
+pathway    31,687 ms  elapsed  76,772 ms  partial
+retrieve   10,162 ms  elapsed  86,935 ms  attempt=3; full; snippets=3
+pathway    10,950 ms  elapsed  97,885 ms  not_covered
+probe      26,833 ms  elapsed 124,717 ms  questions=2; not_covered
+critic     23,719 ms  elapsed 148,437 ms  approved=false; score=0.85; revise=orient_route
+orient     11,563 ms  elapsed 160,000 ms  reroute mode=case_new; AAA only
+retrieve   13,363 ms  elapsed 173,362 ms  bounce attempt=1; snippets=3
+pathway    10,325 ms  elapsed 183,688 ms  retrieval_uncertain
+retrieve    8,597 ms  elapsed 192,285 ms  bounce attempt=2; snippets=10
+pathway    15,856 ms  elapsed 208,141 ms  partial
+retrieve    8,972 ms  elapsed 217,114 ms  bounce attempt=3; full; snippets=6
+pathway    13,026 ms  elapsed 230,139 ms  partial
+decide          0 ms  elapsed 239,145 ms  revised Probe timed out; retained score=0.85
+```
+
+Retrieval-trap result: FAIL at the captured final candidate because the initial mode was invalid and
+the deadline prevented the corrected reroute from becoming the scored winner. After this run, PHP
+now enforces the general invariant that a specific-patient turn with no prior state is `case_new`;
+the model cannot expand beyond an existing deterministic anatomy prior. Verification after the fix:
+
+```text
+Gate-focused tests: 25 passed (44 assertions)
+routing proof sample: 8/8 (100%)
+routing proof scenarios: 32/32 (100%)
+```
+
+No fourth multi-minute live rerun was used to conceal the observed failure. The final deterministic
+mode fix is unit-covered; evidence recovery/latency remains open.
+
+## 2026-07-24 — Phase 0 → Milestone A consolidation
+
+### Outcome
+
+**Milestone A is reached as a development milestone:** `gate:probe2` visibly performs cloud
+orientation, deterministic retrieval/re-retrieval, pathway assessment, probing, critique, revision,
+two-frame answer assembly, and a millisecond stage trace. The approved AAA and correction-flip
+transcripts above demonstrate state retention and correction handling.
+
+It is **not launch-ready**:
+
+- approved first-pass deep cases took 92–103 seconds, above the plan's 60-second target and sometimes
+  above the normal 90-second workflow deadline;
+- critique bounces can exhaust even the 180/240-second diagnostic caps;
+- the captured retrieval-trap run failed before the corrected reroute could replace the retained
+  candidate. The general first-patient mode/anatomy constraints added afterward are unit-covered,
+  but evidence recovery and a completed post-fix cloud rerun remain open;
+- the legacy Azure endpoint does not resolve on Hetzner. The gate explicitly uses deterministic
+  routing/retrieval fallbacks while the independent Laravel AI OpenAI path remains healthy.
+
+### Final verification
+
+Executed in the disposable Hetzner checkout `/tmp/codex-gate-v2`; production
+`/opt/cg/laravel/app` remained untouched.
+
+```text
+Pint (changed PHP files): PASS
+composer validate --strict --no-check-publish: PASS
+
+php artisan test
+Tests: 3 failed, 106 passed (286 assertions)
+Duration: 15.44s
+
+Remaining failures:
+- ChangeDetectionServiceTest: legacy prompt-copy expectation
+- PreRetrievalServiceTest: two legacy safe-default expectations
+
+php artisan gate:eval
+22 scenarios | 32 turns | PASS 28 | MINOR 3 | FAIL 1
+Routing 100.0% | no grade drop YES | verbatim 100.0%
+Artifact: gate-eval/runs/20260724_135919_796438.json
+
+php artisan gate:routing-proof --scenarios
+32/32 (100.0%)
+```
+
+The untouched post-install baseline was `6 failed, 84 passed`; the three live-endpoint failures were
+removed by the tested pooled-request failure handling. The three remaining failures are the same
+legacy assertion mismatches recorded in that baseline, so Milestone A introduced no test-grade drop.
+
+### Delivered
+
+- Phase 0 Composer resolution, Laravel AI cloud setup, and structured `gpt-5-mini` smoke call.
+- J1.1 agent contracts and deterministic boundaries.
+- J1.2 bounded evaluate-and-improve workflow and `gate:probe2`.
+- J1.3 real retrieval and mandatory re-retrieval.
+- J1.4 visible AAA and adversarial transcripts with per-stage latency.
+- General routing constraints derived from the retrieval-trap failure, with focused tests.
+
+### ⛔ HUMAN-blocked / recommended decisions
+
+- Clinician sign-off on the audited snippet library remains required; its activation flag stays OFF.
+- Plan §0 decisions remain open: one tool vs two, S7 stability interval, PHI-at-rest policy, and
+  clinician audit owner/rate/cadence.
+
+### Recommended next engineering work
+
+1. Reduce the deep-path call count/latency so a complete critique or one revision fits the normal
+   deadline.
+2. Rerun the retrieval-trap case through the cloud workflow after that latency work and require the
+   corrected `case_new` candidate to win.
+3. Address the four recorded Composer advisories in a separate dependency-maintenance change.
+
+No production deployment, adapter database write, tool-contract flip, main-branch change, or
+force-push was performed.
