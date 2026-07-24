@@ -2,11 +2,12 @@
 
 namespace App\Ai\Gate;
 
+use App\Ai\Gate\Grounding\GatePathwayWorker;
 use App\Ai\Gate\Guard\PreOrientGuardService;
 use App\Ai\Gate\Progress\GateProgress;
 use App\Ai\Gate\Progress\NullGateProgress;
 use App\Ai\Gate\Routing\OrientRoutingPriorService;
-use App\Ai\Gate\Tools\RetrieveEsvsSnippetsTool;
+use Illuminate\Support\Facades\Concurrency;
 use RuntimeException;
 use Throwable;
 
@@ -22,7 +23,7 @@ final class GateWorkflowService
     public function __construct(
         private readonly PreOrientGuardService $guard,
         private readonly OrientRoutingPriorService $routing,
-        private readonly RetrieveEsvsSnippetsTool $retrieval,
+        private readonly GatePathwayWorker $pathwayWorker,
         private readonly EvidenceStatusService $evidenceStatus,
         private readonly GateDecisionTail $tail,
     ) {}
@@ -263,62 +264,48 @@ final class GateWorkflowService
         $allPathways = [];
         $queriesTried = [];
         $snippetDigests = [];
+        $guidelines = array_slice((array) ($orient['candidate_guidelines'] ?? []), 0, 2);
+        $query = $this->serializeRetrievalQuery($turn, (array) $orient['patient_model'], $issues);
+        $this->assertWithinDeadline();
 
-        foreach (array_slice((array) ($orient['candidate_guidelines'] ?? []), 0, 2) as $guideline) {
-            $query = $this->serializeRetrievalQuery($turn, (array) $orient['patient_model'], $issues);
-            $queriesTried[$guideline] = [];
-            $assessment = null;
-
-            for ($attempt = 1; $attempt <= 3; $attempt++) {
-                $this->assertWithinDeadline();
-                $queriesTried[$guideline][] = $query;
-                $retrievalStarted = microtime(true);
-                $retrieved = $this->retrieval->retrieve($guideline, $query, $attempt === 3);
-                $this->record('retrieve', $retrievalStarted, [
-                    'guideline' => $guideline,
-                    'attempt' => $attempt,
-                    'full_pipeline' => $attempt === 3,
-                    'snippet_count' => $retrieved['diagnostics']['snippet_count'] ?? 0,
-                    'retrieval_ms' => $retrieved['diagnostics']['duration_ms'] ?? null,
-                ]);
-                $snippetDigests[$guideline] = array_slice((array) $retrieved['snippets'], 0, 10);
-
-                $assessmentStarted = microtime(true);
-                $assessment = $this->prompt(new PathwayAgent($guideline), [
-                    'patient_model' => $orient['patient_model'],
-                    'current_question' => $turn,
-                    'query' => $query,
-                    'attempt' => $attempt,
-                    'final_attempt' => $attempt === 3,
-                    'snippets' => $retrieved['snippets'],
-                    'retrieval_diagnostics' => $retrieved['diagnostics'],
-                ]);
-                $this->record('pathway', $assessmentStarted, [
-                    'guideline' => $guideline,
-                    'attempt' => $attempt,
-                    'relevant' => $assessment['relevant'] ?? null,
-                    'coverage' => $assessment['coverage'] ?? null,
-                ]);
-
-                if (
-                    ($assessment['relevant'] ?? false) === true
-                    && (
-                        ($assessment['coverage'] ?? null) === 'covered'
-                        || $attempt === 3
-                    )
-                ) {
-                    break;
-                }
-
-                $betterQuery = trim((string) ($assessment['better_query'] ?? ''));
-                $query = $betterQuery !== '' && ! in_array($betterQuery, $queriesTried[$guideline], true)
-                    ? $betterQuery
-                    : $query.' ESVS recommendation decision threshold anatomy';
+        if ((string) config('gate-v2.deep_path_mode', 'parallel') === 'parallel' && count($guidelines) > 1) {
+            $started = microtime(true);
+            $tasks = [];
+            foreach ($guidelines as $guideline) {
+                $patientModel = (array) $orient['patient_model'];
+                $tasks[$guideline] = static fn (): array => app(GatePathwayWorker::class)->run(
+                    $guideline,
+                    $query,
+                    $patientModel,
+                    $turn,
+                );
             }
+            $results = Concurrency::driver((string) config('gate-v2.concurrency_driver', 'process'))
+                ->run($tasks);
+            $this->record('ground_parallel', $started, ['guidelines' => $guidelines]);
+        } else {
+            $results = [];
+            foreach ($guidelines as $guideline) {
+                $this->assertWithinDeadline();
+                $results[$guideline] = $this->pathwayWorker->run(
+                    $guideline,
+                    $query,
+                    (array) $orient['patient_model'],
+                    $turn,
+                );
+            }
+        }
+        $this->assertWithinDeadline();
 
-            if ($assessment !== null) {
-                $assessment['queries_tried'] = $queriesTried[$guideline];
-                $allPathways[] = $assessment;
+        foreach ($results as $result) {
+            $guideline = (string) $result['guideline'];
+            $queriesTried[$guideline] = (array) $result['queries_tried'];
+            $snippetDigests[$guideline] = (array) $result['snippet_digests'];
+            foreach ((array) $result['trace'] as $entry) {
+                $this->recordExternal($entry);
+            }
+            if (is_array($result['assessment'] ?? null)) {
+                $allPathways[] = $result['assessment'];
             }
         }
 
@@ -556,6 +543,20 @@ final class GateWorkflowService
             'duration_ms' => $duration,
             'elapsed_ms' => (int) round((microtime(true) - $this->startedAt) * 1000),
             'detail' => $detail,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $entry
+     */
+    private function recordExternal(array $entry): void
+    {
+        $this->trace[] = [
+            'stage' => (string) ($entry['stage'] ?? 'unknown'),
+            'iteration' => $this->iteration,
+            'duration_ms' => (int) ($entry['duration_ms'] ?? 0),
+            'elapsed_ms' => (int) round((microtime(true) - $this->startedAt) * 1000),
+            'detail' => (array) ($entry['detail'] ?? []),
         ];
     }
 

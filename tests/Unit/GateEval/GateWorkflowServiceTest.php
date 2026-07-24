@@ -5,6 +5,7 @@ namespace Tests\Unit\GateEval;
 use App\Ai\Gate\EvidenceStatusService;
 use App\Ai\Gate\GateDecisionTail;
 use App\Ai\Gate\GateWorkflowService;
+use App\Ai\Gate\Grounding\GatePathwayWorker;
 use App\Ai\Gate\Guard\PreOrientGuardService;
 use App\Ai\Gate\Routing\OrientRoutingPriorService;
 use App\Ai\Gate\Tools\RetrieveEsvsSnippetsTool;
@@ -80,7 +81,7 @@ class GateWorkflowServiceTest extends TestCase
         return new GateWorkflowService(
             new PreOrientGuardService,
             new OrientRoutingPriorService,
-            new RetrieveEsvsSnippetsTool($retrieval),
+            new GatePathwayWorker(new RetrieveEsvsSnippetsTool($retrieval)),
             new EvidenceStatusService,
             new GateDecisionTail,
         );

@@ -957,3 +957,49 @@ Artifact: `gate-latency/runs/20260724_145417_421211.json` in the disposable chec
 Baseline conclusion: p95 is 91.3 seconds and none of the four required turns reaches Critic. Retrieval
 and pathway retries consume the deadline before Probe/Critic; the current OpenAI response latency also
 varies materially (retrieval p95 36.2 seconds). This is the measured starting point for L2.
+
+## 2026-07-24 — Run 3 / L2: concurrent cloud guideline branches
+
+Implemented one serializable `GatePathwayWorker` per candidate guideline. When Orient supplies two
+guidelines, Laravel's `process` concurrency driver now runs both independent retrieve→assess branches
+concurrently. `GATE_V2_DEEP_PATH_MODE=sequential` retains the local/Ollama-faithful path, and the
+driver is configurable. The worker retains three attempts and final-attempt full-pipeline behavior,
+so this change only changes scheduling.
+
+Files:
+
+- `app/Ai/Gate/Grounding/GatePathwayWorker.php`
+- `app/Ai/Gate/GateWorkflowService.php`
+- `config/gate-v2.php`
+- `tests/Unit/GateEval/GateWorkflowServiceTest.php`
+
+Verification:
+
+```text
+Gate-focused tests: 5 passed (12 assertions)
+Pint: PASS
+
+gate:eval after L2:
+22 scenarios | 32 turns | PASS 28 | MINOR 3 | FAIL 1
+Routing 100.0% | no grade drop YES | verbatim 100.0%
+```
+
+Same-case L2 measurement:
+
+```text
+stage       calls    L1 p50/p95 ms    L2 p50/p95 ms
+TOTAL/TURN      4      89,227/91,348     89,090/89,743
+orient          4      12,257/20,006      9,792/12,774
+retrieve       12      11,325/36,201     11,438/16,164
+pathway        12       8,275/27,530      9,005/19,164
+probe           1               —/—     20,031/20,031
+critic          0               —/—               —/—
+```
+
+Artifact: `gate-latency/runs/20260724_150246_458166.json`.
+
+Result: only a 1.6-second p95 improvement, not material enough by itself. Because AAA Turn 1 still
+timed out, later turns did not inherit the completed patient state and did not expose the intended
+two-guideline branch in this run. The scheduling path is implemented and eval-safe, but its isolated
+benefit cannot be claimed from this broken-state baseline. L3 must first remove enough serial retry
+work for stateful benchmarking to complete.
