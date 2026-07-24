@@ -2,9 +2,12 @@
 
 namespace App\Ai\Gate;
 
+use App\Ai\Gate\Concerns\GateModelOptions;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Laravel\Ai\Attributes\MaxTokens;
 use Laravel\Ai\Attributes\UseCheapestModel;
 use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Contracts\HasProviderOptions;
 use Laravel\Ai\Contracts\HasStructuredOutput;
 use Laravel\Ai\Promptable;
 
@@ -16,9 +19,13 @@ use Laravel\Ai\Promptable;
  * snippets, which prevents stale facts in raw history from leaking back in.
  */
 #[UseCheapestModel]
-final class OrientAgent implements Agent, HasStructuredOutput
+#[MaxTokens(2200)]
+final class OrientAgent implements Agent, HasProviderOptions, HasStructuredOutput
 {
+    use GateModelOptions;
     use Promptable;
+
+    private const REASONING_EFFORT = 'low';
 
     public function instructions(): string
     {

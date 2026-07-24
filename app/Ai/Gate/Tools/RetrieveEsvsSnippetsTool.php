@@ -26,8 +26,7 @@ final class RetrieveEsvsSnippetsTool implements Tool
 
     public function __construct(
         private readonly RetrievalService $retrieval,
-    ) {
-    }
+    ) {}
 
     public function description(): Stringable|string
     {
@@ -56,18 +55,64 @@ final class RetrieveEsvsSnippetsTool implements Tool
         $query = trim((string) ($request['query'] ?? ''));
 
         if ($guidelineKey === '' || $query === '') {
-            return 'NO_SNIPPETS: guideline_key and query are both required.';
+            return '{"error":"guideline_key and query are both required","snippets":[]}';
         }
 
-        $result = $this->retrieval->retrieve($query, [], [$guidelineKey]);
+        return json_encode(
+            $this->retrieve($guidelineKey, $query),
+            JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
+        ) ?: '{"error":"Unable to encode retrieval result","snippets":[]}';
+    }
+
+    /**
+     * Deterministic orchestration entry point used by GateWorkflowService.
+     *
+     * @return array<string, mixed>
+     */
+    public function retrieve(string $guidelineKey, string $query, bool $fullPipeline = false): array
+    {
+        $previous = [
+            'lean' => config('ragflow.lean.enabled'),
+            'planner' => config('ragflow.planner.merged_enabled'),
+            'planner_shadow' => config('ragflow.planner.shadow'),
+            'interpreter' => config('clinical_interpreter.enabled'),
+            'graph' => config('graphrag.enabled'),
+        ];
+        config()->set('ragflow.planner.merged_enabled', false);
+        config()->set('ragflow.planner.shadow', false);
+        config()->set('clinical_interpreter.enabled', false);
+        config()->set('graphrag.enabled', false);
+        if ($fullPipeline) {
+            config()->set('ragflow.lean.enabled', false);
+        }
+
+        try {
+            $result = $this->retrieval->retrieve($query, [], [$guidelineKey]);
+        } finally {
+            config()->set('ragflow.lean.enabled', $previous['lean']);
+            config()->set('ragflow.planner.merged_enabled', $previous['planner']);
+            config()->set('ragflow.planner.shadow', $previous['planner_shadow']);
+            config()->set('clinical_interpreter.enabled', $previous['interpreter']);
+            config()->set('graphrag.enabled', $previous['graph']);
+        }
 
         $snippets = [];
-        foreach (['citation_chunks', 'narrative_chunks'] as $bucket) {
+        $similarities = [];
+        foreach (['llm_citation_chunks', 'llm_narrative_chunks'] as $bucket) {
             foreach ((array) ($result[$bucket] ?? []) as $chunk) {
                 $text = is_array($chunk) ? (string) ($chunk['content'] ?? $chunk['text'] ?? '') : (string) $chunk;
                 $text = trim($text);
                 if ($text !== '') {
-                    $snippets[] = $text;
+                    $snippets[] = [
+                        'text' => $text,
+                        'similarity' => is_array($chunk) ? ($chunk['similarity'] ?? null) : null,
+                        'source' => is_array($chunk)
+                            ? ($chunk['guideline'] ?? $chunk['source_guideline'] ?? $guidelineKey)
+                            : $guidelineKey,
+                    ];
+                    if (is_array($chunk) && is_numeric($chunk['similarity'] ?? null)) {
+                        $similarities[] = (float) $chunk['similarity'];
+                    }
                 }
                 if (count($snippets) >= self::MAX_SNIPPETS) {
                     break 2;
@@ -75,10 +120,17 @@ final class RetrieveEsvsSnippetsTool implements Tool
             }
         }
 
-        if ($snippets === []) {
-            return "NO_SNIPPETS: retrieval returned nothing for guideline '{$guidelineKey}'.";
-        }
-
-        return "ESVS snippets for '{$guidelineKey}':\n- ".implode("\n- ", $snippets);
+        return [
+            'guideline_key' => $guidelineKey,
+            'query' => $query,
+            'retrieval_query' => (string) ($result['retrieval_query'] ?? $query),
+            'full_pipeline' => $fullPipeline,
+            'snippets' => $snippets,
+            'diagnostics' => [
+                'snippet_count' => count($snippets),
+                'max_similarity' => $similarities === [] ? null : max($similarities),
+                'duration_ms' => (int) ($result['duration_ms'] ?? 0),
+            ],
+        ];
     }
 }

@@ -2,8 +2,11 @@
 
 namespace App\Ai\Gate;
 
+use App\Ai\Gate\Concerns\GateModelOptions;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Laravel\Ai\Attributes\MaxTokens;
 use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Contracts\HasProviderOptions;
 use Laravel\Ai\Contracts\HasStructuredOutput;
 use Laravel\Ai\Promptable;
 
@@ -14,9 +17,13 @@ use Laravel\Ai\Promptable;
  * invokes retrieval itself and therefore cannot hide attempts or omit merged
  * patient facts from a query.
  */
-final class PathwayAgent implements Agent, HasStructuredOutput
+#[MaxTokens(2600)]
+final class PathwayAgent implements Agent, HasProviderOptions, HasStructuredOutput
 {
+    use GateModelOptions;
     use Promptable;
+
+    private const REASONING_EFFORT = 'low';
 
     public function __construct(
         private readonly string $guidelineKey,

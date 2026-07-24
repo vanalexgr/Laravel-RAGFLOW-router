@@ -367,3 +367,132 @@ Gate agent schemas + deterministic services:
 
 The broad `app/Ai/Gate` style scan also found three pre-existing formatting issues in untouched
 files; they were not mixed into this review unit. Blockers: none.
+
+## 2026-07-24 — Milestone A / J1.2–J1.3: workflow, probe2, and real retrieval
+
+Implemented:
+
+- `GateWorkflowService` with one sequential evaluate-and-improve loop;
+- `gate:probe2` for a single case or an eval scenario;
+- per-stage bounce budgets (`orient_route:1`, `ground:1`, `probe:2`), global iteration cap 3,
+  oscillation detection, wall-clock deadline, best-so-far degradation, `GateProgress`, and
+  millisecond `stage_trace`;
+- deterministic PHP retrieval queries serialized from the merged patient model;
+- sequential per-guideline retrieval with up to three attempts, a full-pipeline final attempt, and
+  model-proposed reformulation;
+- `RetrieveEsvsSnippetsTool::retrieve()` wired to `RetrievalService`'s LLM-tier chunks and retrieval
+  diagnostics;
+- question lifecycle carry-forward and monotonically incremented CLI state version;
+- OpenAI low-reasoning settings and bounded outputs for the cloud development model only; non-OpenAI
+  providers receive no provider-specific options.
+
+Files:
+
+- `app/Ai/Gate/GateWorkflowService.php`
+- `app/Ai/Gate/Concerns/GateModelOptions.php`
+- `app/Ai/Gate/Tools/RetrieveEsvsSnippetsTool.php`
+- `app/Console/Commands/GateProbe2Command.php`
+- `config/gate-v2.php`
+- `app/Ai/Gate/README.md`
+- `tests/Unit/GateEval/{GateWorkflowService,RetrieveEsvsSnippetsTool}Test.php`
+
+### Reality conflict found and handled explicitly
+
+The first live Ground call failed because Hetzner's legacy Azure hostname no longer resolves. The
+new Laravel AI OpenAI path remained healthy. The legacy router intended to fall back on request
+failure, but `Http::pool()` returned an `Illuminate\Http\Client\ConnectionException` value and line
+294 called `successful()` on it.
+
+Resolution was limited to the intended deterministic path:
+
+- `GuidelineRouterService` now recognizes a pooled failure value and uses its existing deterministic
+  fallback instead of throwing an `Error`;
+- explicit-guideline retrieval skips the legacy LLM `selectAndExpand` call;
+- the gate retrieval wrapper temporarily disables legacy planner/interpreter/Graph LLM enrichment
+  because Orient and PHP already own routing and query serialization, then restores every config
+  value in `finally`.
+
+No endpoint, credential, fabricated result, or production config was substituted. Regression test:
+`GuidelineRouterFailureTest`.
+
+Verification:
+
+```text
+Pint: 21 changed files PASS
+Focused workflow/retrieval/routing tests: 32 passed (58 assertions)
+```
+
+### First visible AAA run (full transcript)
+
+Command used a 180-second diagnostic cap; the normal 90-second cap had already demonstrated a
+best-so-far response at 89.8 seconds when Critic could not finish. After low-reasoning tuning and
+mandatory re-retrieval, the complete approved run took 95.3 seconds.
+
+```text
+USER
+A 74-year-old man has an asymptomatic 5.8 cm abdominal aortic aneurysm discovered on ultrasound.
+He is an active smoker with hypertension and dyslipidaemia. What management would you recommend?
+
+GATE
+mode: case_new
+decision: ask
+guidelines: abdominal_aortic_aneurysm
+iterations: 1
+
+## ESVS-grounded answer
+
+According to the ESVS 2024 guideline snippets available: men with an abdominal aortic aneurysm
+>55 mm should be considered for elective repair (Class IIa). Therefore a 74-year-old man with an
+asymptomatic AAA measured at 5.8 cm meets the guideline size threshold for consideration of elective
+repair. For inflammatory AAAs the guideline notes repair at 55 mm with endovascular repair preferred
+if anatomy is suitable. The guideline material located does not provide the detailed interaction
+between imaging, fitness assessment, and choice of EVAR versus open repair in this extract.
+
+## Interpretation
+
+Non-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):
+Practical next steps I would take as the vascular consultant: 1) Arrange urgent referral to the
+vascular surgery service for assessment and planning given the aneurysm exceeds the 55 mm threshold.
+2) Obtain a contrast-enhanced CT angiogram (arterial-phase imaging covering the thoracoabdominal
+aorta and iliofemoral vessels) to confirm maximal diameter, define proximal neck and iliac anatomy,
+and determine whether standard EVAR is anatomically feasible or if open repair/complex endovascular
+options are required. 3) Complete a preoperative fitness assessment (cardiac, pulmonary, renal
+function, and frailty) to stratify operative risk and decide suitability for open repair if EVAR is
+not possible. 4) Counsel and initiate optimisation: strongly advise smoking cessation and begin
+cardiovascular risk optimisation (blood pressure and lipid management, and review medications).
+5) If CTA and fitness indicate suitability for EVAR, plan elective endovascular repair in discussion
+with the patient; if anatomy is unsuitable but patient is fit, plan elective open repair; if unfit
+for open repair and anatomy unsuitable for standard EVAR, discuss alternative strategies and risks.
+Timeliness: this is not an emergency but should be expedited through elective vascular pathways
+rather than continued routine surveillance because size exceeds the repair threshold.
+
+QUESTIONS
+1. Has the patient undergone a recent contrast-enhanced CTA to define aneurysm anatomy for EVAR
+   suitability (neck length/angulation, iliac access)?
+2. Is the patient considered fit for elective aneurysm repair after cardiopulmonary and renal
+   assessment (recent cardiac evaluation, pulmonary status, renal function, and frailty)?
+
+CRITIC
+approved: true
+score: 0.95
+revise_stage: none
+summary: Candidate routed appropriately to the ESVS 2024 AAA guideline, identified that 5.8 cm
+exceeds the retrieved >55 mm consideration threshold, requested CTA and fitness as decision-critical
+unknowns, and kept grounded and interpretive claims separated.
+
+STAGE TRACE
+orient     9,383 ms  elapsed  9,385 ms  mode=case_new; guideline=abdominal_aortic_aneurysm
+retrieve  11,166 ms  elapsed 20,552 ms  attempt=1; snippets=4; lean
+pathway    9,440 ms  elapsed 29,991 ms  attempt=1; relevant=true; coverage=partial
+retrieve   7,707 ms  elapsed 37,698 ms  attempt=2; snippets=4; lean
+pathway    7,217 ms  elapsed 44,915 ms  attempt=2; relevant=true; coverage=partial
+retrieve   7,765 ms  elapsed 52,680 ms  attempt=3; snippets=7; full pipeline
+pathway   12,647 ms  elapsed 65,328 ms  attempt=3; relevant=true; coverage=partial
+probe     21,850 ms  elapsed 87,177 ms  questions=2; coverage=interaction_gap
+critic     8,157 ms  elapsed 95,335 ms  approved=true; score=0.95; revise_stage=none
+decide         0 ms  elapsed 95,335 ms  decision=ask; best_score=0.95; iterations=1
+```
+
+Observed latency conflict: the approved deep first pass is 95.3 seconds, above the plan's ≤60-second
+target and just above the normal 90-second deadline. This is logged as a Milestone A performance
+blocker, not hidden. The command still returns a valid best-so-far result at the normal deadline.

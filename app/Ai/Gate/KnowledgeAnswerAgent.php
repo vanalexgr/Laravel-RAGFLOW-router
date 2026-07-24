@@ -2,8 +2,11 @@
 
 namespace App\Ai\Gate;
 
+use App\Ai\Gate\Concerns\GateModelOptions;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Laravel\Ai\Attributes\MaxTokens;
 use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Contracts\HasProviderOptions;
 use Laravel\Ai\Contracts\HasStructuredOutput;
 use Laravel\Ai\Promptable;
 
@@ -22,9 +25,13 @@ use Laravel\Ai\Promptable;
  * escalate=true. The workflow then hands off to the full loop AND tells the user
  * it is looking deeper (so the extra latency is explained).
  */
-final class KnowledgeAnswerAgent implements Agent, HasStructuredOutput
+#[MaxTokens(2400)]
+final class KnowledgeAnswerAgent implements Agent, HasProviderOptions, HasStructuredOutput
 {
+    use GateModelOptions;
     use Promptable;
+
+    private const REASONING_EFFORT = 'low';
 
     public function instructions(): string
     {

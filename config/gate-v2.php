@@ -4,6 +4,13 @@ return [
     'enabled' => env('GATE_V2_ENABLED', false),
     'provider' => env('GATE_V2_PROVIDER', 'openai'),
     'model' => env('GATE_V2_MODEL', 'gpt-5-mini'),
+    'deadline_seconds' => (int) env('GATE_V2_DEADLINE_SECONDS', 90),
+    'max_iterations' => (int) env('GATE_V2_MAX_ITERATIONS', 3),
+    'bounce_budgets' => [
+        'orient_route' => 1,
+        'ground' => 1,
+        'probe' => 2,
+    ],
     'synthesis_owner' => env('SYNTHESIS_OWNER', 'adapter'),
     'synthesis_model' => env('SYNTHESIS_MODEL', 'cloud'),
 

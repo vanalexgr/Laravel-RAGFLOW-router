@@ -23,11 +23,10 @@ to **ISI on-prem / local models**:
 
 | File | Stage | Role | Pattern |
 |---|---|---|---|
-| `TriageAgent.php` | 0 | **Front door.** Cheap/fast: `knowledge` (fast path) vs `case` (deep loop). `#[UseCheapestModel]`. | Routing |
 | `KnowledgeAnswerAgent.php` | fast | **Fast path** for simple knowledge Qs: one retrieve + two-frame answer, no loop. Can `escalate` to the deep path. | Routing |
-| `OrientAgent.php` | 1 | Frame the case → patient_model, differential, candidate guideline keys. `#[UseCheapestModel]`. | Routing |
+| `OrientAgent.php` | 1 | Full turn taxonomy + same/new-case decision + delta-merged patient model/provenance + candidate guideline keys. Absorbs Triage. | Routing |
 | `Tools/RetrieveEsvsSnippetsTool.php` | — | Grounding seam: pulls real ESVS snippets for ONE guideline via the existing `RetrievalService`; returns a clear `NO_SNIPPETS` signal on a miss. | Tool |
-| `PathwayAgent.php` | 2 | One instance **per candidate guideline**, run in parallel; **re-retrieves with reformulated queries** on a miss and only then reports `coverage` (covered/partial/not_covered) + `queries_tried`; enumerates grounded pathways. | Parallelization |
+| `PathwayAgent.php` | 2 | Judges one PHP-owned retrieval attempt, proposes a better query, and enumerates pathways from supplied snippets. Candidates and retries run sequentially. | Evaluator |
 | `ProbeAgent.php` | 3 (generator) | Value-of-information ranking → unknowns, ≤2 questions; answer split into **`guideline_grounded_answer`** + **`interpretive_frame` (non-ESVS, always populated)** + `evidence_status`; calibrated confidence. Refines on critic feedback. | Evaluator-Optimizer |
 | `CriticAgent.php` | 4 (evaluator) | **General** evaluator of the WHOLE result against **7** case-agnostic invariants; returns `approved` + `revise_stage` + tagged `issues`. Capable model. | Evaluator-Optimizer |
 
@@ -38,20 +37,20 @@ Plus `Progress/GateProgress.php` (+ `LogGateProgress`, `NullGateProgress`) — t
 
 ## Two-tier front door — most questions stay fast
 
-The heavy loop is only for questions that earn it. `TriageAgent` runs first (one cheap call) and splits:
+The heavy loop is only for questions that earn it. `OrientAgent` classifies and frames in one call:
 
 ```
 question
   │
   ▼
-TriageAgent (cheapest model)
-  ├── "knowledge" ─► KnowledgeAnswerAgent: retrieve once → two-frame answer     [FAST, ~1 call]
+OrientAgent
+  ├── "knowledge" ─► PHP retrieval → KnowledgeAnswerAgent → two-frame answer
   │                     └─ escalate=true? ─► fall through to the deep loop ▼
-  └── "case" ─────► OrientAgent → parallel Pathways → Probe⇄Critic loop → decide [DEEP]
+  └── "case" ─────► sequential Ground → Probe⇄Critic loop → deterministic tail
 ```
 
 Simple definitions/thresholds/population questions — the majority — take the fast path and never pay
-for orient, parallel retrieval, or the critic loop. Only specific-patient consultations whose answer
+for deep retrieval or the critic loop. Only specific-patient consultations whose answer
 depends on unstated facts enter the loop. The fast path still uses the same two-frame answer and the
 same re-retrieve-on-miss rule, so answers stay consistent and robust. The `escalate` hatch means a
 question that *looks* simple but turns out patient-specific is handed to the deep path mid-flight.
@@ -82,9 +81,9 @@ Each agent implements `Laravel\Ai\Contracts\Agent` + `HasStructuredOutput` (type
 JSON via `schema(JsonSchema $schema)`). Structured responses are read via array
 offsets, e.g. `$res['patient_model']`, `$res['confidence']`.
 
-## Wiring plan (NOT built yet — next step)
+## Workflow
 
-A `GateWorkflowService` (or artisan `gate:probe2`) composes the stages inside ONE
+A `GateWorkflowService` and `artisan gate:probe2` compose the stages inside ONE
 **general evaluate-and-improve loop**. The Critic judges the whole result and names
 the earliest failing stage; the loop re-runs from THAT stage with the issues injected.
 There are no case-specific guards — routing validity, state completeness, grounding,
@@ -94,9 +93,7 @@ case:
 ```
 build($case):                                       // one candidate
     orient   = OrientAgent->prompt($case)                        // cheap model (routing)
-    pathways = Concurrency::run(                                 // parallelization
-        collect(orient.candidate_guidelines)->map(fn($k) =>
-            fn() => (new PathwayAgent($k))->prompt($case, orient))->all())
+    pathways = sequential PHP retrieve → relevance call → re-retrieve (≤3)
     probe    = ProbeAgent->prompt($case, orient, pathways, $issues)
     return {orient, pathways, probe}
 
@@ -110,8 +107,8 @@ loop:
     $issues       = $critic.issues                    // tagged, actionable
 until approved OR iteration cap
 
-# deterministic policy tail (NOT a guard, just the ask/proceed threshold):
-decide: ask iff a HIGH-impact unknown remains AND confidence < 0.70.
+# deterministic policy tail:
+decide: ask iff an unresolved HIGH-impact unknown has a non-declined question.
 ```
 
 Key point: because the Critic can set `revise_stage = orient_route`, the loop can
@@ -119,12 +116,10 @@ Key point: because the Critic can set `revise_stage = orient_route`, the loop ca
 case grounded in the thoracic guideline) is caught and corrected by the same general
 mechanism that catches everything else, without an anatomy-specific rule.
 
-Parallelization uses `Illuminate\Support\Facades\Concurrency::run()` (the SDK blog's
-`Concurrency::run()` pattern). **Open risk:** under PHP-FPM this may fork processes;
-confirm on Hetzner that concurrent LLM HTTP calls truly overlap (else fall back to
-queued fan-out or accept sequential pathway calls).
+Pathways are deliberately sequential for the target on-prem runtime. PHP owns every
+retrieval query and attempt; agents never invoke retrieval tools.
 
-**Cost/latency note:** a whole-pipeline loop can re-run Orient + parallel retrieval on
+**Cost/latency note:** a whole-pipeline loop can re-run Orient + sequential retrieval on
 an `orient_route` bounce. Keep the cap low (~3), let the Critic bounce to the EARLIEST
 failing stage only, and short-circuit when `approved` on the first pass (the common
 case). Measure iterations-per-case in `gate:probe2`.
@@ -133,8 +128,9 @@ case). Measure iterations-per-case in `gate:probe2`.
 
 Two properties the loop guarantees for **every** case:
 
-**Re-retrieve before concluding "ESVS is silent."** Retrieval is treated as fallible. A PathwayAgent
-that gets `NO_SNIPPETS` or off-target snippets must reformulate and retry (synonyms, underlying
+**Re-retrieve before concluding "ESVS is silent."** Retrieval is treated as fallible. PHP asks a
+PathwayAgent to judge each snippet set and reformulates on missing, partial, or off-target evidence
+(synonyms, underlying
 threshold/anatomy, broader phrasing) before reporting `coverage: not_covered`, and it emits
 `queries_tried` as the audit trail. The Critic's `retrieval_sufficiency` invariant rejects any
 "not_covered"/"partial" that rests on a single weak query and bounces the loop to `ground` for a
@@ -174,16 +170,16 @@ with the v1 prototype.
 
 ## Status
 
-- [x] Agents + grounding tool scaffolded (structured schemas, domain prompts).
-- [x] Two-tier front door: `TriageAgent` (fast/deep routing) + `KnowledgeAnswerAgent` (fast path, escalate hatch).
+- [x] Agents + grounding tool implemented with structured schemas.
+- [x] Two-tier front door: merged `OrientAgent` + `KnowledgeAnswerAgent` fast path.
 - [x] `GateProgress` channel (+ Log/Null impls) for live user feedback on deep/rethink.
 - [x] Critic is a GENERAL evaluator (7 case-agnostic invariants + `revise_stage`), no per-case guards.
-- [ ] `composer require laravel/ai` + `config/ai.php` provider config (Hetzner).
-- [ ] `GateWorkflowService` / `gate:probe2` — triage → (fast path | deep loop), the loop
+- [x] `laravel/ai` v0.10.1 + cloud `config/ai.php` provider config.
+- [x] `GateWorkflowService` / `gate:probe2` — orient → (fast path | deep loop), the loop
       re-running from `revise_stage` with issues injected; emits `GateProgress`; logs
       iterations-per-case + per-stage timings.
 - [ ] OpenWebUI adapter: map `GateProgress` events to `__event_emitter__` status; pick SSE
       streaming vs coarse-status+stage_trace for the cross-VM channel.
-- [ ] Verify `Concurrency::run()` truly parallelizes on Hetzner.
+- [x] Sequential pathway execution selected; no fork/concurrency dependency.
 - [ ] `laravel/ai` offline eval over the labelled case set (AAA evolving-context, carotid
       lateralisation, etc.) to prove the loop converges across cases, not just spot fixes.

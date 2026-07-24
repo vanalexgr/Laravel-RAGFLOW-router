@@ -2,8 +2,11 @@
 
 namespace App\Ai\Gate;
 
+use App\Ai\Gate\Concerns\GateModelOptions;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Laravel\Ai\Attributes\MaxTokens;
 use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Contracts\HasProviderOptions;
 use Laravel\Ai\Contracts\HasStructuredOutput;
 use Laravel\Ai\Promptable;
 
@@ -23,9 +26,13 @@ use Laravel\Ai\Promptable;
  * The deterministic proceed/ask decision is applied outside the agent using
  * discrete unknown/question signals; confidence never controls the decision.
  */
-final class ProbeAgent implements Agent, HasStructuredOutput
+#[MaxTokens(3000)]
+final class ProbeAgent implements Agent, HasProviderOptions, HasStructuredOutput
 {
+    use GateModelOptions;
     use Promptable;
+
+    private const REASONING_EFFORT = 'low';
 
     public function instructions(): string
     {
