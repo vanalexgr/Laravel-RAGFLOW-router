@@ -6,6 +6,7 @@ return [
     'model' => env('GATE_V2_MODEL', 'gpt-5-mini'),
     'deadline_seconds' => (int) env('GATE_V2_DEADLINE_SECONDS', 90),
     'stage_timeout_seconds' => (int) env('GATE_V2_STAGE_TIMEOUT_SECONDS', 30),
+    'revision_reserve_seconds' => (int) env('GATE_V2_REVISION_RESERVE_SECONDS', 35),
     'max_iterations' => (int) env('GATE_V2_MAX_ITERATIONS', 3),
     'deep_path_mode' => env('GATE_V2_DEEP_PATH_MODE', 'parallel'),
     'concurrency_driver' => env('GATE_V2_CONCURRENCY_DRIVER', 'process'),

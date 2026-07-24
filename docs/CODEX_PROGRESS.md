@@ -1052,3 +1052,54 @@ cloud variance erased the wall-time gain: p95 remained 90.0 seconds. Only retrie
 Critic, returning a disapproved 0.20 candidate at 89.7 seconds; no revision could run. No cache hit
 occurred because every Critic-directed retrieval query was materially different. L3 preserves quality
 but does not meet the latency bar.
+
+## 2026-07-24 — Run 3 / L4: scored-candidate ledger and revision reserve
+
+Implemented a `GateCandidateLedger` with these invariants:
+
+- generated-but-unscored candidates are never eligible for return;
+- Critic's discrete `approved=true` outranks every disapproved candidate;
+- Critic score only breaks ties between candidates with the same approval status;
+- the returned `critic` always belongs to the returned candidate;
+- no completed Critic means an explicit diagnostic failure, not an unreviewed clinical answer.
+
+The deep path now reserves 35 seconds of the 90-second deadline until the first Critic completes, so
+the initial pipeline cannot silently consume the revision window. After the initial Critic score, the
+reserve is released for the requested revision and re-critique.
+
+Files:
+
+- `app/Ai/Gate/Evaluation/GateCandidateLedger.php`
+- `app/Ai/Gate/GateWorkflowService.php`
+- `config/gate-v2.php`
+- `tests/Unit/GateEval/GateCandidateLedgerTest.php`
+
+Verification:
+
+```text
+Focused tests: 8 passed (19 assertions)
+Pint: PASS
+
+gate:eval after L4:
+22 scenarios | 32 turns | PASS 28 | MINOR 3 | FAIL 1
+Routing 100.0% | no grade drop YES | verbatim 100.0%
+```
+
+Same-case L4 measurement:
+
+```text
+stage       calls    L3 p50/p95 ms    L4 p50/p95 ms
+TOTAL/TURN      4      89,704/89,980     54,691/68,381
+orient          4      11,250/21,649     10,811/14,241
+retrieve        2      10,615/15,981      3,458/8,964
+pathway         2       7,239/27,598     11,521/13,930
+probe/critic    0  (some in L3 run)               —/—
+```
+
+Artifact: `gate-latency/runs/20260724_151438_151687.json`.
+
+The apparent total reduction is a fail-fast boundary, not a completed-performance win: all four
+turns failed before Critic because the existing stage calls could not finish the initial candidate
+inside the 55-second pre-revision budget. Retrieval-trap overran to 68.4 seconds while a blocking
+worker call returned, then failed at the parent deadline assertion. The return-selection bug is fixed
+and unit-covered; the revision guarantee remains blocked on L5 making the initial path fit its budget.

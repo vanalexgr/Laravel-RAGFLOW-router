@@ -2,6 +2,7 @@
 
 namespace App\Ai\Gate;
 
+use App\Ai\Gate\Evaluation\GateCandidateLedger;
 use App\Ai\Gate\Grounding\GatePathwayWorker;
 use App\Ai\Gate\Guard\PreOrientGuardService;
 use App\Ai\Gate\Progress\GateProgress;
@@ -22,6 +23,8 @@ final class GateWorkflowService
     private float $startedAt;
 
     private int $iteration = 0;
+
+    private int $reservedRevisionSeconds = 0;
 
     public function __construct(
         private readonly PreOrientGuardService $guard,
@@ -52,6 +55,7 @@ final class GateWorkflowService
         $this->groundCache = [];
         $this->startedAt = microtime(true);
         $this->iteration = 0;
+        $this->reservedRevisionSeconds = 0;
         $progress ??= new NullGateProgress;
 
         $guard = $this->guard->evaluate($turn, $priorState !== []);
@@ -80,14 +84,17 @@ final class GateWorkflowService
             return $this->knowledgePath($turn, $orient, $priorState, $progress);
         }
 
+        $this->reservedRevisionSeconds = max(
+            0,
+            min(60, (int) config('gate-v2.revision_reserve_seconds', 35)),
+        );
         $progress->emit('retrieve', '🔍 Retrieving the selected ESVS guidance…');
         $ground = $this->ground($turn, $orient, []);
         $evidenceStatus = $this->evidenceStatus->assess($turn, $ground['pathways']);
         $probe = $this->probe($turn, $orient, $ground, $evidenceStatus, [], $priorState);
 
         $candidate = compact('orient', 'ground', 'evidenceStatus', 'probe');
-        $bestCandidate = $candidate;
-        $bestScore = -1.0;
+        $ledger = new GateCandidateLedger;
         $budgets = config('gate-v2.bounce_budgets');
         $seenBounceFingerprints = [];
         $lastCritic = null;
@@ -106,14 +113,10 @@ final class GateWorkflowService
                 ]);
                 break;
             }
-            $score = (float) ($lastCritic['score'] ?? 0);
-            if ($score > $bestScore) {
-                $bestScore = $score;
-                $bestCandidate = $candidate;
-            }
+            $ledger->consider($candidate, $lastCritic);
+            $this->reservedRevisionSeconds = 0;
 
             if (($lastCritic['approved'] ?? false) === true) {
-                $bestCandidate = $candidate;
                 break;
             }
 
@@ -174,6 +177,10 @@ final class GateWorkflowService
             }
         }
 
+        $best = $ledger->best();
+        $bestCandidate = $best['candidate'];
+        $bestCritic = $best['critic'];
+        $bestScore = (float) $bestCritic['score'];
         $final = $this->tail->finalize(
             $bestCandidate['probe'],
             (array) ($bestCandidate['orient']['open_questions'] ?? []),
@@ -197,7 +204,7 @@ final class GateWorkflowService
             'routed_guidelines' => $bestCandidate['orient']['candidate_guidelines'],
             'pathways' => $bestCandidate['ground']['pathways'],
             'queries_tried' => $bestCandidate['ground']['queries_tried'],
-            'critic' => $lastCritic,
+            'critic' => $bestCritic,
             'best_score' => $bestScore,
             'iterations' => min($this->iteration, $maxIterations),
             'stage_trace' => $this->trace,
@@ -601,6 +608,10 @@ final class GateWorkflowService
     {
         $deadline = max(1, (int) config('gate-v2.deadline_seconds', 90));
 
-        return (int) floor($deadline - (microtime(true) - $this->startedAt));
+        return (int) floor(
+            $deadline
+            - $this->reservedRevisionSeconds
+            - (microtime(true) - $this->startedAt),
+        );
     }
 }
