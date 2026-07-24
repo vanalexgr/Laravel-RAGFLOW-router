@@ -74,6 +74,7 @@ final class RetrieveEsvsSnippetsTool implements Tool
         string $query,
         bool $fullPipeline = false,
         ?int $topK = null,
+        ?int $timeoutSeconds = null,
     ): array {
         $previous = [
             'lean' => config('ragflow.lean.enabled'),
@@ -85,6 +86,8 @@ final class RetrieveEsvsSnippetsTool implements Tool
             'citation_top_k' => config('ragflow.retrieval.citation_top_k'),
             'lean_top_k' => config('ragflow.lean.top_k'),
             'single_case_top_k' => config('ragflow.single_case.top_k'),
+            'request_timeout' => config('ragflow.request_timeout'),
+            'connect_timeout' => config('ragflow.connect_timeout'),
         ];
         config()->set('ragflow.planner.merged_enabled', false);
         config()->set('ragflow.planner.shadow', false);
@@ -100,6 +103,18 @@ final class RetrieveEsvsSnippetsTool implements Tool
             config()->set('ragflow.lean.top_k', $topK);
             config()->set('ragflow.single_case.top_k', $topK);
         }
+        if ($timeoutSeconds !== null) {
+            $timeoutSeconds = max(1, $timeoutSeconds);
+            config()->set('ragflow.request_timeout', $timeoutSeconds);
+            config()->set('ragflow.connect_timeout', min(
+                $timeoutSeconds,
+                max(1, (int) config('gate-v2.retrieval.connect_timeout_seconds', 3)),
+            ));
+            // The RAGFlow client is a singleton. Rebuild it within this scoped
+            // retrieval so its Guzzle timeout reflects the gate's remaining budget.
+            app()->forgetInstance('ragflow');
+            app()->forgetInstance(\App\Services\RAGFlow\RAGFlowClient::class);
+        }
 
         try {
             $result = $this->retrieval->retrieve($query, [], [$guidelineKey]);
@@ -113,6 +128,12 @@ final class RetrieveEsvsSnippetsTool implements Tool
             config()->set('ragflow.retrieval.citation_top_k', $previous['citation_top_k']);
             config()->set('ragflow.lean.top_k', $previous['lean_top_k']);
             config()->set('ragflow.single_case.top_k', $previous['single_case_top_k']);
+            config()->set('ragflow.request_timeout', $previous['request_timeout']);
+            config()->set('ragflow.connect_timeout', $previous['connect_timeout']);
+            if ($timeoutSeconds !== null) {
+                app()->forgetInstance('ragflow');
+                app()->forgetInstance(\App\Services\RAGFlow\RAGFlowClient::class);
+            }
         }
 
         $snippets = [];

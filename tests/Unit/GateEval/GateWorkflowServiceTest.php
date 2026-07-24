@@ -104,6 +104,21 @@ class GateWorkflowServiceTest extends TestCase
         $this->assertSame('case', $method->invoke($workflow, 'Here are the patient details.'));
     }
 
+    public function test_strong_first_pass_evidence_skips_a_diminishing_return_retrieval_attempt(): void
+    {
+        $method = new \ReflectionMethod(GatePathwayWorker::class, 'firstPassEvidenceIsSufficient');
+        $worker = new GatePathwayWorker(new RetrieveEsvsSnippetsTool(new class extends RetrievalService {}));
+
+        $this->assertTrue($method->invoke($worker, [
+            'snippets' => array_fill(0, 4, ['text' => 'evidence']),
+            'diagnostics' => ['max_similarity' => 0.80],
+        ]));
+        $this->assertFalse($method->invoke($worker, [
+            'snippets' => array_fill(0, 3, ['text' => 'evidence']),
+            'diagnostics' => ['max_similarity' => 0.80],
+        ]));
+    }
+
     private function workflow(): GateWorkflowService
     {
         $retrieval = new class extends RetrievalService

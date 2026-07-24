@@ -4,6 +4,7 @@ return [
     'api_key' => env('RAGFLOW_API_KEY'),
     'api_endpoint' => env('RAGFLOW_ENDPOINT', 'http://localhost/api/v1'),
     'request_timeout' => env('RAGFLOW_REQUEST_TIMEOUT', 30),
+    'connect_timeout' => env('RAGFLOW_CONNECT_TIMEOUT', 3),
 
     'use_bridge' => filter_var(env('RAGFLOW_USE_BRIDGE', false), FILTER_VALIDATE_BOOLEAN),
     'bridge_url' => env('RAGFLOW_BRIDGE_URL', 'http://localhost:8000'),

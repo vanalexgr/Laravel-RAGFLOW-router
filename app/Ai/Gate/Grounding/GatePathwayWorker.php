@@ -26,6 +26,7 @@ final class GatePathwayWorker
         string $turn,
         ?array $prefetched = null,
         ?int $maxAttemptsOverride = null,
+        ?int $timeoutSeconds = null,
     ): array {
         $query = $initialQuery;
         $queriesTried = [];
@@ -54,6 +55,7 @@ final class GatePathwayWorker
                     $query,
                     $attempt === $maxAttempts,
                     $topK,
+                    $timeoutSeconds ?? (int) config('gate-v2.retrieval.timeout_seconds', 20),
                 );
                 $retrievalDuration = (int) round((microtime(true) - $retrievalStarted) * 1000);
             }
@@ -102,13 +104,11 @@ final class GatePathwayWorker
                 ],
             ];
 
-            if (
-                ($assessment['relevant'] ?? false) === true
-                && (
-                    ($assessment['coverage'] ?? null) === 'covered'
-                    || $attempt === $maxAttempts
-                )
-            ) {
+            if (($assessment['relevant'] ?? false) === true && (
+                ($assessment['coverage'] ?? null) === 'covered'
+                || $this->firstPassEvidenceIsSufficient($retrieved)
+                || $attempt === $maxAttempts
+            )) {
                 break;
             }
 
@@ -129,5 +129,12 @@ final class GatePathwayWorker
             'snippet_digests' => $snippetDigests,
             'trace' => $trace,
         ];
+    }
+
+    /** @param array<string, mixed> $retrieved */
+    private function firstPassEvidenceIsSufficient(array $retrieved): bool
+    {
+        return count((array) ($retrieved['snippets'] ?? [])) >= max(1, (int) config('gate-v2.retrieval.sufficient_snippet_count', 4))
+            && (float) ($retrieved['diagnostics']['max_similarity'] ?? 0) >= (float) config('gate-v2.retrieval.sufficient_similarity', 0.78);
     }
 }

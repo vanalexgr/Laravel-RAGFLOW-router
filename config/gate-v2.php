@@ -33,6 +33,14 @@ return [
         'max_attempts' => (int) env('GATE_V2_RETRIEVAL_MAX_ATTEMPTS', 2),
         'revision_max_attempts' => (int) env('GATE_V2_REVISION_RETRIEVAL_MAX_ATTEMPTS', 1),
         'attempt_top_k' => [12, 24],
+        // A gate retrieval must never inherit the generic 30-second bridge timeout:
+        // this budget is deliberately below the parent 90-second wall-clock.
+        'timeout_seconds' => (int) env('GATE_V2_RETRIEVAL_TIMEOUT_SECONDS', 20),
+        'connect_timeout_seconds' => (int) env('GATE_V2_RETRIEVAL_CONNECT_TIMEOUT_SECONDS', 3),
+        // A relevant first pass with enough strong evidence is not re-run merely
+        // because the assessor prefers a different wording of the same query.
+        'sufficient_snippet_count' => (int) env('GATE_V2_RETRIEVAL_SUFFICIENT_SNIPPETS', 4),
+        'sufficient_similarity' => (float) env('GATE_V2_RETRIEVAL_SUFFICIENT_SIMILARITY', 0.78),
     ],
     'bounce_budgets' => [
         'orient_route' => 2,

@@ -318,6 +318,7 @@ final class GateWorkflowService
                     $query,
                     false,
                     (int) config('gate-v2.retrieval.attempt_top_k.0', 24),
+                    (int) config('gate-v2.retrieval.timeout_seconds', 20),
                 );
 
                 return [
@@ -468,6 +469,10 @@ final class GateWorkflowService
                     $turn,
                     $prefetched,
                     $maxAttempts,
+                    max(1, min(
+                        (int) config('gate-v2.retrieval.timeout_seconds', 20),
+                        (int) config('gate-v2.deadline_seconds', 90),
+                    )),
                 );
             }
             $completed = Concurrency::driver((string) config('gate-v2.concurrency_driver', 'process'))
@@ -484,6 +489,10 @@ final class GateWorkflowService
                     $turn,
                     $usePrefetch ? ($this->prefetchedGround[$guideline] ?? null) : null,
                     $maxAttempts,
+                    max(1, min(
+                        (int) config('gate-v2.retrieval.timeout_seconds', 20),
+                        $this->remainingWallSeconds(),
+                    )),
                 );
             }
         }

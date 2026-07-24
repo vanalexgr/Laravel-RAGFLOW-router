@@ -1,5 +1,60 @@
 # Codex unattended progress — Agentic Gate v2
 
+## 2026-07-24 — Run 4 / R4.1–R4.5: bounded retrieval latency pass and retrieval-trap reframe
+
+Implemented locally (not committed pending the required Hetzner verification):
+
+- Added a gate-scoped, abortable RAGFlow HTTP budget. `RetrieveEsvsSnippetsTool` now scopes
+  `ragflow.request_timeout` to the remaining retrieval budget, rebuilds the singleton client for that
+  call, and restores the ordinary application timeout afterwards. `RAGFlowClient` now has an explicit
+  Guzzle `connect_timeout` as well as its existing total timeout. This limits a retrieval child call;
+  it does not claim a measured end-to-end improvement yet.
+- Added configurable first-pass sufficiency thresholds (default: at least four snippets and maximum
+  similarity at least 0.78). A relevant sufficiently-evidenced first pass stops retrying; an off-target,
+  sparse, or low-similarity pass still follows the existing full-pipeline retry. Existing sequential and
+  parallel modes remain config-reachable.
+- Added focused coverage for timeout scoping/restoration and the general evidence sufficiency rule.
+
+Local verification:
+
+```text
+PHP syntax: PASS (four changed implementation files and two focused test files)
+git diff --check: PASS
+```
+
+Measurement / verification blocker: the required disposable Hetzner checkout command was rejected by
+the execution safety boundary because it would transmit the uncommitted local diff to a remote root
+host. No remote code, production source, adapter database, or deployment was changed. Therefore the
+four-turn before/after measurement, end-to-end test run, and commit are deliberately pending; **no
+latency improvement or SLO result is claimed**.
+
+R4.4/R4.5 determination: the Run 3 retrieval-trap initial candidate is clinically acceptable for the
+evaluator's stated task. It correctly confines ESVS claims to the absence of a de-novo non-aneurysmal
+mural-thrombus pathway, labels the practical discussion as non-ESVS, and asks relevant discriminator
+questions. Its sole Critic defect is redundant question value, not a wrong route or clinical drift.
+The Orient reroute kept the same AAA route but fell from 0.90 to 0.50, so it offers no merit-based
+improvement. The dropped “reroute must win” bar is therefore closed as a pass; no case-specific code
+and no change to the general `routing_validity` rubric is warranted.
+
+Files touched:
+
+- `config/gate-v2.php`
+- `config/ragflow.php`
+- `app/Services/RAGFlow/RAGFlowClient.php`
+- `app/Ai/Gate/Tools/RetrieveEsvsSnippetsTool.php`
+- `app/Ai/Gate/Grounding/GatePathwayWorker.php`
+- `app/Ai/Gate/GateWorkflowService.php`
+- `tests/Unit/GateEval/RetrieveEsvsSnippetsToolTest.php`
+- `tests/Unit/GateEval/GateWorkflowServiceTest.php`
+
+## 2026-07-24 — Run 4 / R4.6–R4.7: S0 checkpoint status
+
+Blocked pending the same required disposable-host verification channel. The already-tested Run 3
+`AnswerAssembly` foundation remains default-OFF (`SYNTHESIS_OWNER=adapter`, `SYNTHESIS_MODEL=cloud`)
+and audited snippets remain OFF. It is not yet safe to wire the Laravel synthesis response into the
+existing adapter-facing path or claim the external-judge 15-case / gap-taxonomy S0 checkpoint without
+an executable cloud verification run. No default, adapter DB, or production behavior was changed.
+
 ## 2026-07-24 — Item 1: eval harness + scenarios
 
 Implemented:

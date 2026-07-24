@@ -50,4 +50,27 @@ class RetrieveEsvsSnippetsToolTest extends TestCase
         $this->assertSame('Recommendation text', $result['snippets'][0]['text']);
         $this->assertSame(82.5, $result['diagnostics']['max_similarity']);
     }
+
+    public function test_gate_timeout_is_scoped_to_the_retrieval_client_and_restored_afterward(): void
+    {
+        config()->set('ragflow.request_timeout', 30);
+        config()->set('ragflow.connect_timeout', 3);
+        $retrieval = new class extends RetrievalService
+        {
+            public array $timeouts = [];
+
+            public function retrieve(string $question, array $history = [], ?array $requestedKeys = null): array
+            {
+                $this->timeouts = [config('ragflow.request_timeout'), config('ragflow.connect_timeout')];
+
+                return ['duration_ms' => 1, 'llm_citation_chunks' => [], 'llm_narrative_chunks' => []];
+            }
+        };
+
+        (new RetrieveEsvsSnippetsTool($retrieval))->retrieve('abdominal_aortic_aneurysm', 'q', false, 12, 7);
+
+        $this->assertSame([7, 3], $retrieval->timeouts);
+        $this->assertSame(30, config('ragflow.request_timeout'));
+        $this->assertSame(3, config('ragflow.connect_timeout'));
+    }
 }

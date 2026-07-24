@@ -37,6 +37,12 @@ class RAGFlowClient
         $this->httpClient = new Client([
             'base_uri' => $this->useBridge ? $this->bridgeUrl . '/' : $this->baseUrl,
             'timeout' => $this->timeout,
+            // Guzzle's total timeout is abortable; connect_timeout prevents a
+            // stalled bridge connection from consuming the whole stage budget.
+            'connect_timeout' => max(1, min(
+                $this->timeout,
+                (int) config('ragflow.connect_timeout', 3),
+            )),
             'headers' => $headers,
         ]);
     }
