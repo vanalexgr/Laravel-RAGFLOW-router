@@ -1,5 +1,119 @@
 # Codex unattended progress — Agentic Gate v2
 
+## 2026-07-24 — Review pass (Claude Code, local): deadline binding, PHI, session scope
+
+A full-branch review, then three fixes. Committed and pushed to
+`claude/prototyping-summary-d597c2` (`56d2666`, `5f1e973`, `6ada1ed`). `main` untouched; nothing
+deployed; no adapter DB push.
+
+### Correction to the R4.1 record below
+
+The R4.1 entry claims a gate-scoped abortable RAGFlow budget. **That claim was wrong.**
+`RetrieveEsvsSnippetsTool` cleared the container binding, but `RetrievalService` reaches RAGFlow
+through the *facade*, which keeps its own static instance cache that `Container::forgetInstance()`
+does not touch. The previously resolved client — and its original 30-second Guzzle timeout — was
+reused. The scoping worked only for the first retrieval in a fresh process and was silently ignored
+by every retry and by the entire sequential path. The R4.1 test asserted config values, never that
+the client actually used them, which is why it passed.
+
+### What landed
+
+**`56d2666` — every child call is bounded by the turn's wall-clock deadline.** Four holes, all
+against R4.1's stated goal that "a blocking child call can never outlive the parent deadline":
+
+1. the facade cache above (now cleared via `Facade::clearResolvedInstance()`);
+2. the PathwayAgent call was the only stage with no deadline clamp — with config defaults
+   (`max_attempts` 2, retrieval 20s, pathway 30s) one branch could burn 100s against a 90s deadline
+   before any Critic iteration. An attempt without room to retrieve *and* be assessed is now skipped
+   (`retrieval.minimum_attempt_seconds`, traced as `retrieve_skipped`);
+3. the parallel `ground()` branch bounded children by the `deadline_seconds` constant rather than
+   remaining wall-clock, so the default path ignored elapsed time while the sequential path beside it
+   did not;
+4. an escalating knowledge turn recursed into `run()`, resetting `startedAt` and `trace` — a second
+   full deadline, and the record of the first path discarded. `run()` now initialises and delegates
+   to `execute()`; escalation re-enters `execute()`.
+
+Deadlines cross into forked workers as an absolute instant, not a duration, so a budget computed at
+dispatch cannot go stale before the process boots.
+
+**`5f1e973` — gate-v2 de-identifies before calling a model provider.** `PHIScrubberService` was
+instantiated in exactly one place (`RetrievalService`), so Orient, Pathway, Probe, Critic and
+Knowledge all sent the raw turn and patient model to OpenAI. Only the retrieval *query* was ever
+scrubbed. `docs/HIPAA_COMPLIANCE.md` asserted the opposite. Scrubbing now happens once in
+`GateWorkflowService::run()`, covering every stage reached from that turn, and cannot be bypassed by
+adding a stage. Prior state is scrubbed too, since it round-trips through the client. Redactions are
+audit-logged via `logAudit()`, **which had no callers at all** before this.
+
+Three scrubber defects surfaced. Two are pre-existing and already affect production retrieval:
+
+- `mobile` is a major US city *and* the attribute deciding anticoagulation versus surgery in aortic
+  thrombus — `"mobile thrombus"` scrubbed to `"[CITY] thrombus"`, deleting the finding;
+- any bare five-digit number became `[ZIP]`, so `"platelet count 45000"` and `"D-dimer 12500 ng/mL"`
+  lost the value the decision turns on;
+- `ages_over_90` incremented an undefined `'ages'` key, warning on every age redaction and reporting
+  zero under the declared counter.
+
+All three fixed. The city/ZIP fixes narrow Safe Harbor slightly in exchange for clinical fidelity;
+both are config-driven in `config/phi.php` and want compliance sign-off.
+
+**`6ada1ed` — consult session ids are derived, not taken from the request body.**
+`/api/v1/agent-consult` used the client's `session_key` verbatim as the Vizra session id, so the
+request body chose which stored conversation to load and `loadContext()` returned another patient's
+`last_tool_result`. The handle is now one input to
+`HMAC-SHA256(domain \0 caller_fingerprint \0 handle, APP_KEY)`. `ValidateApiKey` publishes a
+non-reversible credential fingerprint; `session_key` is validated as an opaque token
+(`../../other-session` previously reached the state layer); responses echo the caller's own handle.
+Fails closed with 503 rather than falling back to one shared namespace.
+
+### Verified
+
+```text
+PHP suite: 167 tests, 399 assertions
+  4 failures, all pre-existing and identical to the pre-change baseline
+  (ExampleTest + 3 LeanRetrievalTest — need a reachable RAGFlow bridge)
+Pint: unchanged on every touched file (each was already non-conforming;
+  deliberately not reformatted inside security/compliance changes)
+
+Regression evidence — new tests run against pre-change code:
+  deadline (10 tests):  8 fail; facade test fails with 30s used where 7s was scoped
+  PHI      (13 tests): 13 fail; incl. literal MRN surviving into returned state
+  session  (19 tests):  7 fail; incl. one handle resolving to a single shared
+                        session across two different credentials
+```
+
+Also fixed: `GateWorkflowServiceTest` extended PHPUnit's `TestCase` rather than Laravel's, so
+`config()` had no container and the single unit test guarding the R4.2 short-circuit was *erroring,
+not passing*.
+
+### NOT verified — no host access from this machine
+
+- **No `gate:eval`.** The PHI change alters what every gate stage sees. This is a plausible quality
+  regression vector and it is unmeasured. The 15-case run must be green (28/3/1, verbatim 100%)
+  before any of this is trusted.
+- **No latency measurement.** These bounds should reduce overruns; whether deep-turn p95 moves is
+  unmeasured and no SLO result is claimed. R4.8 remains queued and unrun.
+- **No S0 checkpoint.**
+
+### New outstanding items
+
+- ⛔ **`storage/app/phi/common_names.json` does not exist anywhere in the repo.** `scrubNames()`
+  early-returns, so name redaction is currently a no-op on *every* path including production
+  `/vascular-consult`, and it looks identical to "no names present". `scrub()` now returns
+  `names_dictionary_loaded` and the gate logs a warning when degraded. **This commit makes the gap
+  visible; it does not close it.** Supplying the dictionary is a data decision.
+- ⛔ **`APP_KEY` is now a deployment precondition** for `/api/v1/agent-consult`, which returns 503
+  without it. It is empty in the local `.env`. `docs/deployment_guide.md` already runs
+  `key:generate`; confirm on the Hetzner host before rolling out.
+- ⛔ Session binding is to the *credential*, the only caller identity Laravel has. While one API key
+  is shared by every OpenWebUI user they remain in a single scope, so this does not separate one end
+  user from another. That needs per-user credentials or server-minted session tokens — an auth-model
+  and adapter-contract change.
+- Existing `/agent-consult` sessions are invalidated by the new derivation. Impact expected nil: the
+  production tool is `vascular_mcp_adapter`, which calls `/vascular-consult` and never sends
+  `session_key` to Laravel.
+- The repository has **no CI**. Given unattended runs and commits landing marked UNVERIFIED, a
+  workflow running `phpunit` + `pint --test` is the cheapest way to stop this class of drift.
+
 ## 2026-07-24 — Run 4 / R4.1–R4.5: bounded retrieval latency pass and retrieval-trap reframe
 
 Implemented locally (not committed pending the required Hetzner verification):
