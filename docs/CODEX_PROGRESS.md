@@ -908,3 +908,52 @@ legacy assertion mismatches recorded in that baseline, so Milestone A introduced
 
 No production deployment, adapter database write, tool-contract flip, main-branch change, or
 force-push was performed.
+
+## 2026-07-24 — Run 3 / L1: repeatable latency harness and baseline
+
+Implemented `php artisan gate:latency`, which runs the complete three-turn AAA scenario plus the
+retrieval-trap scenario while preserving state within each scenario. It stores the answer, result
+metadata, raw `stage_trace`, and conservative nearest-rank per-stage/total p50 and p95 statistics in a
+timestamped JSON artifact. Deadline exceptions are measured and retained rather than aborting the
+remaining benchmark cases.
+
+Files:
+
+- `app/Ai/Gate/Latency/GateLatencyScorecard.php`
+- `app/Console/Commands/GateLatencyCommand.php`
+- `app/Ai/Gate/GateWorkflowService.php` (`lastTrace()` diagnostic accessor)
+- `tests/Unit/GateEval/GateLatencyScorecardTest.php`
+
+Verification in disposable Hetzner checkout `/tmp/codex-gate-v2`:
+
+```text
+GateLatencyScorecardTest: 1 passed (4 assertions)
+Pint: PASS
+
+gate:eval after L1:
+22 scenarios | 32 turns | PASS 28 | MINOR 3 | FAIL 1
+Routing 100.0% | no grade drop YES | verbatim 100.0%
+```
+
+Unchanged sequential-path baseline, normal 90-second deadline:
+
+```text
+case                                total ms  result
+AAA turn 1                            89,373  cloud timeout; no scored candidate
+AAA turn 2                            89,227  cloud timeout; no scored candidate
+AAA turn 3                            89,162  cloud timeout; no scored candidate
+retrieval trap                        91,348  workflow deadline; no scored candidate
+
+stage       calls    p50 ms    p95 ms
+TOTAL/TURN      4     89,227     91,348
+orient          4     12,257     20,006
+retrieve       12     11,325     36,201
+pathway        10      8,275     27,530
+probe/critic    0          —          —
+```
+
+Artifact: `gate-latency/runs/20260724_145417_421211.json` in the disposable checkout.
+
+Baseline conclusion: p95 is 91.3 seconds and none of the four required turns reaches Critic. Retrieval
+and pathway retries consume the deadline before Probe/Critic; the current OpenAI response latency also
+varies materially (retrieval p95 36.2 seconds). This is the measured starting point for L2.

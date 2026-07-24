@@ -28,6 +28,17 @@ final class GateWorkflowService
     ) {}
 
     /**
+     * Exposes the current run trace to diagnostic harnesses when a baseline
+     * workflow throws before it can return a normal result.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function lastTrace(): array
+    {
+        return $this->trace;
+    }
+
+    /**
      * @param  array<string, mixed>  $priorState
      * @return array<string, mixed>
      */
