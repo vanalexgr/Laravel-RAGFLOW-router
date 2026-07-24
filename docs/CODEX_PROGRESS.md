@@ -1267,3 +1267,57 @@ Artifact: gate-eval/runs/20260724_155601_274028.json
 ```
 
 L6 conclusion: correctness scorecard stayed green, but the hard latency/reroute bar remains blocked.
+
+## 2026-07-24 — Run 3 / A1: S0 AnswerAssembly foundation
+
+Implemented the first independently testable S0 increment:
+
+- `AnswerAssemblyService` consumes existing-pipeline-shaped planner, patient facts, retrieved
+  evidence, structured evidence status, and assets;
+- one schema-constrained `AnswerFillAgent` cloud call supplies section content;
+- `AnswerSkeletonRenderer` owns response-mode headings, section order, the fixed non-ESVS banner,
+  gap-taxonomy wording, evidence bullets, and verbatim asset placement;
+- modes: management, knowledge, surveillance, diagnostic, and case;
+- gap taxonomy: covered, partial principles, interaction gap, not covered, retrieval uncertain;
+- at most two returned questions;
+- `SYNTHESIS_OWNER` remains `adapter` by default. The Laravel service refuses to call the model unless
+  the per-request/process valve is explicitly `laravel`;
+- `SYNTHESIS_MODEL=cloud` resolves to `gpt-5-mini`; a local model slot exists but is not configured;
+- audited candidate snippets remain OFF and are not sent to the fill model.
+
+Files:
+
+- `app/Ai/AnswerAssembly/AnswerFillAgent.php`
+- `app/Ai/AnswerAssembly/AnswerSkeletonRenderer.php`
+- `app/Ai/AnswerAssembly/AnswerAssemblyService.php`
+- `app/Console/Commands/AnswerAssemblySmokeCommand.php`
+- `config/gate-v2.php`
+- `tests/Unit/AnswerAssembly/AnswerAssemblyServiceTest.php`
+
+Verification:
+
+```text
+AnswerAssembly tests: 6 passed (12 assertions)
+Pint: PASS
+
+answer:assemble-smoke --exercise-laravel
+owner: laravel (CLI-process override only)
+model_target: cloud
+model: gpt-5-mini
+fill_calls: 1
+output: deterministic Direct Answer + ESVS-grounded answer + Guideline Gap
+        + fixed non-ESVS Interpretation + Practical Points + Evidence Used
+
+gate:eval after A1:
+22 scenarios | 32 turns | PASS 28 | MINOR 3 | FAIL 1
+Routing 100.0% | no grade drop YES | verbatim 100.0%
+Artifact: gate-eval/runs/20260724_161528_252939.json
+```
+
+⛔ HUMAN remains unchanged: the audited snippet flag cannot be enabled until a named clinician signs
+every candidate.
+
+A1 is **started, not complete**. The service is not yet wired to the live existing planner/retrieval
+controller path, and the dedicated Laravel-synthesis 15-case + gap-taxonomy external-judge checkpoint
+does not yet exist. The adapter path remains intact and default; no production or adapter change was
+made.

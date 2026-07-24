@@ -41,6 +41,12 @@ return [
     ],
     'synthesis_owner' => env('SYNTHESIS_OWNER', 'adapter'),
     'synthesis_model' => env('SYNTHESIS_MODEL', 'cloud'),
+    'synthesis' => [
+        'provider' => env('SYNTHESIS_PROVIDER', 'openai'),
+        'cloud_model' => env('SYNTHESIS_CLOUD_MODEL', 'gpt-5-mini'),
+        'local_model' => env('SYNTHESIS_LOCAL_MODEL', ''),
+        'timeout_seconds' => (int) env('SYNTHESIS_TIMEOUT_SECONDS', 60),
+    ],
 
     'audited_snippets' => [
         // TODO(human): Enable only after every candidate has clinician sign-off and an audit record.
