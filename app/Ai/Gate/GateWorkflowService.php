@@ -16,6 +16,9 @@ final class GateWorkflowService
     /** @var array<int, array<string, mixed>> */
     private array $trace = [];
 
+    /** @var array<string, array<string, mixed>> */
+    private array $groundCache = [];
+
     private float $startedAt;
 
     private int $iteration = 0;
@@ -46,6 +49,7 @@ final class GateWorkflowService
     public function run(string $turn, array $priorState = [], ?GateProgress $progress = null): array
     {
         $this->trace = [];
+        $this->groundCache = [];
         $this->startedAt = microtime(true);
         $this->iteration = 0;
         $progress ??= new NullGateProgress;
@@ -267,11 +271,22 @@ final class GateWorkflowService
         $guidelines = array_slice((array) ($orient['candidate_guidelines'] ?? []), 0, 2);
         $query = $this->serializeRetrievalQuery($turn, (array) $orient['patient_model'], $issues);
         $this->assertWithinDeadline();
+        $results = [];
+        $pending = [];
+        foreach ($guidelines as $guideline) {
+            $cacheKey = $this->groundCacheKey($guideline, $query, (array) $orient['patient_model']);
+            if (isset($this->groundCache[$cacheKey])) {
+                $results[$guideline] = $this->groundCache[$cacheKey];
+                $this->record('ground_cache', 0, ['guideline' => $guideline, 'hit' => true]);
+            } else {
+                $pending[$guideline] = $cacheKey;
+            }
+        }
 
-        if ((string) config('gate-v2.deep_path_mode', 'parallel') === 'parallel' && count($guidelines) > 1) {
+        if ((string) config('gate-v2.deep_path_mode', 'parallel') === 'parallel' && count($pending) > 1) {
             $started = microtime(true);
             $tasks = [];
-            foreach ($guidelines as $guideline) {
+            foreach (array_keys($pending) as $guideline) {
                 $patientModel = (array) $orient['patient_model'];
                 $tasks[$guideline] = static fn (): array => app(GatePathwayWorker::class)->run(
                     $guideline,
@@ -280,12 +295,12 @@ final class GateWorkflowService
                     $turn,
                 );
             }
-            $results = Concurrency::driver((string) config('gate-v2.concurrency_driver', 'process'))
+            $completed = Concurrency::driver((string) config('gate-v2.concurrency_driver', 'process'))
                 ->run($tasks);
-            $this->record('ground_parallel', $started, ['guidelines' => $guidelines]);
+            $this->record('ground_parallel', $started, ['guidelines' => array_keys($pending)]);
+            $results = array_merge($results, $completed);
         } else {
-            $results = [];
-            foreach ($guidelines as $guideline) {
+            foreach (array_keys($pending) as $guideline) {
                 $this->assertWithinDeadline();
                 $results[$guideline] = $this->pathwayWorker->run(
                     $guideline,
@@ -295,9 +310,13 @@ final class GateWorkflowService
                 );
             }
         }
+        foreach ($pending as $guideline => $cacheKey) {
+            $this->groundCache[$cacheKey] = $results[$guideline];
+        }
         $this->assertWithinDeadline();
 
-        foreach ($results as $result) {
+        foreach ($guidelines as $guideline) {
+            $result = $results[$guideline];
             $guideline = (string) $result['guideline'];
             $queriesTried[$guideline] = (array) $result['queries_tried'];
             $snippetDigests[$guideline] = (array) $result['snippet_digests'];
@@ -314,6 +333,17 @@ final class GateWorkflowService
             'queries_tried' => $queriesTried,
             'snippet_digests' => $snippetDigests,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $patientModel
+     */
+    private function groundCacheKey(string $guideline, string $query, array $patientModel): string
+    {
+        return hash('sha256', json_encode(
+            [$guideline, $query, $patientModel],
+            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
+        ));
     }
 
     /**

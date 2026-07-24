@@ -35,10 +35,15 @@ final class GatePathwayWorker
         for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
             $queriesTried[] = $query;
             $retrievalStarted = microtime(true);
+            $topK = (int) config(
+                'gate-v2.retrieval.attempt_top_k.'.($attempt - 1),
+                $attempt === $maxAttempts ? 48 : 24,
+            );
             $retrieved = $this->retrieval->retrieve(
                 $guideline,
                 $query,
                 $attempt === $maxAttempts,
+                $topK,
             );
             $trace[] = [
                 'stage' => 'retrieve',
@@ -47,6 +52,7 @@ final class GatePathwayWorker
                     'guideline' => $guideline,
                     'attempt' => $attempt,
                     'full_pipeline' => $attempt === $maxAttempts,
+                    'top_k' => $topK,
                     'snippet_count' => $retrieved['diagnostics']['snippet_count'] ?? 0,
                     'retrieval_ms' => $retrieved['diagnostics']['duration_ms'] ?? null,
                 ],

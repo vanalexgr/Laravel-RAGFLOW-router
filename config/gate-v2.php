@@ -10,7 +10,8 @@ return [
     'deep_path_mode' => env('GATE_V2_DEEP_PATH_MODE', 'parallel'),
     'concurrency_driver' => env('GATE_V2_CONCURRENCY_DRIVER', 'process'),
     'retrieval' => [
-        'max_attempts' => (int) env('GATE_V2_RETRIEVAL_MAX_ATTEMPTS', 3),
+        'max_attempts' => (int) env('GATE_V2_RETRIEVAL_MAX_ATTEMPTS', 2),
+        'attempt_top_k' => [24, 48],
     ],
     'bounce_budgets' => [
         'orient_route' => 1,

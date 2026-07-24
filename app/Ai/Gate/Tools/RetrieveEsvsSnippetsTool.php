@@ -69,14 +69,22 @@ final class RetrieveEsvsSnippetsTool implements Tool
      *
      * @return array<string, mixed>
      */
-    public function retrieve(string $guidelineKey, string $query, bool $fullPipeline = false): array
-    {
+    public function retrieve(
+        string $guidelineKey,
+        string $query,
+        bool $fullPipeline = false,
+        ?int $topK = null,
+    ): array {
         $previous = [
             'lean' => config('ragflow.lean.enabled'),
             'planner' => config('ragflow.planner.merged_enabled'),
             'planner_shadow' => config('ragflow.planner.shadow'),
             'interpreter' => config('clinical_interpreter.enabled'),
             'graph' => config('graphrag.enabled'),
+            'top_k' => config('ragflow.retrieval.top_k'),
+            'citation_top_k' => config('ragflow.retrieval.citation_top_k'),
+            'lean_top_k' => config('ragflow.lean.top_k'),
+            'single_case_top_k' => config('ragflow.single_case.top_k'),
         ];
         config()->set('ragflow.planner.merged_enabled', false);
         config()->set('ragflow.planner.shadow', false);
@@ -84,6 +92,13 @@ final class RetrieveEsvsSnippetsTool implements Tool
         config()->set('graphrag.enabled', false);
         if ($fullPipeline) {
             config()->set('ragflow.lean.enabled', false);
+        }
+        if ($topK !== null) {
+            $topK = max(4, min(64, $topK));
+            config()->set('ragflow.retrieval.top_k', $topK);
+            config()->set('ragflow.retrieval.citation_top_k', min($topK, 16));
+            config()->set('ragflow.lean.top_k', $topK);
+            config()->set('ragflow.single_case.top_k', $topK);
         }
 
         try {
@@ -94,6 +109,10 @@ final class RetrieveEsvsSnippetsTool implements Tool
             config()->set('ragflow.planner.shadow', $previous['planner_shadow']);
             config()->set('clinical_interpreter.enabled', $previous['interpreter']);
             config()->set('graphrag.enabled', $previous['graph']);
+            config()->set('ragflow.retrieval.top_k', $previous['top_k']);
+            config()->set('ragflow.retrieval.citation_top_k', $previous['citation_top_k']);
+            config()->set('ragflow.lean.top_k', $previous['lean_top_k']);
+            config()->set('ragflow.single_case.top_k', $previous['single_case_top_k']);
         }
 
         $snippets = [];
@@ -125,6 +144,7 @@ final class RetrieveEsvsSnippetsTool implements Tool
             'query' => $query,
             'retrieval_query' => (string) ($result['retrieval_query'] ?? $query),
             'full_pipeline' => $fullPipeline,
+            'top_k' => $topK,
             'snippets' => $snippets,
             'diagnostics' => [
                 'snippet_count' => count($snippets),

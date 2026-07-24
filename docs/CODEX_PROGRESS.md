@@ -1003,3 +1003,52 @@ timed out, later turns did not inherit the completed patient state and did not e
 two-guideline branch in this run. The scheduling path is implemented and eval-safe, but its isolated
 benefit cannot be claimed from this broken-state baseline. L3 must first remove enough serial retry
 work for stateful benchmarking to complete.
+
+## 2026-07-24 — Run 3 / L3: bounded retrieval and in-turn cache
+
+Implemented:
+
+- exact per-turn branch-result cache keyed by guideline, serialized patient model, and query;
+- two retrieval attempts by default instead of three, preserving mandatory re-retrieval;
+- top-k 24 on the first lean attempt and top-k 48 on the final full-pipeline attempt;
+- restoration of every temporary RAGFlow top-k/lean setting in `finally`;
+- configurable `max_attempts`, so the prior three-attempt path remains reachable.
+
+Files:
+
+- `app/Ai/Gate/GateWorkflowService.php`
+- `app/Ai/Gate/Grounding/GatePathwayWorker.php`
+- `app/Ai/Gate/Tools/RetrieveEsvsSnippetsTool.php`
+- `config/gate-v2.php`
+- `tests/Unit/GateEval/RetrieveEsvsSnippetsToolTest.php`
+
+Verification:
+
+```text
+Focused tests: 6 passed (16 assertions)
+Pint: PASS
+
+gate:eval after L3:
+22 scenarios | 32 turns | PASS 28 | MINOR 3 | FAIL 1
+Routing 100.0% | no grade drop YES | verbatim 100.0%
+```
+
+Same-case L3 measurement:
+
+```text
+stage       calls    L2 p50/p95 ms    L3 p50/p95 ms
+TOTAL/TURN      4      89,090/89,743     89,704/89,980
+orient          4       9,792/12,774     11,250/21,649
+retrieve        6      11,438/16,164     10,615/15,981
+pathway         6       9,005/19,164      7,239/27,598
+probe           2      20,031/20,031     16,236/21,217
+critic          1               —/—     19,532/19,532
+```
+
+Artifact: `gate-latency/runs/20260724_150929_848245.json`.
+
+The retry call count fell from 12 retrieve + 12 pathway observations to six each in this run, but
+cloud variance erased the wall-time gain: p95 remained 90.0 seconds. Only retrieval-trap reached
+Critic, returning a disapproved 0.20 candidate at 89.7 seconds; no revision could run. No cache hit
+occurred because every Critic-directed retrieval query was materially different. L3 preserves quality
+but does not meet the latency bar.
