@@ -2,6 +2,8 @@
 
 return [
     'enabled' => env('GATE_V2_ENABLED', false),
+    'provider' => env('GATE_V2_PROVIDER', 'openai'),
+    'model' => env('GATE_V2_MODEL', 'gpt-5-mini'),
     'synthesis_owner' => env('SYNTHESIS_OWNER', 'adapter'),
     'synthesis_model' => env('SYNTHESIS_MODEL', 'cloud'),
 

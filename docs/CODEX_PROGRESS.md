@@ -235,3 +235,94 @@ Cleanup:
 - Preserved the unrelated `CLAUDE.md` edit that predated this run in stash
   `pre-existing CLAUDE.md edit before gate-v2 unattended run`, allowing the requested clean branch
   without committing another owner's change.
+
+## 2026-07-24 — Phase 0 / J0.2: Laravel AI dependency de-risk and cloud smoke
+
+Work was performed in disposable Hetzner checkouts. `/opt/cg/laravel/app` was read only for its
+existing environment variables; production source and data were not changed.
+
+### Dependency resolution
+
+Applied the authorized target only in `/tmp/codex-gate-v2` first:
+
+```text
+require.php:              ^8.3
+laravel/framework:        ^12.62
+config.platform.php:      8.3.0
+laravel/ai:               ^0.10.1
+```
+
+`composer require laravel/ai:^0.10.1 --dry-run --with-all-dependencies` resolved cleanly:
+
+```text
+laravel/ai                v0.10.1
+laravel/framework         v12.49.0 -> v12.64.0
+prism-php/prism           v0.92.0 (retained)
+vizra/vizra-adk           0.0.42 (retained)
+Package operations        5 installs, 50 updates, 0 removals
+```
+
+The real disposable install produced the same four key versions. `config/ai.php` was published with
+the SDK's `ai-config` tag and defaults to the `openai` cloud driver. Gate-specific defaults are
+`GATE_V2_PROVIDER=openai` and `GATE_V2_MODEL=gpt-5-mini`.
+
+Composer audit reports four advisories already present in the resolved dependency set:
+
+```text
+psy/psysh v0.12.18        CVE-2026-25129 (medium)
+symfony/yaml v7.4.1       CVE-2026-45304, CVE-2026-45305, CVE-2026-45133 (low)
+```
+
+No unrelated package upgrade was attempted silently; these should be handled as a separate
+dependency-maintenance change.
+
+Files:
+
+- `composer.json`
+- `composer.lock`
+- `config/ai.php`
+- `config/gate-v2.php`
+- `app/Ai/Gate/StructuredSmokeAgent.php`
+- `app/Console/Commands/GateAiSmokeCommand.php`
+
+### Verification
+
+The structured-output cloud fill call passed:
+
+```json
+{
+    "ok": true,
+    "provider": "openai",
+    "model": "gpt-5-mini",
+    "latency_ms": 3741,
+    "response": {
+        "status": "ready",
+        "items": ["structured", "cloud"]
+    }
+}
+```
+
+Formatting and Composer validation:
+
+```text
+Pint: 4 files PASS
+composer validate --strict --no-check-publish: valid
+```
+
+Full-suite result after the SDK install:
+
+```text
+Tests: 6 failed, 84 passed (244 assertions)
+```
+
+An independent disposable checkout of the unmodified pre-install commit produced the identical
+`6 failed, 84 passed (244 assertions)` result. The failures are therefore baseline/environment
+failures, not a Laravel AI or framework-upgrade regression:
+
+- one `ChangeDetectionServiceTest` prompt expectation;
+- two `PreRetrievalServiceTest` fallback expectations;
+- three `LeanRetrievalTest` requests where the inherited live RAG endpoint is unreachable and
+  `GuidelineRouterService` calls `successful()` on a `ConnectionException`.
+
+Phase 0 conclusion: **CLEAN / GO**. Laravel AI structured output is operational against the existing
+cloud provider, with no test-grade drop from the dependency change.
