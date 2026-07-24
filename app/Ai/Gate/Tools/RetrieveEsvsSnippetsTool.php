@@ -2,6 +2,8 @@
 
 namespace App\Ai\Gate\Tools;
 
+use App\Facades\RAGFlow as RAGFlowFacade;
+use App\Services\RAGFlow\RAGFlowClient;
 use App\Services\RetrievalService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Contracts\Tool;
@@ -112,8 +114,7 @@ final class RetrieveEsvsSnippetsTool implements Tool
             ));
             // The RAGFlow client is a singleton. Rebuild it within this scoped
             // retrieval so its Guzzle timeout reflects the gate's remaining budget.
-            app()->forgetInstance('ragflow');
-            app()->forgetInstance(\App\Services\RAGFlow\RAGFlowClient::class);
+            $this->rebuildRagflowClient();
         }
 
         try {
@@ -131,8 +132,7 @@ final class RetrieveEsvsSnippetsTool implements Tool
             config()->set('ragflow.request_timeout', $previous['request_timeout']);
             config()->set('ragflow.connect_timeout', $previous['connect_timeout']);
             if ($timeoutSeconds !== null) {
-                app()->forgetInstance('ragflow');
-                app()->forgetInstance(\App\Services\RAGFlow\RAGFlowClient::class);
+                $this->rebuildRagflowClient();
             }
         }
 
@@ -173,5 +173,21 @@ final class RetrieveEsvsSnippetsTool implements Tool
                 'duration_ms' => (int) ($result['duration_ms'] ?? 0),
             ],
         ];
+    }
+
+    /**
+     * Force the next RAGFlow resolution to build a client from current config.
+     *
+     * RetrievalService reaches RAGFlow through the facade, and a facade keeps its
+     * own static instance cache that Container::forgetInstance() does not touch.
+     * Clearing only the container leaves the previously resolved client — and its
+     * original Guzzle timeout — in place, which silently defeats the gate's
+     * per-call timeout scoping on every retrieval after the first in a process.
+     */
+    private function rebuildRagflowClient(): void
+    {
+        RAGFlowFacade::clearResolvedInstance('ragflow');
+        app()->forgetInstance('ragflow');
+        app()->forgetInstance(RAGFlowClient::class);
     }
 }

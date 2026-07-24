@@ -10,7 +10,9 @@ use App\Ai\Gate\Guard\PreOrientGuardService;
 use App\Ai\Gate\Routing\OrientRoutingPriorService;
 use App\Ai\Gate\Tools\RetrieveEsvsSnippetsTool;
 use App\Services\RetrievalService;
-use PHPUnit\Framework\TestCase;
+// Laravel's base TestCase, not PHPUnit's: the gate reads config() for its
+// retrieval thresholds, which needs a booted container.
+use Tests\TestCase;
 
 class GateWorkflowServiceTest extends TestCase
 {

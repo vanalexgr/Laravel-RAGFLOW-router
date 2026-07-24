@@ -64,8 +64,21 @@ final class GateWorkflowService
         $this->startedAt = microtime(true);
         $this->iteration = 0;
         $this->reservedRevisionSeconds = 0;
-        $progress ??= new NullGateProgress;
 
+        return $this->execute($turn, $priorState, $progress ?? new NullGateProgress);
+    }
+
+    /**
+     * The turn body, separated from run() so an escalating knowledge turn can
+     * re-enter the deep path on the *same* wall-clock budget and trace. Calling
+     * run() recursively restarted both, handing the escalated turn a second full
+     * deadline and discarding the evidence of how long the first path took.
+     *
+     * @param  array<string, mixed>  $priorState
+     * @return array<string, mixed>
+     */
+    private function execute(string $turn, array $priorState, GateProgress $progress): array
+    {
         $guard = $this->guard->evaluate($turn, $priorState !== []);
         if ($guard['blocked']) {
             $this->record('guard', 0, ['mode' => $guard['mode']]);
@@ -459,6 +472,10 @@ final class GateWorkflowService
         if ((string) config('gate-v2.deep_path_mode', 'parallel') === 'parallel' && count($pending) > 1) {
             $started = microtime(true);
             $tasks = [];
+            // Forked branches cannot read the parent's elapsed time, so bound
+            // them by the same absolute deadline the sequential path respects.
+            $deadlineAt = $this->deadlineAt();
+            $remaining = $this->remainingWallSeconds();
             foreach (array_keys($pending) as $guideline) {
                 $patientModel = (array) $orient['patient_model'];
                 $prefetched = $usePrefetch ? ($this->prefetchedGround[$guideline] ?? null) : null;
@@ -471,8 +488,9 @@ final class GateWorkflowService
                     $maxAttempts,
                     max(1, min(
                         (int) config('gate-v2.retrieval.timeout_seconds', 20),
-                        (int) config('gate-v2.deadline_seconds', 90),
+                        $remaining,
                     )),
+                    $deadlineAt,
                 );
             }
             $completed = Concurrency::driver((string) config('gate-v2.concurrency_driver', 'process'))
@@ -493,6 +511,7 @@ final class GateWorkflowService
                         (int) config('gate-v2.retrieval.timeout_seconds', 20),
                         $this->remainingWallSeconds(),
                     )),
+                    $this->deadlineAt(),
                 );
             }
         }
@@ -634,8 +653,11 @@ final class GateWorkflowService
         if (($answer['escalate'] ?? false) === true) {
             $forcedState = $priorState;
             $forcedState['_force_case'] = true;
+            $this->record('knowledge_escalated', 0, [
+                'remaining_seconds' => $this->remainingWallSeconds(),
+            ]);
 
-            return $this->run($turn, $forcedState, $progress);
+            return $this->execute($turn, $forcedState, $progress);
         }
 
         $final = $this->tail->finalize($answer + ['unknowns' => [], 'questions' => []]);
@@ -836,8 +858,16 @@ final class GateWorkflowService
 
     private function remainingWallSeconds(): int
     {
-        $deadline = max(1, (int) config('gate-v2.deadline_seconds', 90));
+        return (int) floor($this->deadlineAt() - microtime(true));
+    }
 
-        return (int) floor($deadline - (microtime(true) - $this->startedAt));
+    /**
+     * The turn's absolute wall-clock deadline as a Unix timestamp. Child calls
+     * are bounded by this instant rather than by a duration so a budget computed
+     * in the parent cannot go stale on its way into a forked worker.
+     */
+    private function deadlineAt(): float
+    {
+        return $this->startedAt + max(1, (int) config('gate-v2.deadline_seconds', 90));
     }
 }

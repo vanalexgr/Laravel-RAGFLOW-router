@@ -37,6 +37,9 @@ return [
         // this budget is deliberately below the parent 90-second wall-clock.
         'timeout_seconds' => (int) env('GATE_V2_RETRIEVAL_TIMEOUT_SECONDS', 20),
         'connect_timeout_seconds' => (int) env('GATE_V2_RETRIEVAL_CONNECT_TIMEOUT_SECONDS', 3),
+        // Below this much remaining wall-clock a further retrieval attempt cannot
+        // finish and be assessed, so the branch returns what it already has.
+        'minimum_attempt_seconds' => (int) env('GATE_V2_RETRIEVAL_MINIMUM_ATTEMPT_SECONDS', 8),
         // A relevant first pass with enough strong evidence is not re-run merely
         // because the assessor prefers a different wording of the same query.
         'sufficient_snippet_count' => (int) env('GATE_V2_RETRIEVAL_SUFFICIENT_SNIPPETS', 4),

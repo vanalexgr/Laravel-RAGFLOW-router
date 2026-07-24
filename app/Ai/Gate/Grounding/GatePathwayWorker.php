@@ -16,6 +16,11 @@ final class GatePathwayWorker
      * Execute one guideline branch. Inputs and output remain serializable so
      * Laravel's process driver can run up to two branches concurrently.
      *
+     * $deadlineAt is the parent's absolute wall-clock deadline as a Unix
+     * timestamp. It is passed as an absolute instant rather than a duration so
+     * it survives serialization into a forked worker, where "seconds remaining"
+     * measured at dispatch would already be stale.
+     *
      * @param  array<string, mixed>  $patientModel
      * @return array<string, mixed>
      */
@@ -27,6 +32,7 @@ final class GatePathwayWorker
         ?array $prefetched = null,
         ?int $maxAttemptsOverride = null,
         ?int $timeoutSeconds = null,
+        ?float $deadlineAt = null,
     ): array {
         $query = $initialQuery;
         $queriesTried = [];
@@ -40,12 +46,30 @@ final class GatePathwayWorker
         $topKCaps = array_values((array) config('gate-v2.retrieval.attempt_top_k', [12, 24]));
 
         for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+            // A retry is only worth starting if the parent deadline can still
+            // cover a retrieval plus its assessment; otherwise this branch would
+            // outlive the wall-clock it was dispatched under.
+            $usingPrefetch = $attempt === 1 && $prefetched !== null;
+            if (! $usingPrefetch && ! $this->canStartAttempt($deadlineAt)) {
+                $trace[] = [
+                    'stage' => 'retrieve_skipped',
+                    'duration_ms' => 0,
+                    'detail' => [
+                        'guideline' => $guideline,
+                        'attempt' => $attempt,
+                        'reason' => 'parent_deadline_exhausted',
+                        'remaining_seconds' => $this->remainingSeconds($deadlineAt),
+                    ],
+                ];
+                break;
+            }
+
             $queriesTried[] = $query;
             $topKIndex = $attempt === $maxAttempts
                 ? count($topKCaps) - 1
                 : min($attempt - 1, count($topKCaps) - 1);
             $topK = (int) ($topKCaps[$topKIndex] ?? 24);
-            if ($attempt === 1 && $prefetched !== null) {
+            if ($usingPrefetch) {
                 $retrieved = (array) $prefetched['retrieved'];
                 $retrievalDuration = (int) ($prefetched['duration_ms'] ?? 0);
             } else {
@@ -55,7 +79,10 @@ final class GatePathwayWorker
                     $query,
                     $attempt === $maxAttempts,
                     $topK,
-                    $timeoutSeconds ?? (int) config('gate-v2.retrieval.timeout_seconds', 20),
+                    $this->clampToDeadline(
+                        $timeoutSeconds ?? (int) config('gate-v2.retrieval.timeout_seconds', 20),
+                        $deadlineAt,
+                    ),
                 );
                 $retrievalDuration = (int) round((microtime(true) - $retrievalStarted) * 1000);
             }
@@ -87,7 +114,10 @@ final class GatePathwayWorker
                 ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
                 provider: (string) config('gate-v2.provider'),
                 model: (string) config('gate-v2.stage_models.pathway', config('gate-v2.model')),
-                timeout: max(1, min(60, (int) config('gate-v2.stage_timeouts.pathway', 12))),
+                timeout: $this->clampToDeadline(
+                    min(60, (int) config('gate-v2.stage_timeouts.pathway', 30)),
+                    $deadlineAt,
+                ),
             );
             $assessment = $response->toArray();
             if ($assessment === []) {
@@ -129,6 +159,38 @@ final class GatePathwayWorker
             'snippet_digests' => $snippetDigests,
             'trace' => $trace,
         ];
+    }
+
+    /**
+     * Seconds left on the parent deadline, or null when the caller imposed none.
+     */
+    private function remainingSeconds(?float $deadlineAt): ?int
+    {
+        return $deadlineAt === null ? null : (int) floor($deadlineAt - microtime(true));
+    }
+
+    /**
+     * Bound a stage timeout by the parent's remaining wall-clock. Always returns
+     * at least 1 so an exhausted budget surfaces as a fast child timeout rather
+     * than a zero/negative timeout that some HTTP clients read as "no limit".
+     */
+    private function clampToDeadline(int $seconds, ?float $deadlineAt): int
+    {
+        $remaining = $this->remainingSeconds($deadlineAt);
+
+        return max(1, $remaining === null ? $seconds : min($seconds, $remaining));
+    }
+
+    /**
+     * A fresh attempt needs room for a retrieval and the assessment that reads
+     * it. Starting one with less is how a branch overran the parent deadline.
+     */
+    private function canStartAttempt(?float $deadlineAt): bool
+    {
+        $remaining = $this->remainingSeconds($deadlineAt);
+
+        return $remaining === null
+            || $remaining >= max(1, (int) config('gate-v2.retrieval.minimum_attempt_seconds', 8));
     }
 
     /** @param array<string, mixed> $retrieved */
