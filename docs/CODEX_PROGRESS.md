@@ -1372,3 +1372,75 @@ YAML `v7.4.14`, and `nikic/php-parser v5.8.0` (three updates, no installs/remova
 no upgrade was applied: this needs a separate dependency-maintenance change with full suite/eval,
 cloud structured smoke, and explicit Prism/Vizra coexistence verification. `composer.json` and
 `composer.lock` are unchanged.
+
+## 2026-07-24 — Run 3 final summary
+
+### Latency before/after
+
+Every intermediate L1–L5 change has its own same-case per-stage p50/p95 table above. The consolidated
+bookends are:
+
+| Stage | L1 baseline p50 / p95 | Final L5 p50 / p95 |
+|---|---:|---:|
+| Total deep turn | 89,227 / 91,348 ms | 56,563 / 108,465 ms |
+| Orient | 12,257 / 20,006 ms | 6,308 / 17,684 ms |
+| Retrieval | 11,325 / 36,201 ms | 10,009 / 13,169 ms |
+| Pathway | 8,275 / 27,530 ms | 3,885 / 5,493 ms |
+| Probe | no baseline completion | 6,431 / 9,502 ms |
+| Critic | no baseline completion | 3,853 / 6,118 ms |
+
+This is not a claimed p95 improvement: the baseline timed out before scoring any candidate, whereas
+the final run returned a Critic-scored candidate on all four target turns and exposed a 108.5-second
+blocking-call tail. The final optimized remaining-adversarial replay was p50 70,403 ms / p95 89,667
+ms. Retrieval improved materially at the stage level, but provider/service tails still prevent a
+deep-turn p95 at or below 60 seconds.
+
+### Final scorecard
+
+```text
+PHP suite: 123 passed (324 assertions)
+Composer validate: valid
+Composer audit: 4 documented advisories in 2 locked packages (expected non-zero)
+Prism/Vizra: prism-php/prism v0.92.0 + vizra/vizra-adk 0.0.42 co-installed
+
+gate:eval:
+22 scenarios | 32 turns | PASS 28 | MINOR 3 | FAIL 1
+Routing 100.0% | no grade drop YES | verbatim 100.0%
+Artifact: gate-eval/runs/20260724_161756_964004.json
+
+gate:routing-proof --scenarios: 32/32 (100.0%)
+```
+
+### Done
+
+- L1 repeatable latency harness and baseline;
+- L2 configurable parallel deep pathway with sequential path retained;
+- L3 bounded/cached retrieval with full-pipeline path retained;
+- L4 best-scored-candidate ledger and safe no-score failure;
+- L5 measured model/token/deadline tuning;
+- L6 full AAA, retrieval-trap, and adversarial transcript/trace artifacts;
+- A1 safe S0 AnswerAssembly foundation behind the default-adapter valve;
+- A2 all three legacy failures investigated and corrected without production changes;
+- A3 all Composer advisories documented without upgrading dependencies.
+
+### Blocked / incomplete
+
+- **HARD ACCEPTANCE BAR NOT MET:** target-run deep-turn p95 is 108.5 seconds, not ≤60 seconds.
+- AAA Turn 1 completed a full approved critique + Ground revision + re-critique in 49.5 seconds, but
+  this was not sustained across all AAA turns and retrieval-trap.
+- The retrieval-trap corrected Orient reroute scored worse than the initial candidate and therefore
+  did not win. The ledger correctly refused to promote it.
+- A blocking retrieval/cloud call can outlive the parent deadline; PHP cannot guarantee a completed
+  revision while that boundary is not cancellable.
+- A1 is a tested foundation only. It is not wired into the live answer controller, and its dedicated
+  15-case/gap-taxonomy external-judge checkpoint remains outstanding.
+- ⛔ HUMAN: audited snippet candidates remain OFF pending named clinician sign-off.
+
+### Recommended next run
+
+Treat the retrieval boundary as the first dependency: add an actually cancellable timeout around
+retrieval/cloud HTTP work, profile the retrieval service internally (DB/vector/reranker/model
+components), and decide whether a bounded prefetch or provider-side retrieval replacement can remove
+the remaining tail without changing evidence. Re-run the same four-turn latency harness and binding
+eval after each change. Only once p95 and retrieval-trap pass should the next run finish wiring S0 and
+execute the Laravel-synthesis 15-case external-judge checkpoint.
