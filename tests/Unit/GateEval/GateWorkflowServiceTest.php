@@ -68,6 +68,42 @@ class GateWorkflowServiceTest extends TestCase
         ));
     }
 
+    public function test_critic_snippet_digest_is_bounded_without_changing_source_metadata(): void
+    {
+        $method = new \ReflectionMethod(GateWorkflowService::class, 'compactSnippetDigests');
+        $snippets = array_fill(0, 8, [
+            'text' => str_repeat('x', 1500),
+            'source' => 'AAA',
+            'similarity' => 0.9,
+        ]);
+
+        $result = $method->invoke($this->workflow(), ['aaa' => $snippets]);
+
+        $this->assertCount(6, $result['aaa']);
+        $this->assertSame(1200, mb_strlen($result['aaa'][0]['text']));
+        $this->assertSame('AAA', $result['aaa'][0]['source']);
+    }
+
+    public function test_partial_orient_output_is_rejected_before_state_is_used(): void
+    {
+        $method = new \ReflectionMethod(GateWorkflowService::class, 'finalizeOrient');
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('missing required field: patient_model');
+        $method->invoke($this->workflow(), [], [], [], 'case', []);
+    }
+
+    public function test_response_mode_fallback_is_general_and_deterministic(): void
+    {
+        $method = new \ReflectionMethod(GateWorkflowService::class, 'fallbackResponseMode');
+        $workflow = $this->workflow();
+
+        $this->assertSame('surveillance', $method->invoke($workflow, 'What surveillance is needed?'));
+        $this->assertSame('diagnostic', $method->invoke($workflow, 'Which imaging workup?'));
+        $this->assertSame('management', $method->invoke($workflow, 'How should this be treated?'));
+        $this->assertSame('case', $method->invoke($workflow, 'Here are the patient details.'));
+    }
+
     private function workflow(): GateWorkflowService
     {
         $retrieval = new class extends RetrievalService

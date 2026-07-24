@@ -1103,3 +1103,94 @@ turns failed before Critic because the existing stage calls could not finish the
 inside the 55-second pre-revision budget. Retrieval-trap overran to 68.4 seconds while a blocking
 worker call returned, then failed at the parent deadline assertion. The return-selection bug is fixed
 and unit-covered; the revision guarantee remains blocked on L5 making the initial path fit its budget.
+
+## 2026-07-24 — Run 3 / L5: stage models, prompt budgets, and overlap
+
+Implemented and measured these general latency changes:
+
+- stage-specific cloud models: `gpt-4.1-mini` for Orient/Pathway and full `gpt-4.1` for
+  Probe/Critic; all remain configurable, and the default gate model is unchanged;
+- provider options now send `reasoning.effort` only to GPT-5 models that accept it;
+- right-sized structured-output caps, with failed 1,200/1,400/1,600-token experiments rejected and
+  restored to schema-safe values;
+- bounded Probe/Critic snippet digests (six snippets, 1,200 characters each) while preserving source
+  and similarity metadata;
+- overlap of deterministic first retrieval with Orient through Laravel process concurrency;
+- critique-directed grounding uses one targeted full-pipeline attempt, while initial grounding keeps
+  mandatory lean + full re-retrieval;
+- lower retrieval caps (top-k 12 then 24);
+- deterministic `response_mode` fallback only when the model omits that non-clinical presentation
+  field, plus explicit rejection of missing clinical Orient fields;
+- minimum revision budget checks and two allowed Orient corrections;
+- latency artifacts now retain full Critic, routes, queries, and iteration metadata.
+
+Files:
+
+- `app/Ai/Gate/{OrientAgent,PathwayAgent,ProbeAgent,CriticAgent}.php`
+- `app/Ai/Gate/Concerns/GateModelOptions.php`
+- `app/Ai/Gate/GateWorkflowService.php`
+- `app/Ai/Gate/Grounding/GatePathwayWorker.php`
+- `app/Console/Commands/GateLatencyCommand.php`
+- `config/gate-v2.php`
+- `tests/Unit/GateEval/{GateModelOptions,GateWorkflowService}Test.php`
+
+Verification after the final L5 configuration:
+
+```text
+Focused tests: 13 passed (30 assertions)
+Pint: PASS
+
+gate:eval:
+22 scenarios | 32 turns | PASS 28 | MINOR 3 | FAIL 1
+Routing 100.0% | no grade drop YES | verbatim 100.0%
+Artifact: gate-eval/runs/20260724_155601_274028.json
+```
+
+Final same-case benchmark with every turn returning a scored candidate:
+
+```text
+case                         total ms  final score  approved  revision result
+AAA turn 1                     49,480       1.00      yes     Ground revision won
+AAA turn 2                     74,679       0.89      no      Orient revision won score, not approval
+AAA turn 3                    108,465       0.70      no      revision cloud call overran deadline
+retrieval trap                 56,563       0.65      no      corrected reroute lost to initial
+
+stage                     calls    p50 ms    p95 ms
+TOTAL/TURN                    4     56,563    108,465
+orient                        7      6,308     17,684
+orient_retrieval_parallel     4      9,579     13,368
+retrieve                     11     10,009     13,169
+pathway                      11      3,885      5,493
+probe                         7      6,431      9,502
+critic                        7      3,853      6,118
+```
+
+Artifact: `gate-latency/runs/20260724_155536_010397.json`.
+
+A focused retrieval-trap run with all three iterations completed in 60,330 ms:
+
+```text
+initial candidate:         score 0.90, revise probe
+Probe-only revision:       score 0.85, revise orient_route
+corrected Orient reroute:  score 0.50, revise orient_route
+winner:                    initial scored candidate (correct ledger behavior)
+```
+
+Artifact: `gate-latency/runs/20260724_155701_815404.json`.
+
+### L5 conclusion — HARD BAR BLOCKED
+
+The run achieved a full critique + Ground revision + re-critique that **won and was approved** on AAA
+Turn 1 in 49.5 seconds. It did not achieve deep-turn p95 ≤60 seconds: the best complete four-turn
+scorecard has p95 108.5 seconds. The dominant uncontrollable tail is live retrieval (individual calls
+varied from 2.5 to 32.7 seconds), followed by occasional 15–30-second cloud generation tails. A
+blocking child can still return after the parent deadline; the ledger then safely returns the prior
+scored candidate, but wall time can exceed 90 seconds.
+
+The retrieval-trap corrected reroute did **not** win. The current deterministic first-patient
+constraint already starts the trap as `case_new`; when Critic later requested an Orient reroute, its
+score worsened, so making it win would require overriding the evaluator or case-specific behavior.
+Neither is acceptable. This is recorded as a literal acceptance failure, not hidden as a pass.
+
+All performance configurations retained the binding 28/3/1 eval scorecard. The hard bar cannot be
+claimed from this environment/provider combination.

@@ -19,7 +19,7 @@ use Laravel\Ai\Promptable;
  * snippets, which prevents stale facts in raw history from leaking back in.
  */
 #[UseCheapestModel]
-#[MaxTokens(2200)]
+#[MaxTokens(2600)]
 final class OrientAgent implements Agent, HasProviderOptions, HasStructuredOutput
 {
     use GateModelOptions;

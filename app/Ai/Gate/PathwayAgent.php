@@ -17,7 +17,7 @@ use Laravel\Ai\Promptable;
  * invokes retrieval itself and therefore cannot hide attempts or omit merged
  * patient facts from a query.
  */
-#[MaxTokens(2600)]
+#[MaxTokens(2000)]
 final class PathwayAgent implements Agent, HasProviderOptions, HasStructuredOutput
 {
     use GateModelOptions;

@@ -27,7 +27,7 @@ use Laravel\Ai\Promptable;
  *
  * Capable model (NOT #[UseCheapestModel]) — a weak critic approves bad output.
  */
-#[MaxTokens(4000)]
+#[MaxTokens(1600)]
 final class CriticAgent implements Agent, HasProviderOptions, HasStructuredOutput
 {
     use GateModelOptions;

@@ -8,6 +8,7 @@ use App\Ai\Gate\Guard\PreOrientGuardService;
 use App\Ai\Gate\Progress\GateProgress;
 use App\Ai\Gate\Progress\NullGateProgress;
 use App\Ai\Gate\Routing\OrientRoutingPriorService;
+use App\Ai\Gate\Tools\RetrieveEsvsSnippetsTool;
 use Illuminate\Support\Facades\Concurrency;
 use RuntimeException;
 use Throwable;
@@ -19,6 +20,11 @@ final class GateWorkflowService
 
     /** @var array<string, array<string, mixed>> */
     private array $groundCache = [];
+
+    /** @var array<string, array<string, mixed>> */
+    private array $prefetchedGround = [];
+
+    private ?string $prefetchedQuery = null;
 
     private float $startedAt;
 
@@ -53,6 +59,8 @@ final class GateWorkflowService
     {
         $this->trace = [];
         $this->groundCache = [];
+        $this->prefetchedGround = [];
+        $this->prefetchedQuery = null;
         $this->startedAt = microtime(true);
         $this->iteration = 0;
         $this->reservedRevisionSeconds = 0;
@@ -72,7 +80,7 @@ final class GateWorkflowService
         }
 
         $progress->emit('orient', '🧭 Framing and routing the case…');
-        $orient = $this->orient($turn, $priorState, []);
+        $orient = $this->orientWithPrefetch($turn, $priorState);
         if ($priorState === []) {
             $orient['same_case'] = null;
         }
@@ -137,6 +145,16 @@ final class GateWorkflowService
             $seenBounceFingerprints[$fingerprint] = true;
             $budgets[$stage]--;
             $issues = (array) ($lastCritic['issues'] ?? []);
+            $minimumRevisionSeconds = (int) config("gate-v2.minimum_revision_seconds.{$stage}", 15);
+            if ($this->remainingWallSeconds() < $minimumRevisionSeconds) {
+                $this->record('decide', 0, [
+                    'reason' => 'insufficient_revision_budget',
+                    'stage' => $stage,
+                    'remaining_seconds' => $this->remainingWallSeconds(),
+                    'required_seconds' => $minimumRevisionSeconds,
+                ]);
+                break;
+            }
 
             $progress->emit('revise', '✍️ Refining the earliest failing stage…', [
                 'iteration' => $this->iteration,
@@ -234,19 +252,154 @@ final class GateWorkflowService
     private function orient(string $turn, array $priorState, array $issues): array
     {
         $started = microtime(true);
+        $context = $this->orientContext($turn, $priorState, $issues);
+        $response = $this->prompt(new OrientAgent, $context['payload']);
+        $response = $this->finalizeOrient(
+            $response,
+            $context['signals'],
+            $context['deterministic_candidates'],
+            $turn,
+            $priorState,
+        );
+        $this->record('orient', $started, [
+            'mode' => $response['mode'] ?? null,
+            'guidelines' => $response['candidate_guidelines'],
+        ]);
+
+        return $response;
+    }
+
+    /**
+     * @param  array<string, mixed>  $priorState
+     * @return array<string, mixed>
+     */
+    private function orientWithPrefetch(string $turn, array $priorState): array
+    {
+        $context = $this->orientContext($turn, $priorState, []);
+        $candidates = $context['deterministic_candidates'];
+        if (
+            (string) config('gate-v2.deep_path_mode', 'parallel') !== 'parallel'
+            || $candidates === []
+            || ($context['signals']['raw_knowledge'] ?? false)
+        ) {
+            return $this->orient($turn, $priorState, []);
+        }
+
+        $payload = $context['payload'];
+        $query = $this->serializeRetrievalQuery(
+            $turn,
+            (array) ($priorState['patient_model'] ?? []),
+            [],
+        );
+        $tasks = [
+            'orient' => static function () use ($payload): array {
+                $started = microtime(true);
+                $response = (new OrientAgent)->prompt(
+                    json_encode(
+                        $payload,
+                        JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
+                    ),
+                    provider: (string) config('gate-v2.provider'),
+                    model: (string) config('gate-v2.stage_models.orient', config('gate-v2.model')),
+                    timeout: max(1, min(60, (int) config('gate-v2.stage_timeouts.orient', 15))),
+                )->toArray();
+
+                return [
+                    'response' => $response,
+                    'duration_ms' => (int) round((microtime(true) - $started) * 1000),
+                ];
+            },
+        ];
+        foreach ($candidates as $guideline) {
+            $tasks['retrieve:'.$guideline] = static function () use ($guideline, $query): array {
+                $started = microtime(true);
+                $retrieved = app(RetrieveEsvsSnippetsTool::class)->retrieve(
+                    $guideline,
+                    $query,
+                    false,
+                    (int) config('gate-v2.retrieval.attempt_top_k.0', 24),
+                );
+
+                return [
+                    'retrieved' => $retrieved,
+                    'duration_ms' => (int) round((microtime(true) - $started) * 1000),
+                ];
+            };
+        }
+
+        $started = microtime(true);
+        $results = Concurrency::driver((string) config('gate-v2.concurrency_driver', 'process'))
+            ->run($tasks);
+        $this->record('orient_retrieval_parallel', $started, ['guidelines' => $candidates]);
+        $this->recordExternal([
+            'stage' => 'orient',
+            'duration_ms' => $results['orient']['duration_ms'],
+            'detail' => ['prefetched_retrieval' => true],
+        ]);
+        foreach ($candidates as $guideline) {
+            $this->prefetchedGround[$guideline] = $results['retrieve:'.$guideline];
+        }
+        $this->prefetchedQuery = $query;
+
+        return $this->finalizeOrient(
+            (array) $results['orient']['response'],
+            $context['signals'],
+            $candidates,
+            $turn,
+            $priorState,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $priorState
+     * @param  array<int, array<string, mixed>>  $issues
+     * @return array{signals: array<string, bool>, deterministic_candidates: array<int, string>, payload: array<string, mixed>}
+     */
+    private function orientContext(string $turn, array $priorState, array $issues): array
+    {
         $signals = $this->routing->turnSignals($turn);
         $deterministicCandidates = $this->routing->candidates(
             json_encode([$priorState['patient_model'] ?? [], $turn]) ?: $turn,
         );
-        $response = $this->prompt(new OrientAgent, [
-            'current_turn' => $turn,
-            'turn_index' => (int) ($priorState['turn_index'] ?? 0) + 1,
-            'prior_state' => $priorState,
-            'turn_signals' => $signals,
-            'deterministic_candidate_priors' => $deterministicCandidates,
-            'guideline_reference' => OrientRoutingPriorService::GUIDELINE_REFERENCE,
-            'critic_issues' => $issues,
-        ]);
+
+        return [
+            'signals' => $signals,
+            'deterministic_candidates' => $deterministicCandidates,
+            'payload' => [
+                'current_turn' => $turn,
+                'turn_index' => (int) ($priorState['turn_index'] ?? 0) + 1,
+                'prior_state' => $priorState,
+                'turn_signals' => $signals,
+                'deterministic_candidate_priors' => $deterministicCandidates,
+                'guideline_reference' => OrientRoutingPriorService::GUIDELINE_REFERENCE,
+                'critic_issues' => $issues,
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @param  array<string, bool>  $signals
+     * @param  array<int, string>  $deterministicCandidates
+     * @param  array<string, mixed>  $priorState
+     * @return array<string, mixed>
+     */
+    private function finalizeOrient(
+        array $response,
+        array $signals,
+        array $deterministicCandidates,
+        string $turn,
+        array $priorState,
+    ): array {
+        foreach (['patient_model', 'open_questions', 'provenance', 'changed_fields'] as $required) {
+            if (! array_key_exists($required, $response)) {
+                throw new RuntimeException("OrientAgent response is missing required field: {$required}.");
+            }
+        }
+        if (! isset($response['response_mode'])) {
+            $response['response_mode'] = $this->fallbackResponseMode($turn);
+            $this->record('orient_fallback', 0, ['field' => 'response_mode']);
+        }
         $response['mode'] = $this->constrainMode(
             (string) ($response['mode'] ?? 'case_new'),
             $signals,
@@ -257,12 +410,18 @@ final class GateWorkflowService
             $deterministicCandidates,
             (array) ($response['candidate_guidelines'] ?? []),
         );
-        $this->record('orient', $started, [
-            'mode' => $response['mode'] ?? null,
-            'guidelines' => $response['candidate_guidelines'],
-        ]);
 
         return $response;
+    }
+
+    private function fallbackResponseMode(string $turn): string
+    {
+        return match (true) {
+            preg_match('/\b(?:surveillance|follow[- ]?up|monitor(?:ing)?)\b/iu', $turn) === 1 => 'surveillance',
+            preg_match('/\b(?:diagnos|workup|investigat|imaging|criteria)\b/iu', $turn) === 1 => 'diagnostic',
+            preg_match('/\b(?:manage|management|treat(?:ed|ment|ing)?|therapy|intervention|operate)\b/iu', $turn) === 1 => 'management',
+            default => 'case',
+        };
     }
 
     /**
@@ -276,7 +435,13 @@ final class GateWorkflowService
         $queriesTried = [];
         $snippetDigests = [];
         $guidelines = array_slice((array) ($orient['candidate_guidelines'] ?? []), 0, 2);
-        $query = $this->serializeRetrievalQuery($turn, (array) $orient['patient_model'], $issues);
+        $usePrefetch = $this->iteration === 0 && $issues === [] && $this->prefetchedQuery !== null;
+        $maxAttempts = $issues === []
+            ? null
+            : max(1, (int) config('gate-v2.retrieval.revision_max_attempts', 1));
+        $query = $usePrefetch
+            ? $this->prefetchedQuery
+            : $this->serializeRetrievalQuery($turn, (array) $orient['patient_model'], $issues);
         $this->assertWithinDeadline();
         $results = [];
         $pending = [];
@@ -295,11 +460,14 @@ final class GateWorkflowService
             $tasks = [];
             foreach (array_keys($pending) as $guideline) {
                 $patientModel = (array) $orient['patient_model'];
+                $prefetched = $usePrefetch ? ($this->prefetchedGround[$guideline] ?? null) : null;
                 $tasks[$guideline] = static fn (): array => app(GatePathwayWorker::class)->run(
                     $guideline,
                     $query,
                     $patientModel,
                     $turn,
+                    $prefetched,
+                    $maxAttempts,
                 );
             }
             $completed = Concurrency::driver((string) config('gate-v2.concurrency_driver', 'process'))
@@ -314,9 +482,13 @@ final class GateWorkflowService
                     $query,
                     (array) $orient['patient_model'],
                     $turn,
+                    $usePrefetch ? ($this->prefetchedGround[$guideline] ?? null) : null,
+                    $maxAttempts,
                 );
             }
         }
+        $this->prefetchedGround = [];
+        $this->prefetchedQuery = null;
         foreach ($pending as $guideline => $cacheKey) {
             $this->groundCache[$cacheKey] = $results[$guideline];
         }
@@ -376,7 +548,7 @@ final class GateWorkflowService
             'response_mode' => $orient['response_mode'],
             'house_sections' => ['ESVS-grounded answer', 'Interpretation'],
             'pathways' => $ground['pathways'],
-            'source_snippets' => $ground['snippet_digests'],
+            'source_snippets' => $this->compactSnippetDigests($ground['snippet_digests']),
             'evidence_status' => $evidenceStatus,
             'open_questions' => $orient['open_questions'],
             'prior_assumptions' => $priorState['assumptions'] ?? [],
@@ -402,9 +574,17 @@ final class GateWorkflowService
             'current_question' => $turn,
             'prior_patient_model' => $priorState['patient_model'] ?? null,
             'open_questions' => $candidate['orient']['open_questions'],
-            'orient' => $candidate['orient'],
+            'orient' => [
+                'mode' => $candidate['orient']['mode'],
+                'same_case' => $candidate['orient']['same_case'],
+                'patient_model' => $candidate['orient']['patient_model'],
+                'changed_fields' => $candidate['orient']['changed_fields'],
+                'candidate_guidelines' => $candidate['orient']['candidate_guidelines'],
+            ],
             'pathways' => $candidate['ground']['pathways'],
-            'source_snippet_digests' => $candidate['ground']['snippet_digests'],
+            'source_snippet_digests' => $this->compactSnippetDigests(
+                $candidate['ground']['snippet_digests'],
+            ),
             'probe' => $candidate['probe'],
         ]);
         $this->record('critic', $started, [
@@ -542,11 +722,21 @@ final class GateWorkflowService
     private function prompt(object $agent, array $payload): array
     {
         $this->assertWithinDeadline();
+        $stage = match ($agent::class) {
+            OrientAgent::class => 'orient',
+            ProbeAgent::class => 'probe',
+            CriticAgent::class => 'critic',
+            KnowledgeAnswerAgent::class => 'knowledge',
+            default => 'default',
+        };
         $response = $agent->prompt(
             json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
             provider: (string) config('gate-v2.provider'),
-            model: (string) config('gate-v2.model'),
-            timeout: max(1, min(60, $this->remainingSeconds())),
+            model: (string) config("gate-v2.stage_models.{$stage}", config('gate-v2.model')),
+            timeout: max(1, min(
+                (int) config("gate-v2.stage_timeouts.{$stage}", 15),
+                $this->remainingSeconds(),
+            )),
         );
 
         $structured = $response->toArray();
@@ -555,6 +745,26 @@ final class GateWorkflowService
         }
 
         return $structured;
+    }
+
+    /**
+     * @param  array<string, array<int, array<string, mixed>>>  $digests
+     * @return array<string, array<int, array<string, mixed>>>
+     */
+    private function compactSnippetDigests(array $digests): array
+    {
+        foreach ($digests as $guideline => $snippets) {
+            $digests[$guideline] = array_map(
+                static function (array $snippet): array {
+                    $snippet['text'] = mb_substr((string) ($snippet['text'] ?? ''), 0, 1200);
+
+                    return $snippet;
+                },
+                array_slice($snippets, 0, 6),
+            );
+        }
+
+        return $digests;
     }
 
     /**
@@ -613,5 +823,12 @@ final class GateWorkflowService
             - $this->reservedRevisionSeconds
             - (microtime(true) - $this->startedAt),
         );
+    }
+
+    private function remainingWallSeconds(): int
+    {
+        $deadline = max(1, (int) config('gate-v2.deadline_seconds', 90));
+
+        return (int) floor($deadline - (microtime(true) - $this->startedAt));
     }
 }

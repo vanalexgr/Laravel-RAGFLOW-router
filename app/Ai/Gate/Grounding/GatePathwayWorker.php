@@ -24,30 +24,42 @@ final class GatePathwayWorker
         string $initialQuery,
         array $patientModel,
         string $turn,
+        ?array $prefetched = null,
+        ?int $maxAttemptsOverride = null,
     ): array {
         $query = $initialQuery;
         $queriesTried = [];
         $assessment = null;
         $snippetDigests = [];
         $trace = [];
-        $maxAttempts = max(1, min(3, (int) config('gate-v2.retrieval.max_attempts', 3)));
+        $maxAttempts = max(1, min(
+            3,
+            $maxAttemptsOverride ?? (int) config('gate-v2.retrieval.max_attempts', 3),
+        ));
+        $topKCaps = array_values((array) config('gate-v2.retrieval.attempt_top_k', [12, 24]));
 
         for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
             $queriesTried[] = $query;
-            $retrievalStarted = microtime(true);
-            $topK = (int) config(
-                'gate-v2.retrieval.attempt_top_k.'.($attempt - 1),
-                $attempt === $maxAttempts ? 48 : 24,
-            );
-            $retrieved = $this->retrieval->retrieve(
-                $guideline,
-                $query,
-                $attempt === $maxAttempts,
-                $topK,
-            );
+            $topKIndex = $attempt === $maxAttempts
+                ? count($topKCaps) - 1
+                : min($attempt - 1, count($topKCaps) - 1);
+            $topK = (int) ($topKCaps[$topKIndex] ?? 24);
+            if ($attempt === 1 && $prefetched !== null) {
+                $retrieved = (array) $prefetched['retrieved'];
+                $retrievalDuration = (int) ($prefetched['duration_ms'] ?? 0);
+            } else {
+                $retrievalStarted = microtime(true);
+                $retrieved = $this->retrieval->retrieve(
+                    $guideline,
+                    $query,
+                    $attempt === $maxAttempts,
+                    $topK,
+                );
+                $retrievalDuration = (int) round((microtime(true) - $retrievalStarted) * 1000);
+            }
             $trace[] = [
                 'stage' => 'retrieve',
-                'duration_ms' => (int) round((microtime(true) - $retrievalStarted) * 1000),
+                'duration_ms' => $retrievalDuration,
                 'detail' => [
                     'guideline' => $guideline,
                     'attempt' => $attempt,
@@ -55,6 +67,7 @@ final class GatePathwayWorker
                     'top_k' => $topK,
                     'snippet_count' => $retrieved['diagnostics']['snippet_count'] ?? 0,
                     'retrieval_ms' => $retrieved['diagnostics']['duration_ms'] ?? null,
+                    'prefetched' => $attempt === 1 && $prefetched !== null,
                 ],
             ];
             $snippetDigests = array_slice((array) $retrieved['snippets'], 0, 10);
@@ -71,8 +84,8 @@ final class GatePathwayWorker
                     'retrieval_diagnostics' => $retrieved['diagnostics'],
                 ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
                 provider: (string) config('gate-v2.provider'),
-                model: (string) config('gate-v2.model'),
-                timeout: max(1, min(60, (int) config('gate-v2.stage_timeout_seconds', 30))),
+                model: (string) config('gate-v2.stage_models.pathway', config('gate-v2.model')),
+                timeout: max(1, min(60, (int) config('gate-v2.stage_timeouts.pathway', 12))),
             );
             $assessment = $response->toArray();
             if ($assessment === []) {
