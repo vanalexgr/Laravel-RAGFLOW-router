@@ -14,6 +14,12 @@ Branch: **`claude/prototyping-summary-d597c2`** (also on origin). Pull it and re
   `docs/CODEX_PROGRESS.md`. Roadmap: `docs/AGENTIC_GATE_V2_TIMELINE.md`. Spec: `docs/AGENTIC_GATE_V2_PLAN.md`.
 - **Open blocker:** deep-turn latency p95 ≈ 108s — **retrieval-infrastructure-bound** (RAGFlow on the
   CPU box), not gate design. The 60s SLO is deferred to production/ISI hardware.
+- **⭐ Strongest untested lead (R4.8):** the latency is likely dominated by **reranking inside the
+  RAGFlow call** — the default `RAGFLOW_RERANK_ID=Cohere-rerank-v4.0-pro___OpenAI-API` reranks the whole
+  (recently-raised) `top_k` pool via a synchronous Cohere network hop. An in-process FlashRank reranker
+  (`RAGFLOW_RERANK_ID=local`) and bridge-side rerank already exist and are OFF. R4.8 is a **config-only,
+  measured A/B** (latency **and** `gate:eval` grade) — run it first on any host with access. Details in
+  `docs/CODEX_RUN4_BACKLOG.md` Part 1b.
 - **⛔ Human decisions pending:** clinician sign-off on the 4 audited snippets; plan §0 calls (one-tool,
   decommission window, PHI-at-rest, audit owner). See plan §0.
 
@@ -33,7 +39,15 @@ Backlog: **`docs/CODEX_RUN4_BACKLOG.md`**. Paste this prompt into the Codex app 
 >
 > Guardrails: perf changes must preserve behavior (an altered answer is a bug, not a trade); no case-specific behavior in Part 2 (fix the general rubric or accept the evaluator's verdict); S0 never becomes the default; cloud only; never touch `main`, deploy, push the adapter DB, or force-push; ⛔HUMAN → flag and continue. End with a progress-log summary: latency before/after + new dev SLO, retrieval-trap determination, S0 checkpoint scorecard, done vs blocked, recommended next run.
 
+## Current uncommitted/committed state (2026-07-24)
+Run 4 R4.1–R4.5 landed as commit `12014b1` **marked UNVERIFIED** — the timeout/short-circuit diff is on
+the branch but the four-turn latency measurement, `gate:eval`, and S0 checkpoint are **deferred** (this
+PC has no host access). R4.8 (rerank A/B, commit `a0ff313`) is added to the backlog. **Next host with
+access: run R4.8 first, then lift the UNVERIFIED caveat once eval is green.**
+
 ## Review checkpoints when Run 4 returns
+0. **R4.8 rerank A/B** — `local` (FlashRank) vs Cohere default: latency before/after **and** `gate:eval`
+   grade held (28/3/1, verbatim 100%). Grade drop fails the A/B regardless of the speed win. *(run first)*
 1. **No deadline overruns** + deep-turn p95 ≤ 90s (before/after table).
 2. **Retrieval-trap determination** written (drift vs fine; any general rubric change).
 3. **S0 checkpoint scorecard** — no grade drop + verbatim ≥98% via the Laravel synthesis path (the real milestone).
