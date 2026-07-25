@@ -1,5 +1,55 @@
 # Codex unattended progress — Agentic Gate v2
 
+## 2026-07-26 — Run 8 model ablation
+
+Executed the revised `docs/CODEX_RUN8_ABLATION.md` without starting R7.3–R7.9 or changing prompts,
+retrieval queries, production config/defaults, or adapter state. The brief and merge-fix code changed
+in the shared worktree during the initial pre-merge run; the revised brief was then treated as
+authoritative and executed in its new order.
+
+### Verification
+
+- `GateModelOptionsTest.php`: **5 tests / 5 assertions passed**.
+- Final combined model-option + workflow suite: **15 tests / 28 assertions passed**.
+- Two stale test-only issues were fixed without deleting tests: the retrieval mock signature and an
+  exact-length truncation assertion (now checks `<=1200` plus the truncation marker).
+- Resolved options were dumped before model calls:
+  Probe `o3-mini` medium → `reasoning.effort=medium`; Critic `o3-mini` high →
+  `reasoning.effort=high`. The `o3` prefix matched, so options were not silently dropped.
+- Evidence persistence passed on 8/8 cases with ranked text/similarity/identity metadata.
+
+### Retry merge remeasurement
+
+The strictly additive retry merge corrected C2 `not_covered→interaction_gap` and F2
+FAIL/`not_covered`→MINOR/`interaction_gap`; F4 retained 7 rather than 2 digests but stayed
+MINOR/`not_covered`. Scorecard: **1 PASS / 6 MINOR / 1 FAIL**, routing 100%, verbatim 100%.
+Because all C2/F2/F4 did not recover, the revised stop condition sent the run to ablation.
+
+Attempt 2 consumed 129,501 ms of summed retrieve+Pathway time. It did change one branch positively
+(F2/CLTI `not_covered→partial`), so “retry never changes coverage” is false. F4 was the heaviest retry
+turn (46,182 ms for attempt 2) and the Run 7 default-process abort turn; this supports, but does not
+prove, the retry-timeout hypothesis.
+
+### Ablation
+
+- Arm A (current/current): **1 PASS / 6 MINOR / 1 FAIL**.
+- Arm B (`o3-mini` medium Probe/current Critic): **0 PASS / 3 MINOR / 5 FAIL**.
+- Arm C (current Probe/`o3-mini` high Critic): executed, but its first case produced no scored Critic
+  candidate under the committed 1,600-token structured-output budget; no artifact was emitted.
+
+S6 and F2 both failed in Arm B. Their persisted evidence lacks the missing answering recommendations
+(S6 perioperative apixaban stop/restart/no-bridging; F2 ITP-specific post-bypass management).
+
+**Decision rule: branch 3 fired.** The constraint is evidence relevance; R7.3 becomes P0 and the model
+question is deferred. No token-budget/prompt fix was stacked.
+
+Artifacts:
+
+- `docs/eval/run8_premerge_arm_a_external_20260725_230021.json`
+- `docs/eval/run8_arm_a_merge_external_20260725_233343.json`
+- `docs/eval/run8_arm_b_merge_external_20260725_234613.json`
+- `docs/eval/run8_ablation_report.md`
+
 ## 2026-07-26 — R7.10 citation identity + R7.11 coverage audit
 
 Work was limited to R7.10 and R7.11. The branch was pulled first (already current). Testing ran on
