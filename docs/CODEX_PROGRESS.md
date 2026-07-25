@@ -1,5 +1,118 @@
 # Codex unattended progress — Agentic Gate v2
 
+## 2026-07-25 — Verification run: Part 0 + R4.8 only (Hetzner)
+
+Scope was limited to the requested Part 0 branch verification and Part 1/R4.8 reranker A/B. S0 was
+not started. Work ran on `clinicalguidelines-staging-1` in disposable checkout
+`/tmp/agentic-gate-v2-verify-w3lwtC` at `c39869d` after `git pull --ff-only`. The production source,
+shared bridge configuration, adapter DB, and defaults were not changed. The checkout received its
+own generated `APP_KEY`.
+
+Prerequisites:
+
+- Laravel 12.64.0/PHP 8.5.4, RAGFlow bridge, RAGFlow, and the external GPT-5 judge were reachable.
+- The live Laravel `.env` **does override** `RAGFLOW_RERANK_ID`: the running control is
+  `rerank-english-v3.0`, not the branch default `Cohere-rerank-v4.0-pro___OpenAI-API`.
+- `storage/app/phi/common_names.json` is absent. Name redaction remains a no-op as expected; this was
+  recorded but did not block the run.
+- The committed `gate:eval` fixture SUT does not exercise `GateWorkflowService`. A disposable
+  loopback-only HTTP shim invoked the real workflow for `--sut=http --judge=external`; it did not
+  modify the branch or production app.
+
+### Part 0 quality gate — **FAIL / no complete scorecard**
+
+The full 22-scenario/32-turn real-SUT run aborted on turn 29,
+`batch_f3_aaa_clti_sequencing`, when the SUT returned:
+
+```text
+RuntimeException: No candidate completed Critic scoring before the deadline.
+```
+
+Because `GateEvalRunner` writes its artifact only after all turns complete, there is no valid overall
+grade, routing, or verbatim scorecard to compare with 28 PASS / 3 MINOR / 1 FAIL, 100%, and 100%.
+The baseline is therefore **not held**. A preceding one-case end-to-end smoke for
+`batch_c1_proximal_dvt_simple` reached the real gate and external judge but dropped from baseline PASS
+to PASS_WITH_MINOR (missing explicit three-month duration and expected compactness), with routing
+100% and verbatim 100%.
+
+PHI regression check:
+
+```text
+batch_f3 raw turn == scrubbed turn
+was_modified=false; every redaction count=0; names_dictionary_loaded=false
+```
+
+The C1 smoke likewise had no `phi_scrub` trace entry. The observed grade/failure is therefore not
+caused by a redaction from `5f1e973`. An isolated F3 diagnostic replay subsequently returned a
+Critic-scored 0.90 candidate in 70,809 ms; that proves the failure is intermittent, but it does not
+replace the failed binding run.
+
+Commit determination:
+
+- `5f1e973`: no redaction-caused regression was found in the observed failures, but the aborted full
+  eval means it remains **not fully eval-verified**.
+- `56d2666`: the four-turn harness improved and stayed bounded, but the full eval still produced a
+  no-scored-candidate deadline failure. Its “always return a scored candidate” acceptance claim is
+  **invalidated for this run**, even though its latency behavior improved.
+- `6ada1ed`: the checkout `APP_KEY` precondition was satisfied; this gate workflow/eval does not
+  exercise the `/api/v1/agent-consult` session identity path, so the commit is not validated here.
+
+### Part 0 latency — post-`56d2666` four-turn harness
+
+The comparison baseline is the last committed pre-review Run 3/L5 four-turn artifact,
+`gate-latency/runs/20260724_155536_010397.json`. The post-fix control artifact is
+`gate-latency/runs/20260725_072808_583355.json`.
+
+| Stage | Before p50 / p95 ms | Post-fix p50 / p95 ms |
+|---|---:|---:|
+| Total deep turn | 56,563 / 108,465 | 43,248 / 60,449 |
+| Orient | 6,308 / 17,684 | 2,947 / 4,619 |
+| Orient + retrieval parallel | 9,579 / 13,368 | 8,966 / 13,278 |
+| Retrieval | 10,009 / 13,169 | 10,402 / 14,032 |
+| Pathway | 3,885 / 5,493 | 2,196 / 4,632 |
+| Probe | 6,431 / 9,502 | 3,898 / 4,698 |
+| Critic | 3,853 / 6,118 | 2,548 / 4,847 |
+
+Post-fix turn totals were 35,166 / 60,449 / 58,463 / 43,248 ms. All four returned a Critic-scored
+candidate, had no error/deadline trace event, and had maximum trace elapsed equal to total elapsed.
+For this binding harness the dev SLO is met: p50 43.2s ≤70s, p95/max 60.4s ≤90s, zero overruns.
+The 60s production/ISI target remains deferred; this single four-turn sample was 0.45s above 60s.
+
+### Part 1 / R4.8 — **BLOCKED: FlashRank is not running**
+
+The bridge virtualenv contains the `flashrank` package, but the running service did not initialize
+it. The authoritative startup log is:
+
+```text
+Failed to initialize FlashRank: [Errno 13] Permission denied: 'models'
+```
+
+No `Performing Local Reranking` or `Local Reranking completed` entries appeared during requests with
+`RAGFLOW_RERANK_ID=local`. In `ragflow_service/app.py`, that state skips forwarding the Cohere
+`rerank_id`, then falls through to ordinary interleaving because `HAS_FLASHRANK`/`RANKER` is false.
+Thus a four-turn run requested as `local` actually measured **no reranker**, not TinyBERT:
+
+| Measure | Live Cohere override | Requested `local` (invalid: no reranker) |
+|---|---:|---:|
+| Total p50 / p95 ms | 43,248 / 60,449 | 22,159 / 81,007 |
+| Retrieval p50 / p95 ms | 10,402 / 14,032 | 2,953 / 4,200 |
+| Errors / deadline overruns | 0 / 0 | 0 / 0 |
+| External-judge grade | aborted at F3; no scorecard | not run; would not test FlashRank |
+
+Artifact for the invalid diagnostic only:
+`gate-latency/runs/20260725_073125_675388.json`. It must not be cited as a FlashRank latency result.
+The shared bridge was not restarted, reconfigured, or repointed, and no default was changed.
+
+### Recommendation and next run
+
+Keep the live Cohere override; there is no valid quality-preserving FlashRank A/B on which to
+recommend a default change. In a separately authorized bridge-maintenance window, give the service a
+writable, explicit FlashRank model cache, verify `HAS_FLASHRANK=true` plus a
+`Local Reranking completed` log, then rerun the exact four-turn and 32-turn external-judge conditions.
+Also investigate the intermittent pre-Critic F3 deadline failure before claiming `56d2666` fully
+verified. The eval runner should retain partial results on SUT failure and expose the real workflow as
+a first-class SUT so future binding runs cannot accidentally exercise only the fixture.
+
 ## 2026-07-24 — Review pass (Claude Code, local): deadline binding, PHI, session scope
 
 A full-branch review, then three fixes. Committed and pushed to
