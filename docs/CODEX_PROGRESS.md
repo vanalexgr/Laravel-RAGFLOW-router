@@ -1,5 +1,98 @@
 # Codex unattended progress — Agentic Gate v2
 
+## 2026-07-25 — Run 6 resumed: real baseline persisted + bridge-Cohere timing A/B
+
+Run 6 resumed on Hetzner (`clinicalguidelines-staging-1`) from `feddfb0` in disposable checkout
+`/tmp/agentic-gate-v2-run6-resume-oPRuY9` after `git pull --ff-only`. Two documentation-only commits
+landed on the branch during the long run; the final commit is based on their new head (`9e0eb18`).
+Production source, `.env`, defaults, bridge configuration, and the adapter DB were not changed.
+
+### Infrastructure recovery and reliability checks
+
+- The real production `OPENAI_API_KEY` was exported explicitly as `GATE_EVAL_JUDGE_API_KEY`; the judge
+  used only `https://api.openai.com/v1/chat/completions` with `gpt-5`. A direct structured chat smoke
+  returned HTTP 200. The dead Azure endpoint was not exported or used.
+- The effective gate retrieval clamp was raised from the branch default of 20 seconds to 60 seconds
+  in checkout processes only (`GATE_V2_RETRIEVAL_TIMEOUT_SECONDS=60`). The generic copied
+  `RAGFLOW_REQUEST_TIMEOUT` was already 90 seconds.
+- Two live RAGFlow-side Cohere retrieval checks returned six chunks each (AAA in 3,077 ms; carotid in
+  6,726 ms), confirming embeddings/retrieval recovery before the eval.
+- `storage/app/phi/common_names.json` remains absent. Name redaction is therefore the known no-op; it
+  did not block this run.
+
+The first foreground eval reached 29/32 turns before its controlling SSH connection broke, so it was
+discarded without an artifact. A detached retry exposed an intermittent F2
+`Gate workflow wall-clock deadline exceeded` before artifact write. The remaining uncaught path was
+the knowledge fast path activating the parent deadline before it had produced any terminal result.
+The checkout now leaves the parent improve-loop deadline inactive through the first knowledge
+completion as well as the first deep Critic score; per-call model/retrieval timeouts still apply.
+The targeted F2 replay then returned `case_new`, a 0.80 Critic score, and 17 chunks. The subsequent
+complete 32-turn run finished without an HTTP, empty-ledger, or deadline abort.
+
+### Real HTTP/external baseline — for clinician calibration, not an acceptance verdict
+
+Binding command: `php artisan gate:eval --sut=http --judge=external`, with a loopback-only HTTP
+subject invoking the real `GateWorkflowService`.
+
+```text
+22 scenarios | 32 turns | PASS 4 | MINOR 13 | FAIL 15
+Routing 100.0% | no grade drop NO | verbatim 100.0%
+```
+
+Tracked artifacts:
+
+- `docs/eval/run6_real_external_20260725_120653.json` — complete 1,005,181-byte runner artifact,
+  including outputs, judgments, deterministic checks, and stage traces.
+- `docs/eval/run6_fail_digest.md` — every MINOR/FAIL with scenario turn, expected/routed guidelines,
+  grade/reason/labels, trace-counted retrieval chunks, and both answer frames verbatim.
+
+This score is an inspectable strict-judge baseline for human review, not an authoritative pass/fail
+decision. `no_grade_drop=NO` compares against fixture-derived grades and remains meaningless until
+the clinician signs off a real baseline. Fixture `baseline_grade` fields were not changed.
+
+The 1–3 routing fix is verified by 100% expected-route coverage, including all three expected F4 keys.
+Three turns had zero retrieved chunks:
+
+```text
+adversarial_case_switch_chimera turn 2  FAIL
+adversarial_duplicate_delivery turn 2  FAIL
+batch_f4_aaa_clti_sepsis_anticoagulation turn 1  PASS_WITH_MINOR
+```
+
+All other 25 MINOR/FAIL judgments had non-zero retrieval, separating them from outright retrieval
+starvation for clinician review.
+
+### RAGFlow-side vs bridge-side Cohere latency — timing only
+
+Both four-turn harnesses used the same cloud models and the 60-second checkout-only retrieval clamp.
+Control used live RAGFlow-side `rerank-english-v3.0`. The bridge arm set only
+`BRIDGE_RERANK_ENABLED=true`, using `rerank-english-v3.0`, top 12, and the committed
+candidate multiplier of 3 (~36 candidates). All eight turns returned scored candidates without
+errors.
+
+| Stage | Control p50 / p95 ms | Bridge-Cohere p50 / p95 ms | Bridge delta p50 / p95 ms |
+|---|---:|---:|---:|
+| Total turn | 43,739 / 71,071 | 33,968 / 50,509 | -9,771 / -20,562 |
+| Orient | 3,226 / 4,535 | 2,825 / 3,409 | -401 / -1,126 |
+| Orient + retrieval parallel | 8,963 / 12,551 | 3,620 / 4,486 | -5,343 / -8,065 |
+| Retrieval | 9,909 / 12,351 | 3,898 / 4,889 | -6,011 / -7,462 |
+| Pathway | 2,217 / 5,882 | 3,018 / 5,836 | +801 / -46 |
+| Probe | 5,704 / 7,109 | 4,787 / 7,831 | -917 / +722 |
+| Critic | 2,957 / 4,595 | 3,216 / 12,877 | +259 / +8,282 |
+
+The total tail improved by 20,562 ms (28.9%) and total p50 improved by 9,771 ms (22.3%). The expected
+retrieval tail fell materially; Critic p95 was noisier in the bridge sample. This is a latency result
+only—no reranker quality/default verdict is made before clinician calibration.
+
+Tracked latency artifacts:
+
+- `docs/eval/run6_latency_control_20260725_121322.json`
+- `docs/eval/run6_latency_bridge_cohere_20260725_121659.json`
+
+Recommended next step: the clinician reviews `docs/eval/run6_fail_digest.md`, first separating the
+three zero-chunk turns from non-starved reasoning/coverage judgments. After the real baseline is
+human-calibrated, run the deferred bridge-rerank grade verdict; do not flip production defaults yet.
+
 ## 2026-07-25 — Run 6: implementation prepared; external dependencies blocked both measurements
 
 Run 6 started on Hetzner (`clinicalguidelines-staging-1`) in disposable checkout

@@ -173,8 +173,6 @@ final class GateWorkflowService
         }
 
         if ($orient['mode'] === 'knowledge') {
-            $this->deadlineActive = true;
-
             return $this->knowledgePath($turn, $orient, $priorState, $progress);
         }
 

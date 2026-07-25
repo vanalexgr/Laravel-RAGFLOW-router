@@ -1,0 +1,831 @@
+{
+    "created_at": "2026-07-25T12:16:59+00:00",
+    "configuration": {
+        "provider": "openai",
+        "model": "gpt-5-mini",
+        "deadline_seconds": 90,
+        "scenarios": [
+            "aaa_evolving_context",
+            "adversarial_retrieval_trap"
+        ],
+        "repeat": 1
+    },
+    "summary": {
+        "turn_count": 4,
+        "total": {
+            "count": 4,
+            "p50_ms": 33968,
+            "p95_ms": 50509,
+            "max_ms": 50509
+        },
+        "stages": {
+            "critic": {
+                "count": 9,
+                "p50_ms": 3216,
+                "p95_ms": 12877,
+                "max_ms": 12877
+            },
+            "orient": {
+                "count": 5,
+                "p50_ms": 2825,
+                "p95_ms": 3409,
+                "max_ms": 3409
+            },
+            "orient_retrieval_parallel": {
+                "count": 4,
+                "p50_ms": 3620,
+                "p95_ms": 4486,
+                "max_ms": 4486
+            },
+            "pathway": {
+                "count": 10,
+                "p50_ms": 3018,
+                "p95_ms": 5836,
+                "max_ms": 5836
+            },
+            "probe": {
+                "count": 9,
+                "p50_ms": 4787,
+                "p95_ms": 7831,
+                "max_ms": 7831
+            },
+            "retrieve": {
+                "count": 10,
+                "p50_ms": 3898,
+                "p95_ms": 4889,
+                "max_ms": 4889
+            }
+        }
+    },
+    "turns": [
+        {
+            "run": 1,
+            "scenario": "aaa_evolving_context",
+            "turn": 1,
+            "total_ms": 33968,
+            "mode": "case_new",
+            "decision": "proceed",
+            "best_score": 1,
+            "critic_approved": true,
+            "critic": {
+                "approved": true,
+                "score": 1,
+                "candidate_summary": "The patient model is complete and correctly updated. The guideline routing is correct for an asymptomatic AAA ≥5.5 cm. Retrieval is sufficient and responsive to prior feedback. Guideline claims in both frames are tightly grounded in the 2024 ESVS source text. Interpretation does not leak non-ESVS claims into the grounded frame and delivers actionable, non-ESVS interpretive advice for the user. No decision-changing high-impact unknowns exist, so questions are appropriately empty. Calibration appropriately logs high confidence but is not used as a decision threshold.",
+                "revise_stage": "none",
+                "issues": []
+            },
+            "iterations": 3,
+            "routed_guidelines": [
+                "abdominal_aortic_aneurysm"
+            ],
+            "queries_tried": {
+                "abdominal_aortic_aneurysm": [
+                    "Decision at issue: A 74-year-old man has an asymptomatic 5.8 cm abdominal aortic aneurysm discovered on ultrasound. He is an active smoker with hypertension and dyslipidaemia. What management would you recommend?\nPatient model: {\"demographics\":\"74-year-old man\",\"symptom_status\":\"asymptomatic\",\"lesion\":\"5.8 cm abdominal aortic aneurysm\",\"comorbidities\":[\"hypertension\",\"dyslipidaemia\",\"active smoker\"],\"timing\":\"unknown\",\"fitness\":\"unknown\",\"imaging\":\"ultrasound\",\"medications\":[],\"prior_interventions\":[],\"other_findings\":[]}\nCritic retrieval issues: [{\"invariant\":\"grounding\",\"problem\":\"The grounded answer states: 'For asymptomatic men with an abdominal aortic aneurysm \\u22655.5 cm, a fast-track referral to vascular surgical care for consideration of repair is recommended.' The guideline extract (rec_id:6) supports referral to vascular surgery for those who reach size threshold, but does not explicitly mandate consideration of repair\\u2014only the pathway to assessment. The statement that 'Elective repair is not recommended for asymptomatic men with abdominal aortic aneurysms <55 mm' is supported (rec_id:20). However, the grounding does not reflect the nuance that the guidelines only recommend referral, not mandatory repair, for >5.5 cm in men.\",\"fix\":\"Reword guideline_grounded_answer to state: 'For asymptomatic men with an abdominal aortic aneurysm \\u22655.5 cm, fast track referral to vascular surgery is recommended for specialist assessment.' Avoid implying a direct recommendation for repair without assessment or fitness determination.\"},{\"invariant\":\"frame_integrity\",\"problem\":\"The guideline_grounded_answer contains interpretive\\/expert opinion elements\\u2014such as detailing what happens if a patient is unfit for repair ('management continues despite aneurysm size')\\u2014that are extrapolations, not directly grounded in ESVS text.\",\"fix\":\"Move any statements about next management steps conditional on fitness to interpretive_frame. Guideline_grounded_answer should strictly state what is verbatim or paraphrased from ESVS.\"}]"
+                ]
+            },
+            "error": null,
+            "answer_markdown": "## ESVS-grounded answer\n\nFor asymptomatic men with an abdominal aortic aneurysm ≥55 mm, the ESVS 2024 guidelines recommend a fast track referral to vascular surgical care for specialist assessment. There is no recommendation for elective repair for asymptomatic men with abdominal aortic aneurysms <55 mm. The guideline does not mandate repair at this stage, but referral for specialist assessment.\n\n## Interpretation\n\nNon-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nThe guideline directs immediate referral to specialist vascular assessment when an asymptomatic AAA reaches or exceeds 5.5 cm in men. Suitability for endovascular or open repair, timing, and exact procedural approach depend on further work up (including anatomical suitability, medical optimization, and fitness) that are routinely determined after referral, not before. Therefore, at this presentation, a referral is warranted, and further management is contingent on subsequent detailed evaluation. While anatomical suitability for a particular repair modality is important, it is a matter for post-referral specialist assessment and does not affect the need for referral itself.",
+            "stage_trace": [
+                {
+                    "stage": "orient_retrieval_parallel",
+                    "iteration": 0,
+                    "duration_ms": 3620,
+                    "elapsed_ms": 3626,
+                    "detail": {
+                        "guidelines": [
+                            "abdominal_aortic_aneurysm"
+                        ]
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 0,
+                    "duration_ms": 3409,
+                    "elapsed_ms": 3626,
+                    "detail": {
+                        "prefetched_retrieval": true
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 2750,
+                    "elapsed_ms": 7377,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "full_pipeline": false,
+                        "top_k": 12,
+                        "snippet_count": 10,
+                        "retrieval_ms": 2747,
+                        "prefetched": true
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 3752,
+                    "elapsed_ms": 7377,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "relevant": true,
+                        "coverage": "partial"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 0,
+                    "duration_ms": 2984,
+                    "elapsed_ms": 10362,
+                    "detail": {
+                        "questions": 1,
+                        "coverage": "interaction_gap"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 1,
+                    "duration_ms": 3702,
+                    "elapsed_ms": 14064,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.92,
+                        "revise_stage": "ground"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 1,
+                    "duration_ms": 3947,
+                    "elapsed_ms": 21030,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 6,
+                        "retrieval_ms": 3947,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 1,
+                    "duration_ms": 3018,
+                    "elapsed_ms": 21030,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "relevant": true,
+                        "coverage": "covered"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 1,
+                    "duration_ms": 3908,
+                    "elapsed_ms": 24938,
+                    "detail": {
+                        "questions": 1,
+                        "coverage": "covered"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 2,
+                    "duration_ms": 2817,
+                    "elapsed_ms": 27755,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.8,
+                        "revise_stage": "probe"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 2,
+                    "duration_ms": 4787,
+                    "elapsed_ms": 32542,
+                    "detail": {
+                        "questions": 0,
+                        "coverage": "covered"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 3,
+                    "duration_ms": 1426,
+                    "elapsed_ms": 33968,
+                    "detail": {
+                        "approved": true,
+                        "score": 1,
+                        "revise_stage": "none"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 3,
+                    "duration_ms": 0,
+                    "elapsed_ms": 33968,
+                    "detail": {
+                        "decision": "proceed",
+                        "best_score": 1,
+                        "iterations": 3
+                    }
+                }
+            ]
+        },
+        {
+            "run": 1,
+            "scenario": "aaa_evolving_context",
+            "turn": 2,
+            "total_ms": 42702,
+            "mode": "case_followup_substantive",
+            "decision": "ask",
+            "best_score": 0.85,
+            "critic_approved": false,
+            "critic": {
+                "approved": false,
+                "score": 0.85,
+                "candidate_summary": "Comprehensive, guideline-grounded answer with a clear statement of interaction gap and responsible, non-ESVS interpretive advice. Correct routing and retrieval; only minor frame leakage; patient model is complete and updated. Question is appropriate and necessary. Calibration is well handled. Partially addresses ESVS limitations, but some leakage of advanced EVAR modalities into the guideline-grounded answer must be fixed.",
+                "revise_stage": "ground",
+                "issues": [
+                    {
+                        "invariant": "grounding",
+                        "problem": "In the guideline_grounded_answer, the reference to \"open or endovascular repair may be considered based on patient status, anatomy...\" leaks advanced endovascular strategies into the guideline-grounded frame without explicit ESVS support for elective complex/juxtarenal AAA. ESVS guidance is specific to urgent/ruptured setting; it is not established for elective cases with severe CKD. The guideline_grounded_answer should cleanly separate what ESVS states for the elective setting versus urgent/ruptured.",
+                        "fix": "Rephrase the guideline_grounded_answer to clearly restrict ESVS support for advanced endovascular options and open repair to the urgent/ruptured context. Explicitly state that ESVS does not have recommendations for elective juxtarenal AAA with severe CKD regarding repair modality. Move all interpretive advice about elective advanced EVAR options strictly to the interpretive_frame."
+                    }
+                ]
+            },
+            "iterations": 2,
+            "routed_guidelines": [
+                "abdominal_aortic_aneurysm"
+            ],
+            "queries_tried": {
+                "abdominal_aortic_aneurysm": [
+                    "Decision at issue: CTA now shows that this is a juxtarenal aneurysm with an inadequate infrarenal neck for standard EVAR. His eGFR is 28 mL/min/1.73 m². How does this change your recommendation?\nPatient model: {\"imaging\":\"CTA\",\"lesion\":\"juxtarenal abdominal aortic aneurysm with inadequate infrarenal neck for standard EVAR\",\"fitness\":\"unknown\",\"demographics\":\"74-year-old man\",\"symptom_status\":\"asymptomatic\",\"comorbidities\":[\"hypertension\",\"dyslipidaemia\",\"active smoker\"],\"medications\":[],\"prior_interventions\":[],\"other_findings\":[],\"timing\":\"unknown\"}\nCritic retrieval issues: [{\"invariant\":\"grounding\",\"problem\":\"The statement: 'For most patients with long life expectancy, open surgical repair should be considered as the preferred treatment for elective abdominal aortic aneurysm' is presented without clarifying that this applies to standard AAA and may not specifically apply to complex\\/juxtarenal anatomy. The context in the guideline is for most patients, not necessarily for those with complex anatomy.\",\"fix\":\"Clarify in the guideline_grounded_answer that the recommendation for open repair is for most patients with elective AAA and does not specifically address complex\\/juxtarenal AAA. Drop or qualify the open repair statement accordingly.\"},{\"invariant\":\"grounding\",\"problem\":\"The guideline_grounded_answer references 'complex EVAR' and specific fenestrated\\/branched stent options as if grounded in ESVS, but the retrieved snippets do not provide ESVS recommendations regarding these modalities for juxtarenal AAA specifically or in renal impairment.\",\"fix\":\"Remove or clearly qualify mentions of complex EVAR or fenestrated\\/branched stent-grafts from the guideline_grounded_answer; only include such considerations in the interpretive_frame, with attribution that this is expert extrapolation, not ESVS guidance.\"}]"
+                ]
+            },
+            "error": null,
+            "answer_markdown": "## ESVS-grounded answer\n\nThe ESVS guidelines do not provide a specific recommendation for elective repair of juxtarenal abdominal aortic aneurysms in patients with severe renal impairment (eGFR <30), but they do recommend assessment of kidney function (serum creatinine and eGFR) before repair. For complex (juxtarenal) aneurysms in urgent or ruptured settings, either open or endovascular repair may be considered based on patient status, anatomy, and preferences, and hybrid repair is not recommended as first-line. There is no specific ESVS recommendation on preferred modality for elective juxtarenal AAA with severe chronic kidney disease.\n\n## Interpretation\n\nNon-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nGiven that standard EVAR is not feasible in this juxtarenal case and hybrid repairs are not recommended as first-line, the main remaining options are open surgical repair or advanced endovascular techniques (such as off-the-shelf branched stent grafts or physician-modified endografts). These advanced techniques, while mentioned in the context of urgent repair in ESVS, are not specifically recommended or detailed for the elective setting or in cases with severe CKD. The patient's significant renal impairment (eGFR 28) substantially raises the risk for perioperative renal deterioration, particularly with open repair. If the patient is fit for major surgery, open repair is a recognized possibility, with careful preoperative nephrological optimization and shared decision-making. If the patient is not fit for open surgery, a best supportive care approach or, depending on local expertise and availability, discussion regarding individual suitability for off-label advanced endovascular strategies may be appropriate, recognizing the lack of ESVS guidance in this elective setting.",
+            "stage_trace": [
+                {
+                    "stage": "orient_retrieval_parallel",
+                    "iteration": 0,
+                    "duration_ms": 4486,
+                    "elapsed_ms": 4490,
+                    "detail": {
+                        "guidelines": [
+                            "abdominal_aortic_aneurysm"
+                        ]
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 0,
+                    "duration_ms": 2840,
+                    "elapsed_ms": 4490,
+                    "detail": {
+                        "prefetched_retrieval": true
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 4286,
+                    "elapsed_ms": 11578,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "full_pipeline": false,
+                        "top_k": 12,
+                        "snippet_count": 10,
+                        "retrieval_ms": 4284,
+                        "prefetched": true
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 1996,
+                    "elapsed_ms": 11578,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "relevant": false,
+                        "coverage": "retrieval_uncertain"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 3288,
+                    "elapsed_ms": 11578,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 2,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 10,
+                        "retrieval_ms": 3288,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 1802,
+                    "elapsed_ms": 11578,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 2,
+                        "relevant": false,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 0,
+                    "duration_ms": 7831,
+                    "elapsed_ms": 19408,
+                    "detail": {
+                        "questions": 2,
+                        "coverage": "interaction_gap"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 1,
+                    "duration_ms": 4556,
+                    "elapsed_ms": 23964,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.75,
+                        "revise_stage": "ground"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 1,
+                    "duration_ms": 4889,
+                    "elapsed_ms": 34689,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 10,
+                        "retrieval_ms": 4888,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 1,
+                    "duration_ms": 5836,
+                    "elapsed_ms": 34689,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "relevant": true,
+                        "coverage": "partial"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 1,
+                    "duration_ms": 5774,
+                    "elapsed_ms": 40464,
+                    "detail": {
+                        "questions": 1,
+                        "coverage": "interaction_gap"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 2,
+                    "duration_ms": 2238,
+                    "elapsed_ms": 42702,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.85,
+                        "revise_stage": "ground"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 2,
+                    "duration_ms": 0,
+                    "elapsed_ms": 42702,
+                    "detail": {
+                        "reason": "bounce_budget_exhausted",
+                        "stage": "ground"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 2,
+                    "duration_ms": 0,
+                    "elapsed_ms": 42702,
+                    "detail": {
+                        "decision": "ask",
+                        "best_score": 0.85,
+                        "iterations": 2
+                    }
+                }
+            ]
+        },
+        {
+            "run": 1,
+            "scenario": "aaa_evolving_context",
+            "turn": 3,
+            "total_ms": 50509,
+            "mode": "case_followup_substantive",
+            "decision": "ask",
+            "best_score": 0.85,
+            "critic_approved": false,
+            "critic": {
+                "approved": false,
+                "score": 0.85,
+                "candidate_summary": "The candidate gives an appropriate summary of the ESVS AAA guideline's approach, clearly delineating that avoidance of elective repair is explicitly tied to limited life expectancy, not frailty/comorbidity alone. Pathways for open, endovascular (including FEVAR), and conservative management are correctly routed from the abdominal aortic aneurysm guideline. The queries_tried and coverage verdicts are appropriate, acknowledging that there is no explicit ESVS text stating 'do not intervene in severe comorbidity/frailty' in the AAA context, only for limited life expectancy. The interpretive_frame expresses how, in practice, high comorbidity/frailty often leads to non-intervention, but appropriately separates this from guideline-grounded claims. The unknown and question are well-posed, targeting the only decision-shifting gap. However, two minor issues are present: (1) a slight overstep in the guideline_grounded_answer, in explicitly referencing a class IIa, level C statement about discontinuing surveillance for small aneurysms in unfit patients, which is not strictly relevant to this (non-small) aneurysm; (2) omission of a summarizing statement in the interpretive_frame that the ESVS does NOT say comorbidity/frailty alone is prohibitive for repair when life expectancy is not known to be short.",
+                "revise_stage": "ground",
+                "issues": [
+                    {
+                        "invariant": "grounding",
+                        "problem": "Statement in guideline_grounded_answer: 'For patients with small aneurysms who are unfit for repair, discontinuation of surveillance may be considered (Class IIa, Level C).' This is not relevant to a juxtarenal, presumably large AAA that otherwise requires repair.",
+                        "fix": "Remove this bullet from the guideline_grounded_answer to avoid confusion and strict off-guideline reasoning for this size/context."
+                    },
+                    {
+                        "invariant": "grounding",
+                        "problem": "Interpretive_frame lacks an explicit summary that, per ESVS, being frail or comorbid—without clear limited life expectancy—is not a prohibitive factor for repair; guideline prohibition only applies if life expectancy is limited.",
+                        "fix": "Add a clarifying sentence to interpretive_frame: 'Per ESVS, repair is not prohibited by frailty/comorbidity alone unless life expectancy is considered limited.'"
+                    }
+                ]
+            },
+            "iterations": 2,
+            "routed_guidelines": [
+                "abdominal_aortic_aneurysm"
+            ],
+            "queries_tried": {
+                "abdominal_aortic_aneurysm": [
+                    "Decision at issue: He also has severe COPD, reduced functional capacity, and significant frailty, but remains independent in basic daily activities. Should he still undergo repair, and how would you choose between open repair, FEVAR, and conservative management?\nPatient model: {\"fitness\":\"severe COPD, reduced functional capacity, significant frailty, independent in basic daily activities\"}\nCritic retrieval issues: [{\"invariant\":\"grounding\",\"problem\":\"The main claim that 'Endovascular or open surgical repair is not recommended in patients deemed unfit for repair or unlikely to benefit due to severe comorbidities, frailty, limited life expectancy...' is grounded in the 2026 thoracic\\/thoraco-abdominal aortic guideline, but is used to guide the abdominal (juxtarenal AAA) case. The abdominal AAA guideline snippets retrieved do not include an equally explicit recommendation against repair in unfit\\/frail patients, so the guideline-grounded answer overstates the guideline's specificity for AAA.\",\"fix\":\"In the guideline_grounded_answer, clearly separate what the ESVS abdominal AAA chapter says (limited to 'consider open or endovascular repair if patient status, anatomy, preference fit'), and do not escalate the explicit 'do not intervene in unfit\\/frail' logic unless that text comes from the correct guideline section or scope. Accurately reflect that the explicit class III recommendation is not found under abdominal AAA per the retrieved text.\"}]"
+                ]
+            },
+            "error": null,
+            "answer_markdown": "## ESVS-grounded answer\n\nAccording to the ESVS 2024 Clinical Practice Guidelines on the Management of Abdominal Aorto-Iliac Artery Aneurysms:\n- For patients with limited life expectancy, elective AAA repair (open or endovascular) is not recommended (Class III, Level B).\n- For most patients with long life expectancy, open surgical repair should be considered as the preferred modality (Class IIa, Level B).\n- For patients with small aneurysms who are unfit for repair, discontinuation of surveillance may be considered (Class IIa, Level C).\n- The choice between open and endovascular repair (including FEVAR) should be based on patient fitness, aneurysm anatomy, and patient preferences (Class IIa, Level C).\nThere is no explicit class III (not recommended) statement for frailty or severe comorbidity unfitness in the abdominal AAA section of the guideline, and the guidance on non-intervention mainly references limited life expectancy.\n\n## Interpretation\n\nNon-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nThe guidelines require individual assessment of patient fitness, life expectancy, aneurysm anatomy, and preferences, but do not explicitly state to avoid repair in frail or comorbid patients, unless life expectancy is limited. Severe COPD, reduced functional capacity, and significant frailty suggest very high perioperative risk, even if basic independence is retained, which in practice often leads clinicians to favor conservative management when life expectancy and fitness are both markedly compromised. The role of FEVAR (complex EVAR) is not specifically delineated for frail patients, but—per guideline principle—individualized consideration remains legitimate if a relevant trade-off exists between anatomy, patient fitness, and risk tolerance. If life expectancy is genuinely limited by comorbidities or frailty, the ESVS pathway supports non-intervention; if not, choice of repair approach must weigh the heightened risks against aneurysm-specific threats. Both options require explicit patient values discussion. Ultimately, the decision hinges on whether the clinical team considers the patient to have sufficient life expectancy and fitness to benefit from intervention, rather than on diagnosis-based prohibitions alone.",
+            "stage_trace": [
+                {
+                    "stage": "orient_retrieval_parallel",
+                    "iteration": 0,
+                    "duration_ms": 4106,
+                    "elapsed_ms": 4109,
+                    "detail": {
+                        "guidelines": [
+                            "abdominal_aortic_aneurysm"
+                        ]
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 0,
+                    "duration_ms": 2646,
+                    "elapsed_ms": 4109,
+                    "detail": {
+                        "prefetched_retrieval": true
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 3898,
+                    "elapsed_ms": 9337,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "full_pipeline": false,
+                        "top_k": 12,
+                        "snippet_count": 10,
+                        "retrieval_ms": 3896,
+                        "prefetched": true
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 5228,
+                    "elapsed_ms": 9337,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "relevant": true,
+                        "coverage": "partial"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 0,
+                    "duration_ms": 4880,
+                    "elapsed_ms": 14217,
+                    "detail": {
+                        "questions": 1,
+                        "coverage": "interaction_gap"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 1,
+                    "duration_ms": 8640,
+                    "elapsed_ms": 22857,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.8,
+                        "revise_stage": "ground"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 1,
+                    "duration_ms": 4493,
+                    "elapsed_ms": 31787,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 10,
+                        "retrieval_ms": 4493,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 1,
+                    "duration_ms": 4437,
+                    "elapsed_ms": 31787,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "relevant": true,
+                        "coverage": "partial"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 1,
+                    "duration_ms": 5845,
+                    "elapsed_ms": 37633,
+                    "detail": {
+                        "questions": 1,
+                        "coverage": "interaction_gap"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 2,
+                    "duration_ms": 12877,
+                    "elapsed_ms": 50509,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.85,
+                        "revise_stage": "ground"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 2,
+                    "duration_ms": 0,
+                    "elapsed_ms": 50509,
+                    "detail": {
+                        "reason": "bounce_budget_exhausted",
+                        "stage": "ground"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 2,
+                    "duration_ms": 0,
+                    "elapsed_ms": 50509,
+                    "detail": {
+                        "decision": "ask",
+                        "best_score": 0.85,
+                        "iterations": 2
+                    }
+                }
+            ]
+        },
+        {
+            "run": 1,
+            "scenario": "adversarial_retrieval_trap",
+            "turn": 1,
+            "total_ms": 31733,
+            "mode": "case_new",
+            "decision": "proceed",
+            "best_score": 0.8,
+            "critic_approved": false,
+            "critic": {
+                "approved": false,
+                "score": 0.8,
+                "candidate_summary": "The candidate correctly identifies and documents that ESVS 2024 guidelines do not cover the clinical scenario of native infrarenal abdominal aortic mural thrombus with distal embolisation based on the retrieval. The search queries show reasonable re-retrieval attempts specifically referencing mural thrombus, embolisation, and management pathways. The answer is well-calibrated in both guideline and interpretive frames and preserves the ESVS interaction gap. The patient model is appropriately constructed. There are no frame integrity breaches, redundant questions, or calibration issues.",
+                "revise_stage": "orient_route",
+                "issues": [
+                    {
+                        "invariant": "routing_validity",
+                        "problem": "The case is routed only to the abdominal_aortic_aneurysm guideline. However, the patient's lesion is 'infrarenal abdominal aortic mural thrombus with distal embolisation,' and not an aneurysm. The guideline remit is for aneurysms, not general mural thrombus or embolisation. Additional pathways or guidelines more focused on aortic thrombus, acute aortic syndrome, or embolisation might be more relevant if available (even if ESVS is silent).",
+                        "fix": "Expand the routing logic to include or explicitly exclude any ESVS guidelines relevant to aortic mural thrombus, acute aortic syndromes, or embolic phenomena that might address this pathology, not just aneurysm."
+                    }
+                ]
+            },
+            "iterations": 2,
+            "routed_guidelines": [
+                "abdominal_aortic_aneurysm"
+            ],
+            "queries_tried": {
+                "abdominal_aortic_aneurysm": [
+                    "Decision at issue: A patient has an infrarenal abdominal aortic mural thrombus with distal embolisation. Which ESVS pathway should ground the assessment?\nPatient model: []",
+                    "Decision at issue: A patient has an infrarenal abdominal aortic mural thrombus with distal embolisation. According to the ESVS 2024 guidelines, what is the recommended clinical management or pathway for mural thrombus in the abdominal aorta, including cases with distal embolisation?"
+                ]
+            },
+            "error": null,
+            "answer_markdown": "## ESVS-grounded answer\n\nThe ESVS 2024 guidelines do not explicitly cover the management pathway for infrarenal abdominal aortic mural thrombus with distal embolisation in patients without prior endovascular repair or stent graft. Recommendations specifically address mural thrombus within stent grafts following endovascular abdominal aortic aneurysm repair but do not extend to native aortic mural thrombus with embolisation.\n\n## Interpretation\n\nNon-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nThis scenario—native infrarenal aortic mural thrombus with distal embolisation—is not addressed in the provided ESVS guideline excerpts, which focus on post-EVAR mural thrombus and complex aneurysm anatomy but do not provide a pathway for native mural thrombus or distal embolic events. Management in such cases typically requires individualised assessment, possibly referencing other sources or seeking multidisciplinary input, but ESVS does not specify a pathway.",
+            "stage_trace": [
+                {
+                    "stage": "orient_retrieval_parallel",
+                    "iteration": 0,
+                    "duration_ms": 3030,
+                    "elapsed_ms": 3030,
+                    "detail": {
+                        "guidelines": [
+                            "abdominal_aortic_aneurysm"
+                        ]
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 0,
+                    "duration_ms": 2825,
+                    "elapsed_ms": 3030,
+                    "detail": {
+                        "prefetched_retrieval": true
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 2642,
+                    "elapsed_ms": 9941,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "full_pipeline": false,
+                        "top_k": 12,
+                        "snippet_count": 10,
+                        "retrieval_ms": 2639,
+                        "prefetched": true
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 2549,
+                    "elapsed_ms": 9941,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "relevant": false,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 2758,
+                    "elapsed_ms": 9941,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 2,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 6,
+                        "retrieval_ms": 2758,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 1603,
+                    "elapsed_ms": 9941,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 2,
+                        "relevant": false,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 0,
+                    "duration_ms": 3570,
+                    "elapsed_ms": 13510,
+                    "detail": {
+                        "questions": 0,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 1,
+                    "duration_ms": 2703,
+                    "elapsed_ms": 16213,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.8,
+                        "revise_stage": "orient_route"
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 1,
+                    "duration_ms": 2203,
+                    "elapsed_ms": 18416,
+                    "detail": {
+                        "mode": "case_new",
+                        "guidelines": [
+                            "abdominal_aortic_aneurysm"
+                        ]
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 1,
+                    "duration_ms": 4078,
+                    "elapsed_ms": 25989,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 10,
+                        "retrieval_ms": 4078,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 1,
+                    "duration_ms": 3494,
+                    "elapsed_ms": 25989,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "relevant": false,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 1,
+                    "duration_ms": 2527,
+                    "elapsed_ms": 28516,
+                    "detail": {
+                        "questions": 0,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 2,
+                    "duration_ms": 3216,
+                    "elapsed_ms": 31733,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.7,
+                        "revise_stage": "orient_route"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 2,
+                    "duration_ms": 0,
+                    "elapsed_ms": 31733,
+                    "detail": {
+                        "reason": "oscillation_detected",
+                        "stage": "orient_route"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 2,
+                    "duration_ms": 0,
+                    "elapsed_ms": 31733,
+                    "detail": {
+                        "decision": "proceed",
+                        "best_score": 0.8,
+                        "iterations": 2
+                    }
+                }
+            ]
+        }
+    ]
+}
