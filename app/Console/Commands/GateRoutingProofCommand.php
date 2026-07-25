@@ -99,7 +99,7 @@ class GateRoutingProofCommand extends Command
                     'label' => $scenario['id'],
                     'turn_class' => $expected['mode'],
                     'serialized_patient_model' => $turn['user'].' '.implode(' ', $expected['must_include_facts']),
-                    'expected_guideline_keys' => array_slice($expected['guideline_keys'], 0, 2),
+                    'expected_guideline_keys' => array_slice($expected['guideline_keys'], 0, 3),
                 ];
             }
         }

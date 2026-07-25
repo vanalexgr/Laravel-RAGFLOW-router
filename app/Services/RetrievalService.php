@@ -1807,11 +1807,17 @@ class RetrievalService
         );
 
         $bridgeRerank = new BridgeRerankService;
+        $requestNarrativeMax = $bridgeRerank->enabled()
+            ? $bridgeRerank->candidatePoolSize($narrativeMax)
+            : $narrativeMax;
+        $requestCitationMax = $citationMax > 0 && $bridgeRerank->enabled()
+            ? $bridgeRerank->candidatePoolSize($citationMax)
+            : $citationMax;
         $params = [
             'question' => $narrativeQuery,
             'citation_query' => $citationQuery,
-            'narrative_max' => $narrativeMax,
-            'citation_max' => $citationMax,
+            'narrative_max' => $requestNarrativeMax,
+            'citation_max' => $requestCitationMax,
             'citation_document_ids' => $citationDocumentIds, // NEW: pass to Python
             'high_recall' => $allowHighRecallTopK,
             'top_k' => $topK,
@@ -1878,8 +1884,17 @@ class RetrievalService
         }
 
         if ($bridgeRerank->enabled()) {
-            $narrativeChunks = $bridgeRerank->rerank($narrativeQuery, $narrativeChunks, $narrativeMax, 'narrative');
-            $citationChunks = $bridgeRerank->rerank($citationQuery, $citationChunks, $citationMax, 'citation');
+            $rerankTopN = $bridgeRerank->topN();
+            $narrativeChunks = array_slice(
+                $bridgeRerank->rerank($narrativeQuery, $narrativeChunks, $rerankTopN, 'narrative'),
+                0,
+                $narrativeMax,
+            );
+            $citationChunks = array_slice(
+                $bridgeRerank->rerank($citationQuery, $citationChunks, $rerankTopN, 'citation'),
+                0,
+                $citationMax,
+            );
         }
 
         $formattedNarrative = $this->formatChunks(

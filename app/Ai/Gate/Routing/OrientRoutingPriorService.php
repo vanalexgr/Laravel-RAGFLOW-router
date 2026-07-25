@@ -48,7 +48,7 @@ class OrientRoutingPriorService
     }
 
     /**
-     * Apply deterministic anatomy/acuity priors and return at most two candidates.
+     * Apply deterministic anatomy/acuity priors and return one to three candidates.
      *
      * The LLM may tighten/reorder these candidates, but the PHP orchestration owns
      * the antithrombotic prune and disabling-stroke signal so they cannot diverge.
@@ -118,7 +118,7 @@ class OrientRoutingPriorService
             }
         }
 
-        // CLTI is the advanced PAD pathway; do not spend the second slot on the
+        // CLTI is the advanced PAD pathway; do not spend another slot on the
         // claudication/PAD reference when limb threat is already established.
         if (in_array('clti', $ranked, true)) {
             $ranked = array_values(array_diff($ranked, ['asymptomatic_pad']));
@@ -133,8 +133,11 @@ class OrientRoutingPriorService
             array_unshift($ranked, 'carotid_vertebral');
         }
 
-        // Concern P: add antithrombotic only for an explicit decision, then cap at two.
-        $explicitAntithromboticDecision = $this->matches(
+        // Preserve the current-turn prior when Orient's patient-model summary
+        // omits the medication decision. Re-evaluating only the summary here
+        // previously discarded a correctly detected antithrombotic route.
+        $explicitAntithromboticDecision = in_array('antithrombotic_therapy', $modelCandidates, true)
+            || $this->matches(
             $text,
             '/\b(antithrombotic|antiplatelet|anticoagulation|perioperative|periprocedural|post[- ]?op(?:erative)? medication|bridg|dapt|sapt|triple therapy|bleeding risk)\b/u'
         ) || (
@@ -146,7 +149,7 @@ class OrientRoutingPriorService
             $add($ranked, 'antithrombotic_therapy');
         }
 
-        return array_slice($ranked, 0, 2);
+        return array_slice($ranked, 0, 3);
     }
 
     private function matches(string $text, string $pattern): bool

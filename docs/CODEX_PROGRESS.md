@@ -1,5 +1,89 @@
 # Codex unattended progress — Agentic Gate v2
 
+## 2026-07-25 — Run 6: implementation prepared; external dependencies blocked both measurements
+
+Run 6 started on Hetzner (`clinicalguidelines-staging-1`) in disposable checkout
+`/tmp/agentic-gate-v2-run6-K7wVXY` at branch head `8c2b153` after `git pull --ff-only`. The checkout
+received the production environment as a starting point and then generated its own `APP_KEY`.
+Production source/configuration was not changed; the production `.env` SHA-256 remained
+`f53c41c19afb8067b649f94e8b1628fba4036916cc1967892cb1796891de971d` before and after the run.
+`storage/app/phi/common_names.json` is absent, so name redaction remains the expected non-blocking
+no-op.
+
+### R6.1 implementation
+
+The checkout now reconciles the gate with the declared 1–3 guideline contract:
+
+- Orient is instructed to return one to three guideline keys.
+- The deterministic routing prior and Ground stage retain up to three keys.
+- A current-turn `antithrombotic_therapy` prior survives Orient even when Orient omits the medication
+  decision from its summarized patient model. This is the mechanism behind the Run-5 F5/S2/S6
+  routing misses.
+- The routing-proof scenario projection retains up to three expected keys.
+
+The dead bridge candidate multiplier is also implemented. When bridge rerank is enabled,
+`BRIDGE_RERANK_TOP_N=12` and `BRIDGE_RERANK_CANDIDATE_MULTIPLIER=3` request a 36-chunk candidate pool
+per non-empty retrieval branch, Cohere reranks top 12, and Laravel trims the result back to the
+original narrative/citation output cap. RAGFlow-side rerank remains the default because
+`BRIDGE_RERANK_ENABLED=false`; no production/default enablement was made.
+
+The Run-5 checkout-only first-score deadline correction was carried forward so a future complete
+baseline can reach Critic on F3: the first Orient → Ground → Probe → Critic pass keeps ordinary
+per-call timeouts without the improve-loop parent deadline, and the original turn deadline activates
+only after the first candidate is scored. These changes are **not eval-verified in Run 6** because
+the dependencies below failed before a complete accepted run.
+
+### R6.2 real HTTP/external baseline — **blocked; no grade or artifact**
+
+The checkout-only Laravel server was healthy and the shared RAGFlow bridge reported configured and
+healthy. The external judge was not usable:
+
+- The only copied public `OPENAI_API_KEY` returned HTTP 401 from
+  `https://api.openai.com/v1/chat/completions`.
+- No prior disposable checkout with a separate `GATE_EVAL_JUDGE_URL` or
+  `GATE_EVAL_JUDGE_API_KEY` remains on the host.
+- The configured Azure endpoint
+  `alexiouv-5401-resource.cognitiveservices.azure.com` failed DNS resolution from Hetzner.
+
+The attempted command was the required real mode,
+`gate:eval --sut=http --judge=external`; it stopped on the first judge request and
+`GateEvalRunner` therefore wrote no artifact. Consequently:
+
+- committed full-run JSON: **none**;
+- `docs/eval/run6_fail_digest.md`: **not generated** (there are no complete judgments to digest);
+- real grade summary/routing/verbatim: **unavailable**;
+- `no_grade_drop`: not computed and remains meaningless until clinician re-baselining.
+
+No fixture/stub result was substituted.
+
+### R6.3 bridge-rerank latency A/B — **blocked; no valid timing table**
+
+The live RAGFlow-side Cohere control began with
+`RAGFLOW_RERANK_ID=rerank-english-v3.0` and `BRIDGE_RERANK_ENABLED=false`. Its first two harness turns
+both failed before a scored response because `/retrieve_dual` exceeded the gate's 20-second
+retrieval timeout. The observed failed-turn totals (37,463 ms and 23,311 ms) are error durations,
+not latency samples, and are deliberately excluded from any p50/p95 calculation. The harness was
+stopped rather than producing a misleading control; bridge-side Cohere was therefore not run and
+there is no tail delta.
+
+The bridge health endpoint remained green and the underlying RAGFlow API port responded immediately,
+but full Cohere retrieval was not working within the required timeout. Together with the unusable
+cloud judge, this satisfies the requested dependency stop condition.
+
+### Done, blocked, and next run
+
+Done: the 1–3 routing fix, preservation of explicit antithrombotic routing, candidate-pool multiplier,
+and first-score deadline phase boundary are prepared in the branch checkout. Production `.env`,
+defaults, main, deployments, and the adapter DB were untouched.
+
+Blocked: no trustworthy real baseline artifact/digest and no valid control-vs-bridge latency table
+can be committed from this run.
+
+Recommended next run: restore a working external cloud-judge endpoint/key pair and confirm one live
+RAGFlow-side Cohere `/retrieve_dual` call completes within the gate retrieval budget. Then rerun the
+full HTTP/external baseline, commit its JSON and `docs/eval/run6_fail_digest.md`, run both four-turn
+latency arms, and hand the resulting FAIL/MINOR digest to the clinician for review.
+
 ## 2026-07-25 — Run 5: R5.1 first-score deadline fix; quality-control blocker
 
 Run 5 executed on Hetzner (`clinicalguidelines-staging-1`) in disposable checkout

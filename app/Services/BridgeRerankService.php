@@ -24,6 +24,18 @@ class BridgeRerankService
         return (bool) ($this->config['enabled'] ?? false);
     }
 
+    public function topN(): int
+    {
+        return max(1, min(200, (int) ($this->config['top_n'] ?? 20)));
+    }
+
+    public function candidatePoolSize(int $requestedMax): int
+    {
+        $multiplier = max(1, min(10, (int) ($this->config['candidate_multiplier'] ?? 3)));
+
+        return max(1, min(200, max($requestedMax, $this->topN() * $multiplier)));
+    }
+
     public function rerankDocuments(
         string $query,
         array $documents,

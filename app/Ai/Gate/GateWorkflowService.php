@@ -34,6 +34,8 @@ final class GateWorkflowService
 
     private int $reservedRevisionSeconds = 0;
 
+    private bool $deadlineActive = false;
+
     public function __construct(
         private readonly PreOrientGuardService $guard,
         private readonly OrientRoutingPriorService $routing,
@@ -67,6 +69,7 @@ final class GateWorkflowService
         $this->startedAt = microtime(true);
         $this->iteration = 0;
         $this->reservedRevisionSeconds = 0;
+        $this->deadlineActive = false;
 
         [$turn, $priorState] = $this->deidentify($turn, $priorState);
 
@@ -170,6 +173,8 @@ final class GateWorkflowService
         }
 
         if ($orient['mode'] === 'knowledge') {
+            $this->deadlineActive = true;
+
             return $this->knowledgePath($turn, $orient, $priorState, $progress);
         }
 
@@ -203,6 +208,10 @@ final class GateWorkflowService
                 break;
             }
             $ledger->consider($candidate, $lastCritic);
+            // The first complete orient → ground → probe → critic pass must
+            // always produce a scored candidate. Only revisions compete for
+            // the original wall-clock budget.
+            $this->deadlineActive = true;
             $this->reservedRevisionSeconds = 0;
 
             if (($lastCritic['approved'] ?? false) === true) {
@@ -516,7 +525,7 @@ final class GateWorkflowService
         $allPathways = [];
         $queriesTried = [];
         $snippetDigests = [];
-        $guidelines = array_slice((array) ($orient['candidate_guidelines'] ?? []), 0, 2);
+        $guidelines = array_slice((array) ($orient['candidate_guidelines'] ?? []), 0, 3);
         $usePrefetch = $this->iteration === 0 && $issues === [] && $this->prefetchedQuery !== null;
         $maxAttempts = $issues === []
             ? null
@@ -908,6 +917,10 @@ final class GateWorkflowService
 
     private function assertWithinDeadline(): void
     {
+        if (! $this->deadlineActive) {
+            return;
+        }
+
         if ($this->remainingSeconds() <= 0) {
             throw new RuntimeException('Gate workflow wall-clock deadline exceeded.');
         }
@@ -916,6 +929,10 @@ final class GateWorkflowService
     private function remainingSeconds(): int
     {
         $deadline = max(1, (int) config('gate-v2.deadline_seconds', 90));
+
+        if (! $this->deadlineActive) {
+            return $deadline;
+        }
 
         return (int) floor(
             $deadline
@@ -926,7 +943,11 @@ final class GateWorkflowService
 
     private function remainingWallSeconds(): int
     {
-        return (int) floor($this->deadlineAt() - microtime(true));
+        $deadlineAt = $this->deadlineAt();
+
+        return $deadlineAt === null
+            ? max(1, (int) config('gate-v2.deadline_seconds', 90))
+            : (int) floor($deadlineAt - microtime(true));
     }
 
     /**
@@ -934,8 +955,10 @@ final class GateWorkflowService
      * are bounded by this instant rather than by a duration so a budget computed
      * in the parent cannot go stale on its way into a forked worker.
      */
-    private function deadlineAt(): float
+    private function deadlineAt(): ?float
     {
-        return $this->startedAt + max(1, (int) config('gate-v2.deadline_seconds', 90));
+        return $this->deadlineActive
+            ? $this->startedAt + max(1, (int) config('gate-v2.deadline_seconds', 90))
+            : null;
     }
 }

@@ -14,12 +14,14 @@ final class GatePathwayWorker
 
     /**
      * Execute one guideline branch. Inputs and output remain serializable so
-     * Laravel's process driver can run up to two branches concurrently.
+     * Laravel's process driver can run the routed branches concurrently.
      *
      * $deadlineAt is the parent's absolute wall-clock deadline as a Unix
      * timestamp. It is passed as an absolute instant rather than a duration so
      * it survives serialization into a forked worker, where "seconds remaining"
-     * measured at dispatch would already be stale.
+     * measured at dispatch would already be stale. A null deadline is used for
+     * the mandatory first scoring pass; each retrieval/model call still keeps
+     * its own timeout.
      *
      * @param  array<string, mixed>  $patientModel
      * @return array<string, mixed>

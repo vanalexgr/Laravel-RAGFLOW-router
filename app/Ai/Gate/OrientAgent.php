@@ -41,7 +41,7 @@ GUIDELINE_REFERENCE. Apply these rules:
    findings in other_findings. Never infer an unstated value; use "unknown".
 4. Record changed_fields and per-field provenance with the current turn index and verbatim source.
 5. Update open_questions: mark answered or declined questions; never silently drop them.
-6. Rank at most two candidate guideline keys, selected only from GUIDELINE_REFERENCE. The supplied
+6. Rank one to three candidate guideline keys, selected only from GUIDELINE_REFERENCE. The supplied
    deterministic routing priors are constraints/signals, not optional suggestions.
 7. Do not add antithrombotic_therapy unless the turn asks an explicit medication, anticoagulation,
    antiplatelet, bleeding-risk, or perioperative antithrombotic decision.

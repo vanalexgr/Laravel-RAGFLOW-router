@@ -153,6 +153,7 @@ return [
         'api_key' => env('BRIDGE_RERANK_API_KEY'),
         'model' => env('BRIDGE_RERANK_MODEL', 'rerank-english-v3.0'),
         'top_n' => (int) env('BRIDGE_RERANK_TOP_N', 20),
+        'candidate_multiplier' => (int) env('BRIDGE_RERANK_CANDIDATE_MULTIPLIER', 3),
         'timeout' => (int) env('BRIDGE_RERANK_TIMEOUT', 20),
     ],
 
