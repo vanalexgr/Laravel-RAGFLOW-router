@@ -45,6 +45,16 @@ item does not improve the grade, say so plainly — negative results are results
    carotid/stroke/aorta/venous/thrombus/graft/limb/renal_mesenteric/access/trauma) as deterministic query
    anchors. Port `_rewrite_with_case_context` (`"{provisional_diagnosis} — {question}"`) for vague
    follow-ups. Build a **differentiated citation query** rather than reusing one string.
+   **Language handling (do NOT build a language-detection pipeline — the reasoning model is multilingual
+   and Orient is an implicit normalizer). Two small additions only:**
+   - `serializeRetrievalQuery` currently embeds **`$turn` verbatim** (Greek if the user wrote Greek).
+     Have Orient emit an English **`core_question`** and build the query from that + `patient_model`, so
+     the query is English by construction.
+   - **Orient is never instructed to output English** — a multilingual model given Greek input may emit
+     Greek *values* (`"lesion":"ανεύρυσμα κοιλιακής αορτής"`), silently breaking that assumption. Add one
+     prompt line: *"patient_model values and core_question must be in English clinical terminology,
+     regardless of input language."* (Answer-language for the user is a separate product decision — ⛔HUMAN,
+     do not decide it here.)
 2. **R7.2 Chunk cleaning + metadata parsing.** Port `_html_table_to_text` (ESVS rec tables are HTML →
    `cell | cell` text), `_clean_narrative_text` (flatten tables → strip tags → unescape entities → strip
    markdown → collapse whitespace), `_parse_semicolon_kv` (metadata → **structured fields**, not prompt
@@ -70,6 +80,39 @@ item does not improve the grade, say so plainly — negative results are results
 7. **R7.7 Numeric-threshold check.** The one failure no adapter rule covers: AAA T1 judged a **58 mm**
    aneurysm by a **"<55 mm"** recommendation. Require an explicit numeric comparison of the patient's
    measurement against any retrieved threshold before applying a recommendation.
+
+8. **R7.8 Verifiable evidence rendering (references, popups, figures).** *Verifiability is a core clinical
+   requirement — the clinician must be able to trace every claim back to source.* **The data is already
+   there and the gate discards it:** citation chunks return structured fields
+   `type, similarity, recommendation_id, class, level, guideline, text`, but `RetrieveEsvsSnippetsTool`
+   keeps only `['text','similarity','source']`. Three layers, **all rendered deterministically in PHP —
+   never model-generated**:
+   - **L1 References.** Preserve `recommendation_id / class / level / guideline` through
+     `snippet_digests`; inline `[n]` markers bound to citation records; render `## Evidence Used`, e.g.
+     `[1] Recommendation 22 — ESVS 2024 AAA — Class IIa, Level C — "Men with an AAA >55 mm should be
+     considered for elective repair."`
+   - **L2 Recommendation popups.** Port `_format_rec_popup`'s layout (Recommendation N — Guideline (Year) /
+     Category / Strength: Class X; Level Y / Evidence first authors / verbatim text). Pure formatting over
+     fields we already have.
+   - **L3 Figures/tables.** Call the **existing `GuidelineAssetService`** (it already scans retrieved
+     narrative for Figure/Fig/Table/Algorithm references + caption keyword overlap) and render a
+     deterministic `## 🖼️ Figures / Tables` section. **484 images are present** on the Hetzner disk
+     (`storage/app/public`, `public/storage`) — but `config/guideline_assets.php` is **manifest-driven**
+     and the manifest contents are unverified. **Check the manifest first**: if empty/stale, report it as a
+     data task (⛔HUMAN) rather than writing code against nothing.
+
+   **Why deterministic rendering matters:** a model can hallucinate *"Recommendation 47, Class I"*; a
+   renderer that can only emit from actually-retrieved citation records cannot. This is structurally
+   stronger than the legacy adapter, which merely *instructed* the LLM to copy citations faithfully. It
+   also makes the Critic's `grounding` invariant mechanically checkable — every claim must map to a
+   `recommendation_id` present in the retrieved set, with no LLM judgement required.
+   Depends on **R7.3** (labelled citation bucket) and slots into **R7.4**'s `## Evidence Used` section.
+
+## Porting principle (apply to any further candidates)
+**Port what constrains stochasticity or saves tokens. Do NOT port workarounds for missing reasoning.**
+Multilingual normalization was the latter — dropped, because the reasoning model already does it (see
+R7.1). Chunk cleaning, deterministic mode predicates, the clinical rules, and deterministic citation
+rendering are the former — keep them.
 
 ## Do NOT port
 `_format_gate_for_model` and the "MANDATORY BEHAVIOR / copy exactly" wrappers (dead under
