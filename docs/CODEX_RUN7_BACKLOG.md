@@ -29,12 +29,40 @@ subsystems** — it is not missing new engineering, it is missing restoration. M
   consumes it. Explains judge labels `formatting_noncompliant` / `formatting_heavy_markdown`.
 - **16 clinical rules** from v1.5.x map ~1:1 onto Run-6 failures and are entirely absent from the gate.
 
-## Measurement discipline
+## Measurement discipline — FAST TIERS (do not run the full eval after every item)
 
-**Each item is landed and measured separately** so we learn what each is worth. After every item: run
-`gate:eval` (record grade delta vs **4/13/15**) **and** the four-turn latency harness (record delta vs
-**p50 43.7s / p95 71.1s** control, or **33.9/50.5** bridge). Commit the artifact + digest each time. If an
-item does not improve the grade, say so plainly — negative results are results.
+The full 32-turn eval takes ~45–60 min. Running it 8 times is hours of dead waiting, and **most items do
+not need the judge at all**. Validate in three tiers, escalating only as needed.
+
+**Tier 0 — deterministic probes (SECONDS, no LLM judge).** Several items have purely mechanical
+acceptance criteria. Build a tiny `gate:probe-retrieval` helper (or reuse tinker) and check:
+| Item | Deterministic check | Pass bar |
+|---|---|---|
+| R7.1 | top-5 similarity of the built query; does `rec_22` appear for the AAA T1 case | sim ≫ the measured 17.6/15.9/15.6 baseline; `rec_22` present |
+| R7.2 | signal ratio = cleaned chars / raw chars over ~8 chunks | ≫ the measured **66%** (target ≥90%) |
+| R7.3 | inspect the assembled Pathway/Probe payload | both buckets present, labelled, per-bucket caps honoured, `citation_min` met |
+| R7.4 | section headings emitted per `response_mode` | correct ordered set per mode |
+| R7.8 L1 | `## Evidence Used` output | real `recommendation_id`/class/level, no fabricated ids |
+**Iterate here until green — this is a seconds-long loop, not a 45-minute one.**
+
+**Tier 1 — 5-turn canary (~6–8 min).** Add a `--only=<scenario_ids>` (or `--canary`) filter to
+`gate:eval`. Canary set, each chosen because it isolates a diagnosed failure:
+- `aaa_evolving_context` **T1** — wrong-threshold + missing `rec_22` → tests R7.1 / R7.5 / R7.7
+- `aaa_evolving_context` **T3** — false "no coverage" → tests R7.5 **BROAD COVERAGE**
+- `batch_f2_clti_itp_after_bypass` — multi-condition FAIL → tests R7.3 / sequencing rules
+- `batch_s4_symptomatic_carotid_web` — known RAGFlow **content gap**; must stay an *honest* `not_covered`
+  → **regression guard** (must NOT become a false PASS)
+- `adversarial_knowledge_interleave` **T2** — knowledge fast path → tests R7.6 mode predicates
+
+**Tier 2 — full 32-turn eval + latency harness (~45–60 min).** Run **once** after a batch of items is
+Tier-0/Tier-1 green — not after each one. Record grade delta vs **4/13/15** and latency delta vs
+**p50 43.7s / p95 71.1s**. Commit artifact + digest.
+
+**Suggested first slice for a fast result:** land **R7.1 + R7.2** only (the two largest measured wins,
+both Tier-0 verifiable in seconds), run the canary, then one full eval. That produces a real,
+comparable number in well under an hour instead of a full day. Report it, then continue with the rest.
+
+If an item does not improve things, say so plainly — negative results are results.
 
 ## Items (in order — each independently measurable)
 
