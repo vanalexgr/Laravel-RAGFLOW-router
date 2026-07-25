@@ -146,6 +146,16 @@ final class RetrieveEsvsSnippetsTool implements Tool
                 $cleaned = ($this->chunkCleaner ?? new GateChunkCleaner)->clean($chunk, 3000);
                 $text = $cleaned['text'];
                 if ($text !== '') {
+                    if ($bucket === 'llm_citation_chunks') {
+                        $metadata = $cleaned['metadata'];
+                        $identity = array_filter([
+                            isset($metadata['recommendation_id']) ? 'Recommendation '.$metadata['recommendation_id'] : null,
+                            isset($metadata['recommendation_class']) ? 'Class '.$metadata['recommendation_class'] : null,
+                            isset($metadata['evidence_level']) ? 'Level '.$metadata['evidence_level'] : null,
+                            $guidelineKey,
+                        ]);
+                        $text = '['.implode(' | ', $identity)."]\n".$text;
+                    }
                     $snippets[] = [
                         'text' => $text,
                         'similarity' => is_array($chunk) ? ($chunk['similarity'] ?? null) : null,

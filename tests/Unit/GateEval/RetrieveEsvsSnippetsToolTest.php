@@ -16,7 +16,12 @@ class RetrieveEsvsSnippetsToolTest extends TestCase
 
             public array $configDuringRetrieval = [];
 
-            public function retrieve(string $question, array $history = [], ?array $requestedKeys = null): array
+            public function retrieve(
+                string $question,
+                array $history = [],
+                ?array $requestedKeys = null,
+                ?string $citationQuestion = null,
+            ): array
             {
                 $this->requested = $requestedKeys ?? [];
                 $this->configDuringRetrieval = [
@@ -29,7 +34,7 @@ class RetrieveEsvsSnippetsToolTest extends TestCase
                     'retrieval_query' => $question,
                     'duration_ms' => 12,
                     'llm_citation_chunks' => [[
-                        'text' => 'Recommendation text',
+                        'text' => 'rec_id:22; class:IIa; level:C; guideline_name:ESVS 2024 Clinical Practice Guidelines on Abdominal Aorto-Iliac Artery Aneurysms; rec_text_verbatim:Recommendation text',
                         'similarity' => 82.5,
                         'guideline' => 'AAA',
                     ]],
@@ -47,7 +52,11 @@ class RetrieveEsvsSnippetsToolTest extends TestCase
 
         $this->assertSame(['abdominal_aortic_aneurysm'], $retrieval->requested);
         $this->assertSame([24, 16, 24], $retrieval->configDuringRetrieval);
-        $this->assertSame('Recommendation text', $result['snippets'][0]['text']);
+        $this->assertSame(
+            "[Recommendation 22 | Class IIa | Level C | abdominal_aortic_aneurysm]\nRecommendation text",
+            $result['snippets'][0]['text'],
+        );
+        $this->assertStringNotContainsString('ESVS 2024 Clinical Practice Guidelines', $result['snippets'][0]['text']);
         $this->assertSame(82.5, $result['diagnostics']['max_similarity']);
     }
 
@@ -59,7 +68,12 @@ class RetrieveEsvsSnippetsToolTest extends TestCase
         {
             public array $timeouts = [];
 
-            public function retrieve(string $question, array $history = [], ?array $requestedKeys = null): array
+            public function retrieve(
+                string $question,
+                array $history = [],
+                ?array $requestedKeys = null,
+                ?string $citationQuestion = null,
+            ): array
             {
                 $this->timeouts = [config('ragflow.request_timeout'), config('ragflow.connect_timeout')];
 
