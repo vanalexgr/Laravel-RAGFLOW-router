@@ -46,23 +46,36 @@ guarantee) worked but was NOT committed (quality gate failed). Latency/bridge-re
 **The human (clinician) will be the judge-calibrator.** Mission is now: get a trustworthy real baseline,
 then actually raise quality.
 
-## The active next step = Codex Run 6 (trustworthy baseline + bridge-rerank latency)
+## Prod incident RESOLVED (2026-07-25)
 
-Backlog: **`docs/CODEX_RUN6_BACKLOG.md`**. Two parallel tracks: (A) fix the eval framework (COMMIT
-artifacts + a `docs/eval/run6_fail_digest.md`, fix the 2→3 guideline cap, kill dead
-`CANDIDATE_MULTIPLIER`), re-run the real external eval, and commit per-FAIL transcripts for the human to
-spot-read; (B) standalone **bridge-rerank latency A/B** (control vs `BRIDGE_RERANK_ENABLED=true`, timing
-only — needs no quality baseline). Paste this prompt into Codex:
+OpenAI had a partial-degradation incident (Login/Responses/Embeddings) that confounded Run 5/6 (judge
+401, empty/slow retrieval). **OpenAI recovered** (chat + embeddings verified 200 from Hetzner).
+Separately, the live OWUI model `gpt-5-chat-latest` was **deprecated**; **repointed to `gpt-5.2-chat-latest`**
+(ESVS-expert base + base row + `task.model`; webui.db backed up; restarted; 0 old refs). Prod OWUI +
+vascular MCP adapter confirmed working. Laravel `.env AZURE_OPENAI_DEPLOYMENT=gpt-5-chat` is stale/inert
+(gate uses gpt-5-mini) — cleanup later.
 
-> Continue on branch **`claude/prototyping-summary-d597c2`**. **`git pull` first**, open **`docs/CODEX_RUN6_BACKLOG.md`**, work both tracks. Autonomy rules in `docs/CODEX_HANDOFF.md`; keep `docs/CODEX_PROGRESS.md` current. Runs on Hetzner (disposable checkout); **do not change production `.env`/config/defaults**. Only `--sut=http --judge=external` counts as real eval.
+## The active next step = Codex Run 6 (RESUME on healthy OpenAI): infra fixes → baseline + bridge-rerank latency
+
+Backlog: **`docs/CODEX_RUN6_BACKLOG.md`**. The "28/3/1" was fixture (`--sut=stub --judge=stub`), never
+real; first real eval = 3/14/15 but confounded (judge calibration, fixture baseline_grades, ≤2-guideline
+cap) AND hit during the OpenAI incident, and its artifact was lost. Re-run now on healthy OpenAI, with the
+infra fixes prepended. **The human (clinician) will calibrate the judge** — surface FAIL transcripts, don't
+chase the gpt-5 judge. Paste this prompt into Codex:
+
+> Continue on branch **`claude/prototyping-summary-d597c2`**. **`git pull` first.** Autonomy rules in `docs/CODEX_HANDOFF.md`; keep `docs/CODEX_PROGRESS.md` current. Runs on Hetzner (disposable checkout); **do not change production `.env`/config/defaults.** Only `--sut=http --judge=external` counts as real eval. **OpenAI is recovered** (chat + embeddings confirmed 200) after a partial-degradation incident — the prior 401/empty-retrieval failures were largely that incident.
 >
-> **The "28/3/1" was fixture (`--sut=stub --judge=stub`), never real.** First real eval = 3/14/15, confounded, and its artifact was lost. Don't chase the gpt-5 judge — the human (clinician) will calibrate it. This run produces a fair, inspectable baseline + the bridge-rerank latency number.
+> Run 6's code fixes are committed (`feddfb0`: 1–3 routing, antithrombotic preservation, rerank multiplier, first-score deadline). Do the infra fixes, then re-run:
 >
-> **Track A — trustworthy baseline.** (R6.1) **[mandatory] commit eval artifacts**: the full run JSON **and** a human-readable `docs/eval/run6_fail_digest.md` (per FAIL/MINOR: scenario, turn, expected vs routed guidelines, judge grade+reason+labels, and the gate's `guideline_grounded_answer`+`interpretive_frame` verbatim) — results must survive checkout cleanup (Run-5's were lost). Fix the **≤2-guideline cap** vs scenarios expecting 3 routes (reconcile with the 1–3 guideline contract; re-verify routing). Remove/implement the dead `BRIDGE_RERANK_CANDIDATE_MULTIPLIER`. (R6.2) Re-run the real external eval; commit artifact + digest. **Do NOT overwrite fixture `baseline_grade`s and do NOT treat the judge as authoritative** — output real grades for human review; note `no_grade_drop` is meaningless until re-baselined.
+> **1. Judge env:** export the real `OPENAI_API_KEY` (from prod `.env`) into the disposable checkout so the external judge authenticates; **remove the dead Azure judge fallback** (Azure DNS is gone) — judge is OpenAI-only.
 >
-> **Track B — bridge-rerank latency (standalone, no baseline needed).** (R6.3) Four-turn latency harness: control = RAGFlow-side Cohere (live) vs `BRIDGE_RERANK_ENABLED=true` = bridge-side Cohere (same `rerank-english-v3.0`, reranks ~36 vs full pool). Record per-stage **p50/p95 before/after** + the tail delta. **No grade/quality conclusion** (waits for the human-calibrated baseline); **don't flip prod defaults.**
+> **2. Retrieval reliability:** in the checkout only, **raise the bridge retrieve timeout (25s → 60s)** and verify a couple of retrievals now return non-zero chunks (embeddings are healthy again).
 >
-> Deferred: bridge-rerank grade verdict, quality-improvement work, FlashRank, S0. Guardrails: commit artifacts; never set baseline_grades from the strict judge without human sign-off; cloud only; never touch `main`, deploy, adapter DB, force-push, or prod defaults; ⛔HUMAN → flag & continue. End: committed digest path, real grade summary (for human review, not a pass/fail), bridge-rerank latency A/B + delta, next step = await human FAIL review.
+> **3. Real baseline (for the human judge):** run `gate:eval --sut=http --judge=external`; **commit the artifact + a human-readable `docs/eval/run6_fail_digest.md`** (per FAIL/MINOR: scenario, turn, expected vs routed guidelines, judge grade+reason+labels, the gate's `guideline_grounded_answer`+`interpretive_frame` verbatim, **plus a per-case "retrieval returned N chunks" flag** so we can separate retrieval-starvation FAILs from reasoning FAILs). **Do NOT overwrite fixture `baseline_grade`s and do NOT treat the judge as authoritative** — the human will calibrate.
+>
+> **4. Bridge-rerank latency A/B (timing only):** four-turn harness, control (RAGFlow-side Cohere) vs `BRIDGE_RERANK_ENABLED=true` (bridge-side Cohere, same `rerank-english-v3.0`). Per-stage p50/p95 before/after + tail delta. **No grade verdict** (waits for the calibrated baseline); **don't flip prod defaults.**
+>
+> Deferred: bridge-rerank grade verdict, quality-improvement, FlashRank, S0. Guardrails: commit artifacts; never set baseline_grades from the judge without human sign-off; cloud only; never touch `main`, deploy, adapter DB, force-push, or prod defaults; ⛔HUMAN → flag & continue. End: committed digest path, real grade summary + per-case chunk flag, bridge-rerank latency A/B + delta, next step = await human FAIL review.
 
 ## The active next step = Codex Run 5 (F3 deadline fix + bridge-side Cohere rerank) [SUPERSEDED by Run 6]
 
