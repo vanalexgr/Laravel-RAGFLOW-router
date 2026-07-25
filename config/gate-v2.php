@@ -12,6 +12,33 @@ return [
         'critic' => env('GATE_V2_CRITIC_MODEL', 'gpt-4.1'),
         'knowledge' => env('GATE_V2_KNOWLEDGE_MODEL', 'gpt-5-mini'),
     ],
+    // Coverage verdicts cannot be adjudicated from an artifact that records only
+    // `snippet_count` — Run 7's audit had to mark half its rows "not determinable".
+    // Enable in eval runs to persist the ranked evidence the stages actually saw.
+    // Off by default: this adds guideline text to every gate response.
+    'audit' => [
+        'persist_snippet_digests' => (bool) env('GATE_V2_PERSIST_SNIPPET_DIGESTS', false),
+        'snippet_digest_max_per_guideline' => (int) env('GATE_V2_SNIPPET_DIGEST_MAX', 6),
+        'snippet_digest_max_chars' => (int) env('GATE_V2_SNIPPET_DIGEST_CHARS', 600),
+    ],
+    // Model-name prefixes that accept a `reasoning.effort` provider option. A stage
+    // model outside this list silently drops the effort setting, so extend this when
+    // adopting a new reasoning family rather than assuming effort is being applied.
+    'reasoning_model_prefixes' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', (string) env('GATE_V2_REASONING_MODEL_PREFIXES', 'gpt-5,o1,o3,o4')),
+    ))),
+    // Reasoning effort per stage. Only reaches the provider for reasoning-capable
+    // models (see GateModelOptions); with a non-reasoning stage model the value is
+    // inert, which is why the Run 7 `effort=low` labels had no effect on gpt-4.1.
+    // Null falls back to the agent's own REASONING_EFFORT constant.
+    'stage_efforts' => [
+        'orient' => env('GATE_V2_ORIENT_EFFORT'),
+        'pathway' => env('GATE_V2_PATHWAY_EFFORT'),
+        'probe' => env('GATE_V2_PROBE_EFFORT'),
+        'critic' => env('GATE_V2_CRITIC_EFFORT'),
+        'knowledge' => env('GATE_V2_KNOWLEDGE_EFFORT'),
+    ],
     'stage_timeouts' => [
         'orient' => (int) env('GATE_V2_ORIENT_TIMEOUT_SECONDS', 30),
         'pathway' => (int) env('GATE_V2_PATHWAY_TIMEOUT_SECONDS', 30),

@@ -313,6 +313,9 @@ final class GateWorkflowService
             'routed_guidelines' => $bestCandidate['orient']['candidate_guidelines'],
             'pathways' => $bestCandidate['ground']['pathways'],
             'queries_tried' => $bestCandidate['ground']['queries_tried'],
+            'snippet_digests' => $this->auditSnippetDigests(
+                $bestCandidate['ground']['snippet_digests'],
+            ),
             'critic' => $bestCritic,
             'best_score' => $bestScore,
             'iterations' => min($this->iteration, $maxIterations),
@@ -703,6 +706,7 @@ final class GateWorkflowService
             'routed_guidelines' => $orient['candidate_guidelines'],
             'pathways' => $ground['pathways'],
             'queries_tried' => $ground['queries_tried'],
+            'snippet_digests' => $this->auditSnippetDigests($ground['snippet_digests']),
             'iterations' => 0,
             'stage_trace' => $this->trace,
             'state' => [
@@ -819,6 +823,43 @@ final class GateWorkflowService
      * @param  array<string, array<int, array<string, mixed>>>  $digests
      * @return array<string, array<int, array<string, mixed>>>
      */
+    /**
+     * Ranked evidence exactly as the stages saw it, for post-hoc adjudication of a
+     * coverage verdict. `snippet_count` alone cannot distinguish "reasoned badly over
+     * good evidence" from "the evidence was irrelevant", and that ambiguity is what
+     * blocked the Run 7 coverage audit.
+     *
+     * @param  array<string, array<int, array<string, mixed>>>  $digests
+     * @return array<string, array<int, array<string, mixed>>>
+     */
+    private function auditSnippetDigests(array $digests): array
+    {
+        if (config('gate-v2.audit.persist_snippet_digests', false) !== true) {
+            return [];
+        }
+
+        $maxPerGuideline = max(1, (int) config('gate-v2.audit.snippet_digest_max_per_guideline', 6));
+        $maxChars = max(120, (int) config('gate-v2.audit.snippet_digest_max_chars', 600));
+        $cleaner = $this->chunkCleaner ?? new GateChunkCleaner;
+
+        foreach ($digests as $guideline => $snippets) {
+            $audited = [];
+            foreach (array_slice($snippets, 0, $maxPerGuideline) as $rank => $snippet) {
+                $audited[] = [
+                    'rank' => $rank + 1,
+                    'similarity' => $snippet['similarity'] ?? null,
+                    'source' => $snippet['source'] ?? null,
+                    'metadata' => $snippet['metadata'] ?? [],
+                    'signal_ratio' => $snippet['signal_ratio'] ?? null,
+                    'text' => $cleaner->truncateForLlm((string) ($snippet['text'] ?? ''), $maxChars),
+                ];
+            }
+            $digests[$guideline] = $audited;
+        }
+
+        return $digests;
+    }
+
     private function compactSnippetDigests(array $digests): array
     {
         foreach ($digests as $guideline => $snippets) {
