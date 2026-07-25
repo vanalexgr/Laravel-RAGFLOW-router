@@ -1,5 +1,80 @@
 # Codex unattended progress — Agentic Gate v2
 
+## 2026-07-26 — R7.10 citation identity + R7.11 coverage audit
+
+Work was limited to R7.10 and R7.11. The branch was pulled first (already current). Testing ran on
+Hetzner in detached disposable checkout `/tmp/agentic-gate-v2-r710-V1TcIJ`; production source,
+`.env`, configuration/defaults, RAGFlow, and the adapter DB were not changed. The pre-existing local
+`CLAUDE.md` modification was preserved and excluded from the commits.
+
+### R7.10 — citation-identity prompt header
+
+`RetrieveEsvsSnippetsTool` now prefixes citation-bucket prompt text with the compact identity parsed
+by `GateChunkCleaner`, for example:
+
+```text
+[Recommendation 22 | Class IIa | Level C | abdominal_aortic_aneurysm]
+Men with AAA >55 mm...
+```
+
+Narrative snippets are unchanged. The short configured guideline key is used instead of the parsed,
+long `guideline_name`; embedding/narrative/citation queries were not changed. The focused test also
+updates stale retrieval mocks to the current optional citation-query signature.
+
+Hetzner PHPUnit result:
+
+```text
+OK (2 tests, 8 assertions)
+```
+
+The binding canary used the real loopback HTTP `GateWorkflowService`, external GPT-5 judge, and five
+turns selected to test the hypothesis directly (AAA T1 plus all four omission regressions). The
+checkout-only SUT used the 60-second retrieval clamp and `sync` concurrency; no default changed.
+
+```text
+5 scenarios | 5 turns | PASS 1 | MINOR 3 | FAIL 1
+Routing 100.0% | verbatim 100.0%
+```
+
+| Case | Run 6 | Run 7 before R7.10 | R7.10 canary | Result |
+|---|---|---|---|---|
+| `aaa_evolving_context:1` | FAIL | PASS | PASS | Flagship retrieval gain held |
+| `batch_s2_post_vein_bypass_antithrombotics:1` | MINOR | FAIL | MINOR | Recovered; aspirin 75–100 mg + rivaroxaban 2.5 mg BID explicit |
+| `batch_s5_iliofemoral_dvt_recent_surgery:1` | PASS | MINOR | MINOR | Did not recover; IVC-filter contingency still omitted |
+| `batch_s6_urgent_cea_af_apixaban:1` | MINOR | FAIL | FAIL | Did not recover; stop/restart/no-bridging plan still omitted |
+| `batch_f1_clti_aps_warfarin:1` | PASS | MINOR | MINOR | Did not recover; high-risk APS bridging remained implicit/absent |
+
+**Expectation verdict: mostly not held.** The header recovered S2 and retained AAA T1, but three of
+the four omission regressions did not recover. Therefore anonymous cleaned citations were a sufficient
+explanation for S2 in this run, but not the general cause of S5/S6/F1. Per the backlog instruction,
+no second behavior change was stacked.
+
+Artifact: `docs/eval/run7_r710_canary_external_20260725_223706.json`.
+
+### R7.11 — coverage audit
+
+Committed `docs/eval/coverage_audit.md` contains **10 unique scenario/turn rows** selected from the
+Run 6 and Run 7 full artifacts. It includes each core question, the guidelines/query attempts, both
+coverage verdicts, retrieval counts, and the determinable Run-7-vs-Run-6 change.
+
+Three rows have a deterministic Run 6 zero-to-Run 7 nonzero retrieval change:
+case-switch T2, duplicate-delivery T2, and F4. C2 and F2 regressed from an interaction state to
+`not_covered` despite nonzero retrieval; C3 and F3 stayed `not_covered` despite nonzero retrieval.
+
+The artifacts do not persist ranked raw snippet text or identities. All audited absence Pathways also
+have empty evidence-pathway arrays, so the audit records this limitation instead of fabricating “top
+snippets.” It separately records S4 as a control: both committed full-run artifacts already contain
+the Class IIb / Level C carotid-web basis, so those artifacts do not demonstrate a Run-7-only discovery
+even though the old baseline diagnosis was wrong. R7.11 made no behavior change and required no eval.
+
+### Files touched
+
+- `app/Ai/Gate/Tools/RetrieveEsvsSnippetsTool.php`
+- `tests/Unit/GateEval/RetrieveEsvsSnippetsToolTest.php`
+- `docs/eval/run7_r710_canary_external_20260725_223706.json`
+- `docs/eval/coverage_audit.md`
+- `docs/CODEX_PROGRESS.md`
+
 ## 2026-07-25 — Run 7 fast slice: R7.1 query construction + R7.2 chunk cleaning
 
 Run 7 started from `1922fa0` after `git pull --ff-only` on
