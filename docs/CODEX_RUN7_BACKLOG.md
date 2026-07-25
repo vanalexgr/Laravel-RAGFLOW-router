@@ -136,6 +136,39 @@ If an item does not improve things, say so plainly — negative results are resu
    `recommendation_id` present in the retrieved set, with no LLM judgement required.
    Depends on **R7.3** (labelled citation bucket) and slots into **R7.4**'s `## Evidence Used` section.
 
+## Deferred to S3 / follow-on — clarification-wait retrieval (NOT in Run 7)
+
+The legacy adapter retrieved **in the background while the user typed a clarification answer**
+(`asyncio.create_task` at `_prefetch` / `background_task`, stored as `pending_pre_result`, then reused via
+`_call_confirmation_phase`'s change-detection). **The gate has no equivalent**, and its `groundCache` is
+`private array` — **in-memory, reset every run** — so it evaporates the moment the turn ends.
+
+Note the gate is *better positioned* in one respect: it retrieves **before** asking (Orient → Ground →
+Probe decides `ask`), so it already holds evidence at the moment it poses a question. What is missing:
+
+- **[S3, cheap, strictly wins] Cross-turn reuse + change detection.** Today the gate retrieves, asks a
+  question, **throws the retrieval away**, then re-retrieves from scratch when the answer arrives — waste
+  on *every* clarification turn. Persist `snippet_digests` in the chat_id-keyed state brain alongside
+  `last_answer_digest`; on the next turn, check whether the delta-merged `patient_model` **materially**
+  changes retrieval before re-running. This is Fable's Q5 recommendation ("keep the change-detection
+  semantic as a Ground cache policy off `last_answer_digest`") — already in the plan, never implemented.
+- **[follow-on] Branch-speculative retrieval during the wait.** The gate knows its branches explicitly —
+  Probe enumerates `unknowns` with `discriminating_variables`, Pathway enumerates candidate pathways — so
+  while the clinician types "symptomatic", pre-retrieve the discriminating branches. Dispatch a **queued
+  job** on `decision: ask` that writes into the chat_id-keyed state (Laravel is request/response; the
+  adapter could use `asyncio` only because it is a long-lived process). Fable's two-POST transport
+  (`/gate/start` + `/gate/result`) is the alternative.
+
+**This does NOT contradict removing the speculative prefetch in R7.1** — the two are different:
+
+| | Prefetch removed in R7.1 | Clarification-wait prefetch |
+|---|---|---|
+| Query quality | **bad** (raw turn, pre-Orient) | **good** (post-Orient, branch-specific) |
+| Timing | **on the critical path** | **dead wall-clock** (human reading/typing) |
+| Cost of a miss | wasted call **+ triggered a retry** | free — nobody is waiting |
+
+Speculation is only worth it with a good query, during time that is otherwise idle.
+
 ## Porting principle (apply to any further candidates)
 **Port what constrains stochasticity or saves tokens. Do NOT port workarounds for missing reasoning.**
 Multilingual normalization was the latter — dropped, because the reasoning model already does it (see

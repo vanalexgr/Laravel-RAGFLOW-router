@@ -229,6 +229,14 @@ the answer path first (against the *existing* live pipeline + a *cloud* model) i
    regexes off. **Checkpoint:** 15-case + guardrail/injection cases + gate-reply suppression cases.
 4. **S3 — State brain** (I+H): chat_id-keyed state, idempotency, versioning, new-case detection;
    `STATE_OWNER=laravel` while the adapter still drives turn flow (extends the Stage-D pattern).
+   **Also: cross-turn retrieval reuse + change detection** — the gate's `groundCache` is in-memory and
+   dies with the request, so today it retrieves, asks a clarification, discards the retrieval, and
+   re-retrieves from scratch when the answer arrives (waste on every clarification turn). Persist
+   `snippet_digests` beside `last_answer_digest` and re-run retrieval only when the delta-merged
+   `patient_model` materially changes it (Fable Q5). **Follow-on:** branch-speculative retrieval during
+   the clarification wait via a queued job on `decision: ask` — the gate knows its branches explicitly
+   (Probe's `discriminating_variables`, Pathway's candidates), and the wait is otherwise dead wall-clock.
+   The legacy adapter did the crude version of this with `asyncio.create_task` + `pending_pre_result`.
    **Checkpoint:** adversarial state set (chimera, duplicate-delivery, declined-question) + 15-case.
 5. **S4 — Orient shadow** (A+F+P): Orient classifies + routes on live traffic, logged only; run the
    **routing proof harness** (log replay → shadow disagreements judged → hard bars). **Exit = the
