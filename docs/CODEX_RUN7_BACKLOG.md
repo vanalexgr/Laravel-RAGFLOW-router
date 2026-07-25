@@ -222,6 +222,28 @@ If an item does not improve things, say so plainly — negative results are resu
     infrastructure workaround, and `sync` is arguably the correct default anyway (plan §0 locks sequential
     pathways for the Ollama/ISI target).
 
+11. **R7.11 Audit every `not_covered` / `retrieval_uncertain` verdict.** *(clinician-triggered,
+    2026-07-26)* The S4 carotid-web case was diagnosed in March 2026 as a **RAGFlow content gap**
+    ("ESVS has no dedicated carotid-web recommendation"). Run 7's improved query construction retrieved an
+    **actual Class IIb / Level C carotid-web recommendation**, and **the clinician has confirmed the
+    guidance exists**. So that FAIL was a **retrieval failure misdiagnosed as a corpus gap for ~4 months**.
+
+    **If one confirmed "corpus gap" was really a retrieval gap, others may be too — the system may be
+    systematically under-claiming coverage.** A false *"ESVS is silent"* is clinically worse than an
+    incomplete answer: it tells a clinician no guidance exists when it does.
+
+    **Task:** extract every case in the Run 6 + Run 7 artifacts whose `evidence_status.coverage` is
+    `not_covered` or `retrieval_uncertain`, and for each emit a compact review row — scenario/turn, the
+    core question, the queries tried, and the top retrieved snippets — into
+    `docs/eval/coverage_audit.md` for clinician adjudication. **Do not change behaviour**; this is an
+    evidence-gathering task. Where R7.1's query construction now retrieves something the old path missed,
+    say so explicitly.
+
+    *Note on the metric:* S4 was `PASS_WITH_MINOR` in **both** Run 6 and Run 7 — the grade did not move,
+    but the evidence_status went from a false absence to a correctly cited recommendation. **The strict-judge
+    aggregate did not reward a real clinical improvement.** Treat aggregate grade as a lossy measure and
+    report coverage-correctness separately.
+
 ## Deferred to S3 / follow-on — clarification-wait retrieval (NOT in Run 7)
 
 The legacy adapter retrieved **in the background while the user typed a clarification answer**

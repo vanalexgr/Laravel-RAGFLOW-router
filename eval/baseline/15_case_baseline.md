@@ -15,7 +15,7 @@ Batch Validation v1 (2026-03-26, production adapter v1.5.47+).
 | S1 | PASS WITH MINOR | F7 (framing) | correct conclusion, slight negative framing |
 | S2 | PASS | — | aspirin+rivaroxaban, vein-bypass pathway |
 | S3 | PASS | — | ITP modifier front-loaded, tiered tree |
-| **S4** | **FAIL** | F4 (specificity) | **carotid web — CONTENT gap in RAGFlow, not architecture** (see caveat) |
+| **S4** | **FAIL** | F4 (specificity) | ⚠️ **diagnosis CORRECTED 2026-07-26** — this was a **retrieval** failure, not a corpus gap; ESVS carotid-web guidance exists (clinician-confirmed). See the S4 section below. |
 | S5 | PASS | — | anticoag alone; recent-surgery contraindication |
 | S6 | PASS WITH MINOR | F7 (framing) | correct but slight under-emphasis on urgency |
 | F1 | PASS | — | APS tiered modifier, bridging uncertainty correct |
@@ -38,16 +38,32 @@ Batch Validation v1 (2026-03-26, production adapter v1.5.47+).
 > "PASS WITH MINOR → PASS" after a fix and the header was written mid-flight. Treat the **per-case table
 > as authoritative** (11/3/1). Confirm with the human if the exact totals matter for the gate.
 
-## S4 caveat — critical for defining the gate
+## ⚠️ S4 — THE ORIGINAL DIAGNOSIS WAS WRONG (corrected 2026-07-26, clinician-confirmed)
 
-S4 (symptomatic carotid web) FAILED at baseline because **ESVS has no dedicated carotid-web
-recommendation** — the system correctly declared `coverage=none` and applied symptomatic-stenosis
-principles; the FAIL is a **RAGFlow content gap, not an architecture defect**. Therefore:
-- "No grade drop" for S4 means v2 must **also** correctly declare `not_covered` / `retrieval_uncertain`
-  and fall back to principles via the interpretive frame — it is **not** expected to turn S4 into a PASS
-  unless the corpus gains carotid-web content.
-- S4 is the natural test for the two-frame answer + `retrieval_sufficiency` invariant: re-retrieve, then
-  honestly report absence while still giving a usable, flagged non-ESVS answer.
+**Superseded.** The March 2026 batch validation concluded S4 (symptomatic carotid web) failed because
+*"ESVS has no dedicated carotid-web recommendation — a RAGFlow content gap, not an architecture defect."*
+**That is incorrect.** In Run 7, the improved query construction (R7.1) retrieved an **actual carotid-web
+recommendation (Class IIb, Level C — "CEA or CAS may be considered…")**, and the **clinician has confirmed
+that ESVS guidance on carotid web exists**.
+
+**So S4's baseline FAIL was a RETRIEVAL failure, not a corpus gap** — the evidence was in the corpus all
+along; the old query construction could not reach it. R7.1 closed a real clinical gap that had been
+misdiagnosed for ~4 months.
+
+**Consequences:**
+- The previous instruction — *"S4 must stay `not_covered`; do not expect a PASS"* — is **withdrawn**.
+  Reporting `covered` on S4 is **correct behaviour**, not a false pass. A canary/regression guard asserting
+  `not_covered` would force the system to suppress real evidence (Codex correctly refused to implement it).
+- S4's `baseline_grade` (FAIL) is retained for arithmetic continuity, but **it is a floor, not a target**:
+  S4 improving is a genuine win.
+- **[ACTION] Audit every other `not_covered` / `retrieval_uncertain` verdict.** If one confirmed "corpus
+  gap" was really a retrieval gap, others may be too — the system may have been **systematically
+  under-claiming coverage**. This is now the highest-value use of the clinician's review time, because a
+  false "ESVS is silent" is a clinically worse failure than a merely incomplete answer.
+
+**Note on the metric:** S4 was `PASS_WITH_MINOR` in both Run 6 and Run 7 — the *grade* did not move, but
+the *evidence_status* went from a false absence to a correctly cited recommendation. The strict-judge
+aggregate did not reward this. Treat aggregate grade as a **lossy** measure of clinical improvement.
 
 ## How the eval consumes this
 
