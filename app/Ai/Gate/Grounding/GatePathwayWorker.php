@@ -8,6 +8,12 @@ use RuntimeException;
 
 final class GatePathwayWorker
 {
+    /**
+     * Bound on the evidence carried out of a branch, unchanged from when a single
+     * attempt's slice was returned directly.
+     */
+    private const MAX_MERGED_SNIPPETS = 10;
+
     public function __construct(
         private readonly RetrieveEsvsSnippetsTool $retrieval,
     ) {}
@@ -104,7 +110,7 @@ final class GatePathwayWorker
                     'prefetched' => $attempt === 1 && $prefetched !== null,
                 ],
             ];
-            $snippetDigests = array_slice((array) $retrieved['snippets'], 0, 10);
+            $snippetDigests = $this->mergeSnippets($snippetDigests, (array) $retrieved['snippets']);
 
             $assessmentStarted = microtime(true);
             $response = (new PathwayAgent($guideline))->prompt(
@@ -166,6 +172,73 @@ final class GatePathwayWorker
             'snippet_digests' => $snippetDigests,
             'trace' => $trace,
         ];
+    }
+
+    /**
+     * A retry must only ever ADD evidence. This previously assigned the latest
+     * attempt's slice, so a retry that came back smaller discarded everything the
+     * first attempt found. In Run 7 that hit 12 of 21 retry branches, and F4 wiped
+     * all three guidelines to empty — two of them from a `partial` coverage verdict
+     * to `not_covered` — while the trace still reported 26 chunks retrieved.
+     *
+     * Merging also makes the retry query safe to keep: the appended
+     * "ESVS recommendation decision threshold anatomy" terms can return nothing
+     * without costing the branch its evidence.
+     *
+     * @param  array<int, array<string, mixed>>  $kept
+     * @param  array<int, array<string, mixed>>  $incoming
+     * @return array<int, array<string, mixed>>
+     */
+    private function mergeSnippets(array $kept, array $incoming): array
+    {
+        $merged = $kept;
+        $seen = [];
+        foreach ($kept as $snippet) {
+            $seen[$this->snippetKey($snippet)] = true;
+        }
+
+        foreach ($incoming as $snippet) {
+            $key = $this->snippetKey($snippet);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $merged[] = $snippet;
+        }
+
+        // Similarity-first so the bound below drops the weakest evidence rather
+        // than whichever attempt happened to run last. PHP's sort is stable, so
+        // equal-similarity snippets keep their retrieval order.
+        usort(
+            $merged,
+            static fn (array $a, array $b): int => self::similarityRank($b) <=> self::similarityRank($a),
+        );
+
+        return array_slice($merged, 0, self::MAX_MERGED_SNIPPETS);
+    }
+
+    /**
+     * Identity for de-duplication. Chunk text is the only field always present;
+     * `recommendation_id` is absent on narrative-bucket chunks.
+     *
+     * @param  array<string, mixed>  $snippet
+     */
+    private function snippetKey(array $snippet): string
+    {
+        return md5(trim((string) ($snippet['text'] ?? '')));
+    }
+
+    /**
+     * Unscored snippets sort last but are still retained — a missing similarity
+     * is not evidence of irrelevance.
+     *
+     * @param  array<string, mixed>  $snippet
+     */
+    private static function similarityRank(array $snippet): float
+    {
+        return is_numeric($snippet['similarity'] ?? null)
+            ? (float) $snippet['similarity']
+            : -1.0;
     }
 
     /**

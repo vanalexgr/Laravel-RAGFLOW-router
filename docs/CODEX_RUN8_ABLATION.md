@@ -1,13 +1,33 @@
-# Codex Run 8 — model ablation before any further R7 items
+# Codex Run 8 — fix the retry, then ablate
 
-**Do not start R7.3–R7.9.** Run 7 established that the retrieval lever is spent:
-F4 went 0 → 26 snippets with the verdict unchanged at `not_covered`; C2 went
-31 → 51 snippets and *regressed* to `not_covered`; F3 went 54 → 58 with no
-change. R7.10, a prompt-level fix, recovered 1 of 4 targeted cases. Every
-further prompt fix is being tuned against a generator that may itself be the
-constraint. This run settles that question before more work is stacked on it.
+**Do not start R7.3–R7.9.**
 
-Commit `315a39a` already landed the plumbing. Your job is to run the experiment.
+> **Revised after a trace audit.** An earlier draft of this brief claimed Run 7
+> proved retrieval was saturated, and sent you straight to a model ablation.
+> That reading was wrong. The chunk counts in `run7_fail_digest.md` **sum across
+> retrieval trace entries** — they measure retrieval work performed, not evidence
+> delivered to the Probe. The real figure was far smaller, and on the hardest
+> cases it was zero.
+
+`GatePathwayWorker` **assigned** the latest attempt's snippets instead of merging
+them, so a retry that returned fewer — or none — discarded everything the first
+attempt found. Across Run 7's 21 retry branches: **12 came back smaller, 4
+returned literally zero.** F4 is the clearest case:
+
+| Guideline | Attempt 1 | Attempt 2 |
+|---|---|---|
+| `abdominal_aortic_aneurysm` | 8 snippets, `partial` | **0**, `not_covered` |
+| `clti` | 10, `not_covered` | **0**, `not_covered` |
+| `antithrombotic_therapy` | 8, `partial` | **0**, `not_covered` |
+
+F4 is the case the coverage audit recorded as "0 → 26 chunks, verdict did not
+improve". It retrieved 26 and delivered **zero**, and the retry flipped two
+guidelines off `partial`. An ablation run on this pipeline would have given a
+reasoning Probe an empty evidence set on exactly the discriminating cases and
+produced an uninterpretable null result.
+
+Commit `315a39a` landed the ablation plumbing; a follow-up commit landed the
+merge fix. Work the steps in order — **the ablation is now Step 4, not Step 1.**
 
 ## Context you need
 
@@ -46,7 +66,35 @@ Confirm the artifact now contains `snippet_digests` with ranked text, similarity
 and identity metadata per guideline. Without this the run cannot distinguish a
 reasoning failure from an evidence-relevance failure, which is the whole point.
 
-## Step 3 — the ablation
+## Step 3 — re-measure with the merge fix, before touching any model
+
+`mergeSnippets` makes a retry strictly additive: it can add and re-rank, never
+remove. Re-run the 8 cases on the current models with only this change.
+
+**If C2, F2 and F4 recover here, the model question was never the binding
+constraint** and Step 4 should be re-scoped or dropped. Report that outcome
+before spending the ablation budget.
+
+Then answer the two questions the fix makes newly measurable:
+
+1. **Does the retry ever change a verdict now that it cannot destroy evidence?**
+   Attempt 2 cost 229s of staged wall-clock in Run 7, of which **201s came from
+   branches that returned the same or fewer snippets**. If a strictly-additive
+   retry still never moves a coverage verdict, delete it and take the time back.
+   Note the Run 7 quality run used `GATE_V2_CONCURRENCY_DRIVER=sync`; under the
+   default parallel driver the saving is one retrieve+pathway round off the
+   *slowest* branch, not the summed total. Confirm against
+   `run7_latency_20260725_220506.json`, which is the authoritative timing artifact.
+
+2. **Were the retry-heavy turns the ones that blew the 60s child-process
+   timeout?** Run 7's default concurrent run aborted at 24/32 turns. A branch
+   doing two full retrieve+pathway rounds is much likelier to exceed a fixed 60s
+   child budget. This is a hypothesis, not a finding — check whether the turns
+   that died were retry-heavy. "Completion of all 32 turns under the default
+   concurrency driver" is already on the release gate, so if retries are
+   implicated, gating them clears a gate item as well as the latency.
+
+## Step 4 — the ablation
 
 Same 8 cases each time: **AAA T1, S2, S5, S6, F1, C2, F2, F4**. C2/F2/F4 are the
 coverage-regression cases and are the discriminating ones — do not drop them.
@@ -64,8 +112,10 @@ Record per arm: grade, coverage verdict, and for every case whose verdict is
 `not_covered`, whether the persisted top snippets actually contain a
 recommendation that answers the question. That last column is the finding.
 
-## Step 4 — report against a rule fixed in advance
+## Step 5 — report against a rule fixed in advance
 
+- **C2/F2/F4 recovered at Step 3, before any model change** → the constraint was
+  the destructive retry. Report and stop; Step 4 is not needed this run.
 - **S6 and F2 recover in arm B** → the constraint was generator capability.
   Recommend a Probe/Critic model change, then resume the backlog at R7.3 only,
   and drop R7.4–R7.9 to P2 (they are formatting-class failures).

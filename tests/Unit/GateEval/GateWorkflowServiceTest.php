@@ -83,7 +83,8 @@ class GateWorkflowServiceTest extends TestCase
         $result = $method->invoke($this->workflow(), ['aaa' => $snippets]);
 
         $this->assertCount(6, $result['aaa']);
-        $this->assertSame(1200, mb_strlen($result['aaa'][0]['text']));
+        $this->assertLessThanOrEqual(1200, mb_strlen($result['aaa'][0]['text']));
+        $this->assertStringEndsWith('[...truncated...]', $result['aaa'][0]['text']);
         $this->assertSame('AAA', $result['aaa'][0]['source']);
     }
 
@@ -122,11 +123,52 @@ class GateWorkflowServiceTest extends TestCase
         ]));
     }
 
+    public function test_an_empty_retry_cannot_discard_first_pass_evidence(): void
+    {
+        $method = new \ReflectionMethod(GatePathwayWorker::class, 'mergeSnippets');
+        $worker = new GatePathwayWorker(new RetrieveEsvsSnippetsTool(new class extends RetrievalService {}));
+
+        $first = [
+            ['text' => 'rec 22 threshold', 'similarity' => 0.71],
+            ['text' => 'perioperative antithrombotics', 'similarity' => 0.64],
+        ];
+
+        // Run 7's F4 shape: every retry returned zero, and the branch lost all of it.
+        $this->assertSame($first, $method->invoke($worker, $first, []));
+    }
+
+    public function test_a_retry_adds_and_reranks_without_dropping_earlier_snippets(): void
+    {
+        $method = new \ReflectionMethod(GatePathwayWorker::class, 'mergeSnippets');
+        $worker = new GatePathwayWorker(new RetrieveEsvsSnippetsTool(new class extends RetrievalService {}));
+
+        $merged = $method->invoke(
+            $worker,
+            [['text' => 'weaker first-pass hit', 'similarity' => 0.41]],
+            [
+                ['text' => 'weaker first-pass hit', 'similarity' => 0.41],  // duplicate
+                ['text' => 'stronger retry hit', 'similarity' => 0.88],
+                ['text' => 'unscored hit'],
+            ],
+        );
+
+        $this->assertSame(
+            ['stronger retry hit', 'weaker first-pass hit', 'unscored hit'],
+            array_column($merged, 'text'),
+            'Retry evidence should rank by similarity, dedupe, and retain unscored snippets last.',
+        );
+    }
+
     private function workflow(): GateWorkflowService
     {
         $retrieval = new class extends RetrievalService
         {
-            public function retrieve(string $question, array $history = [], ?array $requestedKeys = null): array
+            public function retrieve(
+                string $question,
+                array $history = [],
+                ?array $requestedKeys = null,
+                ?string $citationQuestion = null,
+            ): array
             {
                 throw new \RuntimeException('Retrieval must not run.');
             }
