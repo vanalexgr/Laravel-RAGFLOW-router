@@ -353,6 +353,26 @@ Every one must land somewhere in v2 or be a conscious drop.
   carry the blueprint's richer coverage model (interaction-gap ≠ total-gap ≠ partial).
 - **Assets are first-class in the answer contract**: response gains `assets[]`; `answer_markdown`
   embeds figure/table/rec-popup references (reuse `GuidelineAssetService`).
+- **OpenWebUI presentation contract (R7.9)** — the legacy adapter uses OWUI's **native event API**
+  (`citation` ×4, `status`, `message`), which is what makes references **clickable**: a `citation` event
+  carries `document` (the `_format_rec_popup` text) + `metadata{kind, guideline, recommendation_id}`, in
+  two kinds (`recommendation` with Class/Level, and `narrative`). Our contract had **no `citations[]`**,
+  so references would render as text only and nothing would be clickable. Response therefore gains:
+  ```
+  citations[] : { id, kind: recommendation|narrative, title, document,
+                  metadata:{ guideline, recommendation_id, class, level } }
+  assets[]    : { url, thumbnail_url, label, caption, guideline_key }
+  progress[]  : { stage, message, context }
+  ```
+  **Emitting OWUI events is adapter-side by necessity** (Laravel cannot call `__event_emitter__`) but is
+  **transport, not intelligence** — Laravel decides what a citation *is*; the adapter only relays it.
+  Laravel builds `citations[]` deterministically from the labelled citation bucket, so a fabricated
+  citation stays structurally impossible **and** becomes click-verifiable. `stage_trace` remains
+  logs/eval only — never rendered (Gap 9).
+  **Progress is an upgrade, not parity:** the adapter could only say "Still retrieving (12s)"; the gate
+  knows stage, guideline, attempt, and whether it is revising after a critique — i.e. visible clinical
+  reasoning. `GateProgress` already emits this; **only the transport is missing** — ⛔HUMAN: two-POST
+  (`/gate/start` + `/gate/result`) vs SSE.
 - **Tool contract change is explicit**: the thin tool no longer takes `guideline_1/2/3` — it sends
   `{question, history}`; Laravel Orient routes. The SELECTION RULES/GUIDELINE REFERENCE migrate into
   Orient. The tool must still *always* invoke Laravel (never answer from history) — that anti-short-

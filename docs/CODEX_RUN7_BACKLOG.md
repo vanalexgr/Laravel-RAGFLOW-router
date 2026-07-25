@@ -136,6 +136,56 @@ If an item does not improve things, say so plainly — negative results are resu
    `recommendation_id` present in the retrieved set, with no LLM judgement required.
    Depends on **R7.3** (labelled citation bucket) and slots into **R7.4**'s `## Evidence Used` section.
 
+9. **R7.9 OpenWebUI presentation contract — clickable citations, images, visible reasoning.**
+   *Verifiability only counts if the clinician can act on it in the UI.* The legacy adapter uses
+   OpenWebUI's **native event API** — `citation` ×4, `status`, `message` — and that is what makes
+   references clickable:
+   ```python
+   await emitter({"type": "citation", "data": {
+       "document": [popup],                       # _format_rec_popup output
+       "metadata": [{"kind": "recommendation", "guideline": gl, "recommendation_id": rec_id}],
+       "source": {"id": str(n), "name": title},
+   }})
+   ```
+   It emits **two kinds** — `recommendation` (with rec id + Class/Level) and `narrative` (prose excerpts)
+   — so `[n]` markers become chips that open the verbatim recommendation.
+
+   **The gap:** our thin-adapter response contract
+   (`{answer_markdown, questions[], evidence_status, assets[], state_echo, stage_ref}`) has **no
+   `citations[]`**. R7.8 therefore yields references as *text only* — the adapter would have nothing to
+   emit citation events from, so nothing is clickable.
+
+   **Architectural note (not a thin-adapter violation):** emitting OWUI events is inherently adapter-side
+   — Laravel cannot call `__event_emitter__`. That is **transport, not intelligence**. The rule holds:
+   **Laravel decides what a citation is; the adapter only relays it.**
+
+   **Extend the response contract:**
+   ```
+   citations[] : { id, kind: recommendation|narrative, title,
+                   document,                                  # rendered popup text
+                   metadata: { guideline, recommendation_id, class, level } }
+   assets[]    : { url, thumbnail_url, label, caption, guideline_key }
+   progress[]  : { stage, message, context }
+   ```
+   Laravel builds `citations[]` **deterministically** from the citation-bucket chunks (R7.3 labels them;
+   they already carry `recommendation_id/class/level/guideline`) → hallucinated citations stay
+   structurally impossible **and** become click-verifiable. Preserve **narrative** citations too, not only
+   recommendations.
+
+   **Progress is an upgrade over parity, not just parity.** The adapter could only say *"Still retrieving
+   (12s)"*. The gate knows the **stage** (orient/ground/probe/critic), **which guideline** is being
+   searched, **which attempt**, and **whether it is revising after a critique** — i.e. visible clinical
+   reasoning: `🔍 Searching carotid guidelines…` → `⚠️ Evidence looks thin — re-checking…` →
+   `🩺 Weighing CEA vs CAS against the case…`. `GateProgress` already emits these; **the transport is what
+   is missing.**
+
+   **⛔ HUMAN decision — progress transport:** two-POST (`/gate/start` + `/gate/result`, Fable's Q7
+   recommendation) vs SSE. Do not pick this unilaterally; without it, deep-path waits stay silent.
+
+   **Verify:** (a) image URLs under `public/storage` must resolve **from the user's browser**, not just
+   the server; (b) `GuidelineAssetService` is actually called (see R7.8 L3 — check the manifest first).
+   Depends on **R7.3** (labelled citation bucket) and **R7.8** (citation records + asset rendering).
+
 ## Deferred to S3 / follow-on — clarification-wait retrieval (NOT in Run 7)
 
 The legacy adapter retrieved **in the background while the user typed a clarification answer**
