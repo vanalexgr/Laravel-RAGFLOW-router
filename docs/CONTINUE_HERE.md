@@ -80,7 +80,34 @@ state-loss bug is substantially fixed.** T1 failed by judging a **5.8 cm (58 mm)
   Orient already emits `response_mode`; nothing downstream consumes it.
 - **16 v1.5.x clinical rules** map ~1:1 onto Run-6 failures and are entirely absent.
 
-## The active next step = Codex Run 7 (restore the discarded subsystems)
+## Run 7 fast slice DONE (commit `9d4ec2b`) — R7.1+R7.2 only
+
+**Tier 0 (mechanics — clearly better):** similarity `47.8/44.7/44.1/39.6/55.2` vs `17.6/15.9/15.6/17/36`
+(~2.8×); **`rec_22` now retrieved** without seeding; chunk signal **66% → 100%**.
+
+**Full eval: 4 PASS / 12 MINOR / 16 FAIL** vs Run 6's 4/13/15 — but the aggregate hides **9 grade moves**:
+- ⬆️ **`aaa_evolving_context:1` FAIL→PASS** — the 58 mm-vs-"<55 mm" threshold bug is **fixed** (the case we
+  diagnosed). Also `case_switch_chimera:3` FAIL→PASS, `declined_question_persistence:2` FAIL→MINOR.
+- ⬇️ 6 regressions, **4 sharing one shape — the model stopped citing discrete recommendations**
+  (`s2` misses the core rec, `s6` omits DOAC-stop-without-bridging, `s5` omits the IVC contingency,
+  `f1` "falls short of explicit"); plus 2 state-carryover regressions (`aaa:2`, `correction_flip:2`).
+
+**Cause confirmed: R7.2 shipped half a change.** `GateChunkCleaner` parses `recommendation_id/class/level`
+correctly but sets `text := rec_text_verbatim`, and **nothing injects that metadata into the prompt**
+(R7.8 would; it isn't built). The model now sees text that is **clean but anonymous** → paraphrases
+instead of citing. **→ R7.10 fixes this in ~10 lines.**
+
+**Latency: p50 47.1s (+3.35s), p95 80.6s (+9.53s)** — still within the ≤90s dev SLO, but a real
+regression: removing the prefetch cost the Orient/retrieval overlap (my prediction that it would be
+latency-neutral was wrong). **Default process driver aborts F4 at a 60s child timeout** (`Illuminate\Process`
+default, not configurable via `Concurrency`); the full eval needed a disposable `sync` fallback.
+Note plan §0 locks **sequential** pathways for the Ollama/ISI target anyway, so `sync` is arguably correct.
+
+**⛔ HUMAN:** `s4_symptomatic_carotid_web` now returns `covered` because retrieval found a genuine
+Class IIb/Level C carotid-web recommendation. Either a real gap closed (a months-old "corpus gap"
+diagnosis was wrong) or a subtle over-reach — **needs the clinician's eye**, in `docs/eval/run7_fail_digest.md`.
+
+## The active next step = R7.10 (finish R7.2), then the rest of Run 7
 
 Backlog: **`docs/CODEX_RUN7_BACKLOG.md`** — 7 items, **each landed and measured separately** (grade delta
 vs 4/13/15; latency delta vs p50 43.7 / p95 71.1 control). All cheap, deterministic, no re-index, no extra
@@ -92,7 +119,7 @@ LLM calls; the reasoning loop is unchanged. Paste this prompt into Codex:
 >
 > **FAST FEEDBACK — do NOT run the full 45–60 min eval after every item.** Validate in tiers (details in the backlog's "Measurement discipline"): **Tier 0 = deterministic probes, seconds, no judge** (R7.1 query similarity + does `rec_22` appear; R7.2 signal ratio vs the measured 66%; R7.3 both buckets labelled in the payload; R7.4 section headings per mode; R7.8-L1 real recommendation_ids) — iterate here until green. **Tier 1 = 5-turn canary (~6–8 min)** via a new `--only=<scenario_ids>` filter on `gate:eval`: `aaa_evolving_context` T1 and T3, `batch_f2_clti_itp_after_bypass`, `batch_s4_symptomatic_carotid_web` (regression guard — must stay an honest `not_covered`, not a false PASS), `adversarial_knowledge_interleave` T2. **Tier 2 = full 32-turn eval + latency harness, run ONCE** after a batch is green (grade delta vs 4/13/15; latency delta vs p50 43.7s / p95 71.1s).
 >
-> **THIS RUN: do the fast slice first — land only R7.1 + R7.2** (the two largest measured wins, both Tier-0 verifiable in seconds), then the canary, then one full eval, and **report back with the numbers before continuing to R7.3+**. That gives a real comparable result in under an hour instead of a full day. If an item doesn't help, report that plainly — negative results are results.
+> **THIS RUN: do R7.10 FIRST and alone** — the ~10-line citation-identity header that finishes R7.2. Run 7 fixed `aaa:1` (FAIL→PASS) but caused 6 regressions, 4 of which are the model no longer citing discrete recommendations because `GateChunkCleaner` strips `rec_id/class/level` from the text and nothing puts them back in the prompt. Prepend a compact `[Recommendation 22 | Class IIa | Level C | <guideline_key>]` header to each **citation-bucket** snippet, built from the already-parsed `metadata`. Keep the long `guideline_name` boilerplate **out** (that was the dilution problem). **Prompt text only — do not touch the embedding query**, so R7.1's ~2.8× similarity gain is preserved. **Validate on the Tier-1 canary (~8 min), not a full eval:** expect `s2`/`s6`/`s5`/`f1` to recover toward their Run-6 grades while `aaa:1` stays PASS. If they don't recover, the cause is something else — report that plainly rather than stacking another fix. **Then stop and report before R7.3+.**
 >
 > **Items:** (R7.1) query construction — prose not JSON, expansion folded into **Orient's existing schema** (do NOT re-enable the merged planner: extra call + duplicate routing), `_case_anchor_terms` as deterministic anchors, `_rewrite_with_case_context` for vague follow-ups, differentiated citation query; **plus language handling — do NOT build a language-detection pipeline (the reasoning model is multilingual and Orient is an implicit normalizer); just (a) have Orient emit an English `core_question` and build the query from that + patient_model instead of embedding `$turn` verbatim, and (b) add one Orient prompt line requiring English patient_model values regardless of input language.** (R7.2) chunk cleaning — port `_html_table_to_text`, `_clean_narrative_text`, `_parse_semicolon_kv` (metadata → structured fields), `_truncate_for_llm`; re-measure the signal ratio. (R7.3) stop flattening dual retrieval — pass citation and narrative buckets **separately and labelled** with per-bucket caps, honour `citation_min`. (R7.4) mode-conditioned section templates consuming `response_mode` (management/gap/surveillance/diagnostic/knowledge), incl. `## What is NOT indicated`, `### 🎯 In practice`, `## Evidence Used`. (R7.5) Tier-1 clinical rules — **BROAD COVERAGE** (fixes false-`not_covered`), **NEGATIVE INDICATION FRAMING**, **DECISION-FIRST/DECISIVENESS/DOMINANT MODIFIER**, **CRITICAL SCOPE** (citation-level, into Critic). (R7.6) deterministic mode predicates as Orient priors (`_is_raw_guideline_knowledge_query`, `_is_answer_only_turn`, `_looks_like_fresh_case_intro`, `_should_treat_as_new_query`); bias to `case` on conflict. (R7.7) numeric-threshold check — a 58 mm aneurysm must never be judged by a "<55 mm" rule. **(R7.8) verifiable evidence rendering — citation chunks ALREADY return `recommendation_id/class/level/guideline` and the gate discards them; preserve them, then render DETERMINISTICALLY IN PHP (never model-generated): inline `[n]` markers + `## Evidence Used`, `_format_rec_popup` layout, and figures via the existing `GuidelineAssetService` (484 images are on disk — but check the asset manifest first; if empty/stale report it as a ⛔HUMAN data task).**
 >

@@ -186,6 +186,42 @@ If an item does not improve things, say so plainly — negative results are resu
    the server; (b) `GuidelineAssetService` is actually called (see R7.8 L3 — check the manifest first).
    Depends on **R7.3** (labelled citation bucket) and **R7.8** (citation records + asset rendering).
 
+10. **R7.10 [DO FIRST] Citation-identity header — finish R7.2.** *Run 7 measured 9 grade moves: 3 up
+    (incl. the flagship `aaa_evolving_context:1` **FAIL→PASS** — the 58 mm-vs-"<55 mm" bug is gone) and
+    **6 down**. Four of the six regressions share one shape — the model stopped citing discrete
+    recommendations and paraphrased narrative instead:*
+    - `batch_s2_post_vein_bypass` MINOR→FAIL — **misses the core recommendation** (aspirin + rivaroxaban)
+    - `batch_s6_urgent_cea_af_apixaban` MINOR→FAIL — **omits** DOAC-stop-without-bridging
+    - `batch_s5_iliofemoral_dvt` PASS→MINOR — **omits** the IVC-filter contingency
+    - `batch_f1_clti_aps_warfarin` PASS→MINOR — F7, "falls short of explicit"
+
+    **Confirmed cause — R7.2 shipped half a change.** `GateChunkCleaner` parses the metadata correctly
+    (`recommendation_id`, `recommendation_class`, `evidence_level`) and returns it as a separate
+    `metadata` field, but sets `text := rec_text_verbatim` — and **nothing injects that metadata into the
+    Probe/Critic prompt** (R7.8 would, and R7.8 is not built). So the model now sees text that is **clean
+    but anonymous**: it can no longer tell a snippet *is* Recommendation 22, Class IIa, Level C, so it
+    paraphrases instead of citing.
+
+    | | Before R7.2 | After R7.2 | With R7.10 |
+    |---|---|---|---|
+    | Snippet text | `rec_id:22; class:IIa; level:C; guideline_name:ESVS 2024 Clinical Practice Guidelines on…; rec_text_verbatim: Men with AAA >55 mm…` | `Men with AAA >55 mm…` | `[Recommendation 22 \| Class IIa \| Level C \| abdominal_aortic_aneurysm]`<br>`Men with AAA >55 mm…` |
+    | | noisy but **identifiable** | clean but **anonymous** | clean **and** identifiable |
+
+    **Fix (~10 lines):** prepend a compact identity header to each **citation-bucket** snippet passed to
+    Probe/Critic, built from the already-parsed `metadata`. Keep the long `guideline_name` boilerplate
+    **out** — that repeated string across ~72k chunks was the dilution problem, not the four short
+    fields. **Prompt text only — do not change the embedding query**, so R7.1's ~2.8× similarity gain is
+    untouched.
+
+    **Validate on the Tier-1 canary (~8 min), not a full eval.** Expected: `s2` / `s6` / `s5` / `f1`
+    recover toward their Run-6 grades while `aaa:1` **stays PASS**. If they do not recover, the omission
+    cause is something else — report that plainly rather than stacking another fix.
+
+    *Priority note:* do this **before** the prefetch/process-timeout work. It is smaller, targets 4 of the
+    6 measured regressions, and is canary-testable in minutes; the process-driver issue is an
+    infrastructure workaround, and `sync` is arguably the correct default anyway (plan §0 locks sequential
+    pathways for the Ollama/ISI target).
+
 ## Deferred to S3 / follow-on — clarification-wait retrieval (NOT in Run 7)
 
 The legacy adapter retrieved **in the background while the user typed a clarification answer**
