@@ -2,6 +2,7 @@
 
 namespace App\Ai\Gate\Tools;
 
+use App\Ai\Gate\Retrieval\GateChunkCleaner;
 use App\Facades\RAGFlow as RAGFlowFacade;
 use App\Services\RAGFlow\RAGFlowClient;
 use App\Services\RetrievalService;
@@ -28,6 +29,7 @@ final class RetrieveEsvsSnippetsTool implements Tool
 
     public function __construct(
         private readonly RetrievalService $retrieval,
+        private readonly ?GateChunkCleaner $chunkCleaner = null,
     ) {}
 
     public function description(): Stringable|string
@@ -77,6 +79,7 @@ final class RetrieveEsvsSnippetsTool implements Tool
         bool $fullPipeline = false,
         ?int $topK = null,
         ?int $timeoutSeconds = null,
+        ?string $citationQuery = null,
     ): array {
         $previous = [
             'lean' => config('ragflow.lean.enabled'),
@@ -118,7 +121,7 @@ final class RetrieveEsvsSnippetsTool implements Tool
         }
 
         try {
-            $result = $this->retrieval->retrieve($query, [], [$guidelineKey]);
+            $result = $this->retrieval->retrieve($query, [], [$guidelineKey], $citationQuery);
         } finally {
             config()->set('ragflow.lean.enabled', $previous['lean']);
             config()->set('ragflow.planner.merged_enabled', $previous['planner']);
@@ -140,8 +143,8 @@ final class RetrieveEsvsSnippetsTool implements Tool
         $similarities = [];
         foreach (['llm_citation_chunks', 'llm_narrative_chunks'] as $bucket) {
             foreach ((array) ($result[$bucket] ?? []) as $chunk) {
-                $text = is_array($chunk) ? (string) ($chunk['content'] ?? $chunk['text'] ?? '') : (string) $chunk;
-                $text = trim($text);
+                $cleaned = ($this->chunkCleaner ?? new GateChunkCleaner)->clean($chunk, 3000);
+                $text = $cleaned['text'];
                 if ($text !== '') {
                     $snippets[] = [
                         'text' => $text,
@@ -149,6 +152,10 @@ final class RetrieveEsvsSnippetsTool implements Tool
                         'source' => is_array($chunk)
                             ? ($chunk['guideline'] ?? $chunk['source_guideline'] ?? $guidelineKey)
                             : $guidelineKey,
+                        'metadata' => $cleaned['metadata'],
+                        'raw_chars' => $cleaned['raw_chars'],
+                        'clean_chars' => $cleaned['clean_chars'],
+                        'signal_ratio' => $cleaned['signal_ratio'],
                     ];
                     if (is_array($chunk) && is_numeric($chunk['similarity'] ?? null)) {
                         $similarities[] = (float) $chunk['similarity'];
@@ -163,6 +170,7 @@ final class RetrieveEsvsSnippetsTool implements Tool
         return [
             'guideline_key' => $guidelineKey,
             'query' => $query,
+            'citation_query' => $citationQuery,
             'retrieval_query' => (string) ($result['retrieval_query'] ?? $query),
             'full_pipeline' => $fullPipeline,
             'top_k' => $topK,
@@ -171,8 +179,29 @@ final class RetrieveEsvsSnippetsTool implements Tool
                 'snippet_count' => count($snippets),
                 'max_similarity' => $similarities === [] ? null : max($similarities),
                 'duration_ms' => (int) ($result['duration_ms'] ?? 0),
+                'signal_ratio' => $this->weightedSignalRatio($snippets),
             ],
         ];
+    }
+
+    /** @param array<int, array<string, mixed>> $snippets */
+    private function weightedSignalRatio(array $snippets): float
+    {
+        $cleanChars = array_sum(array_map(
+            static fn (array $snippet): int => (int) ($snippet['clean_chars'] ?? 0),
+            $snippets,
+        ));
+        if ($cleanChars === 0) {
+            return 0.0;
+        }
+
+        $signalChars = array_sum(array_map(
+            static fn (array $snippet): float => (int) ($snippet['clean_chars'] ?? 0)
+                * (float) ($snippet['signal_ratio'] ?? 0),
+            $snippets,
+        ));
+
+        return round($signalChars / $cleanChars, 4);
     }
 
     /**

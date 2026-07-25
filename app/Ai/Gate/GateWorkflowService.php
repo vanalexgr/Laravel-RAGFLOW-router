@@ -7,8 +7,9 @@ use App\Ai\Gate\Grounding\GatePathwayWorker;
 use App\Ai\Gate\Guard\PreOrientGuardService;
 use App\Ai\Gate\Progress\GateProgress;
 use App\Ai\Gate\Progress\NullGateProgress;
+use App\Ai\Gate\Retrieval\GateChunkCleaner;
+use App\Ai\Gate\Retrieval\GateRetrievalQueryBuilder;
 use App\Ai\Gate\Routing\OrientRoutingPriorService;
-use App\Ai\Gate\Tools\RetrieveEsvsSnippetsTool;
 use App\Services\PHIScrubberService;
 use Illuminate\Support\Facades\Concurrency;
 use Illuminate\Support\Facades\Log;
@@ -43,6 +44,8 @@ final class GateWorkflowService
         private readonly EvidenceStatusService $evidenceStatus,
         private readonly GateDecisionTail $tail,
         private readonly PHIScrubberService $scrubber,
+        private readonly ?GateRetrievalQueryBuilder $queryBuilder = null,
+        private readonly ?GateChunkCleaner $chunkCleaner = null,
     ) {}
 
     /**
@@ -316,6 +319,10 @@ final class GateWorkflowService
             'stage_trace' => $this->trace,
             'state' => [
                 'patient_model' => $bestCandidate['orient']['patient_model'],
+                'core_question' => $bestCandidate['orient']['core_question'],
+                'expansion_terms' => $bestCandidate['orient']['expansion_terms'],
+                'interpretation_terms' => $bestCandidate['orient']['interpretation_terms'],
+                'must_include_terms' => $bestCandidate['orient']['must_include_terms'],
                 'provenance' => $bestCandidate['orient']['provenance'],
                 'open_questions' => $openQuestions,
                 'assumptions' => array_values(array_map(
@@ -363,80 +370,10 @@ final class GateWorkflowService
      */
     private function orientWithPrefetch(string $turn, array $priorState): array
     {
-        $context = $this->orientContext($turn, $priorState, []);
-        $candidates = $context['deterministic_candidates'];
-        if (
-            (string) config('gate-v2.deep_path_mode', 'parallel') !== 'parallel'
-            || $candidates === []
-            || ($context['signals']['raw_knowledge'] ?? false)
-        ) {
-            return $this->orient($turn, $priorState, []);
-        }
-
-        $payload = $context['payload'];
-        $query = $this->serializeRetrievalQuery(
-            $turn,
-            (array) ($priorState['patient_model'] ?? []),
-            [],
-        );
-        $tasks = [
-            'orient' => static function () use ($payload): array {
-                $started = microtime(true);
-                $response = (new OrientAgent)->prompt(
-                    json_encode(
-                        $payload,
-                        JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
-                    ),
-                    provider: (string) config('gate-v2.provider'),
-                    model: (string) config('gate-v2.stage_models.orient', config('gate-v2.model')),
-                    timeout: max(1, min(60, (int) config('gate-v2.stage_timeouts.orient', 15))),
-                )->toArray();
-
-                return [
-                    'response' => $response,
-                    'duration_ms' => (int) round((microtime(true) - $started) * 1000),
-                ];
-            },
-        ];
-        foreach ($candidates as $guideline) {
-            $tasks['retrieve:'.$guideline] = static function () use ($guideline, $query): array {
-                $started = microtime(true);
-                $retrieved = app(RetrieveEsvsSnippetsTool::class)->retrieve(
-                    $guideline,
-                    $query,
-                    false,
-                    (int) config('gate-v2.retrieval.attempt_top_k.0', 24),
-                    (int) config('gate-v2.retrieval.timeout_seconds', 20),
-                );
-
-                return [
-                    'retrieved' => $retrieved,
-                    'duration_ms' => (int) round((microtime(true) - $started) * 1000),
-                ];
-            };
-        }
-
-        $started = microtime(true);
-        $results = Concurrency::driver((string) config('gate-v2.concurrency_driver', 'process'))
-            ->run($tasks);
-        $this->record('orient_retrieval_parallel', $started, ['guidelines' => $candidates]);
-        $this->recordExternal([
-            'stage' => 'orient',
-            'duration_ms' => $results['orient']['duration_ms'],
-            'detail' => ['prefetched_retrieval' => true],
-        ]);
-        foreach ($candidates as $guideline) {
-            $this->prefetchedGround[$guideline] = $results['retrieve:'.$guideline];
-        }
-        $this->prefetchedQuery = $query;
-
-        return $this->finalizeOrient(
-            (array) $results['orient']['response'],
-            $context['signals'],
-            $candidates,
-            $turn,
-            $priorState,
-        );
+        // Retrieval now depends on Orient's English core_question, normalized
+        // patient model, and expansion terms. Starting it speculatively from the
+        // raw turn would preserve the exact JSON/query defect R7.1 removes.
+        return $this->orient($turn, $priorState, []);
     }
 
     /**
@@ -480,7 +417,16 @@ final class GateWorkflowService
         string $turn,
         array $priorState,
     ): array {
-        foreach (['patient_model', 'open_questions', 'provenance', 'changed_fields'] as $required) {
+        foreach ([
+            'patient_model',
+            'core_question',
+            'expansion_terms',
+            'interpretation_terms',
+            'must_include_terms',
+            'open_questions',
+            'provenance',
+            'changed_fields',
+        ] as $required) {
             if (! array_key_exists($required, $response)) {
                 throw new RuntimeException("OrientAgent response is missing required field: {$required}.");
             }
@@ -528,14 +474,19 @@ final class GateWorkflowService
         $maxAttempts = $issues === []
             ? null
             : max(1, (int) config('gate-v2.retrieval.revision_max_attempts', 1));
-        $query = $usePrefetch
-            ? $this->prefetchedQuery
-            : $this->serializeRetrievalQuery($turn, (array) $orient['patient_model'], $issues);
+        $queryPair = $this->serializeRetrievalQuery($orient, $issues);
+        $query = $queryPair['narrative'];
+        $citationQuery = $queryPair['citation'];
         $this->assertWithinDeadline();
         $results = [];
         $pending = [];
         foreach ($guidelines as $guideline) {
-            $cacheKey = $this->groundCacheKey($guideline, $query, (array) $orient['patient_model']);
+            $cacheKey = $this->groundCacheKey(
+                $guideline,
+                $query,
+                $citationQuery,
+                (array) $orient['patient_model'],
+            );
             if (isset($this->groundCache[$cacheKey])) {
                 $results[$guideline] = $this->groundCache[$cacheKey];
                 $this->record('ground_cache', 0, ['guideline' => $guideline, 'hit' => true]);
@@ -566,6 +517,7 @@ final class GateWorkflowService
                         $remaining,
                     )),
                     $deadlineAt,
+                    $citationQuery,
                 );
             }
             $completed = Concurrency::driver((string) config('gate-v2.concurrency_driver', 'process'))
@@ -587,6 +539,7 @@ final class GateWorkflowService
                         $this->remainingWallSeconds(),
                     )),
                     $this->deadlineAt(),
+                    $citationQuery,
                 );
             }
         }
@@ -620,10 +573,15 @@ final class GateWorkflowService
     /**
      * @param  array<string, mixed>  $patientModel
      */
-    private function groundCacheKey(string $guideline, string $query, array $patientModel): string
+    private function groundCacheKey(
+        string $guideline,
+        string $query,
+        string $citationQuery,
+        array $patientModel,
+    ): string
     {
         return hash('sha256', json_encode(
-            [$guideline, $query, $patientModel],
+            [$guideline, $query, $citationQuery, $patientModel],
             JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
         ));
     }
@@ -749,6 +707,10 @@ final class GateWorkflowService
             'stage_trace' => $this->trace,
             'state' => [
                 'patient_model' => $orient['patient_model'],
+                'core_question' => $orient['core_question'],
+                'expansion_terms' => $orient['expansion_terms'],
+                'interpretation_terms' => $orient['interpretation_terms'],
+                'must_include_terms' => $orient['must_include_terms'],
                 'provenance' => $orient['provenance'],
                 'open_questions' => $orient['open_questions'],
                 'candidate_guidelines' => $orient['candidate_guidelines'],
@@ -861,8 +823,11 @@ final class GateWorkflowService
     {
         foreach ($digests as $guideline => $snippets) {
             $digests[$guideline] = array_map(
-                static function (array $snippet): array {
-                    $snippet['text'] = mb_substr((string) ($snippet['text'] ?? ''), 0, 1200);
+                function (array $snippet): array {
+                    $snippet['text'] = ($this->chunkCleaner ?? new GateChunkCleaner)->truncateForLlm(
+                        (string) ($snippet['text'] ?? ''),
+                        1200,
+                    );
 
                     return $snippet;
                 },
@@ -874,14 +839,13 @@ final class GateWorkflowService
     }
 
     /**
-     * @param  array<string, mixed>  $patientModel
+     * @param  array<string, mixed>  $orient
      * @param  array<int, array<string, mixed>>  $issues
+     * @return array{narrative: string, citation: string}
      */
-    private function serializeRetrievalQuery(string $turn, array $patientModel, array $issues): string
+    private function serializeRetrievalQuery(array $orient, array $issues): array
     {
-        return 'Decision at issue: '.$turn."\nPatient model: "
-            .json_encode($patientModel, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
-            .($issues === [] ? '' : "\nCritic retrieval issues: ".json_encode($issues));
+        return ($this->queryBuilder ?? new GateRetrievalQueryBuilder)->build($orient, $issues);
     }
 
     /**

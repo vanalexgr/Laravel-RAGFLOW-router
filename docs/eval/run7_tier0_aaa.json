@@ -1,0 +1,124 @@
+{
+    "narrative_query": "Clinical question: What management is recommended for a 74-year-old man with an asymptomatic 5.8 cm abdominal aortic aneurysm?\nPatient context: Patient: 74-year-old man. Lesion: 5.8 cm asymptomatic abdominal aortic aneurysm. Symptoms: asymptomatic. Timing: newly discovered. Fitness: requires formal assessment. Imaging: ultrasound. Comorbidities: active smoker, hypertension, dyslipidaemia.\nClinical concepts: abdominal aortic aneurysm, AAA 58 mm, elective repair threshold 55 mm, men with asymptomatic AAA, fitness for repair, aneurysm diameter threshold, elective repair candidacy\nAnatomical anchors: aorta",
+    "citation_query": "ESVS recommendation sought: What management is recommended for a 74-year-old man with an asymptomatic 5.8 cm abdominal aortic aneurysm?\nApplicable patient and procedure: Patient: 74-year-old man. Lesion: 5.8 cm asymptomatic abdominal aortic aneurysm. Symptoms: asymptomatic. Timing: newly discovered. Fitness: requires formal assessment. Imaging: ultrasound. Comorbidities: active smoker, hypertension, dyslipidaemia.\nRecommendation terms: abdominal aortic aneurysm, AAA 58 mm, elective repair threshold 55 mm, men with asymptomatic AAA, fitness for repair, aneurysm diameter threshold, elective repair candidacy\nScope anchors: aorta\nReturn the directly applicable recommendation, threshold, indication, class, and evidence level.",
+    "top_5_similarity": [
+        47.8,
+        44.7,
+        44.1,
+        39.6,
+        55.2
+    ],
+    "rec_22_present": true,
+    "snippet_count": 8,
+    "signal_ratio": 1,
+    "snippets": [
+        {
+            "text": "Patients with complex abdominal aortic aneurysms may be considered for elective repair at a diameter of 55 mm in men and 50 mm in women, taking into account fitness for repair, aneurysm anatomy, and patient preferences.",
+            "similarity": 47.8,
+            "source": "ESVS 2024 Clinical Practice Guidelines on the Management of Abdominal Aorto-Iliac Artery Aneurysms",
+            "metadata": {
+                "recommendation_id": "116",
+                "category_name": "Aortic iliac",
+                "recommendation_class": "IIb",
+                "evidence_level": "C",
+                "guideline": "ESVS 2024 Clinical Practice Guidelines on the Management of Abdominal Aorto-Iliac Artery Aneurysms",
+                "rec_text_verbatim": "Patients with complex abdominal aortic aneurysms may be considered for elective repair at a diameter of 55 mm in men and 50 mm in women, taking into account fitness for repair, aneurysm anatomy, and patient preferences."
+            },
+            "raw_chars": 514,
+            "clean_chars": 219,
+            "signal_ratio": 1
+        },
+        {
+            "text": "Men with an asymptomatic abdominal aortic aneurysm < 55 mm are not recommended for elective repair.",
+            "similarity": 44.7,
+            "source": "ESVS 2024 Clinical Practice Guidelines on the Management of Abdominal Aorto-Iliac Artery Aneurysms",
+            "metadata": {
+                "recommendation_id": "20",
+                "category_name": "Aortic iliac",
+                "recommendation_class": "III",
+                "evidence_level": "A",
+                "guideline": "ESVS 2024 Clinical Practice Guidelines on the Management of Abdominal Aorto-Iliac Artery Aneurysms",
+                "rec_text_verbatim": "Men with an asymptomatic abdominal aortic aneurysm < 55 mm are not recommended for elective repair."
+            },
+            "raw_chars": 375,
+            "clean_chars": 99,
+            "signal_ratio": 1
+        },
+        {
+            "text": "Men with an abdominal aortic aneurysm >55 mm should be considered for elective repair.",
+            "similarity": 44.1,
+            "source": "ESVS 2024 Clinical Practice Guidelines on the Management of Abdominal Aorto-Iliac Artery Aneurysms",
+            "metadata": {
+                "recommendation_id": "22",
+                "category_name": "Aortic iliac",
+                "recommendation_class": "IIa",
+                "evidence_level": "C",
+                "guideline": "ESVS 2024 Clinical Practice Guidelines on the Management of Abdominal Aorto-Iliac Artery Aneurysms",
+                "rec_text_verbatim": "Men with an abdominal aortic aneurysm >55 mm should be considered for elective repair."
+            },
+            "raw_chars": 354,
+            "clean_chars": 86,
+            "signal_ratio": 1
+        },
+        {
+            "text": "Patients with an inflammatory abdominal aortic aneurysm should be considered for repair at an aneurysm diameter of 55 mm, with endovascular repair in preference to open surgical repair if the anatomy is suitable.",
+            "similarity": 39.6,
+            "source": "ESVS 2024 Clinical Practice Guidelines on the Management of Abdominal Aorto-Iliac Artery Aneurysms",
+            "metadata": {
+                "recommendation_id": "147",
+                "category_name": "Aortic iliac",
+                "recommendation_class": "IIa",
+                "evidence_level": "C",
+                "guideline": "ESVS 2024 Clinical Practice Guidelines on the Management of Abdominal Aorto-Iliac Artery Aneurysms",
+                "rec_text_verbatim": "Patients with an inflammatory abdominal aortic aneurysm should be considered for repair at an aneurysm diameter of 55 mm, with endovascular repair in preference to open surgical repair if the anatomy is suitable."
+            },
+            "raw_chars": 460,
+            "clean_chars": 212,
+            "signal_ratio": 1
+        },
+        {
+            "text": "Recommendation 20 | Unchanged\nMen with an asymptomatic abdominal aortic aneurysm < 55 mm are not recommended for elective repair.\nClass | Level | References\nIII | A | Lederle et al., Powell et al., Cao et al., Ouriel et al.",
+            "similarity": 55.2,
+            "source": "Abdominal Aortic Aneurysm",
+            "metadata": {
+                "guideline": "Abdominal Aortic Aneurysm"
+            },
+            "raw_chars": 505,
+            "clean_chars": 223,
+            "signal_ratio": 1
+        },
+        {
+            "text": "Recommendation 116 | Changed\nPatients with complex abdominal aortic aneurysms may be considered for elective repair at a diameter of ≥ 55 mm in men and ≥ 50 mm in women, taking into account fitness for repair, aneurysm anatomy, and patient preferences.\nClass | Level | References | ToE\nIIb | C | Lancaster et al., Ulug et al., Cambria et al., Hansen et al., Piffaretti et al.",
+            "similarity": 54.8,
+            "source": "Abdominal Aortic Aneurysm",
+            "metadata": {
+                "guideline": "Abdominal Aortic Aneurysm"
+            },
+            "raw_chars": 745,
+            "clean_chars": 375,
+            "signal_ratio": 1
+        },
+        {
+            "text": "Recommendation 22 | Unchanged\nMen with an abdominal aortic aneurysm ≥ 55 mm should be considered for elective repair.\nClass | Level | References\nIIa | C | Oliver-Williams et al., Filardo et al.",
+            "similarity": 54.6,
+            "source": "Abdominal Aortic Aneurysm",
+            "metadata": {
+                "guideline": "Abdominal Aortic Aneurysm"
+            },
+            "raw_chars": 472,
+            "clean_chars": 193,
+            "signal_ratio": 1
+        },
+        {
+            "text": "3.2.2. Computed tomography angiography.\n\nComputed tomography angiography (CTA) plays a key role in assessing the extent of disease and therapeutic decision making and planning. CTA is also the recommended imaging modality for the diagnosis of rupture and is an important tool in follow up after repair.\n\nSeveral issues concerning measurement by US apply to CTA measurement, for example axial vs. orthogonal centreline diameters, changes with the cardiac cycle, and details of calliper placement. When applying pre-defined methodologies, intra-observer reproducibility can be within the clinically accepted range (±5 mm) in 90% AAA measurements, but the interobserver reproducibility is poor, with 87% of comparisons being outside ± 5 mm. This variability is of great clinical significance, since the number of patients considered for AAA repair, based on a diameter threshold, may vary from 11% to 24%, 5% to 20%, and 15% to 23% for three different radiologists.\n\nCTA provides several advantages for ...",
+            "similarity": 54.2,
+            "source": "Abdominal Aortic Aneurysm",
+            "metadata": {
+                "guideline": "Abdominal Aortic Aneurysm"
+            },
+            "raw_chars": 1003,
+            "clean_chars": 1003,
+            "signal_ratio": 1
+        }
+    ]
+}

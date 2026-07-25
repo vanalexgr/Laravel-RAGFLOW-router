@@ -1,5 +1,136 @@
 # Codex unattended progress — Agentic Gate v2
 
+## 2026-07-25 — Run 7 fast slice: R7.1 query construction + R7.2 chunk cleaning
+
+Run 7 started from `1922fa0` after `git pull --ff-only` on
+`claude/prototyping-summary-d597c2`, using disposable Hetzner checkout
+`/tmp/agentic-gate-v2-run7-03sAvb`. The checkout copied the production environment and generated its
+own `APP_KEY`; production source, `.env`, defaults, RAGFlow bridge, and adapter DB were not changed.
+Only R7.1 and R7.2 were implemented. R7.3+ was not started. The known absent
+`storage/app/phi/common_names.json` was logged and left unchanged, so name redaction remains a no-op.
+
+### Implemented
+
+- Orient now emits an English `core_question`, `expansion_terms`, `interpretation_terms`, and
+  `must_include_terms`, and is explicitly instructed to keep `patient_model` values in English
+  clinical terminology.
+- Retrieval waits for Orient and builds differentiated narrative/citation queries from the English
+  core question plus a natural-clinical-prose patient model. It no longer embeds the raw turn or
+  JSON patient model. The merged planner remains disabled.
+- The adapter's ten-category deterministic case-anchor taxonomy and vague-follow-up case-context
+  rewrite were ported.
+- HTML tables are flattened to pipe-delimited text; HTML/entities/markdown are removed; semicolon
+  metadata is parsed into structured fields; truncation uses an explicit marker.
+- `gate:eval --only=` accepts scenario or `scenario:turn-list` selectors. Preceding unjudged turns
+  still execute so stateful selections such as AAA T3 and knowledge-interleave T2 retain context.
+- `gate:probe-retrieval` records the deterministic AAA retrieval/query-cleaning check.
+
+### Tier 0 — deterministic AAA T1 probe
+
+The final probe does not seed a recommendation number or verbatim recommendation:
+
+```text
+top-5 similarity: 47.8 / 44.7 / 44.1 / 39.6 / 55.2
+rec_22 present:   YES
+returned chunks:  8
+chunk signal:     100.0% (baseline 66%; target >=90%)
+```
+
+This is a clear mechanical retrieval win over the measured gate-query baseline
+`17.6 / 15.9 / 15.6 / 17.0 / 36.0`, which missed `rec_22`.
+
+Artifact: `docs/eval/run7_tier0_aaa.json`.
+
+### Tier 1 — five-judgment canary
+
+Binding mode was real loopback HTTP SUT plus the external OpenAI judge. AAA T2 and knowledge T1 ran
+unjudged only to build state for the selected follow-ups.
+
+```text
+4 scenarios | 5 judged turns | PASS 0 | MINOR 2 | FAIL 3
+Routing 100.0% | verbatim 100.0%
+```
+
+Grades were AAA T1 FAIL, AAA T3 FAIL, knowledge-interleave T2 FAIL, F2 MINOR, and S4 MINOR. The
+requested S4 regression guard returned `covered`, not one of the expected honest-gap states. Inspection
+showed that retrieval had surfaced the exact carotid-web recommendation (CEA or CAS may be considered
+when no other stroke cause is found; Class IIb, Level C). No case-specific guard was added to suppress
+real evidence. In the later full run, S4 returned `interaction_gap`.
+
+Artifact: `docs/eval/run7_canary_external_20260725_204722.json`.
+
+### Tier 2 — real 32-turn quality result
+
+The first default process-driver run stopped at F4 after 24/32 SUT turns. Laravel's process
+concurrency driver killed the three parallel guideline workers at its fixed 60-second child-process
+timeout. No partial score was reported or preserved as a full artifact. `fork` is forbidden by the
+framework inside HTTP requests. A disposable `sync` SUT replay completed F4 in 110 seconds, proving
+that the failure was the process-pool timeout rather than RAGFlow, Laravel access, or the judge.
+
+The complete quality run therefore used `GATE_V2_CONCURRENCY_DRIVER=sync` in the disposable loopback
+SUT server only. It remained a real `--sut=http --judge=external` eval. This setting was not committed
+or applied to production, and its timing is excluded.
+
+```text
+22 scenarios | 32 turns | PASS 4 | MINOR 12 | FAIL 16
+Routing 100.0% | verbatim 100.0%
+Delta vs Run 6 4/13/15: PASS +/-0 | MINOR -1 | FAIL +1
+```
+
+AAA T1 improved from FAIL to PASS, consistent with finding `rec_22`. Across all cases, however, the
+strict-judge aggregate worsened by one grade bucket. Other grade changes were mixed and stochastic;
+the committed digest exposes every judgment and answer frame for clinician review.
+
+Artifacts:
+
+- `docs/eval/run7_real_external_20260725_220026.json`
+- `docs/eval/run7_fail_digest.md`
+
+### Default-driver four-turn latency
+
+The latency harness returned to the branch's default process driver. All four turns completed with
+scored candidates and no errors.
+
+| Stage | Run 6 p50 / p95 ms | Run 7 p50 / p95 ms | Delta p50 / p95 ms |
+|---|---:|---:|---:|
+| Total turn | 43,739 / 71,071 | 47,088 / 80,603 | +3,349 / +9,532 |
+| Orient | 3,226 / 4,535 | 4,382 / 7,645 | +1,156 / +3,110 |
+| Orient + retrieval prefetch | 8,963 / 12,551 | removed | n/a |
+| Retrieval | 9,909 / 12,351 | 7,450 / 12,934 | -2,459 / +583 |
+| Pathway | 2,217 / 5,882 | 3,185 / 6,073 | +968 / +191 |
+| Probe | 5,704 / 7,109 | 4,245 / 6,261 | -1,459 / -848 |
+| Critic | 2,957 / 4,595 | 3,511 / 5,177 | +554 / +582 |
+
+The four-turn harness still meets the box's p50 <=70s and p95 <=90s SLO with no harness deadline
+overruns, but p50 regressed 7.7% and p95 regressed 13.4%. More importantly, the default process driver
+cannot complete the full F4 workload after R7.1 removed speculative Orient/retrieval prefetch.
+
+Artifact: `docs/eval/run7_latency_20260725_220506.json`.
+
+### Per-item value and verdict
+
+| Item | Grade result | Latency result | What it was worth |
+|---|---|---|---|
+| R7.1 natural query + Orient terms/anchors | AAA T1 FAIL -> PASS; bundled full aggregate did not improve | Bundled total p50 +3.35s, p95 +9.53s; default-driver F4 abort | Large deterministic recall gain, but not safe to recommend unchanged |
+| R7.2 chunk cleaning + metadata parsing | No isolated judge arm; bundled result 4/12/16 vs 4/13/15 | Not isolated from R7.1 | Signal improved 66% -> 100%; clinical payload waste removed |
+
+### Done, blocked, and next run
+
+Done: R7.1/R7.2 code, unbiased Tier-0 probe, real canary, complete real 32-turn quality artifact and
+digest, and default-driver four-turn latency artifact. Production configuration/defaults were
+untouched.
+
+Blocked: this slice is not a clean landing recommendation. The aggregate grade did not improve, the
+canary's S4 guard disagreed with its requested gap state, latency regressed, and the production-like
+process driver aborts F4 at 60 seconds.
+
+Recommended next run: clinician review of `docs/eval/run7_fail_digest.md`, starting with AAA T1's
+improvement and the S4 exact-evidence contradiction. Before R7.3, decide how to retain Orient-derived
+query quality without losing bounded parallel prefetch, or add an explicit gate-owned child-process
+timeout/budget that can accommodate F4 without unbounded sync execution. Re-run the same F4 canary,
+full HTTP/external eval, and four-turn harness. Do not proceed to R7.3+ until that R7.1 latency/abort
+decision is made.
+
 ## 2026-07-25 — Run 6 resumed: real baseline persisted + bridge-Cohere timing A/B
 
 Run 6 resumed on Hetzner (`clinicalguidelines-staging-1`) from `feddfb0` in disposable checkout

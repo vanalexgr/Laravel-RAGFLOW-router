@@ -1,0 +1,2803 @@
+{
+    "created_at": "2026-07-25T20:47:22+00:00",
+    "scorecard": {
+        "subject": "gate-v2-gpt-5-mini",
+        "judge": "gpt-5",
+        "scenarios": 4,
+        "turns": 5,
+        "grades": {
+            "PASS": 0,
+            "PASS_WITH_MINOR": 2,
+            "FAIL": 3
+        },
+        "routing_accuracy": 1,
+        "no_grade_drop": false,
+        "baseline_cases": 2,
+        "verbatim_fidelity": 1
+    },
+    "results": [
+        {
+            "scenario_id": "aaa_evolving_context",
+            "turn": 1,
+            "baseline_grade": null,
+            "grade": "FAIL",
+            "no_grade_drop": true,
+            "deterministic_checks": {
+                "mode": true,
+                "same_case": true,
+                "routing": true,
+                "max_questions": true,
+                "evidence_status": true,
+                "interpretive_frame_present": true,
+                "dose_lint": true,
+                "verbatim_fidelity": 1
+            },
+            "judgment": {
+                "grade": "FAIL",
+                "failure_labels": [
+                    "missing_must_include_facts"
+                ],
+                "reason": "The response did not explicitly include several required patient-specific facts: age (74-year-old man), explicit aneurysm size (5.8 cm), active smoking status, hypertension, and dyslipidaemia. While fitness assessment was addressed and the management recommendation aligned with guidelines, omission of these must-include facts does not meet the hard-bar requirements for this turn."
+            },
+            "output": {
+                "guideline_grounded_answer": "According to the ESVS 2024 guidelines, men with an asymptomatic abdominal aortic aneurysm ≥ 55 mm should be considered for elective repair. All patients with an abdominal aortic aneurysm should receive cardiovascular risk management including smoking cessation, blood pressure control, statin and antiplatelet therapy, and lifestyle advice. Patients who have reached the size threshold at which repair is considered should receive a fast track pathway to vascular surgical care.",
+                "interpretive_frame": "Non-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nThe patient meets the guideline threshold for recommending elective repair based solely on aneurysm size and symptom status. The precise choice between endovascular aneurysm repair (EVAR) and open repair would depend on further imaging (anatomical suitability for EVAR) and assessment of fitness for surgery, neither of which is detailed in the current facts. However, the guidelines clearly support elective intervention and aggressive cardiovascular risk modification at this stage. Immediate referral to vascular surgical care is warranted to perform these further assessments and proceed to repair.",
+                "evidence_status": {
+                    "coverage": "covered",
+                    "core_question": "A 74-year-old man has an asymptomatic 5.8 cm abdominal aortic aneurysm discovered on ultrasound. He is an active smoker with hypertension and dyslipidaemia. What management would you recommend?",
+                    "covered_components": [
+                        "size threshold for repair (≥55 mm)",
+                        "recommendation for elective repair",
+                        "importance of cardiovascular risk factor management",
+                        "preference of repair modality depending on anatomy"
+                    ],
+                    "gap_summary": ""
+                },
+                "unknowns": [
+                    {
+                        "variable": "fitness for repair",
+                        "currently_known": false,
+                        "why_it_changes_management": "An unfit patient may be unsuitable for elective repair and may instead require ongoing conservative management with risk factor modification only.",
+                        "branch_impact": "high"
+                    },
+                    {
+                        "variable": "aneurysm anatomy suitability for EVAR",
+                        "currently_known": false,
+                        "why_it_changes_management": "Anatomy determines whether endovascular or open repair is advised, impacting surgical planning and patient risk.",
+                        "branch_impact": "medium"
+                    }
+                ],
+                "questions": [
+                    {
+                        "question": "Is the patient currently fit for elective aneurysm repair (any major cardiopulmonary or frailty contraindications)?",
+                        "targets": "fitness for repair",
+                        "rationale": "Guideline recommendation for elective repair assumes fitness for surgery, and unfitness would shift toward conservative/non-operative management."
+                    }
+                ],
+                "assumptions": [
+                    "Patient is potentially fit for surgery, pending formal assessment.",
+                    "No contraindications to surgical or endovascular intervention have been detected yet."
+                ],
+                "confidence": 0.88,
+                "decision": "ask",
+                "lint_violations": [],
+                "answer_markdown": "## ESVS-grounded answer\n\nAccording to the ESVS 2024 guidelines, men with an asymptomatic abdominal aortic aneurysm ≥ 55 mm should be considered for elective repair. All patients with an abdominal aortic aneurysm should receive cardiovascular risk management including smoking cessation, blood pressure control, statin and antiplatelet therapy, and lifestyle advice. Patients who have reached the size threshold at which repair is considered should receive a fast track pathway to vascular surgical care.\n\n## Interpretation\n\nNon-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nThe patient meets the guideline threshold for recommending elective repair based solely on aneurysm size and symptom status. The precise choice between endovascular aneurysm repair (EVAR) and open repair would depend on further imaging (anatomical suitability for EVAR) and assessment of fitness for surgery, neither of which is detailed in the current facts. However, the guidelines clearly support elective intervention and aggressive cardiovascular risk modification at this stage. Immediate referral to vascular surgical care is warranted to perform these further assessments and proceed to repair.",
+                "mode": "case_new",
+                "same_case": null,
+                "patient_model": {
+                    "demographics": "74-year-old man",
+                    "lesion": "asymptomatic 5.8 cm abdominal aortic aneurysm",
+                    "symptom_status": "asymptomatic",
+                    "timing": "discovered on ultrasound",
+                    "fitness": "unknown",
+                    "comorbidities": [
+                        "active smoker",
+                        "hypertension",
+                        "dyslipidaemia"
+                    ],
+                    "medications": [],
+                    "prior_interventions": [],
+                    "imaging": "ultrasound",
+                    "other_findings": []
+                },
+                "changed_fields": [
+                    "demographics",
+                    "lesion",
+                    "symptom_status",
+                    "timing",
+                    "comorbidities",
+                    "imaging"
+                ],
+                "routed_guidelines": [
+                    "abdominal_aortic_aneurysm"
+                ],
+                "pathways": [
+                    {
+                        "guideline_key": "ESVS 2024 Clinical Practice Guidelines on the Management of Abdominal Aorto-Iliac Artery Aneurysms",
+                        "relevant": true,
+                        "coverage": "covered",
+                        "better_query": "Management recommendation for asymptomatic abdominal aortic aneurysm ≥ 55 mm in a 74-year-old male active smoker with hypertension and dyslipidaemia",
+                        "covered_components": [
+                            "size threshold for repair (≥55 mm)",
+                            "recommendation for elective repair",
+                            "importance of cardiovascular risk factor management",
+                            "preference of repair modality depending on anatomy"
+                        ],
+                        "interaction_gap": false,
+                        "pathways": [
+                            {
+                                "pathway": "Elective repair (endovascular or open surgical)",
+                                "guideline_basis": "Men with an asymptomatic abdominal aortic aneurysm ≥ 55 mm should be considered for elective repair (Class IIa, Level C)",
+                                "discriminating_variables": [
+                                    "aneurysm diameter ≥ 55 mm",
+                                    "asymptomatic status",
+                                    "fitness for repair (not documented but implied consideration)",
+                                    "aneurysm anatomy suitability for EVAR"
+                                ]
+                            },
+                            {
+                                "pathway": "Conservative management with cardiovascular risk factor control",
+                                "guideline_basis": "All patients with an abdominal aortic aneurysm should receive cardiovascular risk management including smoking cessation, blood pressure control, statins, antiplatelet therapy, and lifestyle advice (Class I, Level B)",
+                                "discriminating_variables": [
+                                    "presence of abdominal aortic aneurysm",
+                                    "cardiovascular risk factors (active smoking, hypertension, dyslipidaemia)"
+                                ]
+                            },
+                            {
+                                "pathway": "Fast track referral to vascular surgical care",
+                                "guideline_basis": "Patients with an asymptomatic abdominal aortic aneurysm who have reached the size threshold at which repair is considered should receive a fast track pathway to vascular surgical care (Class I, Level C)",
+                                "discriminating_variables": [
+                                    "aneurysm diameter ≥ 55 mm"
+                                ]
+                            }
+                        ],
+                        "queries_tried": [
+                            "Clinical question: What is the recommended management for an asymptomatic 5.8 cm abdominal aortic aneurysm in a 74-year-old man with active smoking, hypertension, and dyslipidaemia?\nPatient context: Patient: 74-year-old man. Lesion: asymptomatic 5.8 cm abdominal aortic aneurysm. Symptoms: asymptomatic. Timing: discovered on ultrasound. Imaging: ultrasound. Comorbidities: active smoker, hypertension, dyslipidaemia.\nClinical concepts: abdominal aortic aneurysm, asymptomatic aneurysm, management, large aneurysm, 5.8 cm aneurysm, smoking, hypertension, dyslipidaemia, risk factors, surveillance, surgical repair, endovascular repair, 5.8 cm, asymptomatic, management recommendation\nAnatomical anchors: aorta"
+                        ]
+                    }
+                ],
+                "queries_tried": {
+                    "abdominal_aortic_aneurysm": [
+                        "Clinical question: What is the recommended management for an asymptomatic 5.8 cm abdominal aortic aneurysm in a 74-year-old man with active smoking, hypertension, and dyslipidaemia?\nPatient context: Patient: 74-year-old man. Lesion: asymptomatic 5.8 cm abdominal aortic aneurysm. Symptoms: asymptomatic. Timing: discovered on ultrasound. Imaging: ultrasound. Comorbidities: active smoker, hypertension, dyslipidaemia.\nClinical concepts: abdominal aortic aneurysm, asymptomatic aneurysm, management, large aneurysm, 5.8 cm aneurysm, smoking, hypertension, dyslipidaemia, risk factors, surveillance, surgical repair, endovascular repair, 5.8 cm, asymptomatic, management recommendation\nAnatomical anchors: aorta"
+                    ]
+                },
+                "critic": {
+                    "approved": false,
+                    "score": 0.9,
+                    "candidate_summary": "State completeness and routing are strong. Retrieval and grounding comply with ESVS digests: all guideline-framed claims are entailed by the source material, and cardiovascular risk management and fast-track referral are included as required. Frame integrity is correct: guideline_grounded_answer stays within scope, and interpretive_frame is a clear extrapolation. Only one high-impact, branch-changing question is asked and is justified. However, there is a minor state gap: the precise ESVS threshold is 'complex' versus 'inflammatory' aneurysms, and while not directly contradictory, the most precisely matching text refers to 'complex' and 'inflammatory' subtypes, whereas the candidate generalized this threshold to non-specified AAAs. This is broadly accurate but could be more precisely attributed.",
+                    "revise_stage": "ground",
+                    "issues": [
+                        {
+                            "invariant": "grounding",
+                            "problem": "The main ESVS digest describing eligibility for elective repair at ≥55 mm refers specifically to 'complex' or 'inflammatory' abdominal aortic aneurysms. The candidate generalized this to all AAAs ≥55 mm rather than explicitly stating context or noting that the guideline text retrieved refers to these subtypes, not all AAAs.",
+                            "fix": "Amend the guideline basis in the pathway and clarify in both guideline_grounded_answer and interpretive_frame that the precise ESVS wording for elective repair threshold applies to 'complex' or 'inflammatory' AAAs, and that the patient likely meets criteria but the exact generalizability requires clarification or closer adherence to ESVS categories."
+                        }
+                    ]
+                },
+                "best_score": 0.9,
+                "iterations": 3,
+                "stage_trace": [
+                    {
+                        "stage": "orient_fallback",
+                        "iteration": 0,
+                        "duration_ms": 0,
+                        "elapsed_ms": 4739,
+                        "detail": {
+                            "field": "response_mode"
+                        }
+                    },
+                    {
+                        "stage": "orient",
+                        "iteration": 0,
+                        "duration_ms": 4729,
+                        "elapsed_ms": 4739,
+                        "detail": {
+                            "mode": "case_new",
+                            "guidelines": [
+                                "abdominal_aortic_aneurysm"
+                            ]
+                        }
+                    },
+                    {
+                        "stage": "retrieve",
+                        "iteration": 0,
+                        "duration_ms": 3381,
+                        "elapsed_ms": 13229,
+                        "detail": {
+                            "guideline": "abdominal_aortic_aneurysm",
+                            "attempt": 1,
+                            "full_pipeline": false,
+                            "top_k": 12,
+                            "snippet_count": 10,
+                            "retrieval_ms": 3379,
+                            "prefetched": false
+                        }
+                    },
+                    {
+                        "stage": "pathway",
+                        "iteration": 0,
+                        "duration_ms": 5109,
+                        "elapsed_ms": 13229,
+                        "detail": {
+                            "guideline": "abdominal_aortic_aneurysm",
+                            "attempt": 1,
+                            "relevant": true,
+                            "coverage": "covered"
+                        }
+                    },
+                    {
+                        "stage": "probe",
+                        "iteration": 0,
+                        "duration_ms": 3466,
+                        "elapsed_ms": 16695,
+                        "detail": {
+                            "questions": 1,
+                            "coverage": "covered"
+                        }
+                    },
+                    {
+                        "stage": "critic",
+                        "iteration": 1,
+                        "duration_ms": 2777,
+                        "elapsed_ms": 19473,
+                        "detail": {
+                            "approved": false,
+                            "score": 0.9,
+                            "revise_stage": "ground"
+                        }
+                    },
+                    {
+                        "stage": "retrieve",
+                        "iteration": 1,
+                        "duration_ms": 2945,
+                        "elapsed_ms": 26137,
+                        "detail": {
+                            "guideline": "abdominal_aortic_aneurysm",
+                            "attempt": 1,
+                            "full_pipeline": true,
+                            "top_k": 24,
+                            "snippet_count": 10,
+                            "retrieval_ms": 2944,
+                            "prefetched": false
+                        }
+                    },
+                    {
+                        "stage": "pathway",
+                        "iteration": 1,
+                        "duration_ms": 3718,
+                        "elapsed_ms": 26137,
+                        "detail": {
+                            "guideline": "abdominal_aortic_aneurysm",
+                            "attempt": 1,
+                            "relevant": true,
+                            "coverage": "partial"
+                        }
+                    },
+                    {
+                        "stage": "probe",
+                        "iteration": 1,
+                        "duration_ms": 4748,
+                        "elapsed_ms": 30885,
+                        "detail": {
+                            "questions": 2,
+                            "coverage": "interaction_gap"
+                        }
+                    },
+                    {
+                        "stage": "critic",
+                        "iteration": 2,
+                        "duration_ms": 2955,
+                        "elapsed_ms": 33840,
+                        "detail": {
+                            "approved": false,
+                            "score": 0.9,
+                            "revise_stage": "probe"
+                        }
+                    },
+                    {
+                        "stage": "probe",
+                        "iteration": 2,
+                        "duration_ms": 5674,
+                        "elapsed_ms": 39514,
+                        "detail": {
+                            "questions": 0,
+                            "coverage": "interaction_gap"
+                        }
+                    },
+                    {
+                        "stage": "critic",
+                        "iteration": 3,
+                        "duration_ms": 4492,
+                        "elapsed_ms": 44006,
+                        "detail": {
+                            "approved": false,
+                            "score": 0.85,
+                            "revise_stage": "ground"
+                        }
+                    },
+                    {
+                        "stage": "decide",
+                        "iteration": 3,
+                        "duration_ms": 0,
+                        "elapsed_ms": 44006,
+                        "detail": {
+                            "reason": "bounce_budget_exhausted",
+                            "stage": "ground"
+                        }
+                    },
+                    {
+                        "stage": "decide",
+                        "iteration": 3,
+                        "duration_ms": 0,
+                        "elapsed_ms": 44006,
+                        "detail": {
+                            "decision": "ask",
+                            "best_score": 0.9,
+                            "iterations": 3
+                        }
+                    }
+                ],
+                "state": {
+                    "patient_model": {
+                        "demographics": "74-year-old man",
+                        "lesion": "asymptomatic 5.8 cm abdominal aortic aneurysm",
+                        "symptom_status": "asymptomatic",
+                        "timing": "discovered on ultrasound",
+                        "fitness": "unknown",
+                        "comorbidities": [
+                            "active smoker",
+                            "hypertension",
+                            "dyslipidaemia"
+                        ],
+                        "medications": [],
+                        "prior_interventions": [],
+                        "imaging": "ultrasound",
+                        "other_findings": []
+                    },
+                    "core_question": "What is the recommended management for an asymptomatic 5.8 cm abdominal aortic aneurysm in a 74-year-old man with active smoking, hypertension, and dyslipidaemia?",
+                    "expansion_terms": [
+                        "abdominal aortic aneurysm",
+                        "asymptomatic aneurysm",
+                        "management",
+                        "large aneurysm",
+                        "5.8 cm aneurysm"
+                    ],
+                    "interpretation_terms": [
+                        "smoking",
+                        "hypertension",
+                        "dyslipidaemia",
+                        "risk factors",
+                        "surveillance",
+                        "surgical repair",
+                        "endovascular repair"
+                    ],
+                    "must_include_terms": [
+                        "abdominal aortic aneurysm",
+                        "5.8 cm",
+                        "asymptomatic",
+                        "management recommendation"
+                    ],
+                    "provenance": [
+                        {
+                            "field": "demographics",
+                            "turn_index": 1,
+                            "verbatim_source": "A 74-year-old man"
+                        },
+                        {
+                            "field": "lesion",
+                            "turn_index": 1,
+                            "verbatim_source": "asymptomatic 5.8 cm abdominal aortic aneurysm"
+                        },
+                        {
+                            "field": "symptom_status",
+                            "turn_index": 1,
+                            "verbatim_source": "asymptomatic"
+                        },
+                        {
+                            "field": "timing",
+                            "turn_index": 1,
+                            "verbatim_source": "discovered on ultrasound"
+                        },
+                        {
+                            "field": "comorbidities",
+                            "turn_index": 1,
+                            "verbatim_source": "active smoker with hypertension and dyslipidaemia"
+                        },
+                        {
+                            "field": "imaging",
+                            "turn_index": 1,
+                            "verbatim_source": "discovered on ultrasound"
+                        }
+                    ],
+                    "open_questions": [
+                        {
+                            "question": "Is the patient currently fit for elective aneurysm repair (any major cardiopulmonary or frailty contraindications)?",
+                            "status": "pending",
+                            "answer": ""
+                        }
+                    ],
+                    "assumptions": [],
+                    "candidate_guidelines": [
+                        "abdominal_aortic_aneurysm"
+                    ],
+                    "turn_index": 1,
+                    "version": 1
+                },
+                "guideline_keys": [
+                    "abdominal_aortic_aneurysm"
+                ],
+                "rendered_answer": "## ESVS-grounded answer\n\nAccording to the ESVS 2024 guidelines, men with an asymptomatic abdominal aortic aneurysm ≥ 55 mm should be considered for elective repair. All patients with an abdominal aortic aneurysm should receive cardiovascular risk management including smoking cessation, blood pressure control, statin and antiplatelet therapy, and lifestyle advice. Patients who have reached the size threshold at which repair is considered should receive a fast track pathway to vascular surgical care.\n\n## Interpretation\n\nNon-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nThe patient meets the guideline threshold for recommending elective repair based solely on aneurysm size and symptom status. The precise choice between endovascular aneurysm repair (EVAR) and open repair would depend on further imaging (anatomical suitability for EVAR) and assessment of fitness for surgery, neither of which is detailed in the current facts. However, the guidelines clearly support elective intervention and aggressive cardiovascular risk modification at this stage. Immediate referral to vascular surgical care is warranted to perform these further assessments and proceed to repair.",
+                "retrieval_chunk_count": 20,
+                "retrieval_returned_chunks": true
+            },
+            "stage_trace": [
+                {
+                    "stage": "orient_fallback",
+                    "iteration": 0,
+                    "duration_ms": 0,
+                    "elapsed_ms": 4739,
+                    "detail": {
+                        "field": "response_mode"
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 0,
+                    "duration_ms": 4729,
+                    "elapsed_ms": 4739,
+                    "detail": {
+                        "mode": "case_new",
+                        "guidelines": [
+                            "abdominal_aortic_aneurysm"
+                        ]
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 3381,
+                    "elapsed_ms": 13229,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "full_pipeline": false,
+                        "top_k": 12,
+                        "snippet_count": 10,
+                        "retrieval_ms": 3379,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 5109,
+                    "elapsed_ms": 13229,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "relevant": true,
+                        "coverage": "covered"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 0,
+                    "duration_ms": 3466,
+                    "elapsed_ms": 16695,
+                    "detail": {
+                        "questions": 1,
+                        "coverage": "covered"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 1,
+                    "duration_ms": 2777,
+                    "elapsed_ms": 19473,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.9,
+                        "revise_stage": "ground"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 1,
+                    "duration_ms": 2945,
+                    "elapsed_ms": 26137,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 10,
+                        "retrieval_ms": 2944,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 1,
+                    "duration_ms": 3718,
+                    "elapsed_ms": 26137,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "relevant": true,
+                        "coverage": "partial"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 1,
+                    "duration_ms": 4748,
+                    "elapsed_ms": 30885,
+                    "detail": {
+                        "questions": 2,
+                        "coverage": "interaction_gap"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 2,
+                    "duration_ms": 2955,
+                    "elapsed_ms": 33840,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.9,
+                        "revise_stage": "probe"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 2,
+                    "duration_ms": 5674,
+                    "elapsed_ms": 39514,
+                    "detail": {
+                        "questions": 0,
+                        "coverage": "interaction_gap"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 3,
+                    "duration_ms": 4492,
+                    "elapsed_ms": 44006,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.85,
+                        "revise_stage": "ground"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 3,
+                    "duration_ms": 0,
+                    "elapsed_ms": 44006,
+                    "detail": {
+                        "reason": "bounce_budget_exhausted",
+                        "stage": "ground"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 3,
+                    "duration_ms": 0,
+                    "elapsed_ms": 44006,
+                    "detail": {
+                        "decision": "ask",
+                        "best_score": 0.9,
+                        "iterations": 3
+                    }
+                }
+            ]
+        },
+        {
+            "scenario_id": "aaa_evolving_context",
+            "turn": 3,
+            "baseline_grade": null,
+            "grade": "FAIL",
+            "no_grade_drop": true,
+            "deterministic_checks": {
+                "mode": true,
+                "same_case": true,
+                "routing": true,
+                "max_questions": true,
+                "evidence_status": false,
+                "interpretive_frame_present": true,
+                "dose_lint": true,
+                "verbatim_fidelity": 1
+            },
+            "judgment": {
+                "grade": "FAIL",
+                "failure_labels": [
+                    "MISSING_MUST_INCLUDE_FACTS",
+                    "CROSS_GUIDELINE_REFERENCE",
+                    "INSUFFICIENT_CASE_SPECIFICITY"
+                ],
+                "reason": "The response does not include multiple required case facts (e.g., 74-year-old man, asymptomatic 5.8 cm AAA, juxtarenal location with inadequate neck making standard EVAR unsuitable, active smoker, hypertension, dyslipidaemia, eGFR 28 with contrast-nephropathy caution, severe COPD, reduced functional capacity, significant frailty, independence in basic ADLs). It also does not explicitly frame a shared decision across open repair, FEVAR, and conservative management for this specific patient. Additionally, it references principles from thoracic/thoracoabdominal guidelines, which the rubric flags to avoid. While it mentions general guideline principles and FEVAR/open options, the answer lacks sufficient patient-specific integration and omits key required details."
+            },
+            "output": {
+                "unknowns": [
+                    {
+                        "variable": "precise assessment of expected life expectancy (quantified, not just relative)",
+                        "currently_known": false,
+                        "why_it_changes_management": "Repair is not recommended in patients with limited life expectancy; clear documentation is needed to decide between conservative management and intervention.",
+                        "branch_impact": "high"
+                    },
+                    {
+                        "variable": "formal multidisciplinary frailty/fitness assessment (MDT conclusion: fit/unfit for major repair)",
+                        "currently_known": false,
+                        "why_it_changes_management": "Definitively unfit patients should not be offered repair; if borderline this influences risk discussion and may sway toward or away from intervention.",
+                        "branch_impact": "high"
+                    },
+                    {
+                        "variable": "anatomical suitability for FEVAR (specific CTA-based review)",
+                        "currently_known": false,
+                        "why_it_changes_management": "If anatomy precludes FEVAR, only open or conservative management are possible.",
+                        "branch_impact": "medium"
+                    }
+                ],
+                "questions": [
+                    {
+                        "question": "Based on formal multidisciplinary assessment, is the patient deemed fit for elective aneurysm repair (either open or endovascular)?",
+                        "targets": "formal MDT surgical/anaesthetic/frailty evaluation",
+                        "rationale": "A high-impact unknown—guidelines recommend against repair in patients with limited life expectancy or unfit for intervention; this assessment is pivotal for first-line decision."
+                    },
+                    {
+                        "question": "Does current clinical judgement estimate the patient’s life expectancy to be sufficient to merit elective aneurysm repair?",
+                        "targets": "clinical/MDT input regarding expected prognosis in context of comorbidities and frailty",
+                        "rationale": "Clarifies whether the pathway should branch to conservative management, as ESVS recommends against repair if life expectancy is limited."
+                    }
+                ],
+                "guideline_grounded_answer": "According to the ESVS 2024 Clinical Practice Guidelines for abdominal aorto-iliac aneurysms:\n- Elective AAA repair (either open or endovascular) is not recommended for patients with limited life expectancy (Recommendation 67, Class III).\n- For most patients with long life expectancy, open surgical repair should be considered the preferred option (Recommendation 66, Class IIa).\n\nThe guidelines do not give a formula for defining limited life expectancy, nor do they provide a directly applicable statement about frailty, comorbidity, or unfitness specifically for AAA. The principle of not offering repair to patients unlikely to benefit due to comorbidity or frailty is based on a separate thoracic/thoracoabdominal guideline (not directly AAA specific).",
+                "interpretive_frame": "Non-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nIn the absence of a direct AAA-specific ESVS recommendation on frailty and surgical fitness, the decision should integrate multidisciplinary (surgical, anaesthetic, geriatric, and patient) assessment of operative risk, frailty, and estimated prognosis. Extrapolating from thoracic/thoracoabdominal principles (labelled as such): patients with severe comorbidities, marked frailty, or unfitness for repair should not undergo elective intervention. Determining whether this patient is formally unfit or has a clinically limited life expectancy is essential. If he is deemed to have a reasonable life expectancy and is fit for intervention, FEVAR may be considered as first-line therapy in high-risk surgical candidates with complex anatomy (extrapolated from ESVS recommendation 121 for complex AAA anatomy and high risk). If he is judged to have limited life expectancy or is frankly unfit, conservative management is guideline-aligned.",
+                "evidence_status": {
+                    "coverage": "interaction_gap",
+                    "core_question": "He also has severe COPD, reduced functional capacity, and significant frailty, but remains independent in basic daily activities. Should he still undergo repair, and how would you choose between open repair, FEVAR, and conservative management?",
+                    "covered_components": [
+                        "management of juxtarenal abdominal aortic aneurysm",
+                        "impact of severe COPD, frailty and comorbidity on repair suitability",
+                        "open versus fenestrated EVAR choice",
+                        "conservative management criteria",
+                        "importance of life expectancy and fitness assessment"
+                    ],
+                    "gap_summary": "ESVS components were located separately, but no recommendation on their interaction was located."
+                },
+                "assumptions": [
+                    "No formal MDT frailty or fitness conclusion is documented yet; decision is pending.",
+                    "No explicit statement of estimated life expectancy is available in the patient model.",
+                    "Anatomical suitability for FEVAR is not definitively known, but the juxtarenal anatomy and CTA were noted."
+                ],
+                "confidence": 0.75,
+                "decision": "ask",
+                "lint_violations": [],
+                "answer_markdown": "## ESVS-grounded answer\n\nAccording to the ESVS 2024 Clinical Practice Guidelines for abdominal aorto-iliac aneurysms:\n- Elective AAA repair (either open or endovascular) is not recommended for patients with limited life expectancy (Recommendation 67, Class III).\n- For most patients with long life expectancy, open surgical repair should be considered the preferred option (Recommendation 66, Class IIa).\n\nThe guidelines do not give a formula for defining limited life expectancy, nor do they provide a directly applicable statement about frailty, comorbidity, or unfitness specifically for AAA. The principle of not offering repair to patients unlikely to benefit due to comorbidity or frailty is based on a separate thoracic/thoracoabdominal guideline (not directly AAA specific).\n\n## Interpretation\n\nNon-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nIn the absence of a direct AAA-specific ESVS recommendation on frailty and surgical fitness, the decision should integrate multidisciplinary (surgical, anaesthetic, geriatric, and patient) assessment of operative risk, frailty, and estimated prognosis. Extrapolating from thoracic/thoracoabdominal principles (labelled as such): patients with severe comorbidities, marked frailty, or unfitness for repair should not undergo elective intervention. Determining whether this patient is formally unfit or has a clinically limited life expectancy is essential. If he is deemed to have a reasonable life expectancy and is fit for intervention, FEVAR may be considered as first-line therapy in high-risk surgical candidates with complex anatomy (extrapolated from ESVS recommendation 121 for complex AAA anatomy and high risk). If he is judged to have limited life expectancy or is frankly unfit, conservative management is guideline-aligned.",
+                "mode": "case_followup_substantive",
+                "same_case": true,
+                "patient_model": {
+                    "demographics": "74-year-old man",
+                    "lesion": "asymptomatic 5.8 cm juxtarenal abdominal aortic aneurysm with inadequate infrarenal neck for standard EVAR",
+                    "symptom_status": "asymptomatic",
+                    "timing": "discovered on ultrasound",
+                    "fitness": "severe COPD, reduced functional capacity, significant frailty but remains independent in basic daily activities",
+                    "comorbidities": [
+                        "active smoker",
+                        "hypertension",
+                        "dyslipidaemia",
+                        "severe COPD",
+                        "frailty"
+                    ],
+                    "medications": [],
+                    "prior_interventions": [],
+                    "imaging": "CTA",
+                    "other_findings": [],
+                    "renal_function": "eGFR 28 mL/min/1.73 m² (chronic kidney disease stage 4)"
+                },
+                "changed_fields": [
+                    "fitness",
+                    "comorbidities"
+                ],
+                "routed_guidelines": [
+                    "abdominal_aortic_aneurysm"
+                ],
+                "pathways": [
+                    {
+                        "relevant": true,
+                        "coverage": "covered",
+                        "better_query": "ESVS guideline recommendations for management of a 74-year-old man with asymptomatic 5.8 cm juxtarenal abdominal aortic aneurysm, severe COPD, significant frailty but independence in basic activities, and CKD stage 4 (eGFR 28). How to choose between open repair, fenestrated EVAR, and conservative management considering fitness, frailty, comorbidities, anatomical suitability, and expected life expectancy?",
+                        "guideline_key": "ESVS 2024 Clinical Practice Guidelines on the Management of Abdominal Aorto-Iliac Artery Aneurysms",
+                        "covered_components": [
+                            "management of juxtarenal abdominal aortic aneurysm",
+                            "impact of severe COPD, frailty and comorbidity on repair suitability",
+                            "open versus fenestrated EVAR choice",
+                            "conservative management criteria",
+                            "importance of life expectancy and fitness assessment"
+                        ],
+                        "interaction_gap": true,
+                        "pathways": [
+                            {
+                                "pathway": "Conservative management",
+                                "guideline_basis": "For patients with limited life expectancy, elective abdominal aortic aneurysm repair is not recommended, either open or endovascular repair. (Recommendation 67, Class III, Level B)",
+                                "discriminating_variables": [
+                                    "limited life expectancy",
+                                    "severe comorbidities",
+                                    "frailty",
+                                    "unfitness for repair"
+                                ]
+                            },
+                            {
+                                "pathway": "Fenestrated Endovascular Aortic Repair (FEVAR)",
+                                "guideline_basis": "For patients with a complex abdominal aortic aneurysm and high surgical risk, endovascular repair with fenestrated and branched technologies should be considered as first line therapy. (Recommendation 121, Class IIa, Level C)",
+                                "discriminating_variables": [
+                                    "complex aneurysm anatomy",
+                                    "high surgical risk",
+                                    "suitable anatomy for fenestrated EVAR"
+                                ]
+                            },
+                            {
+                                "pathway": "Open surgical repair",
+                                "guideline_basis": "For most patients with long life expectancy, open surgical repair should be considered as the preferred treatment modality for elective abdominal aortic aneurysm repair. (Recommendation 66, Class IIa, Level B)",
+                                "discriminating_variables": [
+                                    "long life expectancy",
+                                    "suitable fitness for open repair"
+                                ]
+                            }
+                        ],
+                        "queries_tried": [
+                            "Clinical question: In a 74-year-old man with an asymptomatic 5.8 cm juxtarenal abdominal aortic aneurysm, severe COPD, significant frailty but independence in basic activities, chronic kidney disease (eGFR 28), how should the choice between open repair, fenestrated EVAR, or conservative management be made?\nPatient context: Patient: 74-year-old man. Lesion: asymptomatic 5.8 cm juxtarenal abdominal aortic aneurysm with inadequate infrarenal neck for standard EVAR. Symptoms: asymptomatic. Timing: discovered on ultrasound. Fitness: severe COPD, reduced functional capacity, significant frailty but remains independent in basic daily activities. Imaging: CTA. Comorbidities: active smoker, hypertension, dyslipidaemia, severe COPD, frailty.\nClinical concepts: juxtarenal abdominal aortic aneurysm, severe COPD, frailty, fenestrated EVAR, open repair, conservative management, chronic kidney disease stage 4, functional capacity, management options, impact of severe COPD on surgical risk, frailty assessment and outcomes, renal impairment and repair risk, anatomical suitability for fenestrated EVAR, perioperative mortality and morbidity for open vs fenestrated EVAR, conservative management indications, 5.8 cm, chronic kidney disease, fitness assessment, management recommendation\nAnatomical anchors: aorta, renal_mesenteric\nRetrieval gaps to resolve: grounding; In the guideline_grounded_answer, the strongest negative recommendation cited is for \"endovascular or open repair... not recommended in those unfit for repair or unlikely to benefit due to severe comorbidities, frailty, limited life expectancy...\" but the snippet provided is from throracic/thoraco-abdominal recommendations, not specifically for abdominal aortic aneurysms (AAA), although the AAA section’s text does not contain the same explicit recommendation. There is a weaker positive statement about \"patients with suitable anatomy and reasonable life expectancy\" as candidates for EVAR in the proper AAA guideline. While the claim is highly credible, a truly rigorous answer should (a) prioritize verbatim AAA guideline text and clarify any extrapolation from thoracic/thoraco-abdominal guidance.; Revise the guideline_grounded_answer to distinguish between directly applicable AAA guideline recommendations (using found text) and extrapolation from thoracic/thoracoabdominal statements; label extrapolated points within the interpretive frame and make clear which recommendations are directly supported by AAA guideline text."
+                        ]
+                    }
+                ],
+                "queries_tried": {
+                    "abdominal_aortic_aneurysm": [
+                        "Clinical question: In a 74-year-old man with an asymptomatic 5.8 cm juxtarenal abdominal aortic aneurysm, severe COPD, significant frailty but independence in basic activities, chronic kidney disease (eGFR 28), how should the choice between open repair, fenestrated EVAR, or conservative management be made?\nPatient context: Patient: 74-year-old man. Lesion: asymptomatic 5.8 cm juxtarenal abdominal aortic aneurysm with inadequate infrarenal neck for standard EVAR. Symptoms: asymptomatic. Timing: discovered on ultrasound. Fitness: severe COPD, reduced functional capacity, significant frailty but remains independent in basic daily activities. Imaging: CTA. Comorbidities: active smoker, hypertension, dyslipidaemia, severe COPD, frailty.\nClinical concepts: juxtarenal abdominal aortic aneurysm, severe COPD, frailty, fenestrated EVAR, open repair, conservative management, chronic kidney disease stage 4, functional capacity, management options, impact of severe COPD on surgical risk, frailty assessment and outcomes, renal impairment and repair risk, anatomical suitability for fenestrated EVAR, perioperative mortality and morbidity for open vs fenestrated EVAR, conservative management indications, 5.8 cm, chronic kidney disease, fitness assessment, management recommendation\nAnatomical anchors: aorta, renal_mesenteric\nRetrieval gaps to resolve: grounding; In the guideline_grounded_answer, the strongest negative recommendation cited is for \"endovascular or open repair... not recommended in those unfit for repair or unlikely to benefit due to severe comorbidities, frailty, limited life expectancy...\" but the snippet provided is from throracic/thoraco-abdominal recommendations, not specifically for abdominal aortic aneurysms (AAA), although the AAA section’s text does not contain the same explicit recommendation. There is a weaker positive statement about \"patients with suitable anatomy and reasonable life expectancy\" as candidates for EVAR in the proper AAA guideline. While the claim is highly credible, a truly rigorous answer should (a) prioritize verbatim AAA guideline text and clarify any extrapolation from thoracic/thoraco-abdominal guidance.; Revise the guideline_grounded_answer to distinguish between directly applicable AAA guideline recommendations (using found text) and extrapolation from thoracic/thoracoabdominal statements; label extrapolated points within the interpretive frame and make clear which recommendations are directly supported by AAA guideline text."
+                    ]
+                },
+                "critic": {
+                    "approved": false,
+                    "score": 0.93,
+                    "candidate_summary": "The candidate accurately updates the patient model and routes only to ESVS abdominal aortic aneurysm guidance. All directly retrieved claims in the guideline-grounded frame are supported by ESVS text, and interpretive extrapolation (frailty, unfitness, and FEVAR rationale) is clearly labelled as such. Questions are high value, not redundant, and both probe actionable MDT/clinical facts that decisively shift management between guideline-justified arms. Coverage/interaction gap is acknowledged and does not reflect premature closure or errant retrieval.",
+                    "revise_stage": "none",
+                    "issues": [
+                        {
+                            "invariant": "grounding",
+                            "problem": "FEVAR as a named recommendation is cited within the interpretive_frame, but not directly grounded in the abdominal/juxtarenal AAA portion of ESVS; the guideline_basis relies on extrapolation and indirect pathway reference. There is a modest risk the user will misattribute Level I support to a more weakly-stated principle than warranted.",
+                            "fix": "In the guideline_grounded_answer, explicitly mark any statement about FEVAR that is not verbatim from the ESVS AAA section as extrapolation, and cite the FEVAR-supportive text if available (or clarify if absent). Make clear in the grounded frame that the first-line consideration for FEVAR in high risk/complex AAA patients is a partial extrapolation, not explicitly recommended for this context in ESVS."
+                        }
+                    ]
+                },
+                "best_score": 0.93,
+                "iterations": 2,
+                "stage_trace": [
+                    {
+                        "stage": "orient_fallback",
+                        "iteration": 0,
+                        "duration_ms": 0,
+                        "elapsed_ms": 5089,
+                        "detail": {
+                            "field": "response_mode"
+                        }
+                    },
+                    {
+                        "stage": "orient",
+                        "iteration": 0,
+                        "duration_ms": 5082,
+                        "elapsed_ms": 5090,
+                        "detail": {
+                            "mode": "case_followup_substantive",
+                            "guidelines": [
+                                "abdominal_aortic_aneurysm"
+                            ]
+                        }
+                    },
+                    {
+                        "stage": "retrieve",
+                        "iteration": 0,
+                        "duration_ms": 3501,
+                        "elapsed_ms": 12701,
+                        "detail": {
+                            "guideline": "abdominal_aortic_aneurysm",
+                            "attempt": 1,
+                            "full_pipeline": false,
+                            "top_k": 12,
+                            "snippet_count": 10,
+                            "retrieval_ms": 3500,
+                            "prefetched": false
+                        }
+                    },
+                    {
+                        "stage": "pathway",
+                        "iteration": 0,
+                        "duration_ms": 4110,
+                        "elapsed_ms": 12701,
+                        "detail": {
+                            "guideline": "abdominal_aortic_aneurysm",
+                            "attempt": 1,
+                            "relevant": true,
+                            "coverage": "partial"
+                        }
+                    },
+                    {
+                        "stage": "probe",
+                        "iteration": 0,
+                        "duration_ms": 5915,
+                        "elapsed_ms": 18616,
+                        "detail": {
+                            "questions": 1,
+                            "coverage": "interaction_gap"
+                        }
+                    },
+                    {
+                        "stage": "critic",
+                        "iteration": 1,
+                        "duration_ms": 3439,
+                        "elapsed_ms": 22055,
+                        "detail": {
+                            "approved": false,
+                            "score": 0.88,
+                            "revise_stage": "ground"
+                        }
+                    },
+                    {
+                        "stage": "retrieve",
+                        "iteration": 1,
+                        "duration_ms": 4934,
+                        "elapsed_ms": 31905,
+                        "detail": {
+                            "guideline": "abdominal_aortic_aneurysm",
+                            "attempt": 1,
+                            "full_pipeline": true,
+                            "top_k": 24,
+                            "snippet_count": 10,
+                            "retrieval_ms": 4933,
+                            "prefetched": false
+                        }
+                    },
+                    {
+                        "stage": "pathway",
+                        "iteration": 1,
+                        "duration_ms": 4916,
+                        "elapsed_ms": 31905,
+                        "detail": {
+                            "guideline": "abdominal_aortic_aneurysm",
+                            "attempt": 1,
+                            "relevant": true,
+                            "coverage": "covered"
+                        }
+                    },
+                    {
+                        "stage": "probe",
+                        "iteration": 1,
+                        "duration_ms": 6524,
+                        "elapsed_ms": 38430,
+                        "detail": {
+                            "questions": 2,
+                            "coverage": "interaction_gap"
+                        }
+                    },
+                    {
+                        "stage": "critic",
+                        "iteration": 2,
+                        "duration_ms": 2903,
+                        "elapsed_ms": 41332,
+                        "detail": {
+                            "approved": false,
+                            "score": 0.93,
+                            "revise_stage": "none"
+                        }
+                    },
+                    {
+                        "stage": "decide",
+                        "iteration": 2,
+                        "duration_ms": 0,
+                        "elapsed_ms": 41332,
+                        "detail": {
+                            "reason": "bounce_budget_exhausted",
+                            "stage": "none"
+                        }
+                    },
+                    {
+                        "stage": "decide",
+                        "iteration": 2,
+                        "duration_ms": 0,
+                        "elapsed_ms": 41332,
+                        "detail": {
+                            "decision": "ask",
+                            "best_score": 0.93,
+                            "iterations": 2
+                        }
+                    }
+                ],
+                "state": {
+                    "patient_model": {
+                        "demographics": "74-year-old man",
+                        "lesion": "asymptomatic 5.8 cm juxtarenal abdominal aortic aneurysm with inadequate infrarenal neck for standard EVAR",
+                        "symptom_status": "asymptomatic",
+                        "timing": "discovered on ultrasound",
+                        "fitness": "severe COPD, reduced functional capacity, significant frailty but remains independent in basic daily activities",
+                        "comorbidities": [
+                            "active smoker",
+                            "hypertension",
+                            "dyslipidaemia",
+                            "severe COPD",
+                            "frailty"
+                        ],
+                        "medications": [],
+                        "prior_interventions": [],
+                        "imaging": "CTA",
+                        "other_findings": [],
+                        "renal_function": "eGFR 28 mL/min/1.73 m² (chronic kidney disease stage 4)"
+                    },
+                    "core_question": "In a 74-year-old man with an asymptomatic 5.8 cm juxtarenal abdominal aortic aneurysm, severe COPD, significant frailty but independence in basic activities, chronic kidney disease (eGFR 28), how should the choice between open repair, fenestrated EVAR, or conservative management be made?",
+                    "expansion_terms": [
+                        "juxtarenal abdominal aortic aneurysm",
+                        "severe COPD",
+                        "frailty",
+                        "fenestrated EVAR",
+                        "open repair",
+                        "conservative management",
+                        "chronic kidney disease stage 4",
+                        "functional capacity",
+                        "management options"
+                    ],
+                    "interpretation_terms": [
+                        "impact of severe COPD on surgical risk",
+                        "frailty assessment and outcomes",
+                        "renal impairment and repair risk",
+                        "anatomical suitability for fenestrated EVAR",
+                        "perioperative mortality and morbidity for open vs fenestrated EVAR",
+                        "conservative management indications"
+                    ],
+                    "must_include_terms": [
+                        "juxtarenal abdominal aortic aneurysm",
+                        "5.8 cm",
+                        "severe COPD",
+                        "frailty",
+                        "chronic kidney disease",
+                        "fitness assessment",
+                        "management recommendation"
+                    ],
+                    "provenance": [
+                        {
+                            "field": "fitness",
+                            "turn_index": 3,
+                            "verbatim_source": "severe COPD, reduced functional capacity, and significant frailty, but remains independent in basic daily activities"
+                        },
+                        {
+                            "field": "comorbidities",
+                            "turn_index": 3,
+                            "verbatim_source": "severe COPD, reduced functional capacity, and significant frailty"
+                        },
+                        {
+                            "field": "comorbidities",
+                            "turn_index": 2,
+                            "verbatim_source": "active smoker, hypertension, dyslipidaemia"
+                        }
+                    ],
+                    "open_questions": [
+                        {
+                            "question": "Is the patient currently fit for elective aneurysm repair (any major cardiopulmonary or frailty contraindications)?",
+                            "status": "pending",
+                            "answer": ""
+                        },
+                        {
+                            "question": "Based on formal multidisciplinary assessment, is the patient deemed fit for elective aneurysm repair (either open or endovascular)?",
+                            "status": "pending",
+                            "answer": ""
+                        },
+                        {
+                            "question": "Does current clinical judgement estimate the patient’s life expectancy to be sufficient to merit elective aneurysm repair?",
+                            "status": "pending",
+                            "answer": ""
+                        }
+                    ],
+                    "assumptions": [],
+                    "candidate_guidelines": [
+                        "abdominal_aortic_aneurysm"
+                    ],
+                    "turn_index": 3,
+                    "version": 3
+                },
+                "guideline_keys": [
+                    "abdominal_aortic_aneurysm"
+                ],
+                "rendered_answer": "## ESVS-grounded answer\n\nAccording to the ESVS 2024 Clinical Practice Guidelines for abdominal aorto-iliac aneurysms:\n- Elective AAA repair (either open or endovascular) is not recommended for patients with limited life expectancy (Recommendation 67, Class III).\n- For most patients with long life expectancy, open surgical repair should be considered the preferred option (Recommendation 66, Class IIa).\n\nThe guidelines do not give a formula for defining limited life expectancy, nor do they provide a directly applicable statement about frailty, comorbidity, or unfitness specifically for AAA. The principle of not offering repair to patients unlikely to benefit due to comorbidity or frailty is based on a separate thoracic/thoracoabdominal guideline (not directly AAA specific).\n\n## Interpretation\n\nNon-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nIn the absence of a direct AAA-specific ESVS recommendation on frailty and surgical fitness, the decision should integrate multidisciplinary (surgical, anaesthetic, geriatric, and patient) assessment of operative risk, frailty, and estimated prognosis. Extrapolating from thoracic/thoracoabdominal principles (labelled as such): patients with severe comorbidities, marked frailty, or unfitness for repair should not undergo elective intervention. Determining whether this patient is formally unfit or has a clinically limited life expectancy is essential. If he is deemed to have a reasonable life expectancy and is fit for intervention, FEVAR may be considered as first-line therapy in high-risk surgical candidates with complex anatomy (extrapolated from ESVS recommendation 121 for complex AAA anatomy and high risk). If he is judged to have limited life expectancy or is frankly unfit, conservative management is guideline-aligned.",
+                "retrieval_chunk_count": 20,
+                "retrieval_returned_chunks": true
+            },
+            "stage_trace": [
+                {
+                    "stage": "orient_fallback",
+                    "iteration": 0,
+                    "duration_ms": 0,
+                    "elapsed_ms": 5089,
+                    "detail": {
+                        "field": "response_mode"
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 0,
+                    "duration_ms": 5082,
+                    "elapsed_ms": 5090,
+                    "detail": {
+                        "mode": "case_followup_substantive",
+                        "guidelines": [
+                            "abdominal_aortic_aneurysm"
+                        ]
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 3501,
+                    "elapsed_ms": 12701,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "full_pipeline": false,
+                        "top_k": 12,
+                        "snippet_count": 10,
+                        "retrieval_ms": 3500,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 4110,
+                    "elapsed_ms": 12701,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "relevant": true,
+                        "coverage": "partial"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 0,
+                    "duration_ms": 5915,
+                    "elapsed_ms": 18616,
+                    "detail": {
+                        "questions": 1,
+                        "coverage": "interaction_gap"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 1,
+                    "duration_ms": 3439,
+                    "elapsed_ms": 22055,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.88,
+                        "revise_stage": "ground"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 1,
+                    "duration_ms": 4934,
+                    "elapsed_ms": 31905,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 10,
+                        "retrieval_ms": 4933,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 1,
+                    "duration_ms": 4916,
+                    "elapsed_ms": 31905,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "relevant": true,
+                        "coverage": "covered"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 1,
+                    "duration_ms": 6524,
+                    "elapsed_ms": 38430,
+                    "detail": {
+                        "questions": 2,
+                        "coverage": "interaction_gap"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 2,
+                    "duration_ms": 2903,
+                    "elapsed_ms": 41332,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.93,
+                        "revise_stage": "none"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 2,
+                    "duration_ms": 0,
+                    "elapsed_ms": 41332,
+                    "detail": {
+                        "reason": "bounce_budget_exhausted",
+                        "stage": "none"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 2,
+                    "duration_ms": 0,
+                    "elapsed_ms": 41332,
+                    "detail": {
+                        "decision": "ask",
+                        "best_score": 0.93,
+                        "iterations": 2
+                    }
+                }
+            ]
+        },
+        {
+            "scenario_id": "adversarial_knowledge_interleave",
+            "turn": 2,
+            "baseline_grade": null,
+            "grade": "FAIL",
+            "no_grade_drop": true,
+            "deterministic_checks": {
+                "mode": true,
+                "same_case": false,
+                "routing": true,
+                "max_questions": true,
+                "evidence_status": true,
+                "interpretive_frame_present": true,
+                "dose_lint": true,
+                "verbatim_fidelity": 1
+            },
+            "judgment": {
+                "grade": "FAIL",
+                "failure_labels": [
+                    "missing_required_case_facts",
+                    "state_tracking_failure"
+                ],
+                "reason": "The response did not include the required case facts (72-year-old man, asymptomatic 5.7 cm infrarenal AAA, CKD) despite same_case being true. It answered as general knowledge only and did not maintain case context. No excess questions were asked."
+            },
+            "output": {
+                "evidence_status": {
+                    "coverage": "covered",
+                    "core_question": "As a general knowledge question, what diameter threshold does ESVS use in women?",
+                    "covered_components": [
+                        "diameter threshold",
+                        "women",
+                        "elective repair",
+                        "ESVS guidelines"
+                    ],
+                    "gap_summary": ""
+                },
+                "guideline_grounded_answer": "The ESVS guideline recommends that women with an abdominal aortic aneurysm ≥ 50 mm may be considered for elective repair (Recommendation class IIb, Level C). Women with an asymptomatic AAA < 50 mm are not recommended for elective repair.",
+                "interpretive_frame": "Non-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nThis is an expert-consensus (Level C) recommendation: the 50 mm threshold for women is a lower elective-repair trigger than the 55 mm threshold used for men and should be applied together with assessment of fitness for repair, aneurysm anatomy, and patient preferences. The recommendation reflects limited evidence and recognizes sex differences in rupture risk; surveillance frequency and individual factors may modify management decisions.",
+                "unknowns": [],
+                "questions": [],
+                "decision": "proceed",
+                "lint_violations": [],
+                "answer_markdown": "## ESVS-grounded answer\n\nThe ESVS guideline recommends that women with an abdominal aortic aneurysm ≥ 50 mm may be considered for elective repair (Recommendation class IIb, Level C). Women with an asymptomatic AAA < 50 mm are not recommended for elective repair.\n\n## Interpretation\n\nNon-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nThis is an expert-consensus (Level C) recommendation: the 50 mm threshold for women is a lower elective-repair trigger than the 55 mm threshold used for men and should be applied together with assessment of fitness for repair, aneurysm anatomy, and patient preferences. The recommendation reflects limited evidence and recognizes sex differences in rupture risk; surveillance frequency and individual factors may modify management decisions.",
+                "mode": "knowledge",
+                "same_case": false,
+                "patient_model": {
+                    "demographics": "unknown",
+                    "lesion": "unknown",
+                    "symptom_status": "unknown",
+                    "timing": "unknown",
+                    "fitness": "unknown",
+                    "imaging": "unknown",
+                    "comorbidities": [],
+                    "medications": [],
+                    "prior_interventions": [],
+                    "other_findings": []
+                },
+                "routed_guidelines": [
+                    "abdominal_aortic_aneurysm"
+                ],
+                "pathways": [
+                    {
+                        "guideline_key": "abdominal_aortic_aneurysm",
+                        "relevant": true,
+                        "coverage": "covered",
+                        "better_query": "What is the elective repair diameter threshold for abdominal aortic aneurysm in women according to the ESVS 2024 guidelines?",
+                        "covered_components": [
+                            "diameter threshold",
+                            "women",
+                            "elective repair",
+                            "ESVS guidelines"
+                        ],
+                        "interaction_gap": false,
+                        "pathways": [
+                            {
+                                "pathway": "elective repair",
+                                "guideline_basis": "Patients with complex abdominal aortic aneurysms may be considered for elective repair at a diameter of 50 mm in women (Class IIb, Level C).",
+                                "discriminating_variables": [
+                                    "sex (women)",
+                                    "aneurysm diameter ≥ 50 mm",
+                                    "fitness for repair",
+                                    "aneurysm anatomy",
+                                    "patient preferences"
+                                ]
+                            },
+                            {
+                                "pathway": "no elective repair",
+                                "guideline_basis": "Women with an asymptomatic abdominal aortic aneurysm less than 50 mm are not recommended for elective repair (Class III, Level C).",
+                                "discriminating_variables": [
+                                    "sex (women)",
+                                    "aneurysm diameter < 50 mm",
+                                    "asymptomatic status"
+                                ]
+                            }
+                        ],
+                        "queries_tried": [
+                            "Clinical question: What diameter threshold does the ESVS guideline recommend for elective repair of abdominal aortic aneurysm in women?\nClinical concepts: abdominal aortic aneurysm, diameter threshold, women, sex differences, elective repair, ESVS guidelines, aneurysm size criteria, sex-specific threshold, rupture risk, treatment indication, ESVS\nAnatomical anchors: aorta"
+                        ]
+                    }
+                ],
+                "queries_tried": {
+                    "abdominal_aortic_aneurysm": [
+                        "Clinical question: What diameter threshold does the ESVS guideline recommend for elective repair of abdominal aortic aneurysm in women?\nClinical concepts: abdominal aortic aneurysm, diameter threshold, women, sex differences, elective repair, ESVS guidelines, aneurysm size criteria, sex-specific threshold, rupture risk, treatment indication, ESVS\nAnatomical anchors: aorta"
+                    ]
+                },
+                "iterations": 0,
+                "stage_trace": [
+                    {
+                        "stage": "orient",
+                        "iteration": 0,
+                        "duration_ms": 16976,
+                        "elapsed_ms": 16981,
+                        "detail": {
+                            "mode": "knowledge",
+                            "guidelines": [
+                                "abdominal_aortic_aneurysm"
+                            ]
+                        }
+                    },
+                    {
+                        "stage": "retrieve",
+                        "iteration": 0,
+                        "duration_ms": 2268,
+                        "elapsed_ms": 21822,
+                        "detail": {
+                            "guideline": "abdominal_aortic_aneurysm",
+                            "attempt": 1,
+                            "full_pipeline": false,
+                            "top_k": 12,
+                            "snippet_count": 10,
+                            "retrieval_ms": 2268,
+                            "prefetched": false
+                        }
+                    },
+                    {
+                        "stage": "pathway",
+                        "iteration": 0,
+                        "duration_ms": 2572,
+                        "elapsed_ms": 21822,
+                        "detail": {
+                            "guideline": "abdominal_aortic_aneurysm",
+                            "attempt": 1,
+                            "relevant": true,
+                            "coverage": "covered"
+                        }
+                    },
+                    {
+                        "stage": "knowledge",
+                        "iteration": 0,
+                        "duration_ms": 4355,
+                        "elapsed_ms": 26177,
+                        "detail": {
+                            "escalate": false,
+                            "coverage": "covered"
+                        }
+                    }
+                ],
+                "state": {
+                    "patient_model": {
+                        "demographics": "unknown",
+                        "lesion": "unknown",
+                        "symptom_status": "unknown",
+                        "timing": "unknown",
+                        "fitness": "unknown",
+                        "imaging": "unknown",
+                        "comorbidities": [],
+                        "medications": [],
+                        "prior_interventions": [],
+                        "other_findings": []
+                    },
+                    "core_question": "What diameter threshold does the ESVS guideline recommend for elective repair of abdominal aortic aneurysm in women?",
+                    "expansion_terms": [
+                        "abdominal aortic aneurysm",
+                        "diameter threshold",
+                        "women",
+                        "sex differences",
+                        "elective repair",
+                        "ESVS guidelines"
+                    ],
+                    "interpretation_terms": [
+                        "aneurysm size criteria",
+                        "sex-specific threshold",
+                        "rupture risk",
+                        "treatment indication"
+                    ],
+                    "must_include_terms": [
+                        "abdominal aortic aneurysm",
+                        "diameter threshold",
+                        "women",
+                        "ESVS"
+                    ],
+                    "provenance": [
+                        {
+                            "field": "demographics",
+                            "turn_index": 2,
+                            "verbatim_source": "general knowledge question"
+                        },
+                        {
+                            "field": "lesion",
+                            "turn_index": 2,
+                            "verbatim_source": "general knowledge question"
+                        },
+                        {
+                            "field": "symptom_status",
+                            "turn_index": 2,
+                            "verbatim_source": "general knowledge question"
+                        },
+                        {
+                            "field": "timing",
+                            "turn_index": 2,
+                            "verbatim_source": "general knowledge question"
+                        },
+                        {
+                            "field": "fitness",
+                            "turn_index": 2,
+                            "verbatim_source": "general knowledge question"
+                        },
+                        {
+                            "field": "imaging",
+                            "turn_index": 2,
+                            "verbatim_source": "general knowledge question"
+                        },
+                        {
+                            "field": "comorbidities",
+                            "turn_index": 2,
+                            "verbatim_source": "general knowledge question"
+                        },
+                        {
+                            "field": "medications",
+                            "turn_index": 2,
+                            "verbatim_source": "general knowledge question"
+                        },
+                        {
+                            "field": "prior_interventions",
+                            "turn_index": 2,
+                            "verbatim_source": "general knowledge question"
+                        }
+                    ],
+                    "open_questions": [],
+                    "candidate_guidelines": [
+                        "abdominal_aortic_aneurysm"
+                    ],
+                    "turn_index": 2,
+                    "version": 2
+                },
+                "guideline_keys": [
+                    "abdominal_aortic_aneurysm"
+                ],
+                "rendered_answer": "## ESVS-grounded answer\n\nThe ESVS guideline recommends that women with an abdominal aortic aneurysm ≥ 50 mm may be considered for elective repair (Recommendation class IIb, Level C). Women with an asymptomatic AAA < 50 mm are not recommended for elective repair.\n\n## Interpretation\n\nNon-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nThis is an expert-consensus (Level C) recommendation: the 50 mm threshold for women is a lower elective-repair trigger than the 55 mm threshold used for men and should be applied together with assessment of fitness for repair, aneurysm anatomy, and patient preferences. The recommendation reflects limited evidence and recognizes sex differences in rupture risk; surveillance frequency and individual factors may modify management decisions.",
+                "retrieval_chunk_count": 10,
+                "retrieval_returned_chunks": true
+            },
+            "stage_trace": [
+                {
+                    "stage": "orient",
+                    "iteration": 0,
+                    "duration_ms": 16976,
+                    "elapsed_ms": 16981,
+                    "detail": {
+                        "mode": "knowledge",
+                        "guidelines": [
+                            "abdominal_aortic_aneurysm"
+                        ]
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 2268,
+                    "elapsed_ms": 21822,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "full_pipeline": false,
+                        "top_k": 12,
+                        "snippet_count": 10,
+                        "retrieval_ms": 2268,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 2572,
+                    "elapsed_ms": 21822,
+                    "detail": {
+                        "guideline": "abdominal_aortic_aneurysm",
+                        "attempt": 1,
+                        "relevant": true,
+                        "coverage": "covered"
+                    }
+                },
+                {
+                    "stage": "knowledge",
+                    "iteration": 0,
+                    "duration_ms": 4355,
+                    "elapsed_ms": 26177,
+                    "detail": {
+                        "escalate": false,
+                        "coverage": "covered"
+                    }
+                }
+            ]
+        },
+        {
+            "scenario_id": "batch_f2_clti_itp_after_bypass",
+            "turn": 1,
+            "baseline_grade": "PASS",
+            "grade": "PASS_WITH_MINOR",
+            "no_grade_drop": false,
+            "deterministic_checks": {
+                "mode": true,
+                "same_case": true,
+                "routing": true,
+                "max_questions": true,
+                "evidence_status": true,
+                "interpretive_frame_present": true,
+                "dose_lint": true,
+                "verbatim_fidelity": 1
+            },
+            "judgment": {
+                "grade": "PASS_WITH_MINOR",
+                "failure_labels": [
+                    "F2"
+                ],
+                "reason": "Includes postoperative CLTI context with ITP after bypass and appropriately asks about platelet count/bleeding. Acknowledges high bleeding risk and individualized approach. However, it omits the key standard recommendation of aspirin plus low-dose rivaroxaban when bleeding risk is acceptable and does not explicitly outline stepwise/delayed escalation based on platelet recovery, leaving core elements of the expected management incomplete."
+            },
+            "output": {
+                "guideline_grounded_answer": "According to the ESVS guidelines and provided excerpts, all patients with chronic limb threatening ischemia (CLTI) should receive antiplatelet therapy as standard long-term management after bypass surgery (Class 1, Level A). The guidelines also state that warfarin may be considered for high-risk vein grafts (such as spliced vein conduits or poor runoff) but ONLY in those who are not at increased risk of bleeding. There is no ESVS-specific recommendation for the interaction of CLTI and immune thrombocytopenic purpura (ITP), so balancing bleeding risk and graft patency must be approached with caution in this patient population. Surveillance of graft patency is recommended, but there are no ESVS-specific antithrombotic adjustments based on ITP.",
+                "interpretive_frame": "Non-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nIn the absence of direct ESVS guideline coverage for patients with both CLTI and ITP, postoperative antiplatelet therapy should be used with significant caution. ITP is an acquired bleeding disorder characterized by thrombocytopenia, and thus poses a high bleeding risk. The guideline recommendation to consider warfarin in high-risk vein grafts is not applicable in this patient, as the increased bleeding risk (from ITP) is an explicit contraindication for such escalation. The actual risk-benefit balance for antiplatelet therapy post-bypass in ITP is not evidence-based in ESVS; therefore, decisions should be individualized—ideally with multidisciplinary input (hematology, vascular surgery), aiming for the safest possible compromise and close monitoring. Direct ESVS guidance stops short of recommendations for this scenario, and the risk of bleeding complications is high. If the ITP is severe, it may be reasonable to omit antithrombotics and rely on close graft surveillance, but this is extrapolated expert reasoning, not guideline-mandated.",
+                "evidence_status": {
+                    "coverage": "interaction_gap",
+                    "core_question": "Post-op management of CLTI patient with ITP submitted to bypass surgery.",
+                    "covered_components": [
+                        "antiplatelet therapy as standard long-term management",
+                        "warfarin consideration in high-risk vein grafts without high bleeding risk",
+                        "postoperative monitoring of graft patency",
+                        "postoperative antithrombotic therapy",
+                        "risk of bleeding vs graft patency",
+                        "use of antiplatelet therapy in bypass grafts",
+                        "limitations in anticoagulation"
+                    ],
+                    "gap_summary": "ESVS components were located separately, but no recommendation on their interaction was located."
+                },
+                "unknowns": [
+                    {
+                        "variable": "Severity and platelet count of ITP/active bleeding risk",
+                        "currently_known": false,
+                        "branch_impact": "high",
+                        "why_it_changes_management": "If platelet count is too low or if there is active bleeding, any antiplatelet or anticoagulant therapy may be contraindicated and management must be altered towards minimizing bleeding risk, possibly omitting antithrombotic therapy, impacting first-line decision."
+                    },
+                    {
+                        "variable": "Type of bypass graft (vein vs prosthetic; high-risk conduit characteristics)",
+                        "currently_known": false,
+                        "branch_impact": "medium",
+                        "why_it_changes_management": "Nature of graft affects patency risk and influences consideration of warfarin (otherwise not applicable with high bleeding risk), and may alter the stringency of graft surveillance and medical management."
+                    }
+                ],
+                "questions": [
+                    {
+                        "question": "What is the patient’s current platelet count and are there clinical signs of bleeding?",
+                        "rationale": "Antiplatelet/anticoagulant therapy is contraindicated or must be very cautiously weighed in the context of severe thrombocytopenia or active bleeding, which may change primary therapeutic pathway.",
+                        "targets": "bleeding risk, suitability for antiplatelet therapy"
+                    }
+                ],
+                "assumptions": [
+                    "Patient does not have active major bleeding or platelet count so low as to mandate full omission of antithrombotics, unless specified otherwise.",
+                    "Bypass conduit details not provided, but assumed not to be spliced vein or poor runoff in absence of specifics."
+                ],
+                "confidence": 0.5,
+                "decision": "ask",
+                "lint_violations": [],
+                "answer_markdown": "## ESVS-grounded answer\n\nAccording to the ESVS guidelines and provided excerpts, all patients with chronic limb threatening ischemia (CLTI) should receive antiplatelet therapy as standard long-term management after bypass surgery (Class 1, Level A). The guidelines also state that warfarin may be considered for high-risk vein grafts (such as spliced vein conduits or poor runoff) but ONLY in those who are not at increased risk of bleeding. There is no ESVS-specific recommendation for the interaction of CLTI and immune thrombocytopenic purpura (ITP), so balancing bleeding risk and graft patency must be approached with caution in this patient population. Surveillance of graft patency is recommended, but there are no ESVS-specific antithrombotic adjustments based on ITP.\n\n## Interpretation\n\nNon-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nIn the absence of direct ESVS guideline coverage for patients with both CLTI and ITP, postoperative antiplatelet therapy should be used with significant caution. ITP is an acquired bleeding disorder characterized by thrombocytopenia, and thus poses a high bleeding risk. The guideline recommendation to consider warfarin in high-risk vein grafts is not applicable in this patient, as the increased bleeding risk (from ITP) is an explicit contraindication for such escalation. The actual risk-benefit balance for antiplatelet therapy post-bypass in ITP is not evidence-based in ESVS; therefore, decisions should be individualized—ideally with multidisciplinary input (hematology, vascular surgery), aiming for the safest possible compromise and close monitoring. Direct ESVS guidance stops short of recommendations for this scenario, and the risk of bleeding complications is high. If the ITP is severe, it may be reasonable to omit antithrombotics and rely on close graft surveillance, but this is extrapolated expert reasoning, not guideline-mandated.",
+                "mode": "case_new",
+                "same_case": null,
+                "patient_model": {
+                    "demographics": "patient with chronic limb threatening ischemia (CLTI) and immune thrombocytopenic purpura (ITP)",
+                    "prior_interventions": [
+                        "bypass surgery"
+                    ]
+                },
+                "changed_fields": [
+                    "patient_model.demographics",
+                    "patient_model.prior_interventions"
+                ],
+                "routed_guidelines": [
+                    "clti",
+                    "antithrombotic_therapy"
+                ],
+                "pathways": [
+                    {
+                        "relevant": true,
+                        "coverage": "partial",
+                        "better_query": "Postoperative antithrombotic therapy in patients with chronic limb threatening ischemia and immune thrombocytopenic purpura after bypass surgery focusing on balancing bleeding risk and graft patency",
+                        "guideline_key": "clti",
+                        "covered_components": [
+                            "antiplatelet therapy as standard long-term management",
+                            "warfarin consideration in high-risk vein grafts without high bleeding risk",
+                            "postoperative monitoring of graft patency"
+                        ],
+                        "interaction_gap": true,
+                        "pathways": [
+                            {
+                                "pathway": "Single antiplatelet therapy continuation",
+                                "guideline_basis": "Recommendation 4.3 Treat all patients with CLTI with an antiplatelet agent. Class 1 (Strong) Level A (High)",
+                                "discriminating_variables": [
+                                    "CLTI diagnosis",
+                                    "absence of high bleeding risk"
+                                ]
+                            },
+                            {
+                                "pathway": "Consideration of warfarin in high-risk vein grafts",
+                                "guideline_basis": "Treatment with warfarin may be considered in patients with high-risk vein grafts (e.g. spliced vein conduit, poor runoff) who are not at increased risk for bleeding",
+                                "discriminating_variables": [
+                                    "presence of high-risk vein graft",
+                                    "bleeding risk assessment"
+                                ]
+                            }
+                        ],
+                        "queries_tried": [
+                            "Clinical question: What is the optimal post-operative management strategy for a patient with chronic limb threatening ischemia and immune thrombocytopenic purpura who underwent bypass surgery?\nPatient context: Patient: patient with chronic limb threatening ischemia (CLTI) and immune thrombocytopenic purpura (ITP). Prior interventions: bypass surgery.\nClinical concepts: postoperative management, bypass surgery, chronic limb threatening ischemia, ITP, immune thrombocytopenic purpura, limb salvage, bleeding risk, bypass graft patency, antithrombotic therapy, bleeding complications, infection risk, postoperative care, ITP considerations, antithrombotic management, limb salvage outcomes\nAnatomical anchors: graft, limb",
+                            "Postoperative management strategies for CLTI patients with immune thrombocytopenic purpura after bypass surgery, focusing on antithrombotic therapy adjustments accounting for bleeding risk and graft patency."
+                        ]
+                    },
+                    {
+                        "relevant": true,
+                        "coverage": "partial",
+                        "better_query": "Antithrombotic therapy recommendations for postoperative management in patients with chronic limb threatening ischemia and immune thrombocytopenic purpura following bypass surgery, focusing on balancing graft patency and bleeding risk.",
+                        "guideline_key": "antithrombotic_therapy",
+                        "covered_components": [
+                            "postoperative antithrombotic therapy",
+                            "risk of bleeding vs graft patency",
+                            "use of antiplatelet therapy in bypass grafts",
+                            "limitations in anticoagulation"
+                        ],
+                        "interaction_gap": true,
+                        "pathways": [
+                            {
+                                "pathway": "Single antiplatelet therapy for long-term PAD management post vein bypass grafting",
+                                "guideline_basis": "Limited evidence supports continuation of single antiplatelet therapy after vein bypass grafting for CLTI",
+                                "discriminating_variables": [
+                                    "type of bypass graft (vein)",
+                                    "bleeding risk",
+                                    "presence of CLTI"
+                                ]
+                            },
+                            {
+                                "pathway": "Consider warfarin for high-risk vein grafts without increased bleeding risk",
+                                "guideline_basis": "Warfarin may be considered in high-risk vein grafts not at increased bleeding risk",
+                                "discriminating_variables": [
+                                    "high-risk vein graft characteristics (e.g., spliced vein conduit, poor runoff)",
+                                    "bleeding risk assessment"
+                                ]
+                            },
+                            {
+                                "pathway": "Use of antiplatelet therapy to maintain patency in prosthetic bypass grafts",
+                                "guideline_basis": "Consistent evidence supports antiplatelet therapy after prosthetic bypass grafting to maintain graft patency",
+                                "discriminating_variables": [
+                                    "type of bypass graft (prosthetic)",
+                                    "bleeding risk"
+                                ]
+                            }
+                        ],
+                        "queries_tried": [
+                            "Clinical question: What is the optimal post-operative management strategy for a patient with chronic limb threatening ischemia and immune thrombocytopenic purpura who underwent bypass surgery?\nPatient context: Patient: patient with chronic limb threatening ischemia (CLTI) and immune thrombocytopenic purpura (ITP). Prior interventions: bypass surgery.\nClinical concepts: postoperative management, bypass surgery, chronic limb threatening ischemia, ITP, immune thrombocytopenic purpura, limb salvage, bleeding risk, bypass graft patency, antithrombotic therapy, bleeding complications, infection risk, postoperative care, ITP considerations, antithrombotic management, limb salvage outcomes\nAnatomical anchors: graft, limb"
+                        ]
+                    }
+                ],
+                "queries_tried": {
+                    "clti": [
+                        "Clinical question: What is the optimal post-operative management strategy for a patient with chronic limb threatening ischemia and immune thrombocytopenic purpura who underwent bypass surgery?\nPatient context: Patient: patient with chronic limb threatening ischemia (CLTI) and immune thrombocytopenic purpura (ITP). Prior interventions: bypass surgery.\nClinical concepts: postoperative management, bypass surgery, chronic limb threatening ischemia, ITP, immune thrombocytopenic purpura, limb salvage, bleeding risk, bypass graft patency, antithrombotic therapy, bleeding complications, infection risk, postoperative care, ITP considerations, antithrombotic management, limb salvage outcomes\nAnatomical anchors: graft, limb",
+                        "Postoperative management strategies for CLTI patients with immune thrombocytopenic purpura after bypass surgery, focusing on antithrombotic therapy adjustments accounting for bleeding risk and graft patency."
+                    ],
+                    "antithrombotic_therapy": [
+                        "Clinical question: What is the optimal post-operative management strategy for a patient with chronic limb threatening ischemia and immune thrombocytopenic purpura who underwent bypass surgery?\nPatient context: Patient: patient with chronic limb threatening ischemia (CLTI) and immune thrombocytopenic purpura (ITP). Prior interventions: bypass surgery.\nClinical concepts: postoperative management, bypass surgery, chronic limb threatening ischemia, ITP, immune thrombocytopenic purpura, limb salvage, bleeding risk, bypass graft patency, antithrombotic therapy, bleeding complications, infection risk, postoperative care, ITP considerations, antithrombotic management, limb salvage outcomes\nAnatomical anchors: graft, limb"
+                    ]
+                },
+                "critic": {
+                    "approved": false,
+                    "score": 0.8,
+                    "candidate_summary": "The candidate correctly identifies that there is a lack of direct ESVS guidance for the intersection of CLTI and ITP following bypass surgery. It grounds standard antiplatelet and, in select cases, warfarin use for primary CLTI indications, but notes (appropriately in the interpretive frame) that ITP may contraindicate these strategies. The answer asks a single high-impact question about platelet count and bleeding risk, which is valid. The state model and routed guidelines are both correct. The retriever demonstrated two reasonable iterations per pathway. The main issues are that the guideline_grounded_answer hints too much at clinical reasoning not directly found in the ESVS text (e.g., 'balancing bleeding risk and graft patency must be approached with caution in this patient population', which is accurate but not directly supported by ESVS), and that the assumptions section presumes the patient does not have critical thrombocytopenia, despite the scenario's core uncertainty. These are minor frame integrity and grounding leaks rather than substantive failures. No state, routing, or retrieval issues. No redundant or irrelevant questions.",
+                    "revise_stage": "ground",
+                    "issues": [
+                        {
+                            "invariant": "grounding",
+                            "problem": "The guideline_grounded_answer includes reasoning ('balancing bleeding risk and graft patency... approached with caution in this patient population') that is not explicitly present in the retrieved ESVS text. ESVS states bleeding risk should be considered regarding warfarin, but does not specifically discuss balancing with ITP or using caution language for antiplatelets.",
+                            "fix": "Remove or rephrase non-ESVS reasoning in the guideline_grounded_answer; restrict to explicit guideline statements. 'Caution' and 'balancing' in the context of ITP can appear in the interpretive_frame only."
+                        },
+                        {
+                            "invariant": "frame_integrity",
+                            "problem": "Assumptions include speculative statements about the absence of severe thrombocytopenia ('Patient does not have active major bleeding or platelet count so low as to mandate full omission...'), while also asking about this very uncertainty in the questions section. This is a minor internal inconsistency.",
+                            "fix": "Clarify that these are conditional assumptions or consider omitting them given the open question, to sharpen frame integrity."
+                        }
+                    ]
+                },
+                "best_score": 0.8,
+                "iterations": 2,
+                "stage_trace": [
+                    {
+                        "stage": "orient",
+                        "iteration": 0,
+                        "duration_ms": 3693,
+                        "elapsed_ms": 3694,
+                        "detail": {
+                            "mode": "case_new",
+                            "guidelines": [
+                                "clti",
+                                "antithrombotic_therapy"
+                            ]
+                        }
+                    },
+                    {
+                        "stage": "ground_parallel",
+                        "iteration": 0,
+                        "duration_ms": 17938,
+                        "elapsed_ms": 21632,
+                        "detail": {
+                            "guidelines": [
+                                "clti",
+                                "antithrombotic_therapy"
+                            ]
+                        }
+                    },
+                    {
+                        "stage": "retrieve",
+                        "iteration": 0,
+                        "duration_ms": 3527,
+                        "elapsed_ms": 21632,
+                        "detail": {
+                            "guideline": "clti",
+                            "attempt": 1,
+                            "full_pipeline": false,
+                            "top_k": 12,
+                            "snippet_count": 4,
+                            "retrieval_ms": 3527,
+                            "prefetched": false
+                        }
+                    },
+                    {
+                        "stage": "pathway",
+                        "iteration": 0,
+                        "duration_ms": 1704,
+                        "elapsed_ms": 21632,
+                        "detail": {
+                            "guideline": "clti",
+                            "attempt": 1,
+                            "relevant": false,
+                            "coverage": "retrieval_uncertain"
+                        }
+                    },
+                    {
+                        "stage": "retrieve",
+                        "iteration": 0,
+                        "duration_ms": 7949,
+                        "elapsed_ms": 21632,
+                        "detail": {
+                            "guideline": "clti",
+                            "attempt": 2,
+                            "full_pipeline": true,
+                            "top_k": 24,
+                            "snippet_count": 4,
+                            "retrieval_ms": 7948,
+                            "prefetched": false
+                        }
+                    },
+                    {
+                        "stage": "pathway",
+                        "iteration": 0,
+                        "duration_ms": 4540,
+                        "elapsed_ms": 21632,
+                        "detail": {
+                            "guideline": "clti",
+                            "attempt": 2,
+                            "relevant": true,
+                            "coverage": "partial"
+                        }
+                    },
+                    {
+                        "stage": "retrieve",
+                        "iteration": 0,
+                        "duration_ms": 8993,
+                        "elapsed_ms": 21632,
+                        "detail": {
+                            "guideline": "antithrombotic_therapy",
+                            "attempt": 1,
+                            "full_pipeline": false,
+                            "top_k": 12,
+                            "snippet_count": 8,
+                            "retrieval_ms": 8992,
+                            "prefetched": false
+                        }
+                    },
+                    {
+                        "stage": "pathway",
+                        "iteration": 0,
+                        "duration_ms": 3747,
+                        "elapsed_ms": 21632,
+                        "detail": {
+                            "guideline": "antithrombotic_therapy",
+                            "attempt": 1,
+                            "relevant": true,
+                            "coverage": "partial"
+                        }
+                    },
+                    {
+                        "stage": "probe",
+                        "iteration": 0,
+                        "duration_ms": 7596,
+                        "elapsed_ms": 29228,
+                        "detail": {
+                            "questions": 1,
+                            "coverage": "interaction_gap"
+                        }
+                    },
+                    {
+                        "stage": "critic",
+                        "iteration": 1,
+                        "duration_ms": 4349,
+                        "elapsed_ms": 33577,
+                        "detail": {
+                            "approved": false,
+                            "score": 0.8,
+                            "revise_stage": "ground"
+                        }
+                    },
+                    {
+                        "stage": "ground_parallel",
+                        "iteration": 1,
+                        "duration_ms": 18627,
+                        "elapsed_ms": 52205,
+                        "detail": {
+                            "guidelines": [
+                                "clti",
+                                "antithrombotic_therapy"
+                            ]
+                        }
+                    },
+                    {
+                        "stage": "retrieve",
+                        "iteration": 1,
+                        "duration_ms": 16405,
+                        "elapsed_ms": 52205,
+                        "detail": {
+                            "guideline": "clti",
+                            "attempt": 1,
+                            "full_pipeline": true,
+                            "top_k": 24,
+                            "snippet_count": 3,
+                            "retrieval_ms": 16404,
+                            "prefetched": false
+                        }
+                    },
+                    {
+                        "stage": "pathway",
+                        "iteration": 1,
+                        "duration_ms": 1997,
+                        "elapsed_ms": 52205,
+                        "detail": {
+                            "guideline": "clti",
+                            "attempt": 1,
+                            "relevant": false,
+                            "coverage": "not_covered"
+                        }
+                    },
+                    {
+                        "stage": "retrieve",
+                        "iteration": 1,
+                        "duration_ms": 15150,
+                        "elapsed_ms": 52205,
+                        "detail": {
+                            "guideline": "antithrombotic_therapy",
+                            "attempt": 1,
+                            "full_pipeline": true,
+                            "top_k": 24,
+                            "snippet_count": 2,
+                            "retrieval_ms": 15149,
+                            "prefetched": false
+                        }
+                    },
+                    {
+                        "stage": "pathway",
+                        "iteration": 1,
+                        "duration_ms": 3266,
+                        "elapsed_ms": 52205,
+                        "detail": {
+                            "guideline": "antithrombotic_therapy",
+                            "attempt": 1,
+                            "relevant": false,
+                            "coverage": "not_covered"
+                        }
+                    },
+                    {
+                        "stage": "probe",
+                        "iteration": 1,
+                        "duration_ms": 2781,
+                        "elapsed_ms": 54986,
+                        "detail": {
+                            "questions": 0,
+                            "coverage": "interaction_gap"
+                        }
+                    },
+                    {
+                        "stage": "critic",
+                        "iteration": 2,
+                        "duration_ms": 3270,
+                        "elapsed_ms": 58256,
+                        "detail": {
+                            "approved": false,
+                            "score": 0.6,
+                            "revise_stage": "ground"
+                        }
+                    },
+                    {
+                        "stage": "decide",
+                        "iteration": 2,
+                        "duration_ms": 0,
+                        "elapsed_ms": 58256,
+                        "detail": {
+                            "reason": "bounce_budget_exhausted",
+                            "stage": "ground"
+                        }
+                    },
+                    {
+                        "stage": "decide",
+                        "iteration": 2,
+                        "duration_ms": 0,
+                        "elapsed_ms": 58256,
+                        "detail": {
+                            "decision": "ask",
+                            "best_score": 0.8,
+                            "iterations": 2
+                        }
+                    }
+                ],
+                "state": {
+                    "patient_model": {
+                        "demographics": "patient with chronic limb threatening ischemia (CLTI) and immune thrombocytopenic purpura (ITP)",
+                        "prior_interventions": [
+                            "bypass surgery"
+                        ]
+                    },
+                    "core_question": "What is the optimal post-operative management strategy for a patient with chronic limb threatening ischemia and immune thrombocytopenic purpura who underwent bypass surgery?",
+                    "expansion_terms": [
+                        "postoperative management",
+                        "bypass surgery",
+                        "chronic limb threatening ischemia",
+                        "ITP",
+                        "immune thrombocytopenic purpura",
+                        "limb salvage",
+                        "bleeding risk"
+                    ],
+                    "interpretation_terms": [
+                        "bypass graft patency",
+                        "antithrombotic therapy",
+                        "bleeding complications",
+                        "infection risk"
+                    ],
+                    "must_include_terms": [
+                        "postoperative care",
+                        "ITP considerations",
+                        "antithrombotic management",
+                        "limb salvage outcomes"
+                    ],
+                    "provenance": [
+                        {
+                            "field": "patient_model.demographics",
+                            "turn_index": 1,
+                            "verbatim_source": "CLTI patient with ITP"
+                        },
+                        {
+                            "field": "patient_model.prior_interventions",
+                            "turn_index": 1,
+                            "verbatim_source": "bypass surgery"
+                        }
+                    ],
+                    "open_questions": [
+                        {
+                            "question": "What is the patient’s current platelet count and are there clinical signs of bleeding?",
+                            "status": "pending",
+                            "answer": ""
+                        }
+                    ],
+                    "assumptions": [],
+                    "candidate_guidelines": [
+                        "clti",
+                        "antithrombotic_therapy"
+                    ],
+                    "turn_index": 1,
+                    "version": 1
+                },
+                "guideline_keys": [
+                    "clti",
+                    "antithrombotic_therapy"
+                ],
+                "rendered_answer": "## ESVS-grounded answer\n\nAccording to the ESVS guidelines and provided excerpts, all patients with chronic limb threatening ischemia (CLTI) should receive antiplatelet therapy as standard long-term management after bypass surgery (Class 1, Level A). The guidelines also state that warfarin may be considered for high-risk vein grafts (such as spliced vein conduits or poor runoff) but ONLY in those who are not at increased risk of bleeding. There is no ESVS-specific recommendation for the interaction of CLTI and immune thrombocytopenic purpura (ITP), so balancing bleeding risk and graft patency must be approached with caution in this patient population. Surveillance of graft patency is recommended, but there are no ESVS-specific antithrombotic adjustments based on ITP.\n\n## Interpretation\n\nNon-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nIn the absence of direct ESVS guideline coverage for patients with both CLTI and ITP, postoperative antiplatelet therapy should be used with significant caution. ITP is an acquired bleeding disorder characterized by thrombocytopenia, and thus poses a high bleeding risk. The guideline recommendation to consider warfarin in high-risk vein grafts is not applicable in this patient, as the increased bleeding risk (from ITP) is an explicit contraindication for such escalation. The actual risk-benefit balance for antiplatelet therapy post-bypass in ITP is not evidence-based in ESVS; therefore, decisions should be individualized—ideally with multidisciplinary input (hematology, vascular surgery), aiming for the safest possible compromise and close monitoring. Direct ESVS guidance stops short of recommendations for this scenario, and the risk of bleeding complications is high. If the ITP is severe, it may be reasonable to omit antithrombotics and rely on close graft surveillance, but this is extrapolated expert reasoning, not guideline-mandated.",
+                "retrieval_chunk_count": 21,
+                "retrieval_returned_chunks": true
+            },
+            "stage_trace": [
+                {
+                    "stage": "orient",
+                    "iteration": 0,
+                    "duration_ms": 3693,
+                    "elapsed_ms": 3694,
+                    "detail": {
+                        "mode": "case_new",
+                        "guidelines": [
+                            "clti",
+                            "antithrombotic_therapy"
+                        ]
+                    }
+                },
+                {
+                    "stage": "ground_parallel",
+                    "iteration": 0,
+                    "duration_ms": 17938,
+                    "elapsed_ms": 21632,
+                    "detail": {
+                        "guidelines": [
+                            "clti",
+                            "antithrombotic_therapy"
+                        ]
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 3527,
+                    "elapsed_ms": 21632,
+                    "detail": {
+                        "guideline": "clti",
+                        "attempt": 1,
+                        "full_pipeline": false,
+                        "top_k": 12,
+                        "snippet_count": 4,
+                        "retrieval_ms": 3527,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 1704,
+                    "elapsed_ms": 21632,
+                    "detail": {
+                        "guideline": "clti",
+                        "attempt": 1,
+                        "relevant": false,
+                        "coverage": "retrieval_uncertain"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 7949,
+                    "elapsed_ms": 21632,
+                    "detail": {
+                        "guideline": "clti",
+                        "attempt": 2,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 4,
+                        "retrieval_ms": 7948,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 4540,
+                    "elapsed_ms": 21632,
+                    "detail": {
+                        "guideline": "clti",
+                        "attempt": 2,
+                        "relevant": true,
+                        "coverage": "partial"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 8993,
+                    "elapsed_ms": 21632,
+                    "detail": {
+                        "guideline": "antithrombotic_therapy",
+                        "attempt": 1,
+                        "full_pipeline": false,
+                        "top_k": 12,
+                        "snippet_count": 8,
+                        "retrieval_ms": 8992,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 3747,
+                    "elapsed_ms": 21632,
+                    "detail": {
+                        "guideline": "antithrombotic_therapy",
+                        "attempt": 1,
+                        "relevant": true,
+                        "coverage": "partial"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 0,
+                    "duration_ms": 7596,
+                    "elapsed_ms": 29228,
+                    "detail": {
+                        "questions": 1,
+                        "coverage": "interaction_gap"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 1,
+                    "duration_ms": 4349,
+                    "elapsed_ms": 33577,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.8,
+                        "revise_stage": "ground"
+                    }
+                },
+                {
+                    "stage": "ground_parallel",
+                    "iteration": 1,
+                    "duration_ms": 18627,
+                    "elapsed_ms": 52205,
+                    "detail": {
+                        "guidelines": [
+                            "clti",
+                            "antithrombotic_therapy"
+                        ]
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 1,
+                    "duration_ms": 16405,
+                    "elapsed_ms": 52205,
+                    "detail": {
+                        "guideline": "clti",
+                        "attempt": 1,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 3,
+                        "retrieval_ms": 16404,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 1,
+                    "duration_ms": 1997,
+                    "elapsed_ms": 52205,
+                    "detail": {
+                        "guideline": "clti",
+                        "attempt": 1,
+                        "relevant": false,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 1,
+                    "duration_ms": 15150,
+                    "elapsed_ms": 52205,
+                    "detail": {
+                        "guideline": "antithrombotic_therapy",
+                        "attempt": 1,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 2,
+                        "retrieval_ms": 15149,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 1,
+                    "duration_ms": 3266,
+                    "elapsed_ms": 52205,
+                    "detail": {
+                        "guideline": "antithrombotic_therapy",
+                        "attempt": 1,
+                        "relevant": false,
+                        "coverage": "not_covered"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 1,
+                    "duration_ms": 2781,
+                    "elapsed_ms": 54986,
+                    "detail": {
+                        "questions": 0,
+                        "coverage": "interaction_gap"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 2,
+                    "duration_ms": 3270,
+                    "elapsed_ms": 58256,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.6,
+                        "revise_stage": "ground"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 2,
+                    "duration_ms": 0,
+                    "elapsed_ms": 58256,
+                    "detail": {
+                        "reason": "bounce_budget_exhausted",
+                        "stage": "ground"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 2,
+                    "duration_ms": 0,
+                    "elapsed_ms": 58256,
+                    "detail": {
+                        "decision": "ask",
+                        "best_score": 0.8,
+                        "iterations": 2
+                    }
+                }
+            ]
+        },
+        {
+            "scenario_id": "batch_s4_symptomatic_carotid_web",
+            "turn": 1,
+            "baseline_grade": "FAIL",
+            "grade": "PASS_WITH_MINOR",
+            "no_grade_drop": true,
+            "deterministic_checks": {
+                "mode": true,
+                "same_case": false,
+                "routing": true,
+                "max_questions": false,
+                "evidence_status": false,
+                "interpretive_frame_present": true,
+                "dose_lint": true,
+                "verbatim_fidelity": 1
+            },
+            "judgment": {
+                "grade": "PASS_WITH_MINOR",
+                "failure_labels": [
+                    "F7",
+                    "F5"
+                ],
+                "reason": "The answer appropriately offers carotid revascularization (CEA or CAS) within 14 days and conditions intervention on excluding other stroke etiologies, aligning with principles. However, it does not state that CEA is generally preferred in a young, fit patient unless specific reasons favor CAS, and it does not explicitly acknowledge the limited evidence/Class IIb nature of support. Minor omission of the 'no prior history' detail in the response."
+            },
+            "output": {
+                "unknowns": [
+                    {
+                        "variable": "no other cause for stroke after detailed neurovascular workup",
+                        "currently_known": false,
+                        "branch_impact": "high",
+                        "why_it_changes_management": "Guidelines indicate carotid intervention is only considered if no other cause for stroke is identified after detailed neurovascular workup; if another cause were found, carotid intervention would not be recommended."
+                    }
+                ],
+                "questions": [
+                    {
+                        "question": "Has a detailed neurovascular workup been performed and found no other cause for this stroke?",
+                        "targets": "neurology/neurovascular team; stroke evaluation",
+                        "rationale": "Guideline pathways demand this precondition before recommending carotid intervention for symptomatic carotid web. Management pathway changes if another stroke cause is established."
+                    }
+                ],
+                "guideline_grounded_answer": "According to ESVS guidelines, for a symptomatic patient with a carotid web and 70% stenosis, carotid endarterectomy or carotid artery stenting may be considered to prevent recurrent stroke, but only if no other cause for the stroke is identified after a detailed neurovascular workup. If carotid intervention is considered appropriate, it should be performed as soon as possible, preferably within 14 days of symptom onset.",
+                "interpretive_frame": "Non-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nIn this 40-year-old patient with symptomatic carotid web and 70% stenosis, the decisive step is confirming that no alternative etiology for stroke exists after detailed neurovascular evaluation. Until this is established, proceeding with carotid intervention (endarterectomy or stenting) is not guideline-supported. The one-week timing of symptoms fits within the advised 14-day window for intervention. If and only if no other stroke cause is found, timely carotid intervention can then be justified as per ESVS guidance. Absent this critical information, first-line management should be withheld pending multidisciplinary reassessment.",
+                "evidence_status": {
+                    "coverage": "covered",
+                    "core_question": "How to treat symptomatic carotid web in a 40-year-old patient? Clarifications: symptoms 1 week ago, 70% stenosis, no prior history.",
+                    "covered_components": [
+                        "symptomatic carotid web",
+                        "70% stenosis",
+                        "no other cause for stroke after detailed neurovascular work up",
+                        "carotid endarterectomy",
+                        "carotid artery stenting",
+                        "timing of intervention"
+                    ],
+                    "gap_summary": ""
+                },
+                "assumptions": [
+                    "Patient is otherwise fit for intervention and meets technical/anatomical criteria for carotid procedure."
+                ],
+                "confidence": 0.3,
+                "decision": "ask",
+                "lint_violations": [],
+                "answer_markdown": "## ESVS-grounded answer\n\nAccording to ESVS guidelines, for a symptomatic patient with a carotid web and 70% stenosis, carotid endarterectomy or carotid artery stenting may be considered to prevent recurrent stroke, but only if no other cause for the stroke is identified after a detailed neurovascular workup. If carotid intervention is considered appropriate, it should be performed as soon as possible, preferably within 14 days of symptom onset.\n\n## Interpretation\n\nNon-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nIn this 40-year-old patient with symptomatic carotid web and 70% stenosis, the decisive step is confirming that no alternative etiology for stroke exists after detailed neurovascular evaluation. Until this is established, proceeding with carotid intervention (endarterectomy or stenting) is not guideline-supported. The one-week timing of symptoms fits within the advised 14-day window for intervention. If and only if no other stroke cause is found, timely carotid intervention can then be justified as per ESVS guidance. Absent this critical information, first-line management should be withheld pending multidisciplinary reassessment.",
+                "mode": "case_new",
+                "same_case": false,
+                "patient_model": {
+                    "demographics": "40-year-old",
+                    "symptom_status": "symptomatic",
+                    "timing": "symptoms 1 week ago",
+                    "lesion": "carotid web with 70% stenosis",
+                    "comorbidities": [],
+                    "medications": [],
+                    "prior_interventions": [],
+                    "imaging": "unknown",
+                    "fitness": "unknown",
+                    "other_findings": [
+                        "no prior history",
+                        "no other cause for stroke after detailed neurovascular workup unknown"
+                    ]
+                },
+                "changed_fields": [
+                    "demographics",
+                    "symptom_status",
+                    "timing",
+                    "lesion",
+                    "other_findings"
+                ],
+                "routed_guidelines": [
+                    "carotid_vertebral"
+                ],
+                "pathways": [
+                    {
+                        "relevant": true,
+                        "coverage": "covered",
+                        "better_query": "",
+                        "guideline_key": "carotid_vertebral",
+                        "covered_components": [
+                            "symptomatic carotid web",
+                            "70% stenosis",
+                            "no other cause for stroke after detailed neurovascular work up",
+                            "carotid endarterectomy",
+                            "carotid artery stenting",
+                            "timing of intervention"
+                        ],
+                        "interaction_gap": false,
+                        "pathways": [
+                            {
+                                "pathway": "carotid endarterectomy or carotid artery stenting",
+                                "guideline_basis": "For symptomatic patients with a carotid web in whom no other cause for stroke can be identified after detailed neurovascular work up, carotid endarterectomy or carotid artery stenting may be considered to prevent recurrent stroke. (Class IIb, Level C)",
+                                "discriminating_variables": [
+                                    "symptomatic carotid web",
+                                    "no other cause for stroke after detailed neurovascular work up"
+                                ]
+                            },
+                            {
+                                "pathway": "timely carotid intervention",
+                                "guideline_basis": "For symptomatic patients with a 50–99% stenosis in whom a carotid intervention is considered appropriate, it is recommended that this be performed as soon as possible, preferably within 14 days of symptom onset. (Class I, Level A)",
+                                "discriminating_variables": [
+                                    "symptomatic status",
+                                    "degree of stenosis (50-99%)",
+                                    "timing within 14 days of symptoms"
+                                ]
+                            }
+                        ],
+                        "queries_tried": [
+                            "Clinical question: What is the recommended management for a symptomatic carotid web with 70% stenosis in a 40-year-old patient, assuming no other cause of stroke after detailed neurovascular workup?\nPatient context: Patient: 40-year-old. Lesion: carotid web with 70% stenosis. Other findings: no prior history, no other cause for stroke after detailed neurovascular workup unknown. Symptoms: symptomatic. Timing: symptoms 1 week ago.\nClinical concepts: carotid web, symptomatic carotid stenosis, carotid intervention, stroke prevention, symptomatic carotid web, 70% stenosis, stroke risk, neurovascular workup, no other cause for stroke after detailed neurovascular workup, carotid stenosis, intervention criteria\nAnatomical anchors: carotid, stroke\nRetrieval gaps to resolve: state_completeness; The candidate answer and pathway appropriately emphasize that intervention is only guideline-supported when no other cause of stroke is identified after detailed neurovascular workup; however, this mandatory precondition ('no other cause for stroke after detailed neurovascular workup') is not present in the orient.patient_model, even though the probe phase acknowledge its absence as a critical knowledge gap that must be explicitly modeled and asked about before recommending a pathway.; Add the state variable 'no other cause for stroke after detailed neurovascular workup' (initially unknown) to the patient_model during orient, so the model structure mirrors the need for this clinical fact."
+                        ]
+                    }
+                ],
+                "queries_tried": {
+                    "carotid_vertebral": [
+                        "Clinical question: What is the recommended management for a symptomatic carotid web with 70% stenosis in a 40-year-old patient, assuming no other cause of stroke after detailed neurovascular workup?\nPatient context: Patient: 40-year-old. Lesion: carotid web with 70% stenosis. Other findings: no prior history, no other cause for stroke after detailed neurovascular workup unknown. Symptoms: symptomatic. Timing: symptoms 1 week ago.\nClinical concepts: carotid web, symptomatic carotid stenosis, carotid intervention, stroke prevention, symptomatic carotid web, 70% stenosis, stroke risk, neurovascular workup, no other cause for stroke after detailed neurovascular workup, carotid stenosis, intervention criteria\nAnatomical anchors: carotid, stroke\nRetrieval gaps to resolve: state_completeness; The candidate answer and pathway appropriately emphasize that intervention is only guideline-supported when no other cause of stroke is identified after detailed neurovascular workup; however, this mandatory precondition ('no other cause for stroke after detailed neurovascular workup') is not present in the orient.patient_model, even though the probe phase acknowledge its absence as a critical knowledge gap that must be explicitly modeled and asked about before recommending a pathway.; Add the state variable 'no other cause for stroke after detailed neurovascular workup' (initially unknown) to the patient_model during orient, so the model structure mirrors the need for this clinical fact."
+                    ]
+                },
+                "critic": {
+                    "approved": true,
+                    "score": 1,
+                    "revise_stage": "none",
+                    "candidate_summary": "All clinically relevant facts across turns are included and current; patient_model explicitly tracks \"no other cause for stroke after detailed neurovascular workup\" as unknown. Only carotid_vertebral guideline is routed, entirely appropriate for the problem. Queries for retrieval match the question scope, and the guideline-grounded answer is fully based on retrieved guideline snippets without unsupported extrapolation. Probing for the gap in neurovascular workup is necessary and appropriate. The interpretive frame gives a usable answer and does not overstate ESVS coverage. Only one high-impact question is asked, focusing on a truly decision-changing gap. Confidence is low/moderate and reflects retrieval difficulty. All invariants satisfied; approval justified.",
+                    "issues": []
+                },
+                "best_score": 1,
+                "iterations": 3,
+                "stage_trace": [
+                    {
+                        "stage": "orient_fallback",
+                        "iteration": 0,
+                        "duration_ms": 0,
+                        "elapsed_ms": 6329,
+                        "detail": {
+                            "field": "response_mode"
+                        }
+                    },
+                    {
+                        "stage": "orient",
+                        "iteration": 0,
+                        "duration_ms": 6328,
+                        "elapsed_ms": 6330,
+                        "detail": {
+                            "mode": "case_new",
+                            "guidelines": [
+                                "carotid_vertebral"
+                            ]
+                        }
+                    },
+                    {
+                        "stage": "retrieve",
+                        "iteration": 0,
+                        "duration_ms": 7356,
+                        "elapsed_ms": 17543,
+                        "detail": {
+                            "guideline": "carotid_vertebral",
+                            "attempt": 1,
+                            "full_pipeline": false,
+                            "top_k": 12,
+                            "snippet_count": 9,
+                            "retrieval_ms": 7355,
+                            "prefetched": false
+                        }
+                    },
+                    {
+                        "stage": "pathway",
+                        "iteration": 0,
+                        "duration_ms": 3857,
+                        "elapsed_ms": 17543,
+                        "detail": {
+                            "guideline": "carotid_vertebral",
+                            "attempt": 1,
+                            "relevant": true,
+                            "coverage": "covered"
+                        }
+                    },
+                    {
+                        "stage": "probe",
+                        "iteration": 0,
+                        "duration_ms": 2452,
+                        "elapsed_ms": 19995,
+                        "detail": {
+                            "questions": 0,
+                            "coverage": "covered"
+                        }
+                    },
+                    {
+                        "stage": "critic",
+                        "iteration": 1,
+                        "duration_ms": 3443,
+                        "elapsed_ms": 23438,
+                        "detail": {
+                            "approved": false,
+                            "score": 0.8,
+                            "revise_stage": "ground"
+                        }
+                    },
+                    {
+                        "stage": "retrieve",
+                        "iteration": 1,
+                        "duration_ms": 9929,
+                        "elapsed_ms": 37031,
+                        "detail": {
+                            "guideline": "carotid_vertebral",
+                            "attempt": 1,
+                            "full_pipeline": true,
+                            "top_k": 24,
+                            "snippet_count": 5,
+                            "retrieval_ms": 9928,
+                            "prefetched": false
+                        }
+                    },
+                    {
+                        "stage": "pathway",
+                        "iteration": 1,
+                        "duration_ms": 3664,
+                        "elapsed_ms": 37031,
+                        "detail": {
+                            "guideline": "carotid_vertebral",
+                            "attempt": 1,
+                            "relevant": true,
+                            "coverage": "covered"
+                        }
+                    },
+                    {
+                        "stage": "probe",
+                        "iteration": 1,
+                        "duration_ms": 3939,
+                        "elapsed_ms": 40970,
+                        "detail": {
+                            "questions": 1,
+                            "coverage": "covered"
+                        }
+                    },
+                    {
+                        "stage": "critic",
+                        "iteration": 2,
+                        "duration_ms": 2247,
+                        "elapsed_ms": 43217,
+                        "detail": {
+                            "approved": false,
+                            "score": 0.85,
+                            "revise_stage": "orient_route"
+                        }
+                    },
+                    {
+                        "stage": "orient",
+                        "iteration": 2,
+                        "duration_ms": 4739,
+                        "elapsed_ms": 47955,
+                        "detail": {
+                            "mode": "case_new",
+                            "guidelines": [
+                                "carotid_vertebral"
+                            ]
+                        }
+                    },
+                    {
+                        "stage": "retrieve",
+                        "iteration": 2,
+                        "duration_ms": 2618,
+                        "elapsed_ms": 53778,
+                        "detail": {
+                            "guideline": "carotid_vertebral",
+                            "attempt": 1,
+                            "full_pipeline": true,
+                            "top_k": 24,
+                            "snippet_count": 10,
+                            "retrieval_ms": 2617,
+                            "prefetched": false
+                        }
+                    },
+                    {
+                        "stage": "pathway",
+                        "iteration": 2,
+                        "duration_ms": 3204,
+                        "elapsed_ms": 53778,
+                        "detail": {
+                            "guideline": "carotid_vertebral",
+                            "attempt": 1,
+                            "relevant": true,
+                            "coverage": "covered"
+                        }
+                    },
+                    {
+                        "stage": "probe",
+                        "iteration": 2,
+                        "duration_ms": 4924,
+                        "elapsed_ms": 58702,
+                        "detail": {
+                            "questions": 1,
+                            "coverage": "covered"
+                        }
+                    },
+                    {
+                        "stage": "critic",
+                        "iteration": 3,
+                        "duration_ms": 1809,
+                        "elapsed_ms": 60510,
+                        "detail": {
+                            "approved": true,
+                            "score": 1,
+                            "revise_stage": "none"
+                        }
+                    },
+                    {
+                        "stage": "decide",
+                        "iteration": 3,
+                        "duration_ms": 0,
+                        "elapsed_ms": 60511,
+                        "detail": {
+                            "decision": "ask",
+                            "best_score": 1,
+                            "iterations": 3
+                        }
+                    }
+                ],
+                "state": {
+                    "patient_model": {
+                        "demographics": "40-year-old",
+                        "symptom_status": "symptomatic",
+                        "timing": "symptoms 1 week ago",
+                        "lesion": "carotid web with 70% stenosis",
+                        "comorbidities": [],
+                        "medications": [],
+                        "prior_interventions": [],
+                        "imaging": "unknown",
+                        "fitness": "unknown",
+                        "other_findings": [
+                            "no prior history",
+                            "no other cause for stroke after detailed neurovascular workup unknown"
+                        ]
+                    },
+                    "core_question": "What is the recommended management for a symptomatic carotid web with 70% stenosis in a 40-year-old patient, assuming no other cause of stroke after detailed neurovascular workup?",
+                    "expansion_terms": [
+                        "carotid web",
+                        "symptomatic carotid stenosis",
+                        "carotid intervention",
+                        "stroke prevention"
+                    ],
+                    "interpretation_terms": [
+                        "symptomatic carotid web",
+                        "70% stenosis",
+                        "stroke risk",
+                        "neurovascular workup"
+                    ],
+                    "must_include_terms": [
+                        "no other cause for stroke after detailed neurovascular workup",
+                        "symptomatic carotid web",
+                        "carotid stenosis",
+                        "intervention criteria"
+                    ],
+                    "provenance": [
+                        {
+                            "field": "demographics",
+                            "turn_index": 1,
+                            "verbatim_source": "40-year-old patient"
+                        },
+                        {
+                            "field": "symptom_status",
+                            "turn_index": 1,
+                            "verbatim_source": "symptomatic carotid web"
+                        },
+                        {
+                            "field": "timing",
+                            "turn_index": 1,
+                            "verbatim_source": "symptoms 1 week ago"
+                        },
+                        {
+                            "field": "lesion",
+                            "turn_index": 1,
+                            "verbatim_source": "carotid web with 70% stenosis"
+                        },
+                        {
+                            "field": "other_findings",
+                            "turn_index": 1,
+                            "verbatim_source": "no prior history"
+                        },
+                        {
+                            "field": "other_findings",
+                            "turn_index": 1,
+                            "verbatim_source": "no other cause for stroke after detailed neurovascular workup unknown"
+                        }
+                    ],
+                    "open_questions": [
+                        {
+                            "question": "Is there no other cause for stroke after detailed neurovascular workup?",
+                            "status": "pending",
+                            "answer": ""
+                        },
+                        {
+                            "question": "Has a detailed neurovascular workup been performed and found no other cause for this stroke?",
+                            "status": "pending",
+                            "answer": ""
+                        }
+                    ],
+                    "assumptions": [],
+                    "candidate_guidelines": [
+                        "carotid_vertebral"
+                    ],
+                    "turn_index": 1,
+                    "version": 1
+                },
+                "guideline_keys": [
+                    "carotid_vertebral"
+                ],
+                "rendered_answer": "## ESVS-grounded answer\n\nAccording to ESVS guidelines, for a symptomatic patient with a carotid web and 70% stenosis, carotid endarterectomy or carotid artery stenting may be considered to prevent recurrent stroke, but only if no other cause for the stroke is identified after a detailed neurovascular workup. If carotid intervention is considered appropriate, it should be performed as soon as possible, preferably within 14 days of symptom onset.\n\n## Interpretation\n\nNon-ESVS interpretation (clinical reasoning beyond the retrieved guideline text):\nIn this 40-year-old patient with symptomatic carotid web and 70% stenosis, the decisive step is confirming that no alternative etiology for stroke exists after detailed neurovascular evaluation. Until this is established, proceeding with carotid intervention (endarterectomy or stenting) is not guideline-supported. The one-week timing of symptoms fits within the advised 14-day window for intervention. If and only if no other stroke cause is found, timely carotid intervention can then be justified as per ESVS guidance. Absent this critical information, first-line management should be withheld pending multidisciplinary reassessment.",
+                "retrieval_chunk_count": 24,
+                "retrieval_returned_chunks": true
+            },
+            "stage_trace": [
+                {
+                    "stage": "orient_fallback",
+                    "iteration": 0,
+                    "duration_ms": 0,
+                    "elapsed_ms": 6329,
+                    "detail": {
+                        "field": "response_mode"
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 0,
+                    "duration_ms": 6328,
+                    "elapsed_ms": 6330,
+                    "detail": {
+                        "mode": "case_new",
+                        "guidelines": [
+                            "carotid_vertebral"
+                        ]
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 0,
+                    "duration_ms": 7356,
+                    "elapsed_ms": 17543,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 1,
+                        "full_pipeline": false,
+                        "top_k": 12,
+                        "snippet_count": 9,
+                        "retrieval_ms": 7355,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 0,
+                    "duration_ms": 3857,
+                    "elapsed_ms": 17543,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 1,
+                        "relevant": true,
+                        "coverage": "covered"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 0,
+                    "duration_ms": 2452,
+                    "elapsed_ms": 19995,
+                    "detail": {
+                        "questions": 0,
+                        "coverage": "covered"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 1,
+                    "duration_ms": 3443,
+                    "elapsed_ms": 23438,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.8,
+                        "revise_stage": "ground"
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 1,
+                    "duration_ms": 9929,
+                    "elapsed_ms": 37031,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 1,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 5,
+                        "retrieval_ms": 9928,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 1,
+                    "duration_ms": 3664,
+                    "elapsed_ms": 37031,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 1,
+                        "relevant": true,
+                        "coverage": "covered"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 1,
+                    "duration_ms": 3939,
+                    "elapsed_ms": 40970,
+                    "detail": {
+                        "questions": 1,
+                        "coverage": "covered"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 2,
+                    "duration_ms": 2247,
+                    "elapsed_ms": 43217,
+                    "detail": {
+                        "approved": false,
+                        "score": 0.85,
+                        "revise_stage": "orient_route"
+                    }
+                },
+                {
+                    "stage": "orient",
+                    "iteration": 2,
+                    "duration_ms": 4739,
+                    "elapsed_ms": 47955,
+                    "detail": {
+                        "mode": "case_new",
+                        "guidelines": [
+                            "carotid_vertebral"
+                        ]
+                    }
+                },
+                {
+                    "stage": "retrieve",
+                    "iteration": 2,
+                    "duration_ms": 2618,
+                    "elapsed_ms": 53778,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 1,
+                        "full_pipeline": true,
+                        "top_k": 24,
+                        "snippet_count": 10,
+                        "retrieval_ms": 2617,
+                        "prefetched": false
+                    }
+                },
+                {
+                    "stage": "pathway",
+                    "iteration": 2,
+                    "duration_ms": 3204,
+                    "elapsed_ms": 53778,
+                    "detail": {
+                        "guideline": "carotid_vertebral",
+                        "attempt": 1,
+                        "relevant": true,
+                        "coverage": "covered"
+                    }
+                },
+                {
+                    "stage": "probe",
+                    "iteration": 2,
+                    "duration_ms": 4924,
+                    "elapsed_ms": 58702,
+                    "detail": {
+                        "questions": 1,
+                        "coverage": "covered"
+                    }
+                },
+                {
+                    "stage": "critic",
+                    "iteration": 3,
+                    "duration_ms": 1809,
+                    "elapsed_ms": 60510,
+                    "detail": {
+                        "approved": true,
+                        "score": 1,
+                        "revise_stage": "none"
+                    }
+                },
+                {
+                    "stage": "decide",
+                    "iteration": 3,
+                    "duration_ms": 0,
+                    "elapsed_ms": 60511,
+                    "detail": {
+                        "decision": "ask",
+                        "best_score": 1,
+                        "iterations": 3
+                    }
+                }
+            ]
+        }
+    ]
+}

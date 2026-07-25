@@ -35,8 +35,10 @@ final class GatePathwayWorker
         ?int $maxAttemptsOverride = null,
         ?int $timeoutSeconds = null,
         ?float $deadlineAt = null,
+        ?string $initialCitationQuery = null,
     ): array {
         $query = $initialQuery;
+        $citationQuery = $initialCitationQuery ?? $initialQuery;
         $queriesTried = [];
         $assessment = null;
         $snippetDigests = [];
@@ -85,6 +87,7 @@ final class GatePathwayWorker
                         $timeoutSeconds ?? (int) config('gate-v2.retrieval.timeout_seconds', 20),
                         $deadlineAt,
                     ),
+                    $citationQuery,
                 );
                 $retrievalDuration = (int) round((microtime(true) - $retrievalStarted) * 1000);
             }
@@ -109,6 +112,7 @@ final class GatePathwayWorker
                     'patient_model' => $patientModel,
                     'current_question' => $turn,
                     'query' => $query,
+                    'citation_query' => $citationQuery,
                     'attempt' => $attempt,
                     'final_attempt' => $attempt === $maxAttempts,
                     'snippets' => $retrieved['snippets'],
@@ -148,6 +152,7 @@ final class GatePathwayWorker
             $query = $betterQuery !== '' && ! in_array($betterQuery, $queriesTried, true)
                 ? $betterQuery
                 : $query.' ESVS recommendation decision threshold anatomy';
+            $citationQuery = 'ESVS recommendation class evidence level decision threshold for: '.$query;
         }
 
         if ($assessment !== null) {

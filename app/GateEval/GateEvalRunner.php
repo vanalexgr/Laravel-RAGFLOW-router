@@ -31,6 +31,9 @@ class GateEvalRunner
             foreach ($scenario['turns'] as $index => $turn) {
                 $output = $subject->runTurn($scenario, $turn, $index, $priorOutputs);
                 $priorOutputs[] = $output;
+                if (($turn['_gate_eval_selected'] ?? true) !== true) {
+                    continue;
+                }
                 $checks = $this->deterministicChecks($turn['expected'], $output);
                 $judgment = $judge->judge($scenario, $turn, $output);
                 $grade = $judgment['grade'];
@@ -51,7 +54,7 @@ class GateEvalRunner
 
                 $results[] = [
                     'scenario_id' => $scenario['id'],
-                    'turn' => $index + 1,
+                    'turn' => (int) ($turn['_gate_eval_turn_number'] ?? ($index + 1)),
                     'baseline_grade' => $baseline,
                     'grade' => $grade,
                     'no_grade_drop' => $noDrop,

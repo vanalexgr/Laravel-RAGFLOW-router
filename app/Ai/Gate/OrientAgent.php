@@ -45,6 +45,9 @@ GUIDELINE_REFERENCE. Apply these rules:
    deterministic routing priors are constraints/signals, not optional suggestions.
 7. Do not add antithrombotic_therapy unless the turn asks an explicit medication, anticoagulation,
    antiplatelet, bleeding-risk, or perioperative antithrombotic decision.
+8. Emit an English core_question that states the clinical decision to retrieve. Also emit concise
+   expansion_terms, interpretation_terms, and must_include_terms for retrieval. patient_model values
+   and core_question must be in English clinical terminology, regardless of input language.
 
 Return ONLY the structured object. No prose.
 TXT;
@@ -72,6 +75,10 @@ TXT;
             'response_mode' => $schema->string()
                 ->enum(['management', 'knowledge', 'surveillance', 'diagnostic', 'case'])
                 ->required(),
+            'core_question' => $schema->string()->required(),
+            'expansion_terms' => $schema->array()->items($schema->string())->required(),
+            'interpretation_terms' => $schema->array()->items($schema->string())->required(),
+            'must_include_terms' => $schema->array()->items($schema->string())->required(),
             'patient_model' => $schema->object([
                 'demographics' => $schema->string()->required(),
                 'lesion' => $schema->string()->required(),

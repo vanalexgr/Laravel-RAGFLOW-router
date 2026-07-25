@@ -9,7 +9,12 @@ class RetrievalService
     /**
      * Core retrieval pipeline: PHI Scrub -> Route -> Dual Retrieve.
      */
-    public function retrieve(string $question, array $history = [], ?array $requestedKeys = null): array
+    public function retrieve(
+        string $question,
+        array $history = [],
+        ?array $requestedKeys = null,
+        ?string $citationQuestion = null,
+    ): array
     {
         $startTime = microtime(true);
         $log = Log::channel('retrieval');
@@ -20,6 +25,9 @@ class RetrievalService
         $scrubResult = $phiScrubber->scrub($question);
         $scrubbedQuestion = $scrubResult['scrubbed_text'];
         $retrievalQuestion = $scrubbedQuestion;
+        $citationRetrievalQuestion = $citationQuestion === null
+            ? null
+            : (new PHIScrubberService)->scrub($citationQuestion)['scrubbed_text'];
         $normalizationOriginalQuestion = $scrubbedQuestion;
         $normalizationMeta = null;
         $graphRag = new GraphRagService;
@@ -251,6 +259,7 @@ class RetrievalService
         }
 
         // Create an expanded query for retrieval
+        $citationBaseQuestion = $citationRetrievalQuestion ?? $retrievalQuestion;
         if (! $planApplied && empty($requestedKeys)) {
             $router = new GuidelineRouterService;
             $t0 = microtime(true);
@@ -258,10 +267,10 @@ class RetrievalService
             $preRetrievalTimings['expand_ms'] = (int) round((microtime(true) - $t0) * 1000);
             $expandedQuery = $expansionResult['expanded'] ?? $retrievalQuestion;
             $expandedQuery = $this->buildCitationQuery($expandedQuery, $normalizationOriginalQuestion, $normalizationMeta, array_keys($selectedGuidelines));
-            $citationQuery = $this->buildCitationQuery($retrievalQuestion, $normalizationOriginalQuestion, $normalizationMeta, array_keys($selectedGuidelines));
+            $citationQuery = $this->buildCitationQuery($citationBaseQuestion, $normalizationOriginalQuestion, $normalizationMeta, array_keys($selectedGuidelines));
         } else {
             $expandedQuery = $this->appendUniqueTerms($retrievalQuestion, $mergedExpansionTerms);
-            $citationQuery = $this->appendUniqueTerms($retrievalQuestion, $mergedExpansionTerms);
+            $citationQuery = $this->appendUniqueTerms($citationBaseQuestion, $mergedExpansionTerms);
             $expandedQuery = $this->buildCitationQuery($expandedQuery, $normalizationOriginalQuestion, $normalizationMeta, array_keys($selectedGuidelines));
             $citationQuery = $this->buildCitationQuery($citationQuery, $normalizationOriginalQuestion, $normalizationMeta, array_keys($selectedGuidelines));
         }
