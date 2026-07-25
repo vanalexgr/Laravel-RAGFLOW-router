@@ -1,5 +1,119 @@
 # Codex unattended progress — Agentic Gate v2
 
+## 2026-07-25 — Run 5: R5.1 first-score deadline fix; quality-control blocker
+
+Run 5 executed on Hetzner (`clinicalguidelines-staging-1`) in disposable checkout
+`/tmp/agentic-gate-v2-run5-z5GM2H`, starting from branch head `59e7397` after `git pull --ff-only`.
+The checkout used a generated `APP_KEY`; the live RAGFlow-side Cohere control remained
+`rerank-english-v3.0`. Production source, `.env`, bridge configuration, and the adapter DB were not
+changed.
+
+### R5.1 implementation exercised
+
+The existing deadline code applied the 90-second parent clamp to the first pass and also subtracted a
+25-second revision reserve before any candidate had reached Critic. A checkout-only patch changed the
+phase boundary:
+
+- Orient → Ground → Probe → the first Critic retain their ordinary per-call timeouts but do not
+  inherit the parent improve-loop deadline.
+- Immediately after the first Critic result enters `GateCandidateLedger`, the original turn deadline
+  becomes active for all revision decisions and child calls.
+- A knowledge-to-deep escalation re-enters the same trace/clock but grants its first deep pass the
+  same guarantee.
+
+The targeted F3 replay completed in 65,845 ms with a Critic-scored 0.85 candidate. In the full eval,
+F3's first Critic completed at 38,453 ms with score 0.85; the turn returned normally instead of
+aborting. The full 32-turn run also completed without a SUT/empty-ledger abort.
+
+### R5.1 external quality gate — **FAILED**
+
+Real `GateWorkflowService` was invoked through a disposable loopback HTTP subject and judged by the
+external GPT-5 judge:
+
+```text
+22 scenarios | 32 turns | PASS 3 | MINOR 14 | FAIL 15
+Routing 87.5% | no grade drop NO | verbatim 100.0%
+Artifact: gate-eval/runs/20260725_083813_922811.json
+```
+
+This is far below the required 28 PASS / 3 MINOR / 1 FAIL, routing 100%, verbatim 100%. Nine of the
+15 binding baseline cases moved downward:
+
+```text
+C1 PASS→MINOR        C2 PASS→MINOR        F2 PASS→MINOR
+F3 PASS→MINOR        F4 PASS→MINOR        F5 PASS→FAIL
+F6 PASS→MINOR        S2 PASS→FAIL         S3 PASS→FAIL
+```
+
+The four deterministic routing misses were F4, F5, S2, and S6. In every case the actual route kept
+the first one/two anatomy keys but omitted the expected third `antithrombotic_therapy` key:
+
+```text
+F4 expected AAA + CLTI + antithrombotic; actual AAA + CLTI
+F5 expected carotid + antithrombotic;    actual carotid
+S2 expected CLTI + antithrombotic;       actual CLTI
+S6 expected carotid + antithrombotic;    actual carotid
+```
+
+This exposes a pre-existing contradiction between the eval schema and the gate's maximum-two
+candidate architecture. The previously recorded 28/3/1 result was produced by the fixture subject
+and fixture judge, which mirror declared expectations; it is not an external-judge baseline for the
+real workflow. Therefore the required R5.1 quality control does not currently exist, and the deadline
+patch cannot be claimed behavior-preserving against it.
+
+### R5.1 four-turn latency
+
+Run 4's post-`56d2666` control is the before measurement. Run 5 uses the same live RAGFlow-side Cohere
+condition with only the checkout deadline patch:
+
+| Stage | Run 4 before p50 / p95 ms | R5.1 patch p50 / p95 ms |
+|---|---:|---:|
+| Total deep turn | 43,248 / 60,449 | 49,737 / 70,266 |
+| Orient | 2,947 / 4,619 | 3,271 / 4,376 |
+| Orient + retrieval parallel | 8,966 / 13,278 | 8,492 / 12,570 |
+| Retrieval | 10,402 / 14,032 | 10,019 / 15,773 |
+| Pathway | 2,196 / 4,632 | 2,045 / 3,864 |
+| Probe | 3,898 / 4,698 | 4,177 / 14,183 |
+| Critic | 2,548 / 4,847 | 2,766 / 5,230 |
+
+Run 5 turn totals were 28,824 / 70,266 / 65,510 / 49,737 ms. All four returned scored candidates and
+had no errors. The dev SLO still passes (p50 ≤70s and p95 ≤90s), but latency did not improve: total
+p50 increased 6.5s and p95 increased 9.8s, dominated by a Probe tail. Artifact:
+`gate-latency/runs/20260725_084225_556820.json`.
+
+### R5.2 / R5.3 status — **dependency-blocked, not run**
+
+Bridge-side Cohere was not enabled because R5.1 did not establish the required 28/3/1 control.
+Running an A/B from a 3/14/15 control could not satisfy the backlog's “must hold 28/3/1” quality
+constraint and would risk turning a pre-existing quality failure into a reranker conclusion.
+
+There is also a second plan-vs-code conflict: the live `.env` declares
+`BRIDGE_RERANK_CANDIDATE_MULTIPLIER=3`, but neither `config/ragflow.php` nor
+`RetrievalService`/`BridgeRerankService` consumes that setting. The documented 3→5 fallback is not an
+available tuning action, and bridge reranking currently sees only the already-returned
+`narrative_max`/`citation_max` chunks.
+
+No production/default config change is recommended from this run. Keep
+`BRIDGE_RERANK_ENABLED=false` and the live RAGFlow-side `rerank-english-v3.0` control. The proposed
+future approval diff remains:
+
+```text
+BRIDGE_RERANK_ENABLED=true                         # production .env; only after a green A/B
+config/ragflow.php rerank_id default:
+  Cohere-rerank-v4.0-pro___OpenAI-API
+  → rerank-english-v3.0
+```
+
+Do not apply it yet. Before R5.2 can be rerun, establish a real-workflow external-judge baseline (or
+explicitly correct the acceptance target), reconcile the two-guideline architecture with scenarios
+expecting three keys, and implement/verify the bridge candidate-pool multiplier. The checkout-only
+deadline patch was not committed because `gate:eval` failed the required quality bar. FlashRank
+fail-loud behavior remains deferred with the local FlashRank A/B; changing it could not be accepted
+under this red gate.
+
+Recommended next run: resolve the baseline/harness contradiction first, then rerun R5.1 control. Only
+after that control is green should bridge-Cohere be enabled and measured.
+
 ## 2026-07-25 — Verification run: Part 0 + R4.8 only (Hetzner)
 
 Scope was limited to the requested Part 0 branch verification and Part 1/R4.8 reranker A/B. S0 was
