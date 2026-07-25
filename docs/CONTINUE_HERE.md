@@ -55,7 +55,48 @@ Separately, the live OWUI model `gpt-5-chat-latest` was **deprecated**; **repoin
 vascular MCP adapter confirmed working. Laravel `.env AZURE_OPENAI_DEPLOYMENT=gpt-5-chat` is stale/inert
 (gate uses gpt-5-mini) — cleanup later.
 
-## The active next step = Codex Run 6 (RESUME, sequenced): baseline → ISOLATED bridge-rerank A/B → decisive split
+## ✅ Run 6 DONE — first trustworthy baseline + the diagnosis that reframed everything
+
+**Baseline (commit `0abf8dc`): 4 PASS / 13 MINOR / 15 FAIL, routing 100%, verbatim 100%** —
+`docs/eval/run6_fail_digest.md` (advisory; fixture `no_grade_drop` meaningless — **the clinician
+calibrates**). Retrieval healthy (only 3 zero-chunk cases). **Bridge rerank: total p95 71.1s → 50.5s
+(−28.9%)** — a real win, but **no grade verdict yet** (must be grade-checked before adopting).
+
+**AAA benchmark:** T1 FAIL, T2 **PASS_WITH_MINOR**, T3 FAIL. T2 is the turn that scored **1/10 on the old
+app** — it now carries juxtarenal + eGFR 28 correctly and never reverts to "infrarenal": **the core
+state-loss bug is substantially fixed.** T1 failed by judging a **5.8 cm (58 mm)** AAA with the
+**"<55 mm → not recommended"** rule; T3 falsely claimed ESVS has no coverage.
+
+### Root cause found: the gate discarded working production subsystems (all measured)
+- **Query construction** — gate embeds `json_encode($patientModel)` and disables planner/interpreter/graph.
+  Gate-style query → top-5 sim `17.6/15.9/15.6/17/36`, **misses `rec_22`** ("AAA >55 mm should be
+  considered for repair"); clean NL+terms → `41.3/34.8/47.3/46.3/45.1`, finds it. **~3× signal loss.**
+- **Chunk cleaning** — gate does `content` → `trim()`. Rec chunks are **52–56% signal**; **34% waste**;
+  only **~793 of 1,200** digest chars are clinical text.
+- **Dual retrieval flattened** — production splits narrative KBs (KG on) from a shared recommendations
+  dataset with `class/level` metatags (KG off); the gate merges both into one flat 10-item list, erasing
+  recommendation-vs-prose and letting one bucket crowd out the other.
+- **Output formatting** — adapter has a 23-section mode-conditioned grammar; gate emits flat prose.
+  Orient already emits `response_mode`; nothing downstream consumes it.
+- **16 v1.5.x clinical rules** map ~1:1 onto Run-6 failures and are entirely absent.
+
+## The active next step = Codex Run 7 (restore the discarded subsystems)
+
+Backlog: **`docs/CODEX_RUN7_BACKLOG.md`** — 7 items, **each landed and measured separately** (grade delta
+vs 4/13/15; latency delta vs p50 43.7 / p95 71.1 control). All cheap, deterministic, no re-index, no extra
+LLM calls; the reasoning loop is unchanged. Paste this prompt into Codex:
+
+> Continue on branch **`claude/prototyping-summary-d597c2`**. **`git pull` first**, open **`docs/CODEX_RUN7_BACKLOG.md`**, work it in order. Autonomy rules in `docs/CODEX_HANDOFF.md`; keep `docs/CODEX_PROGRESS.md` current. Hetzner, disposable checkout, **detached** (`nohup` + exit marker — never foreground over SSH). Do not change production `.env`/config/defaults. Only `gate:eval --sut=http --judge=external` counts; SUT = direct `GateWorkflowService` invocation.
+>
+> **Context:** Run 6 produced the first trustworthy baseline (**4 PASS / 13 MINOR / 15 FAIL**). Diagnosis: the gate discarded working production subsystems — it needs *restoration*, not new engineering. All figures in the backlog are measured, not assumed.
+>
+> **Measure each item separately.** After every item: run `gate:eval` (grade delta vs 4/13/15) **and** the four-turn latency harness (delta vs p50 43.7s / p95 71.1s), and commit the artifact + digest. If an item doesn't help, report that plainly — negative results are results.
+>
+> **Items:** (R7.1) query construction — prose not JSON, expansion folded into **Orient's existing schema** (do NOT re-enable the merged planner: extra call + duplicate routing), `_case_anchor_terms` as deterministic anchors, `_rewrite_with_case_context` for vague follow-ups, differentiated citation query. (R7.2) chunk cleaning — port `_html_table_to_text`, `_clean_narrative_text`, `_parse_semicolon_kv` (metadata → structured fields), `_truncate_for_llm`; re-measure the signal ratio. (R7.3) stop flattening dual retrieval — pass citation and narrative buckets **separately and labelled** with per-bucket caps, honour `citation_min`. (R7.4) mode-conditioned section templates consuming `response_mode` (management/gap/surveillance/diagnostic/knowledge), incl. `## What is NOT indicated`, `### 🎯 In practice`, `## Evidence Used`. (R7.5) Tier-1 clinical rules — **BROAD COVERAGE** (fixes false-`not_covered`), **NEGATIVE INDICATION FRAMING**, **DECISION-FIRST/DECISIVENESS/DOMINANT MODIFIER**, **CRITICAL SCOPE** (citation-level, into Critic). (R7.6) deterministic mode predicates as Orient priors (`_is_raw_guideline_knowledge_query`, `_is_answer_only_turn`, `_looks_like_fresh_case_intro`, `_should_treat_as_new_query`); bias to `case` on conflict. (R7.7) numeric-threshold check — a 58 mm aneurysm must never be judged by a "<55 mm" rule.
+>
+> **Do NOT port:** `_format_gate_for_model` / "MANDATORY BEHAVIOR" wrappers (dead under Laravel-verbatim); adapter state machinery (superseded by the state brain). Guardrails: no case-specific reasoning guards (these are general writing rules + deterministic lints); never touch `main`/deploy/adapter DB/force-push/prod defaults; ⛔HUMAN → flag & continue (clinician sign-off still outstanding; audited-snippet flag stays OFF). End with a per-item table: grade delta, latency delta, what each item was worth.
+
+## [DONE] Run 6 (sequenced): baseline → ISOLATED bridge-rerank A/B → decisive split
 
 Backlog: **`docs/CODEX_RUN6_BACKLOG.md`**. Infra fixes already validated on the resume (OpenAI recovered:
 chat+embeddings 200; healthy RAGFlow retrieval = **6 chunks in 3.1s/6.7s**; judge-env fixed; the eval "401"
