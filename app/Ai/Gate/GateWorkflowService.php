@@ -557,28 +557,49 @@ final class GateWorkflowService
         if ((string) config('gate-v2.deep_path_mode', 'parallel') === 'parallel' && count($pending) > 1) {
             $started = microtime(true);
             $tasks = [];
+            $runtimeConfig = $this->parallelRetrievalRuntimeConfig();
             // Forked branches cannot read the parent's elapsed time, so bound
             // them by the same absolute deadline the sequential path respects.
+            // Process workers also bootstrap a fresh application. Explicitly carry
+            // retrieval switches that may have been supplied to the long-running
+            // SUT process at launch; otherwise only multi-guideline requests fall
+            // back to the checkout's .env values.
             $deadlineAt = $this->deadlineAt();
             $remaining = $this->remainingWallSeconds();
             foreach (array_keys($pending) as $guideline) {
                 $patientModel = (array) $orient['patient_model'];
                 $prefetched = $usePrefetch ? ($this->prefetchedGround[$guideline] ?? null) : null;
-                $tasks[$guideline] = static fn (): array => app(GatePathwayWorker::class)->run(
+                $tasks[$guideline] = static function () use (
+                    $runtimeConfig,
                     $guideline,
                     $query,
                     $patientModel,
                     $turn,
                     $prefetched,
                     $maxAttempts,
-                    max(1, min(
-                        (int) config('gate-v2.retrieval.timeout_seconds', 20),
-                        $remaining,
-                    )),
+                    $remaining,
                     $deadlineAt,
                     $citationQuery,
                     $citationQueries,
-                );
+                ): array {
+                    self::applyParallelRetrievalRuntimeConfig($runtimeConfig);
+
+                    return app(GatePathwayWorker::class)->run(
+                        $guideline,
+                        $query,
+                        $patientModel,
+                        $turn,
+                        $prefetched,
+                        $maxAttempts,
+                        max(1, min(
+                            (int) config('gate-v2.retrieval.timeout_seconds', 20),
+                            $remaining,
+                        )),
+                        $deadlineAt,
+                        $citationQuery,
+                        $citationQueries,
+                    );
+                };
             }
             $completed = Concurrency::driver((string) config('gate-v2.concurrency_driver', 'process'))
                 ->run($tasks);
@@ -632,6 +653,34 @@ final class GateWorkflowService
     }
 
     /**
+     * Non-secret runtime retrieval values that a process worker must inherit from
+     * its parent. In particular, eval SUTs can select the local bridge reranker at
+     * process launch without changing the disposable checkout's .env.
+     *
+     * @return array<string, mixed>
+     */
+    private function parallelRetrievalRuntimeConfig(): array
+    {
+        return [
+            'gate-v2.retrieval' => config('gate-v2.retrieval'),
+            'ragflow.retrieval' => config('ragflow.retrieval'),
+            'ragflow.lean' => config('ragflow.lean'),
+            'ragflow.single_case' => config('ragflow.single_case'),
+            'ragflow.bridge_rerank.enabled' => config('ragflow.bridge_rerank.enabled'),
+            'ragflow.request_timeout' => config('ragflow.request_timeout'),
+            'ragflow.connect_timeout' => config('ragflow.connect_timeout'),
+        ];
+    }
+
+    /** @param  array<string, mixed>  $runtimeConfig */
+    private static function applyParallelRetrievalRuntimeConfig(array $runtimeConfig): void
+    {
+        foreach ($runtimeConfig as $key => $value) {
+            config()->set($key, $value);
+        }
+    }
+
+    /**
      * @param  array<string, mixed>  $patientModel
      */
     private function groundCacheKey(
@@ -640,8 +689,7 @@ final class GateWorkflowService
         string $citationQuery,
         array $citationQueries,
         array $patientModel,
-    ): string
-    {
+    ): string {
         return hash('sha256', json_encode(
             [$guideline, $query, $citationQuery, $citationQueries, $patientModel],
             JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,

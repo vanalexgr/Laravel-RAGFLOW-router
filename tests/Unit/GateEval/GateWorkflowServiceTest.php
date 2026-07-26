@@ -233,6 +233,118 @@ class GateWorkflowServiceTest extends TestCase
         );
     }
 
+    public function test_parallel_multi_guideline_multi_query_retrieval_returns_citations(): void
+    {
+        config()->set('gate-v2.deep_path_mode', 'parallel');
+        config()->set('gate-v2.concurrency_driver', 'sync');
+        config()->set('gate-v2.retrieval.citation_multi_query', true);
+        config()->set('gate-v2.retrieval.citation_multi_query_max', 2);
+        config()->set('ragflow.retrieval.rerank_id', 'local');
+
+        $retrieval = new class extends RetrievalService
+        {
+            public int $citationOnlyCalls = 0;
+
+            public function retrieve(
+                string $question,
+                array $history = [],
+                ?array $requestedKeys = null,
+                ?string $citationQuestion = null,
+            ): array {
+                return $this->result((string) ($requestedKeys[0] ?? ''));
+            }
+
+            public function retrieveCitations(
+                string $citationQuestion,
+                array $history = [],
+                ?array $requestedKeys = null,
+            ): array {
+                $this->citationOnlyCalls++;
+
+                return $this->result((string) ($requestedKeys[0] ?? ''));
+            }
+
+            /** @return array<string, mixed> */
+            private function result(string $guideline): array
+            {
+                $documentId = $guideline === 'clti'
+                    ? '31f83c34052911f18ceb32d89964721d'
+                    : '40795f9affad11f0a4d332d89964721d';
+
+                return [
+                    'duration_ms' => 1,
+                    'llm_citation_chunks' => [[
+                        'text' => "Recommendation for {$guideline}",
+                        'similarity' => 0.8,
+                        'document_id' => $documentId,
+                    ]],
+                    'llm_narrative_chunks' => [],
+                ];
+            }
+        };
+        $worker = new GatePathwayWorker(new RetrieveEsvsSnippetsTool($retrieval));
+        $this->app->instance(GatePathwayWorker::class, $worker);
+        PathwayAgent::fake([
+            [
+                'guideline_key' => 'clti',
+                'relevant' => true,
+                'better_query' => '',
+                'coverage' => 'covered',
+                'covered_components' => ['antithrombotic therapy'],
+                'interaction_gap' => false,
+                'pathways' => [],
+            ],
+            [
+                'guideline_key' => 'antithrombotic_therapy',
+                'relevant' => true,
+                'better_query' => '',
+                'coverage' => 'covered',
+                'covered_components' => ['antithrombotic therapy'],
+                'interaction_gap' => false,
+                'pathways' => [],
+            ],
+        ])->preventStrayPrompts();
+
+        $workflow = $this->workflow();
+        (new \ReflectionProperty($workflow, 'startedAt'))->setValue($workflow, microtime(true));
+        $ground = new \ReflectionMethod($workflow, 'ground');
+        $result = $ground->invoke($workflow, 'What antithrombotic therapy is recommended after vein bypass?', [
+            'candidate_guidelines' => ['clti', 'antithrombotic_therapy'],
+            'core_question' => 'Antithrombotic therapy after vein below-knee bypass',
+            'patient_model' => [
+                'lesion' => 'lower limb peripheral arterial disease',
+                'prior_interventions' => ['vein below-knee bypass'],
+            ],
+            'expansion_terms' => ['antithrombotic therapy', 'vein bypass'],
+            'interpretation_terms' => ['postoperative antiplatelet therapy'],
+            'must_include_terms' => ['graft patency'],
+        ], []);
+
+        $this->assertSame(['clti', 'antithrombotic_therapy'], array_keys($result['snippet_digests']));
+        $this->assertSame('citation', $result['snippet_digests']['clti'][0]['bucket']);
+        $this->assertSame('citation', $result['snippet_digests']['antithrombotic_therapy'][0]['bucket']);
+        $this->assertSame(2, $retrieval->citationOnlyCalls);
+    }
+
+    public function test_parallel_workers_receive_parent_runtime_retrieval_config(): void
+    {
+        config()->set('gate-v2.retrieval.citation_multi_query', true);
+        config()->set('ragflow.retrieval.rerank_id', 'local');
+        config()->set('ragflow.bridge_rerank.enabled', false);
+        $workflow = $this->workflow();
+
+        $snapshot = (new \ReflectionMethod($workflow, 'parallelRetrievalRuntimeConfig'))
+            ->invoke($workflow);
+        config()->set('gate-v2.retrieval.citation_multi_query', false);
+        config()->set('ragflow.retrieval.rerank_id', 'rerank-english-v3.0');
+        (new \ReflectionMethod($workflow, 'applyParallelRetrievalRuntimeConfig'))
+            ->invoke(null, $snapshot);
+
+        $this->assertTrue(config('gate-v2.retrieval.citation_multi_query'));
+        $this->assertSame('local', config('ragflow.retrieval.rerank_id'));
+        $this->assertFalse(config('ragflow.bridge_rerank.enabled'));
+    }
+
     private function workflow(): GateWorkflowService
     {
         $retrieval = new class extends RetrievalService
@@ -242,8 +354,7 @@ class GateWorkflowServiceTest extends TestCase
                 array $history = [],
                 ?array $requestedKeys = null,
                 ?string $citationQuestion = null,
-            ): array
-            {
+            ): array {
                 throw new \RuntimeException('Retrieval must not run.');
             }
         };
