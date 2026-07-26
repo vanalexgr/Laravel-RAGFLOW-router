@@ -22,6 +22,11 @@ return [
         'narrative_max' => (int) env('RAGFLOW_NARRATIVE_MAX', 10),
         'citation_max' => (int) env('RAGFLOW_CITATION_MAX', 4),
         'similarity_threshold' => (float) env('RAGFLOW_SIMILARITY_THRESHOLD', 0.2),
+        // When the caller passes explicit guideline keys, discard the post-routing
+        // prune/guardrail/bypass expansions and keep exactly those keys. Off by
+        // default so the adapter path is unchanged; the gate enables it per call
+        // because it retrieves one branch per guideline and needs per-branch scope.
+        'strict_requested_keys' => filter_var(env('RAGFLOW_STRICT_REQUESTED_KEYS', false), FILTER_VALIDATE_BOOLEAN),
         'keyword_mode' => filter_var(env('RAGFLOW_KEYWORD_MODE', true), FILTER_VALIDATE_BOOLEAN),
         'vector_similarity_weight' => (float) env('RAGFLOW_VECTOR_WEIGHT', 0.5),
         // Force bridge parallel retrieval for multi-dataset requests by default.

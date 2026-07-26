@@ -94,7 +94,12 @@ final class RetrieveEsvsSnippetsTool implements Tool
             'single_case_top_k' => config('ragflow.single_case.top_k'),
             'request_timeout' => config('ragflow.request_timeout'),
             'connect_timeout' => config('ragflow.connect_timeout'),
+            'strict_keys' => config('ragflow.retrieval.strict_requested_keys'),
         ];
+        // One branch per guideline: the post-routing guardrails would otherwise
+        // expand this branch back to the full routed set, so every branch would
+        // retrieve every guideline's recommendations and return the same ones.
+        config()->set('ragflow.retrieval.strict_requested_keys', true);
         config()->set('ragflow.planner.merged_enabled', false);
         config()->set('ragflow.planner.shadow', false);
         config()->set('clinical_interpreter.enabled', false);
@@ -135,6 +140,7 @@ final class RetrieveEsvsSnippetsTool implements Tool
             config()->set('ragflow.single_case.top_k', $previous['single_case_top_k']);
             config()->set('ragflow.request_timeout', $previous['request_timeout']);
             config()->set('ragflow.connect_timeout', $previous['connect_timeout']);
+            config()->set('ragflow.retrieval.strict_requested_keys', $previous['strict_keys']);
             if ($timeoutSeconds !== null) {
                 $this->rebuildRagflowClient();
             }
@@ -148,6 +154,14 @@ final class RetrieveEsvsSnippetsTool implements Tool
                 $cleaned = ($this->chunkCleaner ?? new GateChunkCleaner)->clean($chunk, 3000);
                 $text = $cleaned['text'];
                 if ($text !== '') {
+                    // The header carries the guideline KEY, not the chunk's own
+                    // `guideline_name`: that name is the full ESVS title, which R7.2
+                    // deliberately strips as noise. The key is only trustworthy
+                    // because the branch is now scope-locked to a single guideline
+                    // (ragflow.retrieval.strict_requested_keys) — before that, a
+                    // shared-dataset chunk could be stamped with the wrong
+                    // guideline. `source` records what the chunk itself claimed so
+                    // the two can be reconciled after the fact.
                     if ($bucket === 'llm_citation_chunks') {
                         $metadata = $cleaned['metadata'];
                         $identity = array_filter([
@@ -162,9 +176,10 @@ final class RetrieveEsvsSnippetsTool implements Tool
                         'text' => $text,
                         'bucket' => $bucketName,
                         'similarity' => is_array($chunk) ? ($chunk['similarity'] ?? null) : null,
-                        'source' => is_array($chunk)
-                            ? ($chunk['guideline'] ?? $chunk['source_guideline'] ?? $guidelineKey)
-                            : $guidelineKey,
+                        'source' => $cleaned['metadata']['guideline']
+                            ?? (is_array($chunk) ? ($chunk['guideline'] ?? $chunk['source_guideline'] ?? null) : null)
+                            ?? $guidelineKey,
+                        'requested_guideline' => $guidelineKey,
                         'metadata' => $cleaned['metadata'],
                         'raw_chars' => $cleaned['raw_chars'],
                         'clean_chars' => $cleaned['clean_chars'],

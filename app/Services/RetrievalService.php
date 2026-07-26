@@ -174,6 +174,17 @@ class RetrievalService
             $routingMethod = 'explicit';
         }
 
+        // A caller that has already chosen the guideline keeps that scope. The
+        // post-routing prune/guardrail/bypass corrections below are correct for the
+        // single-call adapter path, but the gate runs ONE branch per routed
+        // guideline: there, expansion made every branch retrieve every routed
+        // guideline's recommendations document, so all branches returned the same
+        // recommendations and per-branch provenance was lost.
+        $explicitSelection = $routingMethod === 'explicit'
+            && config('ragflow.retrieval.strict_requested_keys', false) === true
+            ? $selectedGuidelines
+            : null;
+
         $selectedBeforePrune = array_keys($selectedGuidelines);
         $selectedGuidelines = $this->pruneSelectedGuidelines($selectedGuidelines, $retrievalQuestion);
         if (array_keys($selectedGuidelines) !== $selectedBeforePrune) {
@@ -199,6 +210,9 @@ class RetrievalService
             // asymptomatic_pad has no bypass antithrombotic recs — free the slot for clti
             unset($selectedGuidelines['asymptomatic_pad']);
         }
+
+        // Re-pin the caller's scope after every post-routing correction above.
+        $selectedGuidelines = $this->enforceExplicitScope($selectedGuidelines, $explicitSelection);
 
         // 4. Fallback Keyword Scoring (if still empty)
         if (empty($selectedGuidelines)) {
@@ -1744,6 +1758,30 @@ class RetrievalService
     /**
      * Get full guideline config including recs_doc_id from config file.
      */
+    /**
+     * Discard post-routing expansion when the caller pinned the scope itself.
+     *
+     * `$explicit` is null for every caller that did not opt in, so the adapter path
+     * keeps its prune/guardrail/bypass corrections untouched.
+     *
+     * @param  array<string, array<string, mixed>>  $selected
+     * @param  array<string, array<string, mixed>>|null  $explicit
+     * @return array<string, array<string, mixed>>
+     */
+    protected function enforceExplicitScope(array $selected, ?array $explicit): array
+    {
+        if ($explicit === null || array_keys($selected) === array_keys($explicit)) {
+            return $selected;
+        }
+
+        Log::info('[STRICT SCOPE] Discarded post-routing expansion for an explicit caller', [
+            'expanded_to' => array_keys($selected),
+            'restored_to' => array_keys($explicit),
+        ]);
+
+        return $explicit;
+    }
+
     protected function getGuidelineConfig(string $key): ?array
     {
         $categories = config('guidelines.categories', []);
