@@ -62,44 +62,84 @@ final class GateVarianceSummary
     public function summarize(array $runs): array
     {
         $grades = [];
-        $branchCounts = [];
-        $branchQueries = [];
-        $allQueries = [];
+        $observedBranches = [];
+        $successfulRuns = [];
+        $errors = 0;
 
         foreach ($runs as $run) {
+            if (array_key_exists('error', $run)) {
+                $errors++;
+
+                continue;
+            }
+
+            $successfulRuns[] = $run;
             $grade = is_string($run['grade'] ?? null) ? $run['grade'] : 'NOT_JUDGED';
             $grades[$grade] = ($grades[$grade] ?? 0) + 1;
 
-            foreach ((array) ($run['branches'] ?? []) as $branch => $metrics) {
-                $branchCounts[$branch][] = (int) ($metrics['citation_count'] ?? 0);
-                $query = (string) ($metrics['citation_query'] ?? '');
-                $branchQueries[$branch][$query] = true;
-                $allQueries[$query] = true;
+            foreach (array_keys((array) ($run['branches'] ?? [])) as $branch) {
+                $observedBranches[(string) $branch] = true;
             }
         }
 
         ksort($grades);
         $branches = [];
-        foreach ($branchCounts as $branch => $counts) {
-            $queries = array_keys($branchQueries[$branch] ?? []);
-            sort($queries);
+        $allNormalizedQueries = [];
+        $allRawQueries = [];
+        foreach (array_keys($observedBranches) as $branch) {
+            $counts = [];
+            $runsMissing = 0;
+            $normalizedQueries = [];
+            $rawQueries = [];
+
+            foreach ($successfulRuns as $run) {
+                $runBranches = (array) ($run['branches'] ?? []);
+                if (! array_key_exists($branch, $runBranches)) {
+                    $counts[] = 0;
+                    $runsMissing++;
+
+                    continue;
+                }
+
+                $metrics = (array) $runBranches[$branch];
+                $counts[] = (int) ($metrics['citation_count'] ?? 0);
+                $rawQuery = (string) ($metrics['citation_query'] ?? '');
+                $normalizedQuery = $this->normalizeQuery($rawQuery);
+                $rawQueries[$rawQuery] = true;
+                $normalizedQueries[$normalizedQuery] = true;
+                $allRawQueries[$rawQuery] = true;
+                $allNormalizedQueries[$normalizedQuery] = true;
+            }
+
+            $rawQueryStrings = array_keys($rawQueries);
+            sort($rawQueryStrings);
             $branches[$branch] = [
                 'citation_count' => $this->distribution($counts),
-                'distinct_citation_query_count' => count($queries),
-                'distinct_citation_queries' => $queries,
+                'runs_missing' => $runsMissing,
+                'distinct_citation_query_count' => count($normalizedQueries),
+                'distinct_citation_queries' => $rawQueryStrings,
+                'raw_citation_queries' => $rawQueryStrings,
             ];
         }
         ksort($branches);
 
-        $queries = array_keys($allQueries);
-        sort($queries);
+        $rawQueries = array_keys($allRawQueries);
+        sort($rawQueries);
 
         return [
+            'successful_runs' => count($successfulRuns),
+            'errors' => $errors,
             'grade_distribution' => $grades,
             'branches' => $branches,
-            'distinct_citation_query_count' => count($queries),
-            'distinct_citation_queries' => $queries,
+            'distinct_citation_query_count' => count($allNormalizedQueries),
+            'distinct_citation_queries' => $rawQueries,
+            'raw_citation_queries' => $rawQueries,
         ];
+    }
+
+    private function normalizeQuery(string $query): string
+    {
+        return mb_strtolower(trim($query));
     }
 
     /**

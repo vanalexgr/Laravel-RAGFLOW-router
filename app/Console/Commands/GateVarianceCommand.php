@@ -9,16 +9,20 @@ use App\GateEval\HttpGateSubject;
 use App\GateEval\ScenarioRepository;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
+use Symfony\Component\Process\Process;
 use Throwable;
 
 final class GateVarianceCommand extends Command
 {
+    private const SINGLE_RUN_PREFIX = 'GATE_VARIANCE_RUN_JSON:';
+
     protected $signature = 'gate:variance
         {--case=batch_s2_post_vein_bypass_antithrombotics : Scenario id}
         {--runs=5 : Number of independent turns}
         {--json : Print the complete variance artifact}
         {--judge : Grade each turn with the external judge}
-        {--no-judge : Explicitly skip grading (the default)}';
+        {--no-judge : Explicitly skip grading (the default)}
+        {--single-run : Execute one isolated run for the parent variance process}';
 
     protected $description = 'Measure Gate eval retrieval and grade variance over repeated real-path turns';
 
@@ -56,27 +60,38 @@ final class GateVarianceCommand extends Command
         }
 
         $judged = (bool) $this->option('judge');
-        $subject = new HttpGateSubject;
-        $judge = $judged ? new ExternalCloudJudge : null;
-        $records = [];
+        if ($this->option('single-run')) {
+            return $this->executeSingleRun($runner, $variance, $scenario, $judged);
+        }
 
-        $environment = $this->enableSnippetDigests();
-        try {
-            for ($runNumber = 1; $runNumber <= $runs; $runNumber++) {
-                $this->info("RUN {$runNumber}/{$runs} · {$case}".($judged ? ' · JUDGED' : ' · UNJUDGED'));
-                $eval = $judge === null
-                    ? $runner->runUnjudged([$scenario], $subject)
-                    : $runner->runJudgedWithoutArtifact([$scenario], $subject, $judge);
-                $record = $variance->capture($eval, $runNumber);
-                $records[] = $record;
+        $records = [];
+        $succeeded = 0;
+        for ($runNumber = 1; $runNumber <= $runs; $runNumber++) {
+            $this->info("RUN {$runNumber}/{$runs} · {$case}".($judged ? ' · JUDGED' : ' · UNJUDGED'));
+            try {
+                $record = $this->runIsolated($case, $judged, $runNumber);
+                if (array_key_exists('error', $record)) {
+                    $this->error('  '.$record['error']);
+                } else {
+                    $succeeded++;
+                }
                 $this->printRun($record);
+            } catch (Throwable $exception) {
+                $record = [
+                    'run' => $runNumber,
+                    'error' => $exception->getMessage(),
+                    'grade' => null,
+                    'branches' => [],
+                ];
+                $this->error('  '.$exception->getMessage());
             }
-        } catch (Throwable $exception) {
-            $this->error($exception->getMessage());
+            $records[] = $record;
+        }
+
+        if ($succeeded === 0) {
+            $this->error('All variance runs failed; no summary artifact was written.');
 
             return self::FAILURE;
-        } finally {
-            $this->restoreSnippetDigests($environment);
         }
 
         $summary = $variance->summarize($records);
@@ -114,6 +129,10 @@ final class GateVarianceCommand extends Command
      */
     private function printRun(array $record): void
     {
+        if (array_key_exists('error', $record)) {
+            return;
+        }
+
         $this->line('  grade='.($record['grade'] ?? 'NOT_JUDGED'));
         foreach ((array) $record['branches'] as $branch => $metrics) {
             $this->line(sprintf(
@@ -135,6 +154,11 @@ final class GateVarianceCommand extends Command
     private function printSummary(array $summary): void
     {
         $this->info('Variance summary');
+        $this->line(sprintf(
+            'Successful runs: %d; errors: %d',
+            $summary['successful_runs'],
+            $summary['errors'],
+        ));
         $this->line('Grade distribution: '.implode(', ', array_map(
             static fn (string $grade, int $count): string => "{$grade}={$count}",
             array_keys($summary['grade_distribution']),
@@ -143,18 +167,98 @@ final class GateVarianceCommand extends Command
         foreach ($summary['branches'] as $branch => $metrics) {
             $counts = $metrics['citation_count'];
             $this->line(sprintf(
-                '%s citation_count min/median/max: %s/%s/%s; distinct queries: %d',
+                '%s citation_count min/median/max: %s/%s/%s; distinct queries: %d; runs missing: %d',
                 $branch,
                 $counts['min'],
                 $counts['median'],
                 $counts['max'],
                 $metrics['distinct_citation_query_count'],
+                $metrics['runs_missing'],
             ));
         }
         $this->line('Distinct citation queries observed: '.$summary['distinct_citation_query_count']);
         foreach ($summary['distinct_citation_queries'] as $query) {
             $this->line('  - '.$query);
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $scenario
+     */
+    private function executeSingleRun(
+        GateEvalRunner $runner,
+        GateVarianceSummary $variance,
+        array $scenario,
+        bool $judged,
+    ): int {
+        $environment = $this->enableSnippetDigests();
+        try {
+            // These objects are deliberately constructed only after the fresh
+            // child Laravel process has booted, so no run can reuse their state.
+            $subject = new HttpGateSubject;
+            $judge = $judged ? new ExternalCloudJudge : null;
+            $eval = $judge === null
+                ? $runner->runUnjudged([$scenario], $subject)
+                : $runner->runJudgedWithoutArtifact([$scenario], $subject, $judge);
+            $record = $variance->capture($eval, 1);
+            $status = self::SUCCESS;
+        } catch (Throwable $exception) {
+            $record = [
+                'run' => 1,
+                'error' => $exception->getMessage(),
+                'grade' => null,
+                'branches' => [],
+            ];
+            $status = self::FAILURE;
+        } finally {
+            $this->restoreSnippetDigests($environment);
+        }
+
+        $this->line(self::SINGLE_RUN_PREFIX.base64_encode(json_encode(
+            $record,
+            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
+        )));
+
+        return $status;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function runIsolated(string $case, bool $judged, int $runNumber): array
+    {
+        $process = new Process([
+            PHP_BINARY,
+            base_path('artisan'),
+            'gate:variance',
+            '--single-run',
+            '--runs=1',
+            '--case='.$case,
+            $judged ? '--judge' : '--no-judge',
+        ], base_path());
+        $process->setTimeout(null);
+        $process->run();
+
+        $output = $process->getOutput()."\n".$process->getErrorOutput();
+        if (! preg_match(
+            '/^'.preg_quote(self::SINGLE_RUN_PREFIX, '/').'([A-Za-z0-9+\/=]+)$/m',
+            $output,
+            $matches,
+        )) {
+            $message = trim($process->getErrorOutput()) ?: trim($process->getOutput());
+            throw new \RuntimeException($message !== ''
+                ? "Isolated run did not return a result: {$message}"
+                : 'Isolated run did not return a result.');
+        }
+
+        $json = base64_decode($matches[1], true);
+        $record = is_string($json) ? json_decode($json, true, 512, JSON_THROW_ON_ERROR) : null;
+        if (! is_array($record)) {
+            throw new \RuntimeException('Isolated run returned an invalid result.');
+        }
+        $record['run'] = $runNumber;
+
+        return $record;
     }
 
     /**
