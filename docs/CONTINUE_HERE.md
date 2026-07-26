@@ -5,6 +5,114 @@ Single source of truth for picking this work back up (from any machine). The Cla
 
 Branch: **`claude/prototyping-summary-d597c2`** (also on origin). Pull it and read this file first.
 
+## Where we are (2026-07-26) — READ THIS FIRST, the 07-24 section below is historical
+
+**Work is PAUSED at the user's request until usage credits reset.** Nothing is half-applied: the tree
+is committed and pushed, and every disposable checkout (each held a copy of production `.env`) has been
+removed from the Hetzner host.
+
+HEAD when paused: see `git log -1`. 31 commits landed this session, all pushed.
+
+### The one thing that was fixed, and it is measured
+
+Retrieval was starving the recommendations knowledge base. Four independent causes, each measured:
+
+1. Retries **overwrote** evidence instead of merging it — 12 of 21 retry branches came back smaller and
+   4 returned zero, discarding good first-pass evidence.
+2. The citation query was sent in **question form**, which returns ZERO recommendations at any length
+   (292 / 156 / 116 chars all → 0). Recommendation rows are declarative statements.
+3. The legacy **60/40 narrative-to-citation reservation** (`ragflow.retrieval.evidence_caps`) had been
+   lost to first-come flattening at three separate capping points.
+4. Each branch was **expanded back to the full routed guideline set**, so every branch queried every
+   guideline's recommendations document and recommendations were stamped with the WRONG guideline name.
+
+Result on `batch_s2_post_vein_bypass_antithrombotics`:
+
+| | before | after |
+|---|---:|---:|
+| CLTI citations min/med/max | 0 / 0 / 0 | 12 / 12 / 12 |
+| Distinct query plans in 5 runs | 5 | 1 |
+| Unit tests | 103 | 149 (GateEval), 0 failures |
+
+### Blockers
+
+- **Codex MCP worker is out of credits until 2026-08-01.** Antigravity (Gemini) still works — use it for
+  design and review. Implementation needs Codex or the user's Codex app.
+- **Cohere reranking was billing-exhausted (HTTP 402) and the user has now RESTORED it.** All
+  measurements taken while it was dead used `RAGFLOW_RERANK_ID=local`. Retrieval hard-FAILS without
+  that override when Cohere is unavailable — verified both directions.
+
+### The open question that blocks every quality claim
+
+Both arms of the last paired measurement scored **0 PASS / 9 MINOR / 11 FAIL** and **0 PASS / 8 MINOR /
+12 FAIL**. Hours earlier the same baseline configuration scored **4 PASS / 13 MINOR / 1 FAIL**.
+Two candidate causes, and that measurement cannot separate them:
+  (a) the reranker switched Cohere → local;
+  (b) the intervening retrieval-path code changes.
+**Until this is resolved, no cross-run grade comparison means anything.** Do this first.
+
+### Next steps, in order
+
+1. **Matched reranker A/B on identical code** — the only way to answer the question above.
+   Now that Cohere is restored, run baseline twice on the same commit, once with Cohere and once with
+   `RAGFLOW_RERANK_ID=local`. If Cohere is the difference, it is a large *quality* dependency, not just
+   an availability one, and every prior local-rerank number should be discarded.
+2. **Enable the dev retrieval cache for sweeps** — `GATE_V2_RETRIEVAL_DEV_CACHE_TTL=3600`. Reranking is
+   billed per CALL (query + up to ~100 docs), so lowering `top_k` saves NOTHING; only fewer calls do.
+   A paired 8-case sweep at 3 runs/arm is ~288 rerank calls; because citation queries are now
+   deterministic, runs 2..N of a case hit the cache and roughly two thirds disappear.
+   Never enable it for a latency or reliability run — it invalidates timing and masks failures.
+3. **Teach the variance harness multi-turn.** `gate:variance` requires exactly one turn, so
+   `aaa_evolving_context` self-excludes. That means the LARGEST failure class — multi-turn state loss,
+   roughly 11 of 16 failures in the 32-turn evaluation — has never been measured at all.
+4. **Then measure the state ledger.** It is built and defaulted OFF
+   (`gate-state.shadow_enabled`). Design: `docs/DESIGN_STATE_LEDGER.md`.
+5. **Then wire and measure the decision contract.** Built, validator NOT wired into the workflow;
+   `DecisionContractValidator::revisionPrompt()` is the integration point.
+   Design: `docs/DESIGN_DECISION_COMPOSITION.md`.
+
+### Built but OFF and UNMEASURED — do not assume these work
+
+- **State ledger** (`app/Ai/Gate/State/`): event-sourced, deterministic reducer, contradiction guard,
+  durable event table. Its durability test **SKIPS** on the Hetzner host because `phpunit.xml` uses
+  `sqlite::memory:` and that PHP has only the `mysql` PDO driver. The durable store is therefore
+  UNVERIFIED. Installing `pdo_sqlite` on the dev path would fix that.
+- **Decision-composition contract** (`app/Ai/Gate/Decision/`): structured output, typed deferral codes,
+  trigger checklists, rule-based contraindication check.
+  Known limitations, recorded not fixed: the deferral validator is a keyword list and is defeatable by
+  paraphrase ("the treating team should weigh these factors"); `EVIDENCE_ABSENT` is gamable with one
+  generic `what_not_to_do` string; `Temperature(0)` on a hosted MoE model does not deliver determinism.
+
+### Traps that cost real time — do not rediscover these
+
+- **Chunk counts in eval artifacts SUM across retrieval attempts.** They measure work performed, not
+  evidence delivered. F4 showed "26 chunks" and delivered ZERO. This caused a wrong conclusion
+  ("retrieval is saturated") that stood for several iterations.
+- **`similarity` is RAGFlow's unbounded composite score × 100**, not a percentage — values 11–535. It
+  was being compared against a 0–1 threshold, so `firstPassEvidenceIsSufficient()` was always true.
+  The key is now `sufficient_ragflow_score` with units documented. Narrative and citation scores are
+  NOT on the same scale, so never rank across the two buckets.
+- **Global config does not survive the fork.** Branch workers run under a process concurrency driver;
+  passing retrieval settings via `config()` mutation silently loses them in the child. This caused a
+  7-of-8-case failure. Pass them explicitly.
+- **`gate:variance` needs `GATE_EVAL_SUT_URL` exported**, or every run fails with no useful message.
+- **Long runs must be detached on the server** (`setsid nohup`, poll a log for a completion sentinel).
+  An MCP tool call is killed at its idle timeout; `CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT` is now 1h in
+  `~/.claude/settings.json`, but detaching is still the right pattern.
+- **`pkill -f <pattern>` over ssh kills its own session** when the pattern appears in the wrapper
+  command line.
+- **Run order is a confound.** The "multi-query regression" (run 9) was retracted because the baseline
+  arm ran with working Cohere and the treatment arm ran after billing died. Always run paired arms in
+  the same session under the same conditions.
+
+### Artifacts
+
+`docs/eval/run9_8case_variance_baseline_vs_multiquery.txt` (the retracted regression),
+`docs/eval/run10_paired_local_reranker.txt` (paired, local reranker),
+`docs/eval/run8_ablation_report.md`, `docs/eval/coverage_audit.md`.
+
+---
+
 ## Where we are (2026-07-24)
 
 - **Milestone A reached:** the gate reasons end-to-end on the CLI (`php artisan gate:probe2 "<case>"`)
