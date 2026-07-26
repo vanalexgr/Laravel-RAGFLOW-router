@@ -478,4 +478,117 @@ class RetrieveEsvsSnippetsToolTest extends TestCase
             $formatted[0]['document_id'],
         );
     }
+
+    /** A counting stub so we can assert how many upstream calls were actually paid for. */
+    private function countingRetrieval(): RetrievalService
+    {
+        return new class extends RetrievalService
+        {
+            public int $calls = 0;
+
+            public function retrieve(
+                string $question,
+                array $history = [],
+                ?array $requestedKeys = null,
+                ?string $citationQuestion = null,
+            ): array {
+                $this->calls++;
+
+                return [
+                    'duration_ms' => 1,
+                    'llm_citation_chunks' => [[
+                        'text' => 'rec_id:22; recommendation_text:Verbatim recommendation',
+                        'similarity' => 30.0,
+                        'guideline' => 'clti',
+                    ]],
+                    'llm_narrative_chunks' => [],
+                ];
+            }
+        };
+    }
+
+    public function test_retrieval_is_not_cached_by_default(): void
+    {
+        config()->set('gate-v2.retrieval.dev_cache_ttl_seconds', 0);
+        $retrieval = $this->countingRetrieval();
+        $tool = new RetrieveEsvsSnippetsTool($retrieval);
+
+        $tool->retrieve('clti', 'q', false, 12, null, 'cq');
+        $tool->retrieve('clti', 'q', false, 12, null, 'cq');
+
+        // Production must keep paying for every call; the cache is a dev-only lever.
+        $this->assertSame(2, $retrieval->calls);
+    }
+
+    public function test_identical_retrieval_is_served_from_cache_when_a_ttl_is_set(): void
+    {
+        config()->set('gate-v2.retrieval.dev_cache_ttl_seconds', 600);
+        $retrieval = $this->countingRetrieval();
+        $tool = new RetrieveEsvsSnippetsTool($retrieval);
+
+        $first = $tool->retrieve('clti', 'q', false, 12, null, 'cq');
+        $second = $tool->retrieve('clti', 'q', false, 12, null, 'cq');
+
+        $this->assertSame(1, $retrieval->calls, 'The second identical retrieval must not be paid for again.');
+        $this->assertFalse($first['diagnostics']['cache_hit']);
+        $this->assertTrue($second['diagnostics']['cache_hit']);
+        $this->assertSame($first['snippets'], $second['snippets']);
+    }
+
+    public function test_a_different_query_is_a_cache_miss_so_nondeterminism_stays_visible(): void
+    {
+        config()->set('gate-v2.retrieval.dev_cache_ttl_seconds', 600);
+        $retrieval = $this->countingRetrieval();
+        $tool = new RetrieveEsvsSnippetsTool($retrieval);
+
+        $tool->retrieve('clti', 'q', false, 12, null, 'citation query A');
+        $tool->retrieve('clti', 'q', false, 12, null, 'citation query B');
+
+        // If the pipeline emits a different query the cache must NOT hide it,
+        // otherwise the determinism measurement would be meaningless.
+        $this->assertSame(2, $retrieval->calls);
+    }
+
+    public function test_the_reranker_identity_is_part_of_the_cache_key(): void
+    {
+        config()->set('gate-v2.retrieval.dev_cache_ttl_seconds', 600);
+        $retrieval = $this->countingRetrieval();
+        $tool = new RetrieveEsvsSnippetsTool($retrieval);
+
+        config()->set('ragflow.retrieval.rerank_id', 'local');
+        $tool->retrieve('clti', 'q', false, 12, null, 'cq');
+        config()->set('ragflow.retrieval.rerank_id', 'Cohere-rerank-v4.0-pro___OpenAI-API');
+        $tool->retrieve('clti', 'q', false, 12, null, 'cq');
+
+        // Local and Cohere return different orderings, so they cannot share a key.
+        $this->assertSame(2, $retrieval->calls);
+    }
+
+    public function test_an_empty_result_is_not_cached(): void
+    {
+        config()->set('gate-v2.retrieval.dev_cache_ttl_seconds', 600);
+        $retrieval = new class extends RetrievalService
+        {
+            public int $calls = 0;
+
+            public function retrieve(
+                string $question,
+                array $history = [],
+                ?array $requestedKeys = null,
+                ?string $citationQuestion = null,
+            ): array {
+                $this->calls++;
+
+                return ['duration_ms' => 1, 'llm_citation_chunks' => [], 'llm_narrative_chunks' => []];
+            }
+        };
+        $tool = new RetrieveEsvsSnippetsTool($retrieval);
+
+        $tool->retrieve('clti', 'q', false, 12, null, 'cq');
+        $tool->retrieve('clti', 'q', false, 12, null, 'cq');
+
+        // Caching an empty result would freeze a transient upstream failure into
+        // every remaining run of the sweep.
+        $this->assertSame(2, $retrieval->calls);
+    }
 }

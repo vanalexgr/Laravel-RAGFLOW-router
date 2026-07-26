@@ -8,6 +8,7 @@ use App\Facades\RAGFlow as RAGFlowFacade;
 use App\Services\RAGFlow\RAGFlowClient;
 use App\Services\RetrievalService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
@@ -76,9 +77,75 @@ final class RetrieveEsvsSnippetsTool implements Tool
     /**
      * Deterministic orchestration entry point used by GateWorkflowService.
      *
+     * Optionally memoises the retrieval so a development sweep does not pay for the
+     * same reranking repeatedly. Reranking is billed per CALL (one query plus up to
+     * ~100 documents), so lowering top_k saves nothing — only issuing fewer calls
+     * does. An eval that runs the same case N times used to pay N times; now that
+     * the citation queries are deterministic, runs 2..N hit this cache.
+     *
+     * Off unless a TTL is configured, so production is unaffected.
+     *
+     * This does NOT weaken the determinism metric: distinct-plan counting is taken
+     * from the queries the pipeline decided to issue, which are computed before
+     * retrieval, and any query that differs produces a different key and a miss.
+     * It DOES invalidate latency measurement, and it hides transient upstream
+     * failures — never leave it on for a timing or reliability run.
+     *
      * @return array<string, mixed>
      */
     public function retrieve(
+        string $guidelineKey,
+        string $query,
+        bool $fullPipeline = false,
+        ?int $topK = null,
+        ?int $timeoutSeconds = null,
+        ?string $citationQuery = null,
+        ?array $citationQueries = null,
+    ): array {
+        $ttl = (int) config('gate-v2.retrieval.dev_cache_ttl_seconds', 0);
+        if ($ttl <= 0) {
+            return $this->retrieveUncached(
+                $guidelineKey, $query, $fullPipeline, $topK, $timeoutSeconds, $citationQuery, $citationQueries,
+            );
+        }
+
+        // Everything that can change the RESULT is in the key. The timeout is not,
+        // because it changes only how long we are willing to wait. The reranker
+        // identity IS, because local and Cohere return different orderings.
+        $key = 'gate-v2:retrieval:'.hash('sha256', json_encode([
+            $guidelineKey, $query, $fullPipeline, $topK, $citationQuery, $citationQueries,
+            config('gate-v2.retrieval.citation_multi_query'),
+            config('gate-v2.retrieval.citation_multi_query_max'),
+            config('ragflow.retrieval.rerank_id'),
+            config('ragflow.bridge_rerank.enabled'),
+            config('ragflow.retrieval.strict_requested_keys'),
+            config('ragflow.retrieval.authoritative_citation_document_scope'),
+        ], JSON_THROW_ON_ERROR));
+
+        $cached = Cache::get($key);
+        if (is_array($cached)) {
+            $cached['diagnostics']['cache_hit'] = true;
+
+            return $cached;
+        }
+
+        $result = $this->retrieveUncached(
+            $guidelineKey, $query, $fullPipeline, $topK, $timeoutSeconds, $citationQuery, $citationQueries,
+        );
+        // Only a successful retrieval is worth keeping; caching an empty result
+        // would silently freeze a transient upstream failure into the sweep.
+        if (($result['diagnostics']['snippet_count'] ?? 0) > 0) {
+            Cache::put($key, $result, $ttl);
+        }
+        $result['diagnostics']['cache_hit'] = false;
+
+        return $result;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function retrieveUncached(
         string $guidelineKey,
         string $query,
         bool $fullPipeline = false,

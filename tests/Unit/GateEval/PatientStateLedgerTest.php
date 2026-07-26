@@ -194,6 +194,17 @@ class PatientStateLedgerTest extends TestCase
 
     public function test_shadow_ingestion_corrects_changed_alias_and_database_log_survives_cache_clear(): void
     {
+        // This is the only coverage for the durable event store that replaced the
+        // cache-backed log. It needs a real database, and the deployment host's PHP
+        // ships only the mysql PDO driver while phpunit.xml runs on sqlite::memory:.
+        // Skip with a reason rather than erroring, so the gap is visible instead of
+        // looking like a passing suite.
+        $driver = (string) config('database.default');
+        $pdo = (string) config("database.connections.{$driver}.driver");
+        if (! in_array($pdo, \PDO::getAvailableDrivers(), true)) {
+            $this->markTestSkipped("PDO driver '{$pdo}' unavailable: the durable ledger store is UNVERIFIED here.");
+        }
+
         Schema::dropIfExists('gate_state_events');
         Schema::create('gate_state_events', function (Blueprint $table): void {
             $table->id();

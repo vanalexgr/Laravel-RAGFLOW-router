@@ -60,6 +60,16 @@ return [
         'max_attempts' => (int) env('GATE_V2_RETRIEVAL_MAX_ATTEMPTS', 2),
         'revision_max_attempts' => (int) env('GATE_V2_REVISION_RETRIEVAL_MAX_ATTEMPTS', 1),
         'attempt_top_k' => [12, 24],
+        // DEV COST CONTROL. Memoise gate retrievals for this many seconds; 0 = off,
+        // which is the production default. Reranking is billed per CALL (a query
+        // plus up to ~100 documents), so reducing top_k does NOT reduce spend —
+        // only making fewer calls does. A paired 8-case sweep at 3 runs per arm
+        // issues on the order of 288 rerank calls; because the citation queries are
+        // now deterministic, runs 2..N of a case reuse the same key, so a TTL that
+        // spans one sweep removes roughly two thirds of them.
+        // Never enable for a latency or reliability run: it invalidates timing and
+        // masks transient upstream failures.
+        'dev_cache_ttl_seconds' => (int) env('GATE_V2_RETRIEVAL_DEV_CACHE_TTL', 0),
         // Minimum share of every evidence budget reserved for verbatim
         // recommendations, matching the legacy adapter's dual-retrieval mix
         // (`evidence_caps`: narrative 16 / citation 12). Fractional slots round
