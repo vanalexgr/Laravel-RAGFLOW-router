@@ -60,10 +60,11 @@ return [
         'max_attempts' => (int) env('GATE_V2_RETRIEVAL_MAX_ATTEMPTS', 2),
         'revision_max_attempts' => (int) env('GATE_V2_REVISION_RETRIEVAL_MAX_ATTEMPTS', 1),
         'attempt_top_k' => [12, 24],
-        // Share of every evidence budget reserved for verbatim recommendations,
-        // matching the legacy adapter's dual-retrieval mix (`evidence_caps`:
-        // narrative 16 / citation 12). Applied at retrieval, retry merge, and
-        // prompt compaction alike — see GateEvidenceQuota.
+        // Minimum share of every evidence budget reserved for verbatim
+        // recommendations, matching the legacy adapter's dual-retrieval mix
+        // (`evidence_caps`: narrative 16 / citation 12). Fractional slots round
+        // up so small prompt caps never under-reserve. Applied at retrieval,
+        // retry merge, and prompt compaction alike — see GateEvidenceQuota.
         'citation_share' => (float) env('GATE_V2_CITATION_SHARE', 0.4),
         // The recommendations bridge accepts only one citation query per call.
         // Until it supports batching, run at most two short queries sequentially.
@@ -83,7 +84,8 @@ return [
         // recommendations at 292, 156 and 116 chars, while terms-only queries
         // return 2-6 at 98 and 54 chars. The stricter CLTI document did best near
         // 54, so each independent concept is capped at 60 rather than allowing a
-        // second concept to dilute it. The legacy 100-character budget remains
+        // second concept to dilute it. This value is a hard upper bound, including
+        // when configured below 40. The legacy 100-character budget remains
         // separate so disabling citation_multi_query is a faithful A/B control.
         'citation_query_max_chars' => (int) env('GATE_V2_CITATION_QUERY_MAX_CHARS', 100),
         // A gate retrieval must never inherit the generic 30-second bridge timeout:

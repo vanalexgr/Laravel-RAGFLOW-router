@@ -13,7 +13,7 @@ namespace App\Ai\Gate\Retrieval;
  * free to drop recommendations. In Run 8, 10 of 16 guideline branches reached
  * the answering stage with **zero** recommendations.
  *
- * Applying the same share at every cap keeps the guarantee end to end.
+ * Applying the same minimum share at every cap keeps the guarantee end to end.
  */
 final class GateEvidenceQuota
 {
@@ -28,9 +28,9 @@ final class GateEvidenceQuota
     }
 
     /**
-     * Citation slots to reserve out of `$capacity`. At least one whenever the
-     * budget and share both allow it, so a small cap cannot round the
-     * recommendations away entirely.
+     * Citation slots to reserve out of `$capacity`. The configured share is a
+     * minimum guarantee, so fractional slots round up. At least one is reserved
+     * whenever the budget and share both allow it.
      */
     public static function citationSlots(int $capacity): int
     {
@@ -42,7 +42,7 @@ final class GateEvidenceQuota
             return 0;
         }
 
-        return max(1, min($capacity, (int) round($capacity * $share)));
+        return max(1, min($capacity, (int) ceil($capacity * $share)));
     }
 
     /**

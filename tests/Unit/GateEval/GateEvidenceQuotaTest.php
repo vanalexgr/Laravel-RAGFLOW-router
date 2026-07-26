@@ -73,6 +73,15 @@ class GateEvidenceQuotaTest extends TestCase
         $this->assertCount(1, $buckets['citation'], 'Rounding must not erase the recommendations entirely.');
     }
 
+    public function test_fractional_minimum_share_rounds_up_at_prompt_sized_capacities(): void
+    {
+        config()->set('gate-v2.retrieval.citation_share', 0.4);
+
+        $this->assertSame(2, GateEvidenceQuota::citationSlots(3));
+        $this->assertSame(2, GateEvidenceQuota::citationSlots(5));
+        $this->assertSame(3, GateEvidenceQuota::citationSlots(6));
+    }
+
     public function test_share_of_zero_disables_the_reservation(): void
     {
         config()->set('gate-v2.retrieval.citation_share', 0.0);

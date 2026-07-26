@@ -7,10 +7,12 @@ use App\Ai\Gate\GateDecisionTail;
 use App\Ai\Gate\GateWorkflowService;
 use App\Ai\Gate\Grounding\GatePathwayWorker;
 use App\Ai\Gate\Guard\PreOrientGuardService;
+use App\Ai\Gate\PathwayAgent;
 use App\Ai\Gate\Routing\OrientRoutingPriorService;
 use App\Ai\Gate\Tools\RetrieveEsvsSnippetsTool;
 use App\Services\PHIScrubberService;
 use App\Services\RetrievalService;
+use Laravel\Ai\Prompts\AgentPrompt;
 // Laravel's base TestCase, not PHPUnit's: the gate reads config() for its
 // retrieval thresholds, which needs a booted container.
 use Tests\TestCase;
@@ -135,6 +137,78 @@ class GateWorkflowServiceTest extends TestCase
 
         // Run 7's F4 shape: every retry returned zero, and the branch lost all of it.
         $this->assertSame($first, $method->invoke($worker, $first, []));
+    }
+
+    public function test_an_empty_retry_is_assessed_with_merged_first_pass_evidence(): void
+    {
+        config()->set('gate-v2.retrieval.citation_multi_query', false);
+        config()->set('gate-v2.retrieval.sufficient_similarity', 0.99);
+        $retrieval = new class extends RetrievalService
+        {
+            public int $calls = 0;
+
+            public function retrieve(
+                string $question,
+                array $history = [],
+                ?array $requestedKeys = null,
+                ?string $citationQuestion = null,
+            ): array {
+                $this->calls++;
+
+                return [
+                    'duration_ms' => 1,
+                    'llm_citation_chunks' => [],
+                    'llm_narrative_chunks' => $this->calls === 1
+                        ? array_map(
+                            static fn (int $i): array => [
+                                'text' => "first-pass evidence {$i}",
+                                'similarity' => 0.5,
+                            ],
+                            range(1, 10),
+                        )
+                        : [],
+                ];
+            }
+        };
+        PathwayAgent::fake([
+            [
+                'guideline_key' => 'clti',
+                'relevant' => true,
+                'better_query' => 'better retry query',
+                'coverage' => 'partial',
+                'covered_components' => ['first pass'],
+                'interaction_gap' => false,
+                'pathways' => [],
+            ],
+            [
+                'guideline_key' => 'clti',
+                'relevant' => true,
+                'better_query' => '',
+                'coverage' => 'not_covered',
+                'covered_components' => [],
+                'interaction_gap' => false,
+                'pathways' => [],
+            ],
+        ])->preventStrayPrompts();
+
+        $result = (new GatePathwayWorker(new RetrieveEsvsSnippetsTool($retrieval)))->run(
+            'clti',
+            'initial query',
+            ['lesion' => 'CLTI'],
+            'What treatment is appropriate?',
+            null,
+            2,
+        );
+
+        $this->assertSame(2, $retrieval->calls);
+        $this->assertCount(10, $result['snippet_digests']);
+        PathwayAgent::assertPrompted(function (AgentPrompt $prompt): bool {
+            $payload = json_decode($prompt->prompt, true, flags: JSON_THROW_ON_ERROR);
+
+            return $payload['attempt'] === 2
+                && count($payload['snippets']) === 10
+                && $payload['snippets'][0]['text'] === 'first-pass evidence 1';
+        });
     }
 
     public function test_a_retry_adds_and_reranks_without_dropping_earlier_snippets(): void

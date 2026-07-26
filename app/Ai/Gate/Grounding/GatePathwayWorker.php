@@ -65,8 +65,7 @@ final class GatePathwayWorker
             // A retry is only worth starting if the parent deadline can still
             // cover a retrieval plus its assessment; otherwise this branch would
             // outlive the wall-clock it was dispatched under.
-            $usingPrefetch = $attempt === 1 && $prefetched !== null;
-            if (! $usingPrefetch && ! $this->canStartAttempt($deadlineAt)) {
+            if (! $this->canStartAttempt($deadlineAt)) {
                 $trace[] = [
                     'stage' => 'retrieve_skipped',
                     'duration_ms' => 0,
@@ -85,33 +84,28 @@ final class GatePathwayWorker
                 ? count($topKCaps) - 1
                 : min($attempt - 1, count($topKCaps) - 1);
             $topK = (int) ($topKCaps[$topKIndex] ?? 24);
-            if ($usingPrefetch) {
-                $retrieved = (array) $prefetched['retrieved'];
-                $retrievalDuration = (int) ($prefetched['duration_ms'] ?? 0);
-            } else {
-                $retrievalStarted = microtime(true);
-                $baseTimeout = $timeoutSeconds ?? (int) config('gate-v2.retrieval.timeout_seconds', 20);
-                if (count($citationQueries) > 1 && $deadlineAt !== null) {
-                    // The tool may consume at most 1.5x this base across its two
-                    // sequential calls. Reduce the base first so that enlarged
-                    // allowance still fits the absolute parent deadline.
-                    $remaining = max(1, $this->remainingSeconds($deadlineAt) ?? 1);
-                    $baseTimeout = min($baseTimeout, max(1, (int) floor($remaining / 1.5)));
-                }
-                $retrieved = $this->retrieval->retrieve(
-                    $guideline,
-                    $query,
-                    $attempt === $maxAttempts,
-                    $topK,
-                    $this->clampToDeadline(
-                        $baseTimeout,
-                        $deadlineAt,
-                    ),
-                    $citationQuery,
-                    $citationQueries,
-                );
-                $retrievalDuration = (int) round((microtime(true) - $retrievalStarted) * 1000);
+            $retrievalStarted = microtime(true);
+            $baseTimeout = $timeoutSeconds ?? (int) config('gate-v2.retrieval.timeout_seconds', 20);
+            if (count($citationQueries) > 1 && $deadlineAt !== null) {
+                // The tool may consume at most 1.5x this base across its two
+                // sequential calls. Reduce the base first so that enlarged
+                // allowance still fits the absolute parent deadline.
+                $remaining = max(1, $this->remainingSeconds($deadlineAt) ?? 1);
+                $baseTimeout = min($baseTimeout, max(1, (int) floor($remaining / 1.5)));
             }
+            $retrieved = $this->retrieval->retrieve(
+                $guideline,
+                $query,
+                $attempt === $maxAttempts,
+                $topK,
+                $this->clampToDeadline(
+                    $baseTimeout,
+                    $deadlineAt,
+                ),
+                $citationQuery,
+                $citationQueries,
+            );
+            $retrievalDuration = (int) round((microtime(true) - $retrievalStarted) * 1000);
             $trace[] = [
                 'stage' => 'retrieve',
                 'duration_ms' => $retrievalDuration,
@@ -135,7 +129,6 @@ final class GatePathwayWorker
                     'citation_query_chars_each' => array_map('mb_strlen', $citationQueries),
                     'citation_top_k' => min($topK, 16),
                     'retrieval_ms' => $retrieved['diagnostics']['duration_ms'] ?? null,
-                    'prefetched' => $attempt === 1 && $prefetched !== null,
                 ],
             ];
             $snippetDigests = $this->mergeSnippets($snippetDigests, (array) $retrieved['snippets']);
@@ -150,7 +143,7 @@ final class GatePathwayWorker
                     'citation_queries' => $citationQueries,
                     'attempt' => $attempt,
                     'final_attempt' => $attempt === $maxAttempts,
-                    'snippets' => $retrieved['snippets'],
+                    'snippets' => $snippetDigests,
                     'retrieval_diagnostics' => $retrieved['diagnostics'],
                 ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
                 provider: (string) config('gate-v2.provider'),

@@ -97,6 +97,30 @@ class GateRetrievalQueryBuilderTest extends TestCase
         $this->assertStringStartsWith('perioperative management', $shaped);
     }
 
+    public function test_configured_citation_budget_below_forty_is_a_hard_cap(): void
+    {
+        config()->set('gate-v2.retrieval.citation_query_max_chars', 31);
+
+        $shaped = (new GateRetrievalQueryBuilder)->shapeCitationQuery(str_repeat('x', 50));
+
+        $this->assertSame(31, mb_strlen($shaped));
+    }
+
+    public function test_oversized_must_include_term_is_truncated_instead_of_discarded(): void
+    {
+        config()->set('gate-v2.retrieval.citation_query_max_chars', 31);
+        $mandatory = str_repeat('mandatory', 12);
+        $orient = $this->orient();
+        $orient['must_include_terms'] = [$mandatory];
+        $orient['expansion_terms'] = ['short optional'];
+        $orient['interpretation_terms'] = [];
+
+        $citation = (new GateRetrievalQueryBuilder)->build($orient)['citation'];
+
+        $this->assertSame(mb_substr($mandatory, 0, 31), $citation);
+        $this->assertStringNotContainsString('short optional', $citation);
+    }
+
     public function test_narrative_query_is_unchanged_in_shape(): void
     {
         $narrative = (new GateRetrievalQueryBuilder)->build($this->orient())['narrative'];

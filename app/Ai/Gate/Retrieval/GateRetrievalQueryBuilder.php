@@ -239,7 +239,7 @@ final class GateRetrievalQueryBuilder
      */
     private function buildCitationQuery(string $coreQuestion, array $terms): string
     {
-        $budget = max(20, (int) config('gate-v2.retrieval.citation_query_max_chars', 100));
+        $budget = max(0, (int) config('gate-v2.retrieval.citation_query_max_chars', 100));
         $query = '';
 
         foreach ($terms as $term) {
@@ -249,6 +249,14 @@ final class GateRetrievalQueryBuilder
             }
             $candidate = $query === '' ? $term : $query.' '.$term;
             if (mb_strlen($candidate) > $budget) {
+                // Must-include terms are ordered first by build(). If the first
+                // usable term alone exceeds the hard cap, keep its bounded prefix
+                // instead of silently dropping it in favour of a later optional
+                // term.
+                if ($query === '') {
+                    $query = mb_substr($term, 0, $budget);
+                    break;
+                }
                 continue;
             }
             $query = $candidate;
@@ -269,7 +277,7 @@ final class GateRetrievalQueryBuilder
      */
     public function shapeCitationQuery(string $text): string
     {
-        $budget = max(20, (int) config('gate-v2.retrieval.citation_query_max_chars', 100));
+        $budget = max(0, (int) config('gate-v2.retrieval.citation_query_max_chars', 100));
 
         return mb_substr($this->declarativeForm($text), 0, $budget);
     }
