@@ -44,17 +44,62 @@ final class GateRetrievalQueryBuilder
             $issueText === '' ? null : 'Retrieval gaps to resolve: '.$issueText,
         ]);
 
-        $narrative = implode("\n", $shared);
-        $citation = implode("\n", array_filter([
-            'ESVS recommendation sought: '.$coreQuestion,
-            $patientProse === '' ? null : 'Applicable patient and procedure: '.$patientProse,
-            $terms === [] ? null : 'Recommendation terms: '.implode(', ', $terms),
-            $anchors === [] ? null : 'Scope anchors: '.implode(', ', $anchors),
-            'Return the directly applicable recommendation, threshold, indication, class, and evidence level.',
-            $issueText === '' ? null : 'Missing recommendation detail: '.$issueText,
-        ]));
+        return [
+            'narrative' => implode("\n", $shared),
+            'citation' => $this->buildCitationQuery(
+                $coreQuestion,
+                // Must-include terms first: under a character budget the terms the
+                // planner marked mandatory must survive, not be truncated away.
+                $this->terms($orient, ['must_include_terms', 'expansion_terms', 'interpretation_terms']),
+                $issueText,
+            ),
+        ];
+    }
 
-        return ['narrative' => $narrative, 'citation' => $citation];
+    /**
+     * The recommendations dataset holds short verbatim recommendation rows — text,
+     * number, guideline, class, level. It therefore needs a terse, terminology-dense
+     * query, NOT the narrative prose blob.
+     *
+     * Run 8 sent both datasets the same ~800-character "Clinical question / Patient
+     * context" text and 10 of 16 guideline branches came back with **zero**
+     * recommendations: an 800-character patient narrative is too dissimilar from a
+     * two-sentence recommendation to clear the similarity floor, so the answering
+     * recommendation was never in the evidence the Probe saw.
+     *
+     * Deliberately excluded, because none of it appears in a recommendation row and
+     * all of it dilutes the embedding:
+     *   - the patient-context prose,
+     *   - the internal anchor labels (`carotid`, `limb` — router vocabulary, not
+     *     guideline vocabulary),
+     *   - the old "Return the directly applicable recommendation…" instruction,
+     *     which is an instruction to a model, meaningless to a similarity search.
+     *
+     * @param  array<int, string>  $terms
+     */
+    private function buildCitationQuery(string $coreQuestion, array $terms, string $issueText): string
+    {
+        $budget = max(80, (int) config('gate-v2.retrieval.citation_query_max_chars', 300));
+        $query = trim($coreQuestion);
+
+        foreach ($terms as $term) {
+            if (str_contains(mb_strtolower($query), mb_strtolower($term))) {
+                continue;
+            }
+            $candidate = $query.' '.$term;
+            if (mb_strlen($candidate) > $budget) {
+                continue;
+            }
+            $query = $candidate;
+        }
+
+        // A Critic-raised gap is only worth spending budget on if it still fits
+        // whole; a half-truncated gap description is noise.
+        if ($issueText !== '' && mb_strlen($query) + mb_strlen($issueText) + 1 <= $budget) {
+            $query .= ' '.$issueText;
+        }
+
+        return $query;
     }
 
     /** @param array<string, mixed> $patientModel */
@@ -120,12 +165,13 @@ final class GateRetrievalQueryBuilder
     }
 
     /** @param array<string, mixed> $orient
+     *  @param array<int, string> $fieldOrder
      *  @return array<int, string>
      */
-    private function terms(array $orient): array
+    private function terms(array $orient, array $fieldOrder = ['expansion_terms', 'interpretation_terms', 'must_include_terms']): array
     {
         $terms = [];
-        foreach (['expansion_terms', 'interpretation_terms', 'must_include_terms'] as $field) {
+        foreach ($fieldOrder as $field) {
             foreach ((array) ($orient[$field] ?? []) as $term) {
                 $term = trim((string) $term);
                 if ($term !== '' && ! in_array(mb_strtolower($term), array_map('mb_strtolower', $terms), true)) {

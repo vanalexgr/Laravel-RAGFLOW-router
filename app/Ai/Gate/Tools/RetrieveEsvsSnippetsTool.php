@@ -3,6 +3,7 @@
 namespace App\Ai\Gate\Tools;
 
 use App\Ai\Gate\Retrieval\GateChunkCleaner;
+use App\Ai\Gate\Retrieval\GateEvidenceQuota;
 use App\Facades\RAGFlow as RAGFlowFacade;
 use App\Services\RAGFlow\RAGFlowClient;
 use App\Services\RetrievalService;
@@ -139,9 +140,10 @@ final class RetrieveEsvsSnippetsTool implements Tool
             }
         }
 
-        $snippets = [];
+        $byBucket = ['citation' => [], 'narrative' => []];
         $similarities = [];
         foreach (['llm_citation_chunks', 'llm_narrative_chunks'] as $bucket) {
+            $bucketName = $bucket === 'llm_citation_chunks' ? 'citation' : 'narrative';
             foreach ((array) ($result[$bucket] ?? []) as $chunk) {
                 $cleaned = ($this->chunkCleaner ?? new GateChunkCleaner)->clean($chunk, 3000);
                 $text = $cleaned['text'];
@@ -156,8 +158,9 @@ final class RetrieveEsvsSnippetsTool implements Tool
                         ]);
                         $text = '['.implode(' | ', $identity)."]\n".$text;
                     }
-                    $snippets[] = [
+                    $byBucket[$bucketName][] = [
                         'text' => $text,
+                        'bucket' => $bucketName,
                         'similarity' => is_array($chunk) ? ($chunk['similarity'] ?? null) : null,
                         'source' => is_array($chunk)
                             ? ($chunk['guideline'] ?? $chunk['source_guideline'] ?? $guidelineKey)
@@ -171,11 +174,14 @@ final class RetrieveEsvsSnippetsTool implements Tool
                         $similarities[] = (float) $chunk['similarity'];
                     }
                 }
-                if (count($snippets) >= self::MAX_SNIPPETS) {
-                    break 2;
-                }
             }
         }
+
+        $snippets = GateEvidenceQuota::fill(
+            $byBucket['citation'],
+            $byBucket['narrative'],
+            self::MAX_SNIPPETS,
+        );
 
         return [
             'guideline_key' => $guidelineKey,
@@ -187,12 +193,22 @@ final class RetrieveEsvsSnippetsTool implements Tool
             'snippets' => $snippets,
             'diagnostics' => [
                 'snippet_count' => count($snippets),
+                // Recorded separately because a branch can look healthy on
+                // snippet_count while supplying no recommendations at all — the
+                // Run 8 failure mode. An eval must be able to see this directly.
+                'citation_count' => count(array_filter(
+                    $snippets,
+                    static fn (array $s): bool => ($s['bucket'] ?? null) === 'citation',
+                )),
+                'citation_available' => count($byBucket['citation']),
+                'narrative_available' => count($byBucket['narrative']),
                 'max_similarity' => $similarities === [] ? null : max($similarities),
                 'duration_ms' => (int) ($result['duration_ms'] ?? 0),
                 'signal_ratio' => $this->weightedSignalRatio($snippets),
             ],
         ];
     }
+
 
     /** @param array<int, array<string, mixed>> $snippets */
     private function weightedSignalRatio(array $snippets): float

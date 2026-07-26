@@ -58,6 +58,11 @@ class RetrieveEsvsSnippetsToolTest extends TestCase
         );
         $this->assertStringNotContainsString('ESVS 2024 Clinical Practice Guidelines', $result['snippets'][0]['text']);
         $this->assertSame(82.5, $result['diagnostics']['max_similarity']);
+        // Bucket labelling must survive into the snippet and the diagnostics, or
+        // the downstream citation reservation has nothing to reserve on.
+        $this->assertSame('citation', $result['snippets'][0]['bucket']);
+        $this->assertSame(1, $result['diagnostics']['citation_count']);
+        $this->assertSame(0, $result['diagnostics']['narrative_available']);
     }
 
     public function test_gate_timeout_is_scoped_to_the_retrieval_client_and_restored_afterward(): void

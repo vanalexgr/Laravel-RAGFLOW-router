@@ -60,6 +60,16 @@ return [
         'max_attempts' => (int) env('GATE_V2_RETRIEVAL_MAX_ATTEMPTS', 2),
         'revision_max_attempts' => (int) env('GATE_V2_REVISION_RETRIEVAL_MAX_ATTEMPTS', 1),
         'attempt_top_k' => [12, 24],
+        // Share of every evidence budget reserved for verbatim recommendations,
+        // matching the legacy adapter's dual-retrieval mix (`evidence_caps`:
+        // narrative 16 / citation 12). Applied at retrieval, retry merge, and
+        // prompt compaction alike — see GateEvidenceQuota.
+        'citation_share' => (float) env('GATE_V2_CITATION_SHARE', 0.4),
+        // Snippets per guideline handed to Probe/Critic.
+        'prompt_snippets_per_guideline' => (int) env('GATE_V2_PROMPT_SNIPPETS_PER_GUIDELINE', 6),
+        // The recommendations dataset matches short verbatim rows, so its query is
+        // held to a tight character budget instead of the narrative prose blob.
+        'citation_query_max_chars' => (int) env('GATE_V2_CITATION_QUERY_MAX_CHARS', 300),
         // A gate retrieval must never inherit the generic 30-second bridge timeout:
         // this budget is deliberately below the parent 90-second wall-clock.
         'timeout_seconds' => (int) env('GATE_V2_RETRIEVAL_TIMEOUT_SECONDS', 20),

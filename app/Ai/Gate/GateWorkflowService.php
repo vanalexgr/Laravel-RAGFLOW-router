@@ -8,6 +8,7 @@ use App\Ai\Gate\Guard\PreOrientGuardService;
 use App\Ai\Gate\Progress\GateProgress;
 use App\Ai\Gate\Progress\NullGateProgress;
 use App\Ai\Gate\Retrieval\GateChunkCleaner;
+use App\Ai\Gate\Retrieval\GateEvidenceQuota;
 use App\Ai\Gate\Retrieval\GateRetrievalQueryBuilder;
 use App\Ai\Gate\Routing\OrientRoutingPriorService;
 use App\Services\PHIScrubberService;
@@ -847,6 +848,9 @@ final class GateWorkflowService
             foreach (array_slice($snippets, 0, $maxPerGuideline) as $rank => $snippet) {
                 $audited[] = [
                     'rank' => $rank + 1,
+                    // Persisted so an eval can count recommendations directly rather
+                    // than sniffing the identity-header prefix.
+                    'bucket' => $snippet['bucket'] ?? null,
                     'similarity' => $snippet['similarity'] ?? null,
                     'source' => $snippet['source'] ?? null,
                     'metadata' => $snippet['metadata'] ?? [],
@@ -862,7 +866,14 @@ final class GateWorkflowService
 
     private function compactSnippetDigests(array $digests): array
     {
+        $cap = max(1, (int) config('gate-v2.retrieval.prompt_snippets_per_guideline', 6));
+
         foreach ($digests as $guideline => $snippets) {
+            // The prompt cap is the last place recommendations can be dropped, so
+            // it reserves the same citation share as retrieval and the retry merge.
+            // A plain head-slice here would re-create the Run 8 failure whenever
+            // narrative chunks happened to lead the list.
+            $buckets = GateEvidenceQuota::partition($snippets);
             $digests[$guideline] = array_map(
                 function (array $snippet): array {
                     $snippet['text'] = ($this->chunkCleaner ?? new GateChunkCleaner)->truncateForLlm(
@@ -872,7 +883,7 @@ final class GateWorkflowService
 
                     return $snippet;
                 },
-                array_slice($snippets, 0, 6),
+                GateEvidenceQuota::fill($buckets['citation'], $buckets['narrative'], $cap),
             );
         }
 

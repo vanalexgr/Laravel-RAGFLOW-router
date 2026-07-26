@@ -3,6 +3,7 @@
 namespace App\Ai\Gate\Grounding;
 
 use App\Ai\Gate\PathwayAgent;
+use App\Ai\Gate\Retrieval\GateEvidenceQuota;
 use App\Ai\Gate\Tools\RetrieveEsvsSnippetsTool;
 use RuntimeException;
 
@@ -158,7 +159,15 @@ final class GatePathwayWorker
             $query = $betterQuery !== '' && ! in_array($betterQuery, $queriesTried, true)
                 ? $betterQuery
                 : $query.' ESVS recommendation decision threshold anatomy';
-            $citationQuery = 'ESVS recommendation class evidence level decision threshold for: '.$query;
+            // Keep the retry's citation query terse for the same reason the builder
+            // does: the recommendations dataset matches short recommendation rows,
+            // and the old boilerplate prefix ("ESVS recommendation class evidence
+            // level decision threshold for: ") is not language any row contains.
+            $citationQuery = mb_substr(
+                $betterQuery !== '' ? $betterQuery : $query,
+                0,
+                max(80, (int) config('gate-v2.retrieval.citation_query_max_chars', 300)),
+            );
         }
 
         if ($assessment !== null) {
@@ -206,15 +215,26 @@ final class GatePathwayWorker
             $merged[] = $snippet;
         }
 
-        // Similarity-first so the bound below drops the weakest evidence rather
-        // than whichever attempt happened to run last. PHP's sort is stable, so
-        // equal-similarity snippets keep their retrieval order.
-        usort(
-            $merged,
-            static fn (array $a, array $b): int => self::similarityRank($b) <=> self::similarityRank($a),
-        );
+        // Rank WITHIN each bucket only. The two buckets come from different
+        // datasets, so their similarity scores are not comparable — a raw
+        // cross-bucket sort would let prose outrank recommendations on a number
+        // that does not mean the same thing on both sides, and would silently
+        // undo the citation reservation applied during retrieval.
+        $buckets = GateEvidenceQuota::partition($merged);
+        foreach ($buckets as $name => $snippets) {
+            // PHP's sort is stable, so equal scores keep retrieval order.
+            usort(
+                $snippets,
+                static fn (array $a, array $b): int => self::similarityRank($b) <=> self::similarityRank($a),
+            );
+            $buckets[$name] = $snippets;
+        }
 
-        return array_slice($merged, 0, self::MAX_MERGED_SNIPPETS);
+        return GateEvidenceQuota::fill(
+            $buckets['citation'],
+            $buckets['narrative'],
+            self::MAX_MERGED_SNIPPETS,
+        );
     }
 
     /**
