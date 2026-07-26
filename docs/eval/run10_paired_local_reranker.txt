@@ -1,0 +1,89 @@
+=== PHASE4 COMPLETE ===
+### b4-aaa_evolving_context.log
+### b4-batch_c2_brachial_vein_compression.log
+Successful runs: 3; errors: 0
+Grade distribution: PASS_WITH_MINOR=3
+antithrombotic_therapy citation_count min/median/max: 10/10/11; distinct queries: 3; runs missing: 0
+venous_thrombosis citation_count min/median/max: 11/12/12; distinct queries: 3; runs missing: 0
+Distinct citation queries observed: 3
+### b4-batch_f1_clti_aps_warfarin.log
+Successful runs: 3; errors: 0
+Grade distribution: FAIL=2, PASS_WITH_MINOR=1
+antithrombotic_therapy citation_count min/median/max: 8/12/12; distinct queries: 2; runs missing: 0
+clti citation_count min/median/max: 11/11/12; distinct queries: 2; runs missing: 0
+Distinct citation queries observed: 2
+### b4-batch_f2_clti_itp_after_bypass.log
+Successful runs: 3; errors: 0
+Grade distribution: FAIL=3
+antithrombotic_therapy citation_count min/median/max: 6/6/8; distinct queries: 2; runs missing: 0
+clti citation_count min/median/max: 6/6/8; distinct queries: 2; runs missing: 0
+Distinct citation queries observed: 2
+### b4-batch_f4_aaa_clti_sepsis_anticoagulation.log
+Successful runs: 2; errors: 1
+Grade distribution: PASS_WITH_MINOR=2
+abdominal_aortic_aneurysm citation_count min/median/max: 6/6/6; distinct queries: 1; runs missing: 0
+antithrombotic_therapy citation_count min/median/max: 6/6/6; distinct queries: 1; runs missing: 0
+clti citation_count min/median/max: 4/4/4; distinct queries: 1; runs missing: 0
+Distinct citation queries observed: 1
+### b4-batch_s2_post_vein_bypass_antithrombotics.log
+Successful runs: 3; errors: 0
+Grade distribution: FAIL=2, PASS_WITH_MINOR=1
+antithrombotic_therapy citation_count min/median/max: 8/12/12; distinct queries: 1; runs missing: 0
+clti citation_count min/median/max: 12/12/12; distinct queries: 1; runs missing: 0
+Distinct citation queries observed: 1
+### b4-batch_s5_iliofemoral_dvt_recent_surgery.log
+Successful runs: 3; errors: 0
+Grade distribution: FAIL=1, PASS_WITH_MINOR=2
+antithrombotic_therapy citation_count min/median/max: 7/8/11; distinct queries: 2; runs missing: 0
+venous_thrombosis citation_count min/median/max: 8/9/12; distinct queries: 2; runs missing: 0
+Distinct citation queries observed: 2
+### b4-batch_s6_urgent_cea_af_apixaban.log
+Successful runs: 3; errors: 0
+Grade distribution: FAIL=3
+antithrombotic_therapy citation_count min/median/max: 6/7/9; distinct queries: 1; runs missing: 0
+carotid_vertebral citation_count min/median/max: 6/8/12; distinct queries: 1; runs missing: 0
+Distinct citation queries observed: 1
+### t4-aaa_evolving_context.log
+### t4-batch_c2_brachial_vein_compression.log
+Successful runs: 3; errors: 0
+Grade distribution: PASS_WITH_MINOR=3
+antithrombotic_therapy citation_count min/median/max: 10/10/10; distinct queries: 2; runs missing: 0
+venous_thrombosis citation_count min/median/max: 11/12/12; distinct queries: 2; runs missing: 0
+Distinct citation queries observed: 2
+### t4-batch_f1_clti_aps_warfarin.log
+Successful runs: 3; errors: 0
+Grade distribution: FAIL=2, PASS_WITH_MINOR=1
+antithrombotic_therapy citation_count min/median/max: 8/12/12; distinct queries: 1; runs missing: 0
+clti citation_count min/median/max: 12/12/12; distinct queries: 1; runs missing: 0
+Distinct citation queries observed: 1
+### t4-batch_f2_clti_itp_after_bypass.log
+Successful runs: 3; errors: 0
+Grade distribution: FAIL=3
+antithrombotic_therapy citation_count min/median/max: 8/8/12; distinct queries: 1; runs missing: 0
+clti citation_count min/median/max: 8/8/12; distinct queries: 1; runs missing: 0
+Distinct citation queries observed: 1
+### t4-batch_f4_aaa_clti_sepsis_anticoagulation.log
+Successful runs: 3; errors: 0
+Grade distribution: FAIL=1, PASS_WITH_MINOR=2
+abdominal_aortic_aneurysm citation_count min/median/max: 6/8/8; distinct queries: 1; runs missing: 0
+antithrombotic_therapy citation_count min/median/max: 6/7/7; distinct queries: 1; runs missing: 0
+clti citation_count min/median/max: 4/6/6; distinct queries: 1; runs missing: 0
+Distinct citation queries observed: 1
+### t4-batch_s2_post_vein_bypass_antithrombotics.log
+Successful runs: 2; errors: 1
+Grade distribution: FAIL=2
+antithrombotic_therapy citation_count min/median/max: 8/10/12; distinct queries: 1; runs missing: 0
+clti citation_count min/median/max: 8/10/12; distinct queries: 1; runs missing: 0
+Distinct citation queries observed: 1
+### t4-batch_s5_iliofemoral_dvt_recent_surgery.log
+Successful runs: 3; errors: 0
+Grade distribution: FAIL=1, PASS_WITH_MINOR=2
+antithrombotic_therapy citation_count min/median/max: 6/6/8; distinct queries: 2; runs missing: 0
+venous_thrombosis citation_count min/median/max: 6/6/8; distinct queries: 2; runs missing: 0
+Distinct citation queries observed: 2
+### t4-batch_s6_urgent_cea_af_apixaban.log
+Successful runs: 3; errors: 0
+Grade distribution: FAIL=3
+antithrombotic_therapy citation_count min/median/max: 6/7/9; distinct queries: 1; runs missing: 0
+carotid_vertebral citation_count min/median/max: 6/8/12; distinct queries: 1; runs missing: 0
+Distinct citation queries observed: 1

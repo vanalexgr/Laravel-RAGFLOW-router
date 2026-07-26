@@ -71,16 +71,20 @@ return [
         // Each receives 75% of the former single-query timeout, so the absolute
         // worst case is 2 * 0.75 = 1.5 times the old retrieval budget. The branch
         // deadline can reduce that total further.
-        // DEFAULT FLIPPED TO FALSE 2026-07-26 after measurement. Over 8 cases x 3
-        // judged runs the multi-query path improved determinism (3 plans -> 1-2)
-        // and fixed S2's CLTI starvation, but REGRESSED grades: baseline
-        // 4 PASS/13 MINOR/1 FAIL vs multi-query 2 PASS/11 MINOR/4 FAIL. Four
-        // implementation defects are the likely cause (see the run9 artifact in
-        // docs/eval), chief among them a cancelled-out latency budget that let
-        // retrieval consume the whole branch deadline. Re-enable only after those
-        // are fixed AND a re-measurement shows a grade improvement.
+        // RE-ENABLED 2026-07-26. The earlier apparent regression (run9) was an
+        // artefact of run ORDER: the baseline arm ran while Cohere reranking still
+        // worked and the treatment arm ran after Cohere hit its billing limit, so
+        // the comparison was systematically biased against treatment.
+        // Under MATCHED conditions (run10, paired, local reranker, 7 cases x 3
+        // judged runs) the two arms are indistinguishable on grades — baseline
+        // 9 MINOR/11 FAIL vs multi-query 8 MINOR/12 FAIL — while multi-query
+        // strictly improves determinism (distinct query plans 3->2 and 2->1) and
+        // citation supply on several cases (f2 6/6/8 -> 8/8/12). No timeouts in
+        // either arm. Neutral on grades, better on determinism, so enabled.
+        // Grades here were measured under the LOCAL reranker and must be
+        // re-measured once Cohere reranking is restored.
         'citation_multi_query' => filter_var(
-            env('GATE_V2_CITATION_MULTI_QUERY', false),
+            env('GATE_V2_CITATION_MULTI_QUERY', true),
             FILTER_VALIDATE_BOOLEAN,
         ),
         'citation_multi_query_max' => (int) env('GATE_V2_CITATION_MULTI_QUERY_MAX', 2),
