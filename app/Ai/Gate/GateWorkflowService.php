@@ -11,6 +11,7 @@ use App\Ai\Gate\Retrieval\GateChunkCleaner;
 use App\Ai\Gate\Retrieval\GateEvidenceQuota;
 use App\Ai\Gate\Retrieval\GateRetrievalQueryBuilder;
 use App\Ai\Gate\Routing\OrientRoutingPriorService;
+use App\Ai\Gate\State\ShadowStateRecorder;
 use App\Services\PHIScrubberService;
 use Illuminate\Support\Facades\Concurrency;
 use Illuminate\Support\Facades\Log;
@@ -372,12 +373,38 @@ final class GateWorkflowService
             $turn,
             $priorState,
         );
+        $this->recordShadowState($turn, $priorState, $response);
         $this->record('orient', $started, [
             'mode' => $response['mode'] ?? null,
             'guidelines' => $response['candidate_guidelines'],
         ]);
 
         return $response;
+    }
+
+    /**
+     * Phase 1 is deliberately fail-open and observational. Nothing returned by
+     * the shadow recorder is assigned to Orient or any downstream input.
+     *
+     * @param array<string, mixed> $priorState
+     * @param array<string, mixed> $orient
+     */
+    private function recordShadowState(string $turn, array $priorState, array $orient): void
+    {
+        if (config('gate-state.shadow_enabled', false) !== true) {
+            return;
+        }
+
+        try {
+            $detail = (new ShadowStateRecorder)->record($turn, $priorState, $orient);
+            $this->record('state_ledger_shadow', 0, $detail);
+        } catch (Throwable $exception) {
+            // Shadow infrastructure must never change the clinical pipeline.
+            $this->record('state_ledger_shadow', 0, [
+                'recorded' => false,
+                'error_type' => $exception::class,
+            ]);
+        }
     }
 
     /**
