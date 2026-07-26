@@ -56,6 +56,7 @@ final class GateVarianceSummary
             'grade' => $result['grade'] ?? null,
             'branches' => $branches,
             'orient' => [
+                'patient_model' => (array) ($output['patient_model'] ?? $state['patient_model'] ?? []),
                 'must_include_terms' => array_values((array) ($state['must_include_terms'] ?? [])),
                 'expansion_terms' => array_values((array) ($state['expansion_terms'] ?? [])),
                 'interpretation_terms' => array_values((array) ($state['interpretation_terms'] ?? [])),

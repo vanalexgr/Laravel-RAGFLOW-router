@@ -38,6 +38,8 @@ final class GateWorkflowService
 
     private bool $deadlineActive = false;
 
+    private string $rawTurnText = '';
+
     public function __construct(
         private readonly PreOrientGuardService $guard,
         private readonly OrientRoutingPriorService $routing,
@@ -76,8 +78,17 @@ final class GateWorkflowService
         $this->deadlineActive = false;
 
         [$turn, $priorState] = $this->deidentify($turn, $priorState);
+        $this->rawTurnText = $this->accumulateRawTurnText($turn, $priorState);
 
         return $this->execute($turn, $priorState, $progress ?? new NullGateProgress);
+    }
+
+    /** @param array<string, mixed> $priorState */
+    private function accumulateRawTurnText(string $turn, array $priorState): string
+    {
+        $priorTurns = trim((string) ($priorState['raw_turn_text'] ?? ''));
+
+        return $priorTurns === '' ? $turn : $priorTurns."\n".$turn;
     }
 
     /**
@@ -337,6 +348,7 @@ final class GateWorkflowService
                     ),
                 )),
                 'candidate_guidelines' => $bestCandidate['orient']['candidate_guidelines'],
+                'raw_turn_text' => $this->rawTurnText,
                 'turn_index' => (int) ($priorState['turn_index'] ?? 0) + 1,
                 'version' => (int) ($priorState['version'] ?? 0) + 1,
             ],
@@ -724,6 +736,7 @@ final class GateWorkflowService
                 'provenance' => $orient['provenance'],
                 'open_questions' => $orient['open_questions'],
                 'candidate_guidelines' => $orient['candidate_guidelines'],
+                'raw_turn_text' => $this->rawTurnText,
                 'turn_index' => (int) ($priorState['turn_index'] ?? 0) + 1,
                 'version' => (int) ($priorState['version'] ?? 0) + 1,
             ],
@@ -907,7 +920,11 @@ final class GateWorkflowService
      */
     private function serializeRetrievalQuery(array $orient, array $issues): array
     {
-        return ($this->queryBuilder ?? new GateRetrievalQueryBuilder)->build($orient, $issues);
+        return ($this->queryBuilder ?? new GateRetrievalQueryBuilder)->build(
+            $orient,
+            $issues,
+            $this->rawTurnText,
+        );
     }
 
     /**

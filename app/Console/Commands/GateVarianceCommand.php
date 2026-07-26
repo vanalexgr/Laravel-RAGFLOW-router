@@ -134,6 +134,14 @@ final class GateVarianceCommand extends Command
         }
 
         $this->line('  grade='.($record['grade'] ?? 'NOT_JUDGED'));
+        $patientModelText = json_encode(
+            $record['orient']['patient_model'] ?? [],
+            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
+        ) ?: '';
+        $this->line('  Orient vein-bypass signal='.(preg_match(
+            '/\bvein\b.{0,24}\bbypass\b|\bbypass\b.{0,24}\bvein\b|\bvein\s+(?:bk|below[- ]knee)\s+bypass\b/iu',
+            $patientModelText,
+        ) === 1 ? 'yes' : 'no'));
         foreach ((array) $record['branches'] as $branch => $metrics) {
             $this->line(sprintf(
                 '  %s citations=%d available=%d narrative=%d query_chars=%d top_k=%d',

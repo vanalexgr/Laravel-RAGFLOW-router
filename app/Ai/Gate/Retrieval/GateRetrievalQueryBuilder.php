@@ -28,7 +28,7 @@ final class GateRetrievalQueryBuilder
      *   citation_core_queries: array<int, string>
      * }
      */
-    public function build(array $orient, array $issues = []): array
+    public function build(array $orient, array $issues = [], string $rawTurnText = ''): array
     {
         $patientModel = (array) ($orient['patient_model'] ?? []);
         $coreQuestion = trim((string) ($orient['core_question'] ?? ''));
@@ -55,7 +55,11 @@ final class GateRetrievalQueryBuilder
             // planner marked mandatory must survive, not be truncated away.
             $this->terms($orient, ['must_include_terms', 'expansion_terms', 'interpretation_terms']),
         );
-        $multiQuery = $this->buildCitationQueries($patientModel, (array) ($orient['must_include_terms'] ?? []));
+        $multiQuery = $this->buildCitationQueries(
+            $patientModel,
+            (array) ($orient['must_include_terms'] ?? []),
+            $rawTurnText,
+        );
 
         return [
             'narrative' => implode("\n", $shared),
@@ -71,8 +75,10 @@ final class GateRetrievalQueryBuilder
     }
 
     /**
-     * Build an immutable deterministic core from structured case fields, then
-     * append (never concatenate into the core) at most two Orient terms.
+     * Build an immutable deterministic core from both structured case fields and
+     * the accumulated raw turns, then append (never concatenate into the core) at
+     * most two Orient terms. The raw-turn source is guarded against negation and
+     * family attribution before it is unioned with the structured source.
      *
      * The bridge currently has no citation-query batch input. The sequential
      * fallback is therefore capped at two queries; see RetrieveEsvsSnippetsTool
@@ -83,25 +89,41 @@ final class GateRetrievalQueryBuilder
      * @param  array<int, mixed>  $mustIncludeTerms
      * @return array{queries: array<int, string>, core: array<int, string>}
      */
-    public function buildCitationQueries(array $patientModel, array $mustIncludeTerms = []): array
+    public function buildCitationQueries(
+        array $patientModel,
+        array $mustIncludeTerms = [],
+        string $rawTurnText = '',
+    ): array
     {
         $maxQueries = max(2, min(4, (int) config('gate-v2.retrieval.citation_multi_query_max', 2)));
         $fieldText = $this->structuredCitationText($patientModel);
         $lower = mb_strtolower($fieldText);
-        $anchors = $this->caseAnchorTerms($fieldText);
+        $anchors = array_values(array_unique(array_merge(
+            $this->caseAnchorTerms($fieldText),
+            $this->guardedCaseAnchorTerms($rawTurnText),
+        )));
         $core = [];
 
-        $hasVeinBypass = preg_match('/\bvein\b.{0,24}\bbypass\b|\bbypass\b.{0,24}\bvein\b/iu', $fieldText) === 1
-            || preg_match('/\bvein\s+(?:bk|below[- ]knee)\s+bypass\b/iu', $fieldText) === 1;
+        $veinBypassPattern = '/\bvein\b.{0,24}\bbypass\b|\bbypass\b.{0,24}\bvein\b|\bvein\s+(?:bk|below[- ]knee)\s+bypass\b/iu';
+        $hasVeinBypass = preg_match($veinBypassPattern, $fieldText) === 1
+            || $this->hasGuardedTranscriptMatch($veinBypassPattern, $rawTurnText);
+        $hasBypass = preg_match('/\bbypass\b/iu', $fieldText) === 1
+            || $this->hasGuardedTranscriptMatch('/\bbypass\b/iu', $rawTurnText);
         if ($hasVeinBypass) {
             $core[] = 'antithrombotic therapy after vein bypass';
-        } elseif (preg_match('/\bbypass\b/iu', $fieldText) === 1) {
+        } elseif ($hasBypass) {
             $core[] = 'antithrombotic therapy after bypass';
         }
 
         $hasLimbIschaemia = in_array('limb', $anchors, true)
-            || preg_match('/\b(?:lower\s+limb|peripheral arterial disease|ischemi|ischaemi)\b/iu', $fieldText) === 1;
-        if ($hasLimbIschaemia && ($hasVeinBypass || str_contains($lower, 'revascular'))) {
+            || preg_match('/\b(?:lower\s+limb|peripheral arterial disease|ischemi|ischaemi)\b/iu', $fieldText) === 1
+            || $this->hasGuardedTranscriptMatch(
+                '/\b(?:lower\s+limb|peripheral arterial disease|ischemi|ischaemi)\b/iu',
+                $rawTurnText,
+            );
+        $hasRevascularisation = str_contains($lower, 'revascular')
+            || $this->hasGuardedTranscriptMatch('/\brevascular/iu', $rawTurnText);
+        if ($hasLimbIschaemia && ($hasVeinBypass || $hasRevascularisation)) {
             $core[] = 'critical limb-threatening ischaemia revascularisation';
         } elseif (in_array('carotid', $anchors, true)) {
             $core[] = 'carotid stenosis revascularisation';
@@ -132,6 +154,46 @@ final class GateRetrievalQueryBuilder
         }
 
         return ['queries' => $queries, 'core' => $core];
+    }
+
+    /** @return array<int, string> */
+    private function guardedCaseAnchorTerms(string $rawTurnText): array
+    {
+        $matched = [];
+        foreach (self::ANCHOR_PATTERNS as $label => $pattern) {
+            if ($this->hasGuardedTranscriptMatch($pattern, $rawTurnText)) {
+                $matched[] = $label;
+            }
+        }
+
+        return $matched;
+    }
+
+    /**
+     * A raw-turn term is usable only when no negation or family-attribution cue
+     * occurs in the approximately 40 characters immediately before the match.
+     */
+    private function hasGuardedTranscriptMatch(string $pattern, string $rawTurnText): bool
+    {
+        if ($rawTurnText === '') {
+            return false;
+        }
+
+        preg_match_all($pattern, $rawTurnText, $matches, PREG_OFFSET_CAPTURE);
+        foreach ((array) ($matches[0] ?? []) as $match) {
+            $byteOffset = (int) ($match[1] ?? 0);
+            $prefix = substr($rawTurnText, 0, $byteOffset);
+            $guardWindow = mb_substr($prefix, -40);
+            $isSuppressed = preg_match(
+                '/\b(?:no|not|without|denies|negative\s+for|ruled\s+out|family\s+history\s+of|father|mother|sibling)\b.{0,40}$/isu',
+                $guardWindow,
+            ) === 1;
+            if (! $isSuppressed) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

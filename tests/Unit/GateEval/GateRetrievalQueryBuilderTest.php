@@ -137,6 +137,49 @@ class GateRetrievalQueryBuilderTest extends TestCase
         $this->assertSame($expected, $second['citation_queries']);
     }
 
+    public function test_raw_turn_restores_vein_bypass_core_when_orient_drops_it(): void
+    {
+        $built = (new GateRetrievalQueryBuilder)->buildCitationQueries(
+            ['lesion' => 'peripheral arterial disease'],
+            [],
+            'Clarifications: vein BK bypass, rest pain pre-op, no high bleeding risk.',
+        );
+
+        $this->assertSame([
+            'antithrombotic therapy after vein bypass',
+            'critical limb-threatening ischaemia revascularisation',
+        ], $built['core']);
+    }
+
+    /**
+     * @dataProvider suppressedRawTurnProvider
+     */
+    public function test_raw_turn_does_not_anchor_negated_or_family_attributed_vein_bypass(
+        string $rawTurnText,
+    ): void {
+        $built = (new GateRetrievalQueryBuilder)->buildCitationQueries([], [], $rawTurnText);
+
+        $this->assertNotContains('antithrombotic therapy after vein bypass', $built['core']);
+        $this->assertNotContains('antithrombotic therapy after bypass', $built['core']);
+    }
+
+    /** @return array<string, array{string}> */
+    public static function suppressedRawTurnProvider(): array
+    {
+        return [
+            'no' => ['The patient has no vein bypass.'],
+            'not' => ['This was not a vein bypass.'],
+            'without' => ['The patient presented without a vein bypass.'],
+            'denies' => ['The patient denies a vein bypass.'],
+            'negative for' => ['The history is negative for vein bypass.'],
+            'ruled out' => ['The team ruled out a vein bypass.'],
+            'family history of' => ['There is a family history of vein bypass.'],
+            'father' => ['Her father had a vein bypass.'],
+            'mother' => ['His mother underwent a vein bypass.'],
+            'sibling' => ['A sibling previously had a vein bypass.'],
+        ];
+    }
+
     public function test_every_multi_query_obeys_the_per_query_character_cap(): void
     {
         config()->set('gate-v2.retrieval.citation_multi_query_max_chars', 42);
