@@ -18,7 +18,48 @@ class GateEvalRunner
      */
     public function run(array $scenarios, GateSubject $subject, GateJudge $judge): array
     {
-        if ($subject->identity() === $judge->identity()) {
+        return $this->execute($scenarios, $subject, $judge, true);
+    }
+
+    /**
+     * Run the same subject and deterministic-check path as an eval without
+     * paying for or depending on an external judgment.
+     *
+     * @param  array<int, array<string, mixed>>  $scenarios
+     * @return array<string, mixed>
+     */
+    public function runUnjudged(array $scenarios, GateSubject $subject): array
+    {
+        return $this->execute($scenarios, $subject, null, false);
+    }
+
+    /**
+     * Run a judged eval without writing the normal per-eval artifact. This is
+     * used when a parent harness owns the distribution artifact.
+     *
+     * @param  array<int, array<string, mixed>>  $scenarios
+     * @return array<string, mixed>
+     */
+    public function runJudgedWithoutArtifact(
+        array $scenarios,
+        GateSubject $subject,
+        GateJudge $judge,
+    ): array {
+        return $this->execute($scenarios, $subject, $judge, false);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $scenarios
+     * @return array<string, mixed>
+     */
+    private function execute(
+        array $scenarios,
+        GateSubject $subject,
+        ?GateJudge $judge,
+        bool $writeArtifact,
+    ): array
+    {
+        if ($judge !== null && $subject->identity() === $judge->identity()) {
             throw new RuntimeException('The external judge must not be the system-under-test model.');
         }
 
@@ -35,22 +76,26 @@ class GateEvalRunner
                     continue;
                 }
                 $checks = $this->deterministicChecks($turn['expected'], $output);
-                $judgment = $judge->judge($scenario, $turn, $output);
-                $grade = $judgment['grade'];
-                if (! isset(self::GRADE_RANK[$grade])) {
+                $judgment = $judge?->judge($scenario, $turn, $output);
+                $grade = $judgment['grade'] ?? null;
+                if ($grade !== null && ! isset(self::GRADE_RANK[$grade])) {
                     throw new RuntimeException("Judge returned unknown grade: {$grade}");
                 }
 
                 $baseline = $turn['expected']['baseline_grade'] ?? null;
-                $noDrop = $baseline === null || self::GRADE_RANK[$grade] >= self::GRADE_RANK[$baseline];
-                if ($baseline !== null) {
+                $noDrop = $grade === null
+                    ? null
+                    : ($baseline === null || self::GRADE_RANK[$grade] >= self::GRADE_RANK[$baseline]);
+                if ($baseline !== null && $grade !== null) {
                     $noDropTotal++;
                     $noDropPassed += (int) $noDrop;
                 }
 
                 $routingTotal++;
                 $routingPassed += (int) $checks['routing'];
-                $totals[$grade]++;
+                if ($grade !== null) {
+                    $totals[$grade]++;
+                }
 
                 $results[] = [
                     'scenario_id' => $scenario['id'],
@@ -68,7 +113,7 @@ class GateEvalRunner
 
         $scorecard = [
             'subject' => $subject->identity(),
-            'judge' => $judge->identity(),
+            'judge' => $judge?->identity(),
             'scenarios' => count($scenarios),
             'turns' => count($results),
             'grades' => $totals,
@@ -84,12 +129,14 @@ class GateEvalRunner
             'results' => $results,
         ];
 
-        $path = trim((string) config('gate-eval.runs_path'), '/').'/'.now()->format('Ymd_His_u').'.json';
-        Storage::disk((string) config('gate-eval.runs_disk'))->put(
-            $path,
-            json_encode($run, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
-        );
-        $run['artifact'] = $path;
+        if ($writeArtifact) {
+            $path = trim((string) config('gate-eval.runs_path'), '/').'/'.now()->format('Ymd_His_u').'.json';
+            Storage::disk((string) config('gate-eval.runs_disk'))->put(
+                $path,
+                json_encode($run, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+            );
+            $run['artifact'] = $path;
+        }
 
         return $run;
     }
