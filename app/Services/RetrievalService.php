@@ -2229,7 +2229,9 @@ class RetrievalService
             }
 
             if ($allowedDocumentIds === []) {
-                return [];
+                // No configured IDs means the authoritative check cannot make a
+                // provenance decision. Preserve evidence instead of deleting it.
+                return $rawChunks;
             }
 
             return array_values(array_filter(
@@ -2240,8 +2242,14 @@ class RetrievalService
                     }
                     $documentId = $chunk['document_id'] ?? $chunk['doc_id'] ?? $chunk['DocumentID'] ?? null;
 
-                    return is_scalar($documentId)
-                        && isset($allowedDocumentIds[trim((string) $documentId)]);
+                    // Fail closed when a supplied ID is outside the selected
+                    // guideline scope. Fail open when the bridge omitted the ID:
+                    // absence is a deployment gap, not proof of misattribution.
+                    if (! is_scalar($documentId) || trim((string) $documentId) === '') {
+                        return true;
+                    }
+
+                    return isset($allowedDocumentIds[trim((string) $documentId)]);
                 },
             ));
         }

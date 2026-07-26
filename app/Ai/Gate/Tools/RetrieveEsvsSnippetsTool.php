@@ -8,6 +8,7 @@ use App\Facades\RAGFlow as RAGFlowFacade;
 use App\Services\RAGFlow\RAGFlowClient;
 use App\Services\RetrievalService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\Support\Facades\Log;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
@@ -226,26 +227,64 @@ final class RetrieveEsvsSnippetsTool implements Tool
         $provenanceMismatch = 0;
         $provenanceUnverifiable = 0;
         $guidelineKeyByDocumentId = $this->guidelineKeyByDocumentId();
+        $citationChunks = (array) ($result['llm_citation_chunks'] ?? []);
+        $citationsWithDocumentId = count(array_filter(
+            $citationChunks,
+            static function (mixed $chunk): bool {
+                $documentId = is_array($chunk)
+                    ? ($chunk['document_id'] ?? $chunk['doc_id'] ?? $chunk['DocumentID'] ?? null)
+                    : null;
+
+                return is_scalar($documentId) && trim((string) $documentId) !== '';
+            },
+        ));
+        $unlabelledCitationCount = count($citationChunks) - $citationsWithDocumentId;
+        $provenanceGuardDegraded = $citationChunks !== [] && $citationsWithDocumentId === 0;
+        if ($unlabelledCitationCount > 0) {
+            if ($provenanceGuardDegraded) {
+                Log::warning(
+                    'Gate citation provenance guard degraded to pass-through: bridge does not supply document IDs.',
+                    [
+                        'requested_guideline' => $guidelineKey,
+                        'citation_count' => count($citationChunks),
+                    ],
+                );
+            } else {
+                Log::warning(
+                    'Gate citation provenance is unverifiable for chunks without document IDs; retaining them fail-open.',
+                    [
+                        'requested_guideline' => $guidelineKey,
+                        'unverifiable_count' => $unlabelledCitationCount,
+                    ],
+                );
+            }
+        }
         foreach (['llm_citation_chunks', 'llm_narrative_chunks'] as $bucket) {
             $bucketName = $bucket === 'llm_citation_chunks' ? 'citation' : 'narrative';
             foreach ((array) ($result[$bucket] ?? []) as $chunk) {
                 $citationGuidelineKey = null;
+                $provenanceVerified = null;
                 if ($bucket === 'llm_citation_chunks') {
                     $documentId = is_array($chunk)
                         ? ($chunk['document_id'] ?? $chunk['doc_id'] ?? $chunk['DocumentID'] ?? null)
                         : null;
-                    $citationGuidelineKey = is_scalar($documentId)
-                        ? ($guidelineKeyByDocumentId[trim((string) $documentId)] ?? null)
-                        : null;
-                    if ($citationGuidelineKey === null) {
-                        $provenanceUnverifiable++;
+                    $documentId = is_scalar($documentId) ? trim((string) $documentId) : '';
+                    $citationGuidelineKey = $documentId === ''
+                        ? null
+                        : ($guidelineKeyByDocumentId[$documentId] ?? null);
 
-                        continue;
-                    }
-                    if ($citationGuidelineKey !== $guidelineKey) {
+                    // Fail closed only on positive evidence of misattribution: a
+                    // known document ID that maps to another guideline. Missing
+                    // or unknown IDs are a deployment/metadata gap, so retain the
+                    // evidence fail-open without stamping it as verified.
+                    if ($citationGuidelineKey !== null && $citationGuidelineKey !== $guidelineKey) {
                         $provenanceMismatch++;
 
                         continue;
+                    }
+                    $provenanceVerified = $citationGuidelineKey === $guidelineKey;
+                    if (! $provenanceVerified) {
+                        $provenanceUnverifiable++;
                     }
                 }
                 $cleaned = ($this->chunkCleaner ?? new GateChunkCleaner)->clean($chunk, 3000);
@@ -269,7 +308,9 @@ final class RetrieveEsvsSnippetsTool implements Tool
                             isset($metadata['evidence_level']) ? 'Level '.$metadata['evidence_level'] : null,
                             $citationGuidelineKey,
                         ]);
-                        $text = '['.implode(' | ', $identity)."]\n".$text;
+                        if ($identity !== []) {
+                            $text = '['.implode(' | ', $identity)."]\n".$text;
+                        }
                     }
                     $byBucket[$bucketName][] = [
                         'text' => $text,
@@ -279,6 +320,7 @@ final class RetrieveEsvsSnippetsTool implements Tool
                             ?? (is_array($chunk) ? ($chunk['guideline'] ?? $chunk['source_guideline'] ?? null) : null)
                             ?? $guidelineKey,
                         'requested_guideline' => $guidelineKey,
+                        'provenance_verified' => $provenanceVerified,
                         'metadata' => $cleaned['metadata'],
                         'raw_chars' => $cleaned['raw_chars'],
                         'clean_chars' => $cleaned['clean_chars'],
@@ -320,6 +362,7 @@ final class RetrieveEsvsSnippetsTool implements Tool
                 'citation_query_count' => count($citationQueries),
                 'provenance_mismatch' => $provenanceMismatch,
                 'provenance_unverifiable' => $provenanceUnverifiable,
+                'provenance_guard_degraded' => $provenanceGuardDegraded,
                 'max_similarity' => $similarities === [] ? null : max($similarities),
                 'duration_ms' => (int) ($result['duration_ms'] ?? 0),
                 'signal_ratio' => $this->weightedSignalRatio($snippets),

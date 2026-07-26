@@ -63,6 +63,7 @@ class RetrieveEsvsSnippetsToolTest extends TestCase
         // Bucket labelling must survive into the snippet and the diagnostics, or
         // the downstream citation reservation has nothing to reserve on.
         $this->assertSame('citation', $result['snippets'][0]['bucket']);
+        $this->assertTrue($result['snippets'][0]['provenance_verified']);
         $this->assertSame(1, $result['diagnostics']['citation_count']);
         $this->assertSame(0, $result['diagnostics']['narrative_available']);
     }
@@ -227,7 +228,7 @@ class RetrieveEsvsSnippetsToolTest extends TestCase
         );
     }
 
-    public function test_unlabelled_citation_is_discarded_as_unverifiable(): void
+    public function test_unlabelled_citation_is_kept_and_counted_as_unverifiable(): void
     {
         $retrieval = new class extends RetrievalService
         {
@@ -247,9 +248,78 @@ class RetrieveEsvsSnippetsToolTest extends TestCase
 
         $result = (new RetrieveEsvsSnippetsTool($retrieval))->retrieve('clti', 'q');
 
-        $this->assertSame([], $result['snippets']);
+        $this->assertCount(1, $result['snippets']);
+        $this->assertSame(
+            'Recommendation with no document identity',
+            $result['snippets'][0]['text'],
+        );
+        $this->assertFalse($result['snippets'][0]['provenance_verified']);
         $this->assertSame(0, $result['diagnostics']['provenance_mismatch']);
         $this->assertSame(1, $result['diagnostics']['provenance_unverifiable']);
+        $this->assertTrue($result['diagnostics']['provenance_guard_degraded']);
+    }
+
+    public function test_one_unlabelled_citation_is_kept_alongside_a_verified_match(): void
+    {
+        $retrieval = new class extends RetrievalService
+        {
+            public function retrieve(
+                string $question,
+                array $history = [],
+                ?array $requestedKeys = null,
+                ?string $citationQuestion = null,
+            ): array {
+                return [
+                    'duration_ms' => 1,
+                    'llm_citation_chunks' => [
+                        [
+                            'text' => 'rec_id:1; rec_text_verbatim:Verified CLTI recommendation',
+                            'document_id' => '31f83c34052911f18ceb32d89964721d',
+                        ],
+                        ['text' => 'Recommendation with no document identity'],
+                    ],
+                    'llm_narrative_chunks' => [],
+                ];
+            }
+        };
+
+        $result = (new RetrieveEsvsSnippetsTool($retrieval))->retrieve('clti', 'q');
+
+        $this->assertCount(2, $result['snippets']);
+        $this->assertSame([true, false], array_column($result['snippets'], 'provenance_verified'));
+        $this->assertSame(0, $result['diagnostics']['provenance_mismatch']);
+        $this->assertSame(1, $result['diagnostics']['provenance_unverifiable']);
+        $this->assertFalse($result['diagnostics']['provenance_guard_degraded']);
+    }
+
+    public function test_all_unlabelled_citations_degrade_guard_to_pass_through(): void
+    {
+        $retrieval = new class extends RetrievalService
+        {
+            public function retrieve(
+                string $question,
+                array $history = [],
+                ?array $requestedKeys = null,
+                ?string $citationQuestion = null,
+            ): array {
+                return [
+                    'duration_ms' => 1,
+                    'llm_citation_chunks' => [
+                        ['text' => 'First unlabelled recommendation'],
+                        ['text' => 'Second unlabelled recommendation'],
+                    ],
+                    'llm_narrative_chunks' => [],
+                ];
+            }
+        };
+
+        $result = (new RetrieveEsvsSnippetsTool($retrieval))->retrieve('clti', 'q');
+
+        $this->assertCount(2, $result['snippets']);
+        $this->assertSame(2, $result['diagnostics']['citation_available']);
+        $this->assertSame(0, $result['diagnostics']['provenance_mismatch']);
+        $this->assertSame(2, $result['diagnostics']['provenance_unverifiable']);
+        $this->assertTrue($result['diagnostics']['provenance_guard_degraded']);
     }
 
     public function test_legacy_raw_filter_behavior_is_unchanged_when_authoritative_flag_is_off(): void
@@ -272,7 +342,7 @@ class RetrieveEsvsSnippetsToolTest extends TestCase
         $this->assertSame([$unlabelled], $retrieval->filterForTest([$unlabelled]));
     }
 
-    public function test_authoritative_raw_filter_requires_selected_document_id(): void
+    public function test_authoritative_raw_filter_rejects_mismatch_but_keeps_missing_id(): void
     {
         config()->set('ragflow.retrieval.authoritative_citation_document_scope', true);
         $retrieval = new class extends RetrievalService
@@ -297,7 +367,10 @@ class RetrieveEsvsSnippetsToolTest extends TestCase
         ];
         $unlabelled = ['content' => 'Recommendation with sparse metadata'];
 
-        $this->assertSame([$matching], $retrieval->filterForTest([$matching, $wrong, $unlabelled]));
+        $this->assertSame(
+            [$matching, $unlabelled],
+            $retrieval->filterForTest([$matching, $wrong, $unlabelled]),
+        );
     }
 
     public function test_citation_formatter_propagates_canonical_document_id(): void
