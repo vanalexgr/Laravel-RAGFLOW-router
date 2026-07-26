@@ -5,6 +5,18 @@ Single source of truth for picking this work back up (from any machine). The Cla
 
 Branch: **`claude/prototyping-summary-d597c2`** (also on origin). Pull it and read this file first.
 
+## ▶ THE PLAN IS NOW `docs/DEVELOPMENT_PLAN.md`
+
+Read that first. It carries the governing principle, what the philosophy change retired, the
+evaluation-model change (the clinician is ground truth; the LLM judge is demoted to screening), the
+12-case clinician review round with its scoring sheet, and the reordered backlog. The sections below
+remain as the state and trap record.
+
+**Stage 1 on resume: the clinician review round.** They have offered to review and score answers
+directly. One run per case, no LLM judge, dev cache on.
+
+---
+
 ## ⚑ PRODUCT PHILOSOPHY — settled by the clinician 2026-07-26. Read before any answer-quality work.
 
 The app is meant to **surface the available evidence so the clinician stays on top of the decision**,

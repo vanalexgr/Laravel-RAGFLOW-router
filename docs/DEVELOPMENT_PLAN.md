@@ -1,0 +1,185 @@
+# Development plan — gate v2
+
+Supersedes the priority ordering in `docs/CODEX_RUN7_BACKLOG.md` and
+`docs/CODEX_RUN8_ABLATION.md`. Those remain valid as records of what was measured.
+
+Written 2026-07-26, after the clinician reviewed a live answer and settled the product
+philosophy. Development is paused until usage credits reset; this is the plan to execute on
+resume.
+
+---
+
+## 0. Governing principle
+
+**The app surfaces the available evidence so the clinician stays on top of the decision.
+It is not meant to produce a single deterministic recommendation.**
+
+Clinician, reviewing the S2 answer that offers VKA, aspirin, and aspirin+rivaroxaban without
+ranking them:
+
+> "The scope of the app is less to provide extremely deterministic answers and more to show the
+> available evidence to the user. The user clinician should be on top of decisions and this
+> answer leaves him on top of decision. It offers good support."
+
+Clinical basis they gave: VKA has been standard for years where bypass patency is a concern;
+aspirin alone is standard for a good bypass with good outflow; rivaroxaban+aspirin is the newer
+entry for difficult cases and many would choose it for patient convenience and lower bleeding
+risk. There is genuinely no single correct regimen, so any rubric demanding one is
+over-specified.
+
+Everything below derives from this.
+
+---
+
+## 1. What this retires or reverses
+
+| Previously treated as | Now |
+|---|---|
+| "Excessive deference / won't commit" is a top failure class | **Not a defect.** Offering options with class and level, and leaving the call to the clinician, is the product working. This framing came from an external critique and was carried unexamined for a full day. |
+| Build the decision-composition contract as designed | **Do not.** Keep the completeness and rule-based contraindication checks in `app/Ai/Gate/Decision/`. Drop the mandated-commitment fields and the deferral-code policing. |
+| Off-topic retrieved recommendations are a precision failure | **Acceptable, even welcome.** They show what was processed and the clinician can click through; labelling them off-topic improves the reference list. Only ensure they never crowd out on-topic ones. |
+| Interpretive-frame content from model training is a grounding leak | **Fine, provided it is flagged as non-ESVS.** This makes accurate provenance labelling load-bearing rather than cosmetic. |
+| FAIL counts measure system quality | **Suspect.** See section 2. |
+| Clickable citations are presentation polish (R7.8/R7.9) | **Priority feature.** The clinician wants to click through. |
+
+---
+
+## 2. Evaluation model change — the clinician is ground truth
+
+The external GPT-5 judge graded the S2 answer FAIL for not committing to aspirin+rivaroxaban.
+The clinician graded the same answer as good support. **The judge was wrong, because its rubric
+encodes a product philosophy we have now rejected.**
+
+Consequences:
+
+- The LLM judge is demoted from ground truth to a **screening tool**. Useful for catching
+  contract and mechanical failures at volume; not authoritative on clinical quality.
+- Some meaningful share of the 11–12 FAILs in the last paired run may be the rubric penalising
+  correct behaviour. That is a **third candidate cause** for the unexplained zero-PASS result,
+  alongside the reranker switch and the intervening code changes.
+- **Do not tune anything against those grades** until the rubric is rewritten or the clinician
+  has scored the same cases.
+- Rewriting the rubric is itself now a task (section 4, item 2).
+
+---
+
+## 3. Stage 1 on resume — clinician review round
+
+The clinician has offered to review and score answers directly. This is the primary evaluation
+gate from here.
+
+### Mechanics
+
+1. Run each case **once** through `php artisan gate:probe2 --scenario=<id> --json` with
+   `GATE_V2_PERSIST_SNIPPET_DIGESTS=true`. No LLM judge — the clinician scores. This removes
+   judge cost entirely.
+2. Enable `GATE_V2_RETRIEVAL_DEV_CACHE_TTL=3600` for the batch. Rerank is billed per call, so
+   the cache is the only real cost lever.
+3. Export one review packet per case in the format that worked for S2: question as asked,
+   patient model extracted, both answer frames verbatim, every snippet with recommendation id /
+   class / level / source / relevance mark, and the retrieval table. Render as a page — the
+   clinician engaged substantively with the rendered version, not the raw markdown.
+4. Deliver the packets plus the scoring sheet below. Do not pre-judge; present the output and
+   the flagged uncertainties, not a verdict.
+
+### Proposed case set (12)
+
+Chosen to span the failure classes rather than to flatter the system.
+
+| # | Case | Why it is in the set |
+|---|---|---|
+| 1 | `batch_s2_post_vein_bypass_antithrombotics` | Anchor — already reviewed and judged good; detects regression |
+| 2 | `batch_s6_urgent_cea_af_apixaban` | Safety-critical; earlier flagged as possibly unsafe advice |
+| 3 | `batch_f5_urgent_cea_af_recent_gi_bleed` | Safety-critical; competing bleeding and stroke risk |
+| 4 | `batch_f2_clti_itp_after_bypass` | Interaction gap — thrombocytopenia modifies a standard regimen |
+| 5 | `batch_f1_clti_aps_warfarin` | Interaction gap — antiphospholipid syndrome |
+| 6 | `batch_f3_aaa_clti_sequencing` | Competing priorities, no direct sequencing recommendation |
+| 7 | `batch_f4_aaa_clti_sepsis_anticoagulation` | Three guidelines, sepsis dominance |
+| 8 | `batch_c3_carotid_near_occlusion_criteria` | Pure knowledge question, no patient |
+| 9 | `batch_c2_brachial_vein_compression` | Genuinely uncovered scenario |
+| 10 | `batch_s5_iliofemoral_dvt_recent_surgery` | Recent surgery modifies anticoagulation |
+| 11 | `batch_s4_symptomatic_carotid_web` | Rare entity, thin evidence |
+| 12 | `aaa_evolving_context` (all 3 turns) | **Multi-turn state.** The largest measured failure class and currently unmeasurable — see section 4, item 1 |
+
+### Scoring sheet — per case
+
+Kept short deliberately; a surgeon will not fill twenty fields per case. Clinical and
+mechanical dimensions are scored separately so a formatting miss never masks a clinical one.
+
+**Clinical (what matters)**
+
+| Item | Scale |
+|---|---|
+| Were the relevant recommendations surfaced? | none / some / all that matter |
+| Was anything clinically important **missing**? | free text |
+| Is anything stated **unsafe or misleading**? | no / minor / yes + free text |
+| Are class and evidence level correct as shown? | yes / no + which |
+| Does it leave you on top of the decision? | no / partly / yes |
+| Would you use this output in practice? | no / with edits / yes |
+
+**Mechanical (report separately, never averaged with the above)**
+
+| Item | Scale |
+|---|---|
+| Provenance correctly labelled (ESVS vs other guideline vs model interpretation)? | yes / no + which |
+| Any snippet truncated, garbled, or unusable? | count |
+| Patient facts carried correctly across turns (multi-turn cases only)? | yes / no + what was lost |
+
+**Free text:** anything the sheet does not capture.
+
+### Success criterion for the round
+
+Not a score threshold. The purpose is to find out **which of our remaining "defects" the
+clinician actually cares about**, and to replace the rubric with their judgement. Today proved
+that a full day can be spent optimising against the wrong target.
+
+---
+
+## 4. Backlog, reordered
+
+1. **Multi-turn review support.** `gate:variance` requires exactly one turn, so
+   `aaa_evolving_context` self-excludes and the largest failure class has never been measured.
+   `gate:probe2` may handle multi-turn — verify, and if not, add it. This blocks case 12 above.
+2. **Rewrite the eval rubric** to score evidence surfacing rather than single-regimen
+   commitment. Until then the LLM judge is screening only.
+3. **Clickable citations** (R7.8 / R7.9). Promoted at the clinician's request. Depends on the
+   labelled citation bucket, which now exists.
+4. **Fix provenance labelling.** The answer says "From the retrieved ESVS text" over four
+   snippets that came from Global Vascular Guidelines. If flagging is what makes interpretive
+   content acceptable, a wrong flag is load-bearing.
+5. **Fix class/level parsing.** Emits `Iib`, `Ila` and bare `2`. Matters more now that weighing
+   class and level is the clinician's job.
+6. **Matched reranker A/B** on identical code, Cohere versus local. Still the only way to
+   explain the zero-PASS collapse — but note grades are a suspect measure, so read it on
+   citation supply and relevance as well.
+7. **State ledger** (`gate-state.shadow_enabled`, currently off). Multi-turn state loss is
+   unaffected by the philosophy change and remains a genuine safety issue: a knowledge-question
+   interleave converted an asymptomatic aneurysm into a symptomatic one.
+8. **Decision contract, reduced scope.** Completeness and contraindication checks only.
+9. **Drop truncated snippets** before they reach the answer stage.
+10. Deferred: `similarity` scale is now correct but unvalidated against retrieval quality;
+    `filterRawChunksToSelectedGuidelines` remains a weak guard for the legacy adapter path.
+
+---
+
+## 5. Known defects, current
+
+- Provenance mislabel: GVG content presented as ESVS.
+- Class/level parsing garbled (`Iib`, `Ila`, `2`).
+- One narrative snippet arrived truncated mid-sentence and unusable.
+- Multi-turn state loss, including an asymptomatic → symptomatic contradiction.
+- The durable ledger event store is **unverified**: its test skips because the deployment host's
+  PHP has only the `mysql` PDO driver while `phpunit.xml` uses `sqlite::memory:`.
+- Synthesis is nondeterministic: identical evidence and identical upstream state produced
+  different grades. Lower priority under the new philosophy, but it affects reproducibility and
+  trust.
+
+## 6. Standing constraints
+
+- Rerank is billed **per call**, not per document. Lowering `top_k` saves nothing.
+  `GATE_V2_RETRIEVAL_DEV_CACHE_TTL` is the lever; never enable it for a latency or reliability
+  run.
+- Long measurements must run detached on the server and be polled; an MCP call dies at its idle
+  timeout.
+- Run paired arms in the same session. Run order confounded an entire measurement once already.
+- Every disposable checkout copies production `.env`. Remove it when finished.
