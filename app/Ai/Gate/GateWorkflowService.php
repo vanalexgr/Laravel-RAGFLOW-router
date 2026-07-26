@@ -383,11 +383,12 @@ final class GateWorkflowService
     }
 
     /**
-     * Phase 1 is deliberately fail-open and observational. Nothing returned by
-     * the shadow recorder is assigned to Orient or any downstream input.
+     * Register shadow persistence for response termination. It therefore runs
+     * after the answer has been produced and cannot consume the clinical
+     * deadline, mutate the returned trace, or feed any downstream stage.
      *
-     * @param array<string, mixed> $priorState
-     * @param array<string, mixed> $orient
+     * @param  array<string, mixed>  $priorState
+     * @param  array<string, mixed>  $orient
      */
     private function recordShadowState(string $turn, array $priorState, array $orient): void
     {
@@ -396,14 +397,27 @@ final class GateWorkflowService
         }
 
         try {
-            $detail = (new ShadowStateRecorder)->record($turn, $priorState, $orient);
-            $this->record('state_ledger_shadow', 0, $detail);
+            app()->terminating(function () use ($turn, $priorState, $orient): void {
+                try {
+                    (new ShadowStateRecorder)->record($turn, $priorState, $orient);
+                } catch (Throwable $exception) {
+                    $this->logShadowFailure($exception);
+                }
+            });
         } catch (Throwable $exception) {
-            // Shadow infrastructure must never change the clinical pipeline.
-            $this->record('state_ledger_shadow', 0, [
-                'recorded' => false,
+            $this->logShadowFailure($exception);
+        }
+    }
+
+    private function logShadowFailure(Throwable $exception): void
+    {
+        try {
+            Log::channel('retrieval')->error('[GATE STATE SHADOW] Recorder failed.', [
                 'error_type' => $exception::class,
+                'error_digest' => substr(hash('sha256', $exception->getMessage()), 0, 16),
             ]);
+        } catch (Throwable) {
+            // Logging is best-effort; shadow diagnostics must never escape.
         }
     }
 

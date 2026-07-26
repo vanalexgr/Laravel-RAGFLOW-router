@@ -201,6 +201,27 @@ final class DecisionContractTest extends TestCase
         $this->assertTrue($this->validator->validate($decision)->accepted());
     }
 
+    public function test_typed_legitimate_deferral_is_accepted_even_when_coverage_is_partial(): void
+    {
+        $decision = $this->decision([
+            'actionable_plan' => [
+                'timing' => 'EVIDENCE_ABSENT',
+                'pharmacotherapy_regimen' => 'EVIDENCE_ABSENT',
+                'what_not_to_do' => [],
+                'deferral_justification' => 'MULTISPECIALTY_CONFLICT',
+                'antithrombotic_combination_justification' => 'NOT_APPLICABLE',
+            ],
+            'evidence_status' => [
+                'coverage' => 'interaction_gap',
+                'core_question' => 'Treatment',
+                'covered_components' => ['Baseline pathway'],
+                'gap_summary' => 'The interaction cannot be resolved from the supplied evidence.',
+            ],
+        ]);
+
+        $this->assertTrue($this->validator->validate($decision)->accepted());
+    }
+
     public function test_long_term_anticoagulant_plus_antiplatelet_without_indication_is_flagged(): void
     {
         $decision = $this->decision([
@@ -214,6 +235,21 @@ final class DecisionContractTest extends TestCase
         ]);
 
         $this->assertRejectedWith($decision, 'UNJUSTIFIED_LONG_TERM_ANTICOAGULANT_ANTIPLATELET');
+    }
+
+    public function test_drug_specific_duration_does_not_invent_a_long_term_combination(): void
+    {
+        $decision = $this->decision([
+            'actionable_plan' => [
+                'timing' => 'After discharge.',
+                'pharmacotherapy_regimen' => 'Short-term apixaban, lifelong aspirin.',
+                'what_not_to_do' => ['Do not extend apixaban beyond its short course.'],
+                'deferral_justification' => 'NOT_DEFERRED',
+                'antithrombotic_combination_justification' => 'NOT_APPLICABLE',
+            ],
+        ]);
+
+        $this->assertTrue($this->validator->validate($decision)->accepted());
     }
 
     /**

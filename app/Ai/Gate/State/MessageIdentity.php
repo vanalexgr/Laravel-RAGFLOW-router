@@ -2,29 +2,30 @@
 
 namespace App\Ai\Gate\State;
 
-use DateTimeImmutable;
-
 final class MessageIdentity
 {
     public static function dedupeKey(
         string $conversationId,
         string $message,
         ?string $clientSuppliedId = null,
-        ?DateTimeImmutable $receivedAt = null,
+        ?int $turnIndex = null,
     ): string {
         if (trim((string) $clientSuppliedId) !== '') {
             return 'client:'.trim((string) $clientSuppliedId);
         }
 
-        // The approved design includes a minute bucket in its fallback. It
-        // limits false duplicate matches when identical text is intentionally
-        // sent again much later, while retries in the same minute still merge.
-        $minute = ($receivedAt ?? new DateTimeImmutable)->format('Y-m-d\TH:i');
+        // Without a stable client ID, only the caller's conversation-scoped
+        // monotonic turn index is sufficiently strong evidence of a retry.
+        // If neither exists, deliberately make the event unique: guessing a
+        // duplicate is less safe than processing a clinician turn twice.
+        if ($turnIndex === null || $turnIndex < 1) {
+            return 'undedupeable:'.bin2hex(random_bytes(16));
+        }
 
         return 'synthetic:'.hash('sha256', implode("\n", [
             trim($conversationId),
             self::normalizeMessage($message),
-            $minute,
+            (string) $turnIndex,
         ]));
     }
 

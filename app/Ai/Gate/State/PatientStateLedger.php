@@ -75,7 +75,7 @@ final class PatientStateLedger
                 return new EventApplication(false, reason: 'superseded_value_does_not_match', event: $event);
             }
             if (trim($event->quote) === '' || trim($event->justification) === '') {
-                return new EventApplication(false, reason: 'clinician_quote_and_justification_required', event: $event);
+                return new EventApplication(false, reason: 'source_evidence_and_justification_required', event: $event);
             }
         }
 

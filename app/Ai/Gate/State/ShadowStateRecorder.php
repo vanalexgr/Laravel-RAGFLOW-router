@@ -3,34 +3,49 @@
 namespace App\Ai\Gate\State;
 
 use App\Ai\Gate\State\Events\AddFact;
+use App\Ai\Gate\State\Events\CorrectFact;
 use App\Ai\Gate\State\Events\MessageReceived;
 use App\Ai\Gate\State\Events\RecordAssumption;
 use App\Ai\Gate\State\Events\RecordDeclinedQuestion;
 use DateTimeImmutable;
-use Illuminate\Support\Facades\Cache;
 
 final class ShadowStateRecorder
 {
+    public function __construct(
+        private readonly LedgerEventStore $store = new LedgerEventStore,
+    ) {}
+
     /**
-     * @param array<string, mixed> $priorState
-     * @param array<string, mixed> $orient
+     * @param  array<string, mixed>  $priorState
+     * @param  array<string, mixed>  $orient
      * @return array<string, mixed>
      */
     public function record(string $message, array $priorState, array $orient): array
     {
         $conversationId = $this->conversationId($message, $priorState);
-        $turn = (int) ($priorState['turn_index'] ?? 0) + 1;
+        $stored = $this->store->load($conversationId);
+        $turnIdentity = array_key_exists('turn_index', $priorState)
+            && is_numeric($priorState['turn_index'])
+                ? (int) $priorState['turn_index'] + 1
+                : null;
+        $turn = $turnIdentity ?? $this->nextTurn($stored);
         $receivedAt = new DateTimeImmutable;
         $clientId = $this->clientMessageId($priorState);
-        $dedupeKey = MessageIdentity::dedupeKey($conversationId, $message, $clientId, $receivedAt);
-        $cacheKey = (string) config('gate-state.cache_prefix', 'gate-state:shadow:')
-            .hash('sha256', $conversationId);
-        $stored = Cache::get($cacheKey, []);
-        $rules = (array) config('gate-state.mutually_exclusive_fields', []);
-        $ledger = PatientStateLedger::restore(
-            is_array($stored) ? $stored : [],
-            guard: new ContradictionGuard($rules),
+        $dedupeKey = MessageIdentity::dedupeKey(
+            $conversationId,
+            $message,
+            $clientId,
+            $turnIdentity,
         );
+        $rules = (array) config('gate-state.mutually_exclusive_fields', []);
+        $fieldAliases = (array) config('gate-state.field_aliases', []);
+        $allowedFields = (array) config('gate-state.canonical_fields', []);
+        $guard = new ContradictionGuard($rules, $fieldAliases, $allowedFields);
+        $ledger = PatientStateLedger::restore(
+            $stored,
+            guard: $guard,
+        );
+        $storedEventCount = count($stored);
 
         $receipt = $ledger->apply(new MessageReceived(
             $dedupeKey,
@@ -46,14 +61,30 @@ final class ShadowStateRecorder
                     continue;
                 }
 
-                $result = $ledger->apply(new AddFact(
-                    (string) $field,
-                    $value,
-                    $turn,
-                    $this->quoteFor((string) $field, $message, $orient),
-                ));
+                $field = $guard->canonicalField((string) $field);
+                $established = $this->valueAtPath($ledger->projection()->patientModel, $field);
+                $sourceEvidence = $this->quoteFor($field, $message, $orient);
+                $event = $guard->conflicts($field, $established, $value)
+                    ? new CorrectFact(
+                        $field,
+                        $established,
+                        $value,
+                        $turn,
+                        $sourceEvidence,
+                        "Current clinician turn {$turn} reports a changed value; preserve both values and supersede the prior one.",
+                    )
+                    : new AddFact($field, $value, $turn, $sourceEvidence);
+
+                $result = $ledger->apply($event);
                 if ($result->contradiction !== null) {
                     $contradictions[] = $result->contradiction;
+                } elseif (! $result->accepted) {
+                    $contradictions[] = [
+                        'field' => $field,
+                        'established_value' => $established,
+                        'proposed_value' => $value,
+                        'reason' => $result->reason,
+                    ];
                 }
             }
 
@@ -62,10 +93,10 @@ final class ShadowStateRecorder
         }
 
         $projection = $ledger->projection();
-        Cache::put(
-            $cacheKey,
-            $ledger->serialize(),
-            max(1, (int) config('gate-state.retention_seconds', 86400)),
+        $this->store->append(
+            $conversationId,
+            $storedEventCount,
+            array_slice($ledger->serialize(), $storedEventCount),
         );
 
         return [
@@ -80,6 +111,31 @@ final class ShadowStateRecorder
             ),
             'event_count' => count($ledger->events()),
         ];
+    }
+
+    /** @param  array<int, array<string, mixed>>  $events */
+    private function nextTurn(array $events): int
+    {
+        $turns = array_map(
+            static fn (array $event): int => (int) ($event['turn'] ?? 0),
+            $events,
+        );
+
+        return max([0, ...$turns]) + 1;
+    }
+
+    /** @param array<string, mixed> $values */
+    private function valueAtPath(array $values, string $path): mixed
+    {
+        $cursor = $values;
+        foreach (explode('.', $path) as $segment) {
+            if (! is_array($cursor) || ! array_key_exists($segment, $cursor)) {
+                return null;
+            }
+            $cursor = $cursor[$segment];
+        }
+
+        return $cursor;
     }
 
     /** @param array<string, mixed> $orient */

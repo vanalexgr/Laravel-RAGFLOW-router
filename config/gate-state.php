@@ -10,25 +10,42 @@ return [
     | its projection for routing, retrieval, prompts, decisions, or answers.
     |
     */
-    'shadow_enabled' => env(
-        'GATE_STATE_SHADOW_ENABLED',
-        env('APP_ENV', 'production') === 'testing',
-    ),
-
-    'cache_prefix' => env('GATE_STATE_CACHE_PREFIX', 'gate-state:shadow:'),
-    'retention_seconds' => (int) env('GATE_STATE_RETENTION_SECONDS', 86400),
+    'shadow_enabled' => env('GATE_STATE_SHADOW_ENABLED', false),
 
     /*
     | Any different canonical value in these fields requires CorrectFact.
-    | Longer/more specific aliases precede substring aliases where needed.
+    | Field aliases are normalized before projection so schema-name drift cannot
+    | create a second, unguarded version of the same clinical fact.
     */
+    'field_aliases' => [
+        'symptoms' => 'symptom_status',
+        'symptom_presentation' => 'symptom_status',
+        'symptomatic_status' => 'symptom_status',
+    ],
+
+    'canonical_fields' => [
+        'demographics',
+        'lesion',
+        'other_findings',
+        'symptom_status',
+        'timing',
+        'fitness',
+        'imaging',
+        'comorbidities',
+        'medications',
+        'prior_interventions',
+        'sex',
+        'evar_suitability',
+    ],
+
     'mutually_exclusive_fields' => [
         'symptom_status' => [
-            'asymptomatic' => ['asymptomatic', 'no attributable symptoms', 'without symptoms'],
-            'symptomatic' => ['symptomatic', 'attributable symptoms'],
-        ],
-        'symptoms' => [
-            'asymptomatic' => ['asymptomatic', 'no attributable symptoms', 'without symptoms'],
+            'asymptomatic' => [
+                'asymptomatic',
+                'not symptomatic',
+                'no attributable symptoms',
+                'without symptoms',
+            ],
             'symptomatic' => ['symptomatic', 'attributable symptoms'],
         ],
         'sex' => [

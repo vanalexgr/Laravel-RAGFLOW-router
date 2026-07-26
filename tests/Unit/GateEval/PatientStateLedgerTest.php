@@ -10,7 +10,11 @@ use App\Ai\Gate\State\Events\RecordAssumption;
 use App\Ai\Gate\State\Events\RecordDeclinedQuestion;
 use App\Ai\Gate\State\MessageIdentity;
 use App\Ai\Gate\State\PatientStateLedger;
+use App\Ai\Gate\State\ShadowStateRecorder;
 use DateTimeImmutable;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class PatientStateLedgerTest extends TestCase
@@ -115,12 +119,7 @@ class PatientStateLedgerTest extends TestCase
     {
         $ledger = new PatientStateLedger;
         $receivedAt = new DateTimeImmutable('2026-07-26T12:34:20+00:00');
-        $key = MessageIdentity::dedupeKey(
-            'aaa-case',
-            '  Diameter   is 68 MM. ',
-            null,
-            $receivedAt,
-        );
+        $key = MessageIdentity::dedupeKey('aaa-case', '  Diameter   is 68 MM. ', null, 1);
 
         $first = $ledger->apply(new MessageReceived(
             $key,
@@ -137,7 +136,7 @@ class PatientStateLedgerTest extends TestCase
                 'aaa-case',
                 'diameter is 68 mm.',
                 null,
-                new DateTimeImmutable('2026-07-26T12:34:55+00:00'),
+                1,
             ),
             'aaa-case',
             1,
@@ -151,6 +150,84 @@ class PatientStateLedgerTest extends TestCase
         $this->assertTrue($duplicate->duplicate);
         $this->assertCount(2, $ledger->events());
         $this->assertSame(68, $ledger->projection()->patientModel['aneurysm_diameter_mm']);
+    }
+
+    public function test_idempotency_uses_turn_identity_and_never_guesses_without_it(): void
+    {
+        $retry = MessageIdentity::dedupeKey('case', ' Yes ', null, 7);
+        $this->assertSame($retry, MessageIdentity::dedupeKey('case', 'yes', null, 7));
+        $this->assertNotSame($retry, MessageIdentity::dedupeKey('case', 'yes', null, 8));
+        $this->assertNotSame(
+            MessageIdentity::dedupeKey('case', 'yes'),
+            MessageIdentity::dedupeKey('case', 'yes'),
+        );
+    }
+
+    public function test_negation_and_drifted_symptom_field_are_guarded(): void
+    {
+        $guard = new ContradictionGuard(
+            [
+                'symptom_status' => [
+                    'asymptomatic' => ['asymptomatic', 'not symptomatic'],
+                    'symptomatic' => ['symptomatic'],
+                ],
+            ],
+            ['symptom_presentation' => 'symptom_status'],
+        );
+
+        $this->assertFalse($guard->conflicts('symptom_status', 'asymptomatic', 'not symptomatic'));
+        $this->assertTrue($guard->conflicts('symptom_status', 'symptomatic', 'not symptomatic'));
+        $this->assertTrue($guard->conflicts('symptom_presentation', 'asymptomatic', 'symptomatic'));
+    }
+
+    public function test_unknown_clinical_field_name_is_rejected_loudly(): void
+    {
+        $guard = new ContradictionGuard(
+            ['symptom_status' => ['asymptomatic' => ['asymptomatic']]],
+            ['symptom_presentation' => 'symptom_status'],
+            ['symptom_status'],
+        );
+
+        $this->expectException(\InvalidArgumentException::class);
+        $guard->canonicalField('symptom_state');
+    }
+
+    public function test_shadow_ingestion_corrects_changed_alias_and_database_log_survives_cache_clear(): void
+    {
+        Schema::dropIfExists('gate_state_events');
+        Schema::create('gate_state_events', function (Blueprint $table): void {
+            $table->id();
+            $table->char('conversation_key', 64);
+            $table->unsignedBigInteger('sequence');
+            $table->json('payload');
+            $table->timestamp('created_at');
+            $table->unique(['conversation_key', 'sequence']);
+        });
+
+        $recorder = new ShadowStateRecorder;
+        $recorder->record(
+            'The patient is asymptomatic.',
+            ['conversation_id' => 'evolving-case', 'turn_index' => 0],
+            ['patient_model' => ['symptom_status' => 'asymptomatic']],
+        );
+
+        Cache::clear();
+
+        $result = $recorder->record(
+            'The patient developed attributable pain and is now symptomatic.',
+            ['conversation_id' => 'evolving-case', 'turn_index' => 1],
+            ['patient_model' => ['symptom_presentation' => 'symptomatic']],
+        );
+
+        $this->assertSame(
+            'symptomatic',
+            $result['ledger_projection']['patient_model']['symptom_status'],
+        );
+        $this->assertSame(
+            'CorrectFact',
+            $result['ledger_projection']['provenance']['symptom_status']['event'],
+        );
+        $this->assertSame(4, $result['event_count']);
     }
 
     /** @param array<string, mixed> $facts */

@@ -85,6 +85,11 @@ final class DecisionContractValidator
             return;
         }
 
+        $deferralCode = trim((string) ($actionablePlan['deferral_justification'] ?? ''));
+        if (in_array($deferralCode, (array) ($this->rules['deferral_codes'] ?? []), true)) {
+            return;
+        }
+
         $meaningfulValues = array_filter(
             [
                 $actionablePlan['timing'] ?? null,
@@ -141,9 +146,15 @@ final class DecisionContractValidator
         $matrix = (array) ($this->rules['long_term_combination'] ?? []);
         $regimen = trim((string) ($actionablePlan['pharmacotherapy_regimen'] ?? ''));
 
-        if (! $this->matchesAny($regimen, (array) ($matrix['anticoagulants'] ?? []))
-            || ! $this->matchesAny($regimen, (array) ($matrix['antiplatelets'] ?? []))
-            || ! $this->matchesAny($regimen, (array) ($matrix['long_term_terms'] ?? []))) {
+        if (! $this->hasLongTermAgent(
+            $regimen,
+            (array) ($matrix['anticoagulants'] ?? []),
+            (array) ($matrix['long_term_terms'] ?? []),
+        ) || ! $this->hasLongTermAgent(
+            $regimen,
+            (array) ($matrix['antiplatelets'] ?? []),
+            (array) ($matrix['long_term_terms'] ?? []),
+        )) {
             return;
         }
 
@@ -158,6 +169,28 @@ final class DecisionContractValidator
                 'trigger' => 'antithrombotic',
             ];
         }
+    }
+
+    /**
+     * Duration terms only apply inside their punctuation-delimited regimen
+     * clause. This keeps "short-term apixaban, lifelong aspirin" from turning
+     * into an invented lifelong combination while retaining detection of
+     * "apixaban and aspirin long-term".
+     *
+     * @param  array<int, string>  $agents
+     * @param  array<int, string>  $durations
+     */
+    private function hasLongTermAgent(string $regimen, array $agents, array $durations): bool
+    {
+        $clauses = preg_split('/[,;\n.]+/u', $regimen) ?: [];
+
+        foreach ($clauses as $clause) {
+            if ($this->matchesAny($clause, $agents) && $this->matchesAny($clause, $durations)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
