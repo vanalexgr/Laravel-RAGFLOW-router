@@ -98,7 +98,13 @@ return [
         // A relevant first pass with enough strong evidence is not re-run merely
         // because the assessor prefers a different wording of the same query.
         'sufficient_snippet_count' => (int) env('GATE_V2_RETRIEVAL_SUFFICIENT_SNIPPETS', 4),
-        'sufficient_similarity' => (float) env('GATE_V2_RETRIEVAL_SUFFICIENT_SIMILARITY', 0.78),
+        // Raw RAGFlow composite-score units, NOT a probability or percentage.
+        // RAGFlow blends term/vector similarity and may add a chunk PageRank
+        // feature, so the score is unbounded and dataset-specific. RetrievalService
+        // publishes it to snippet diagnostics multiplied by 100; the pathway worker
+        // converts it back before comparing. Keep this at RAGFlow's normal 0.20
+        // retrieval floor until retry frequency and latency are measured.
+        'sufficient_ragflow_score' => (float) env('GATE_V2_RETRIEVAL_SUFFICIENT_RAGFLOW_SCORE', 0.20),
     ],
     'bounce_budgets' => [
         'orient_route' => 2,

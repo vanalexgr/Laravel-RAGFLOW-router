@@ -322,7 +322,37 @@ final class GatePathwayWorker
     /** @param array<string, mixed> $retrieved */
     private function firstPassEvidenceIsSufficient(array $retrieved): bool
     {
+        $maxScore = self::rawRagflowScore(
+            $retrieved['diagnostics']['max_similarity'] ?? null,
+        );
+        // Honour an in-process legacy override for callers/tests migrating from
+        // the old key, but do not ship that ambiguous key in configuration.
+        $legacyThreshold = config('gate-v2.retrieval.sufficient_similarity');
+        $threshold = $legacyThreshold !== null
+            ? (float) $legacyThreshold
+            : (float) config('gate-v2.retrieval.sufficient_ragflow_score', 0.20);
+
         return count((array) ($retrieved['snippets'] ?? [])) >= max(1, (int) config('gate-v2.retrieval.sufficient_snippet_count', 4))
-            && (float) ($retrieved['diagnostics']['max_similarity'] ?? 0) >= (float) config('gate-v2.retrieval.sufficient_similarity', 0.78);
+            && $maxScore !== null
+            && $maxScore >= $threshold;
+    }
+
+    /**
+     * RetrievalService formats RAGFlow's composite score for display by
+     * multiplying it by 100. Convert that value back to the raw, unbounded
+     * RAGFlow units used by retrieval thresholds.
+     *
+     * Values in [0, 1] are retained for compatibility with direct tool doubles
+     * and pre-format callers that still provide the upstream score.
+     */
+    private static function rawRagflowScore(mixed $formattedScore): ?float
+    {
+        if (! is_numeric($formattedScore)) {
+            return null;
+        }
+
+        $score = (float) $formattedScore;
+
+        return $score > 1.0 ? $score / 100.0 : $score;
     }
 }
