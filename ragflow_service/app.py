@@ -654,6 +654,31 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
         
         # NEW: Get citation document IDs for hard scoping
         citation_document_ids = body.citation_document_ids or []
+
+        def validate_and_tag_citation_chunks(chunks: list[dict], retrieval_pass: str) -> None:
+            """Preserve per-chunk provenance and inspect every retrieved chunk."""
+            for i, chunk in enumerate(chunks):
+                doc_id = chunk.get("document_id") or chunk.get("doc_id") or chunk.get("DocumentID")
+                if doc_id:
+                    chunk["document_id"] = doc_id
+                    if citation_document_ids and doc_id not in citation_document_ids:
+                        logger.error(
+                            f"  ⚠️ SCOPE VIOLATION ({retrieval_pass}): "
+                            f"chunk[{i}] doc_id={doc_id} not in allowed {citation_document_ids}"
+                        )
+                    elif citation_document_ids:
+                        logger.debug(
+                            f"  ✓ Chunk [{i}] doc_id={doc_id} within scope ({retrieval_pass})"
+                        )
+                elif citation_document_ids:
+                    logger.warning(
+                        f"  No document_id found in {retrieval_pass} chunk [{i}]: "
+                        f"{chunk.get('id', 'unknown')}"
+                    )
+
+                chunk["_source_guideline"] = "ESVS Recommendations"
+                chunk["_source_dataset_id"] = body.citation_dataset_id
+                chunk["_chunk_type"] = "citation"
         
         # Adjust retrieval size based on scoping method
         if citation_document_ids:
@@ -702,24 +727,7 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
             result = response.json()
             chunks = result.get("data", {}).get("chunks", [])
             logger.info(f"  Raw Citations Retrieved: {len(chunks)}")
-            
-            # Debug: Verify all chunks are from allowed document IDs
-            if citation_document_ids:
-                for i, chunk in enumerate(chunks[:3]):  # Check first 3
-                    doc_id = chunk.get("document_id") or chunk.get("doc_id") or chunk.get("DocumentID")
-                    if doc_id:
-                        if doc_id not in citation_document_ids:
-                            logger.error(f"  ⚠️ SCOPE VIOLATION: chunk doc_id={doc_id} not in allowed {citation_document_ids}")
-                        else:
-                            logger.debug(f"  ✓ Chunk [{i}] doc_id={doc_id} (within scope)")
-                    else:
-                        logger.warning(f"  No document_id found in chunk [{i}]: {chunk.get('id', 'unknown')}")
-            
-            # Tag chunks
-            for chunk in chunks:
-                chunk["_source_guideline"] = "ESVS Recommendations"
-                chunk["_source_dataset_id"] = body.citation_dataset_id
-                chunk["_chunk_type"] = "citation"
+            validate_and_tag_citation_chunks(chunks, "initial")
 
             # Prefer clinically actionable citations over "Good research statement" citations.
             filtered = [c for c in chunks if not _is_research_statement(c)]
@@ -755,10 +763,7 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
                     )
                     retry_result = retry_response.json()
                     retry_chunks = retry_result.get("data", {}).get("chunks", [])
-                    for chunk in retry_chunks:
-                        chunk["_source_guideline"] = "ESVS Recommendations"
-                        chunk["_source_dataset_id"] = body.citation_dataset_id
-                        chunk["_chunk_type"] = "citation"
+                    validate_and_tag_citation_chunks(retry_chunks, "retry")
                     retry_capped = retry_chunks[:body.citation_max]
                     if len(retry_capped) > len(capped):
                         capped = retry_capped

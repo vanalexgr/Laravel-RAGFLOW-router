@@ -27,6 +27,10 @@ return [
         // default so the adapter path is unchanged; the gate enables it per call
         // because it retrieves one branch per guideline and needs per-branch scope.
         'strict_requested_keys' => filter_var(env('RAGFLOW_STRICT_REQUESTED_KEYS', false), FILTER_VALIDATE_BOOLEAN),
+        // Require citation chunks to carry a document ID belonging to one of the
+        // selected guidelines. Off by default to preserve the legacy adapter's
+        // sparse-metadata behavior; the gate enables it for each scoped branch.
+        'authoritative_citation_document_scope' => filter_var(env('RAGFLOW_AUTHORITATIVE_CITATION_DOCUMENT_SCOPE', false), FILTER_VALIDATE_BOOLEAN),
         'keyword_mode' => filter_var(env('RAGFLOW_KEYWORD_MODE', true), FILTER_VALIDATE_BOOLEAN),
         'vector_similarity_weight' => (float) env('RAGFLOW_VECTOR_WEIGHT', 0.5),
         // Force bridge parallel retrieval for multi-dataset requests by default.

@@ -116,11 +116,13 @@ final class RetrieveEsvsSnippetsTool implements Tool
             'request_timeout' => config('ragflow.request_timeout'),
             'connect_timeout' => config('ragflow.connect_timeout'),
             'strict_keys' => config('ragflow.retrieval.strict_requested_keys'),
+            'authoritative_citation_document_scope' => config('ragflow.retrieval.authoritative_citation_document_scope'),
         ];
         // One branch per guideline: the post-routing guardrails would otherwise
         // expand this branch back to the full routed set, so every branch would
         // retrieve every guideline's recommendations and return the same ones.
         config()->set('ragflow.retrieval.strict_requested_keys', true);
+        config()->set('ragflow.retrieval.authoritative_citation_document_scope', true);
         config()->set('ragflow.planner.merged_enabled', false);
         config()->set('ragflow.planner.shadow', false);
         config()->set('clinical_interpreter.enabled', false);
@@ -209,6 +211,10 @@ final class RetrieveEsvsSnippetsTool implements Tool
             config()->set('ragflow.request_timeout', $previous['request_timeout']);
             config()->set('ragflow.connect_timeout', $previous['connect_timeout']);
             config()->set('ragflow.retrieval.strict_requested_keys', $previous['strict_keys']);
+            config()->set(
+                'ragflow.retrieval.authoritative_citation_document_scope',
+                $previous['authoritative_citation_document_scope'],
+            );
             if ($timeoutSeconds !== null) {
                 $this->rebuildRagflowClient();
             }
@@ -217,9 +223,31 @@ final class RetrieveEsvsSnippetsTool implements Tool
         $byBucket = ['citation' => [], 'narrative' => []];
         $seenTextHashes = ['citation' => [], 'narrative' => []];
         $similarities = [];
+        $provenanceMismatch = 0;
+        $provenanceUnverifiable = 0;
+        $guidelineKeyByDocumentId = $this->guidelineKeyByDocumentId();
         foreach (['llm_citation_chunks', 'llm_narrative_chunks'] as $bucket) {
             $bucketName = $bucket === 'llm_citation_chunks' ? 'citation' : 'narrative';
             foreach ((array) ($result[$bucket] ?? []) as $chunk) {
+                $citationGuidelineKey = null;
+                if ($bucket === 'llm_citation_chunks') {
+                    $documentId = is_array($chunk)
+                        ? ($chunk['document_id'] ?? $chunk['doc_id'] ?? $chunk['DocumentID'] ?? null)
+                        : null;
+                    $citationGuidelineKey = is_scalar($documentId)
+                        ? ($guidelineKeyByDocumentId[trim((string) $documentId)] ?? null)
+                        : null;
+                    if ($citationGuidelineKey === null) {
+                        $provenanceUnverifiable++;
+
+                        continue;
+                    }
+                    if ($citationGuidelineKey !== $guidelineKey) {
+                        $provenanceMismatch++;
+
+                        continue;
+                    }
+                }
                 $cleaned = ($this->chunkCleaner ?? new GateChunkCleaner)->clean($chunk, 3000);
                 $text = $cleaned['text'];
                 if ($text !== '') {
@@ -231,21 +259,15 @@ final class RetrieveEsvsSnippetsTool implements Tool
                         continue;
                     }
                     $seenTextHashes[$bucketName][$textHash] = true;
-                    // The header carries the guideline KEY, not the chunk's own
-                    // `guideline_name`: that name is the full ESVS title, which R7.2
-                    // deliberately strips as noise. The key is only trustworthy
-                    // because the branch is now scope-locked to a single guideline
-                    // (ragflow.retrieval.strict_requested_keys) — before that, a
-                    // shared-dataset chunk could be stamped with the wrong
-                    // guideline. `source` records what the chunk itself claimed so
-                    // the two can be reconciled after the fact.
+                    // The short identity key comes from the chunk's document ID,
+                    // never from the requesting branch or the verbose title.
                     if ($bucket === 'llm_citation_chunks') {
                         $metadata = $cleaned['metadata'];
                         $identity = array_filter([
                             isset($metadata['recommendation_id']) ? 'Recommendation '.$metadata['recommendation_id'] : null,
                             isset($metadata['recommendation_class']) ? 'Class '.$metadata['recommendation_class'] : null,
                             isset($metadata['evidence_level']) ? 'Level '.$metadata['evidence_level'] : null,
-                            $guidelineKey,
+                            $citationGuidelineKey,
                         ]);
                         $text = '['.implode(' | ', $identity)."]\n".$text;
                     }
@@ -296,11 +318,29 @@ final class RetrieveEsvsSnippetsTool implements Tool
                 'citation_available' => count($byBucket['citation']),
                 'narrative_available' => count($byBucket['narrative']),
                 'citation_query_count' => count($citationQueries),
+                'provenance_mismatch' => $provenanceMismatch,
+                'provenance_unverifiable' => $provenanceUnverifiable,
                 'max_similarity' => $similarities === [] ? null : max($similarities),
                 'duration_ms' => (int) ($result['duration_ms'] ?? 0),
                 'signal_ratio' => $this->weightedSignalRatio($snippets),
             ],
         ];
+    }
+
+    /** @return array<string, string> document ID => short guideline key */
+    private function guidelineKeyByDocumentId(): array
+    {
+        $map = [];
+        foreach ((array) config('guidelines.categories', []) as $category) {
+            foreach ((array) ($category['guidelines'] ?? []) as $key => $guideline) {
+                $documentId = $guideline['recs_doc_id'] ?? null;
+                if (is_string($key) && is_string($documentId) && $documentId !== '') {
+                    $map[$documentId] = $key;
+                }
+            }
+        }
+
+        return $map;
     }
 
 

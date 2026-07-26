@@ -28,6 +28,7 @@ class RetrieveEsvsSnippetsToolTest extends TestCase
                     config('ragflow.retrieval.top_k'),
                     config('ragflow.retrieval.citation_top_k'),
                     config('ragflow.single_case.top_k'),
+                    config('ragflow.retrieval.authoritative_citation_document_scope'),
                 ];
 
                 return [
@@ -37,6 +38,7 @@ class RetrieveEsvsSnippetsToolTest extends TestCase
                         'text' => 'rec_id:22; class:IIa; level:C; guideline_name:ESVS 2024 Clinical Practice Guidelines on Abdominal Aorto-Iliac Artery Aneurysms; rec_text_verbatim:Recommendation text',
                         'similarity' => 82.5,
                         'guideline' => 'AAA',
+                        'document_id' => '40a8b701ff8111f080ad32d89964721d',
                     ]],
                     'llm_narrative_chunks' => [],
                 ];
@@ -51,7 +53,7 @@ class RetrieveEsvsSnippetsToolTest extends TestCase
         );
 
         $this->assertSame(['abdominal_aortic_aneurysm'], $retrieval->requested);
-        $this->assertSame([24, 16, 24], $retrieval->configDuringRetrieval);
+        $this->assertSame([24, 16, 24, true], $retrieval->configDuringRetrieval);
         $this->assertSame(
             "[Recommendation 22 | Class IIa | Level C | abdominal_aortic_aneurysm]\nRecommendation text",
             $result['snippets'][0]['text'],
@@ -122,7 +124,11 @@ class RetrieveEsvsSnippetsToolTest extends TestCase
                 return [
                     'duration_ms' => 1,
                     'llm_citation_chunks' => array_map(
-                        static fn (string $text): array => ['text' => $text, 'similarity' => 0.8],
+                        static fn (string $text): array => [
+                            'text' => $text,
+                            'similarity' => 0.8,
+                            'document_id' => '31f83c34052911f18ceb32d89964721d',
+                        ],
                         $texts,
                     ),
                     'llm_narrative_chunks' => array_map(
@@ -187,5 +193,131 @@ class RetrieveEsvsSnippetsToolTest extends TestCase
         );
 
         $this->assertSame(['legacy concatenated query'], $retrieval->citationQuestions);
+    }
+
+    public function test_cross_guideline_document_is_discarded_and_counted_before_stamping(): void
+    {
+        $retrieval = new class extends RetrievalService
+        {
+            public function retrieve(
+                string $question,
+                array $history = [],
+                ?array $requestedKeys = null,
+                ?string $citationQuestion = null,
+            ): array {
+                return [
+                    'duration_ms' => 1,
+                    'llm_citation_chunks' => [[
+                        'text' => 'rec_id:39; rec_text_verbatim:Antithrombotic recommendation',
+                        'document_id' => '40795f9affad11f0a4d332d89964721d',
+                    ]],
+                    'llm_narrative_chunks' => [],
+                ];
+            }
+        };
+
+        $result = (new RetrieveEsvsSnippetsTool($retrieval))->retrieve('clti', 'q');
+
+        $this->assertSame([], $result['snippets']);
+        $this->assertSame(1, $result['diagnostics']['provenance_mismatch']);
+        $this->assertSame(0, $result['diagnostics']['provenance_unverifiable']);
+        $this->assertStringNotContainsString(
+            'clti',
+            implode("\n", array_column($result['snippets'], 'text')),
+        );
+    }
+
+    public function test_unlabelled_citation_is_discarded_as_unverifiable(): void
+    {
+        $retrieval = new class extends RetrievalService
+        {
+            public function retrieve(
+                string $question,
+                array $history = [],
+                ?array $requestedKeys = null,
+                ?string $citationQuestion = null,
+            ): array {
+                return [
+                    'duration_ms' => 1,
+                    'llm_citation_chunks' => [['text' => 'Recommendation with no document identity']],
+                    'llm_narrative_chunks' => [],
+                ];
+            }
+        };
+
+        $result = (new RetrieveEsvsSnippetsTool($retrieval))->retrieve('clti', 'q');
+
+        $this->assertSame([], $result['snippets']);
+        $this->assertSame(0, $result['diagnostics']['provenance_mismatch']);
+        $this->assertSame(1, $result['diagnostics']['provenance_unverifiable']);
+    }
+
+    public function test_legacy_raw_filter_behavior_is_unchanged_when_authoritative_flag_is_off(): void
+    {
+        config()->set('ragflow.retrieval.authoritative_citation_document_scope', false);
+        $retrieval = new class extends RetrievalService
+        {
+            public function filterForTest(array $chunks): array
+            {
+                return $this->filterRawChunksToSelectedGuidelines(
+                    $chunks,
+                    ['clti'],
+                    ['Chronic Limb-Threatening Ischemia'],
+                    'citation',
+                );
+            }
+        };
+        $unlabelled = ['content' => 'Recommendation with sparse metadata'];
+
+        $this->assertSame([$unlabelled], $retrieval->filterForTest([$unlabelled]));
+    }
+
+    public function test_authoritative_raw_filter_requires_selected_document_id(): void
+    {
+        config()->set('ragflow.retrieval.authoritative_citation_document_scope', true);
+        $retrieval = new class extends RetrievalService
+        {
+            public function filterForTest(array $chunks): array
+            {
+                return $this->filterRawChunksToSelectedGuidelines(
+                    $chunks,
+                    ['clti'],
+                    ['Chronic Limb-Threatening Ischemia'],
+                    'citation',
+                );
+            }
+        };
+        $matching = [
+            'content' => 'CLTI recommendation',
+            'document_id' => '31f83c34052911f18ceb32d89964721d',
+        ];
+        $wrong = [
+            'content' => 'Antithrombotic recommendation',
+            'document_id' => '40795f9affad11f0a4d332d89964721d',
+        ];
+        $unlabelled = ['content' => 'Recommendation with sparse metadata'];
+
+        $this->assertSame([$matching], $retrieval->filterForTest([$matching, $wrong, $unlabelled]));
+    }
+
+    public function test_citation_formatter_propagates_canonical_document_id(): void
+    {
+        $retrieval = new class extends RetrievalService
+        {
+            public function formatForTest(array $chunks): array
+            {
+                return $this->formatChunks($chunks, 'citation');
+            }
+        };
+
+        $formatted = $retrieval->formatForTest([[
+            'content' => 'recommendation_text:Use treatment',
+            'doc_id' => '31f83c34052911f18ceb32d89964721d',
+        ]]);
+
+        $this->assertSame(
+            '31f83c34052911f18ceb32d89964721d',
+            $formatted[0]['document_id'],
+        );
     }
 }

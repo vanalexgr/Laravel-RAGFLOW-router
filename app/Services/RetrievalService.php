@@ -2062,6 +2062,10 @@ class RetrievalService
 
             if ($type === 'citation') {
                 $text = $content;
+                $documentId = $chunk['document_id'] ?? $chunk['doc_id'] ?? $chunk['DocumentID'] ?? null;
+                if (is_scalar($documentId) && trim((string) $documentId) !== '') {
+                    $meta['document_id'] = trim((string) $documentId);
+                }
                 // Parse Citation Metadata - Handle both formats
                 // Format 1: RECOMMENDATION_ID: Rec 12
                 if (preg_match('/RECOMMENDATION_ID:\s*(Rec\s*[\d\w]+)/i', $content, $m)) {
@@ -2210,6 +2214,36 @@ class RetrievalService
     {
         if (empty($rawChunks)) {
             return [];
+        }
+
+        if ($type === 'citation' && config('ragflow.retrieval.authoritative_citation_document_scope', false) === true) {
+            $allowedDocumentIds = [];
+            foreach ($selectedKeys as $key) {
+                if (! is_string($key) || $key === '') {
+                    continue;
+                }
+                $documentId = $this->getGuidelineConfig($key)['recs_doc_id'] ?? null;
+                if (is_string($documentId) && $documentId !== '' && ! str_starts_with($documentId, 'NEED_')) {
+                    $allowedDocumentIds[$documentId] = true;
+                }
+            }
+
+            if ($allowedDocumentIds === []) {
+                return [];
+            }
+
+            return array_values(array_filter(
+                $rawChunks,
+                static function (mixed $chunk) use ($allowedDocumentIds): bool {
+                    if (! is_array($chunk)) {
+                        return false;
+                    }
+                    $documentId = $chunk['document_id'] ?? $chunk['doc_id'] ?? $chunk['DocumentID'] ?? null;
+
+                    return is_scalar($documentId)
+                        && isset($allowedDocumentIds[trim((string) $documentId)]);
+                },
+            ));
         }
 
         $allowedLabels = [];
