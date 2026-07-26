@@ -13,6 +13,7 @@ class GateProbeRetrievalCommand extends Command
         {--case=aaa : Fixture to probe (aaa|s2)}
         {--guideline= : Probe one guideline ad hoc, bypassing fixtures}
         {--query= : Raw query to use with --guideline (both narrative and citation)}
+        {--top-k=24 : Candidate pool; the gate uses 12 on attempt 1 and 24 on the retry}
         {--json : Emit machine-readable JSON}';
 
     protected $description = 'Probe gate retrieval query shape, citation supply, and cleaned chunk signal';
@@ -55,13 +56,16 @@ class GateProbeRetrievalCommand extends Command
         }
         $branches = [];
         $passed = true;
+        // The gate's attempt_top_k is [12, 24], so a probe at 24 does not reproduce
+        // what attempt 1 actually sends. `citation_top_k` is min(top_k, 16).
+        $topK = max(4, (int) $this->option('top-k'));
 
         foreach ($fixture['guidelines'] as $guideline) {
             $result = $retrieval->retrieve(
                 $guideline,
                 $queries['narrative'],
                 false,
-                24,
+                $topK,
                 60,
                 $queries['citation'],
             );
@@ -105,6 +109,8 @@ class GateProbeRetrievalCommand extends Command
 
         $payload = [
             'case' => $case,
+            'top_k' => $topK,
+            'citation_top_k' => min($topK, 16),
             'narrative_query' => $queries['narrative'],
             'narrative_query_chars' => mb_strlen($queries['narrative']),
             'citation_query' => $queries['citation'],

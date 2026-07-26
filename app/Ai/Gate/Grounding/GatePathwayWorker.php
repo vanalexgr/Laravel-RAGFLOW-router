@@ -108,6 +108,17 @@ final class GatePathwayWorker
                     'full_pipeline' => $attempt === $maxAttempts,
                     'top_k' => $topK,
                     'snippet_count' => $retrieved['diagnostics']['snippet_count'] ?? 0,
+                    // Recommendation supply is the metric that actually predicts
+                    // answer quality, and the citation query is what drives it — a
+                    // question-form or over-long query returns zero recommendations.
+                    // Both were previously absent from the trace, leaving the eval
+                    // unable to explain a zero-citation turn.
+                    'citation_count' => $retrieved['diagnostics']['citation_count'] ?? 0,
+                    'citation_available' => $retrieved['diagnostics']['citation_available'] ?? 0,
+                    'narrative_available' => $retrieved['diagnostics']['narrative_available'] ?? 0,
+                    'citation_query' => $citationQuery,
+                    'citation_query_chars' => mb_strlen($citationQuery),
+                    'citation_top_k' => min($topK, 16),
                     'retrieval_ms' => $retrieved['diagnostics']['duration_ms'] ?? null,
                     'prefetched' => $attempt === 1 && $prefetched !== null,
                 ],
