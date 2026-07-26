@@ -5,6 +5,7 @@ namespace App\Ai\Gate;
 use App\Ai\Gate\Concerns\GateModelOptions;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Attributes\MaxTokens;
+use Laravel\Ai\Attributes\Temperature;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\HasProviderOptions;
 use Laravel\Ai\Contracts\HasStructuredOutput;
@@ -27,6 +28,7 @@ use Laravel\Ai\Promptable;
  * discrete unknown/question signals; confidence never controls the decision.
  */
 #[MaxTokens(3000)]
+#[Temperature(0)]
 final class ProbeAgent implements Agent, HasProviderOptions, HasStructuredOutput
 {
     use GateModelOptions;
@@ -65,6 +67,28 @@ guidelines fall short, and must always know which parts are ESVS and which are e
   were filled.
 - If ISSUES are provided, fix every one of them in this pass.
 
+COMPOSE THE DECISION IN THIS ORDER. The order is part of the safety contract:
+1. baseline_pathway: state the standard ESVS pathway for the primary pathology before considering
+   comorbidities. This must be grounded in the supplied evidence.
+2. patient_deviations: list only patient factors that modify or conflict with that baseline.
+3. actionable_plan: commit to a timing and pharmacotherapy regimen, then state what must not be
+   done. Do not replace this synthesis with "MDT", "individualise", or "local protocol".
+4. escalation_and_reassessment: name an observable trigger and the action it causes.
+
+Use the exact literal EVIDENCE_ABSENT instead of inventing a timing, drug, dose, duration, harm, or
+trigger not supported by the supplied evidence and patient facts. When EVIDENCE_ABSENT prevents a
+committed plan, select the applicable typed deferral_justification; otherwise use NOT_DEFERRED.
+Valid deferrals are limited to:
+- GUIDELINE_MANDATED
+- UNRESOLVABLE_CONTRAINDICATION
+- MULTISPECIALTY_CONFLICT
+
+For antithrombotic combinations, antithrombotic_combination_justification must state the explicit
+indication for planned long-term anticoagulant plus antiplatelet therapy. Use NOT_APPLICABLE when no
+such combination is planned. Address domain checklist items explicitly when they apply, including
+urgency, anticoagulant interruption, bridging, perioperative antiplatelet therapy, and a restart
+criterion for carotid patients taking a DOAC.
+
 Return ONLY the structured object. No prose.
 TXT;
     }
@@ -75,6 +99,26 @@ TXT;
     public function schema(JsonSchema $schema): array
     {
         return [
+            // Baseline deliberately comes first: it conditions the remaining
+            // generation on the guideline default before patient deviations.
+            'baseline_pathway' => $schema->string()->required(),
+            'patient_deviations' => $schema->array()->items($schema->string())->required(),
+            'actionable_plan' => $schema->object([
+                'timing' => $schema->string()->required(),
+                'pharmacotherapy_regimen' => $schema->string()->required(),
+                'what_not_to_do' => $schema->array()->items($schema->string())->required(),
+                'deferral_justification' => $schema->string()->enum([
+                    'NOT_DEFERRED',
+                    'GUIDELINE_MANDATED',
+                    'UNRESOLVABLE_CONTRAINDICATION',
+                    'MULTISPECIALTY_CONFLICT',
+                ])->required(),
+                'antithrombotic_combination_justification' => $schema->string()->required(),
+            ])->required(),
+            'escalation_and_reassessment' => $schema->object([
+                'trigger_event' => $schema->string()->required(),
+                'action_on_trigger' => $schema->string()->required(),
+            ])->required(),
             'unknowns' => $schema->array()->items(
                 $schema->object([
                     'variable' => $schema->string()->required(),
