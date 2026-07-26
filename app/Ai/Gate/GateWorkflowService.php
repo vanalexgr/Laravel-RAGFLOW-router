@@ -481,6 +481,7 @@ final class GateWorkflowService
         $queryPair = $this->serializeRetrievalQuery($orient, $issues);
         $query = $queryPair['narrative'];
         $citationQuery = $queryPair['citation'];
+        $citationQueries = $queryPair['citation_queries'];
         $this->assertWithinDeadline();
         $results = [];
         $pending = [];
@@ -489,6 +490,7 @@ final class GateWorkflowService
                 $guideline,
                 $query,
                 $citationQuery,
+                $citationQueries,
                 (array) $orient['patient_model'],
             );
             if (isset($this->groundCache[$cacheKey])) {
@@ -522,6 +524,7 @@ final class GateWorkflowService
                     )),
                     $deadlineAt,
                     $citationQuery,
+                    $citationQueries,
                 );
             }
             $completed = Concurrency::driver((string) config('gate-v2.concurrency_driver', 'process'))
@@ -544,6 +547,7 @@ final class GateWorkflowService
                     )),
                     $this->deadlineAt(),
                     $citationQuery,
+                    $citationQueries,
                 );
             }
         }
@@ -581,11 +585,12 @@ final class GateWorkflowService
         string $guideline,
         string $query,
         string $citationQuery,
+        array $citationQueries,
         array $patientModel,
     ): string
     {
         return hash('sha256', json_encode(
-            [$guideline, $query, $citationQuery, $patientModel],
+            [$guideline, $query, $citationQuery, $citationQueries, $patientModel],
             JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
         ));
     }
@@ -893,7 +898,12 @@ final class GateWorkflowService
     /**
      * @param  array<string, mixed>  $orient
      * @param  array<int, array<string, mixed>>  $issues
-     * @return array{narrative: string, citation: string}
+     * @return array{
+     *   narrative: string,
+     *   citation: string,
+     *   citation_queries: array<int, string>,
+     *   citation_core_queries: array<int, string>
+     * }
      */
     private function serializeRetrievalQuery(array $orient, array $issues): array
     {

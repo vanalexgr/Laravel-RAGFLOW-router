@@ -44,9 +44,13 @@ final class GatePathwayWorker
         ?int $timeoutSeconds = null,
         ?float $deadlineAt = null,
         ?string $initialCitationQuery = null,
+        ?array $initialCitationQueries = null,
     ): array {
         $query = $initialQuery;
         $citationQuery = $initialCitationQuery ?? $initialQuery;
+        $citationQueries = (bool) config('gate-v2.retrieval.citation_multi_query', true)
+            ? array_values((array) $initialCitationQueries)
+            : [$citationQuery];
         $queriesTried = [];
         $assessment = null;
         $snippetDigests = [];
@@ -86,16 +90,25 @@ final class GatePathwayWorker
                 $retrievalDuration = (int) ($prefetched['duration_ms'] ?? 0);
             } else {
                 $retrievalStarted = microtime(true);
+                $baseTimeout = $timeoutSeconds ?? (int) config('gate-v2.retrieval.timeout_seconds', 20);
+                if (count($citationQueries) > 1 && $deadlineAt !== null) {
+                    // The tool may consume at most 1.5x this base across its two
+                    // sequential calls. Reduce the base first so that enlarged
+                    // allowance still fits the absolute parent deadline.
+                    $remaining = max(1, $this->remainingSeconds($deadlineAt) ?? 1);
+                    $baseTimeout = min($baseTimeout, max(1, (int) floor($remaining / 1.5)));
+                }
                 $retrieved = $this->retrieval->retrieve(
                     $guideline,
                     $query,
                     $attempt === $maxAttempts,
                     $topK,
                     $this->clampToDeadline(
-                        $timeoutSeconds ?? (int) config('gate-v2.retrieval.timeout_seconds', 20),
+                        $baseTimeout,
                         $deadlineAt,
                     ),
                     $citationQuery,
+                    $citationQueries,
                 );
                 $retrievalDuration = (int) round((microtime(true) - $retrievalStarted) * 1000);
             }
@@ -118,6 +131,8 @@ final class GatePathwayWorker
                     'narrative_available' => $retrieved['diagnostics']['narrative_available'] ?? 0,
                     'citation_query' => $citationQuery,
                     'citation_query_chars' => mb_strlen($citationQuery),
+                    'citation_queries' => $citationQueries,
+                    'citation_query_chars_each' => array_map('mb_strlen', $citationQueries),
                     'citation_top_k' => min($topK, 16),
                     'retrieval_ms' => $retrieved['diagnostics']['duration_ms'] ?? null,
                     'prefetched' => $attempt === 1 && $prefetched !== null,
@@ -132,6 +147,7 @@ final class GatePathwayWorker
                     'current_question' => $turn,
                     'query' => $query,
                     'citation_query' => $citationQuery,
+                    'citation_queries' => $citationQueries,
                     'attempt' => $attempt,
                     'final_attempt' => $attempt === $maxAttempts,
                     'snippets' => $retrieved['snippets'],
@@ -180,6 +196,11 @@ final class GatePathwayWorker
             $citationQuery = (new GateRetrievalQueryBuilder)->shapeCitationQuery(
                 $betterQuery !== '' ? $betterQuery : $citationQuery,
             );
+            // Multi-query retries retain the deterministic core unchanged. The
+            // legacy A/B path still follows the assessor's shaped better_query.
+            if (! (bool) config('gate-v2.retrieval.citation_multi_query', true)) {
+                $citationQueries = [$citationQuery];
+            }
         }
 
         if ($assessment !== null) {

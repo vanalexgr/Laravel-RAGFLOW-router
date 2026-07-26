@@ -81,7 +81,28 @@ final class RetrieveEsvsSnippetsTool implements Tool
         ?int $topK = null,
         ?int $timeoutSeconds = null,
         ?string $citationQuery = null,
+        ?array $citationQueries = null,
     ): array {
+        $multiQueryEnabled = (bool) config('gate-v2.retrieval.citation_multi_query', true);
+        // The current bridge has no batch input, so the sequential fallback must
+        // stay at two even if query construction is experimentally raised to four.
+        $queryCap = min(2, max(1, (int) config('gate-v2.retrieval.citation_multi_query_max', 2)));
+        $citationQueries = array_values(array_unique(array_filter(array_map(
+            static fn (mixed $value): string => trim((string) $value),
+            $multiQueryEnabled ? (array) $citationQueries : [],
+        ))));
+        $citationQueries = array_slice($citationQueries, 0, $queryCap);
+        if ($citationQueries === []) {
+            $citationQueries = [$citationQuery];
+        }
+        $citationQueries = array_values(array_filter(
+            $citationQueries,
+            static fn (?string $value): bool => $value !== null && $value !== '',
+        ));
+        if ($citationQueries === []) {
+            $citationQueries = [null];
+        }
+
         $previous = [
             'lean' => config('ragflow.lean.enabled'),
             'planner' => config('ragflow.planner.merged_enabled'),
@@ -114,11 +135,22 @@ final class RetrieveEsvsSnippetsTool implements Tool
             config()->set('ragflow.lean.top_k', $topK);
             config()->set('ragflow.single_case.top_k', $topK);
         }
+        $perQueryTimeout = $timeoutSeconds;
+        $multiQueryDeadline = null;
         if ($timeoutSeconds !== null) {
             $timeoutSeconds = max(1, $timeoutSeconds);
-            config()->set('ragflow.request_timeout', $timeoutSeconds);
+            // With two sequential queries, 75% apiece gives a strict 1.5x cap
+            // versus the old single-query allowance. GatePathwayWorker first
+            // reduces the base allowance when the parent deadline is tighter.
+            $perQueryTimeout = count($citationQueries) > 1
+                ? max(1, (int) floor($timeoutSeconds * 0.75))
+                : $timeoutSeconds;
+            $multiQueryDeadline = microtime(true) + (
+                count($citationQueries) > 1 ? $timeoutSeconds * 1.5 : $timeoutSeconds
+            );
+            config()->set('ragflow.request_timeout', $perQueryTimeout);
             config()->set('ragflow.connect_timeout', min(
-                $timeoutSeconds,
+                $perQueryTimeout,
                 max(1, (int) config('gate-v2.retrieval.connect_timeout_seconds', 3)),
             ));
             // The RAGFlow client is a singleton. Rebuild it within this scoped
@@ -127,7 +159,42 @@ final class RetrieveEsvsSnippetsTool implements Tool
         }
 
         try {
-            $result = $this->retrieval->retrieve($query, [], [$guidelineKey], $citationQuery);
+            $result = [
+                'duration_ms' => 0,
+                'llm_citation_chunks' => [],
+                'llm_narrative_chunks' => [],
+            ];
+            foreach ($citationQueries as $index => $currentCitationQuery) {
+                if ($multiQueryDeadline !== null) {
+                    $remaining = max(1, (int) floor($multiQueryDeadline - microtime(true)));
+                    $currentTimeout = min((int) $perQueryTimeout, $remaining);
+                    config()->set('ragflow.request_timeout', $currentTimeout);
+                    config()->set('ragflow.connect_timeout', min(
+                        $currentTimeout,
+                        max(1, (int) config('gate-v2.retrieval.connect_timeout_seconds', 3)),
+                    ));
+                    $this->rebuildRagflowClient();
+                }
+
+                $current = $this->retrieval->retrieve(
+                    $query,
+                    [],
+                    [$guidelineKey],
+                    $currentCitationQuery,
+                );
+                $result['duration_ms'] += (int) ($current['duration_ms'] ?? 0);
+                $result['llm_citation_chunks'] = array_merge(
+                    $result['llm_citation_chunks'],
+                    (array) ($current['llm_citation_chunks'] ?? []),
+                );
+                // Narrative retrieval is independent of the citation wording.
+                // Keep it from the first call only; later calls exist solely to
+                // widen recommendation recall.
+                if ($index === 0) {
+                    $result['llm_narrative_chunks'] = (array) ($current['llm_narrative_chunks'] ?? []);
+                    $result['retrieval_query'] = $current['retrieval_query'] ?? $query;
+                }
+            }
         } finally {
             config()->set('ragflow.lean.enabled', $previous['lean']);
             config()->set('ragflow.planner.merged_enabled', $previous['planner']);
@@ -147,6 +214,7 @@ final class RetrieveEsvsSnippetsTool implements Tool
         }
 
         $byBucket = ['citation' => [], 'narrative' => []];
+        $seenTextHashes = ['citation' => [], 'narrative' => []];
         $similarities = [];
         foreach (['llm_citation_chunks', 'llm_narrative_chunks'] as $bucket) {
             $bucketName = $bucket === 'llm_citation_chunks' ? 'citation' : 'narrative';
@@ -154,6 +222,14 @@ final class RetrieveEsvsSnippetsTool implements Tool
                 $cleaned = ($this->chunkCleaner ?? new GateChunkCleaner)->clean($chunk, 3000);
                 $text = $cleaned['text'];
                 if ($text !== '') {
+                    // Multiple sharp queries commonly retrieve the same row. Hash
+                    // the cleaned chunk body before adding a query-independent
+                    // identity header, and deduplicate within its evidence bucket.
+                    $textHash = hash('sha256', trim($text));
+                    if (isset($seenTextHashes[$bucketName][$textHash])) {
+                        continue;
+                    }
+                    $seenTextHashes[$bucketName][$textHash] = true;
                     // The header carries the guideline KEY, not the chunk's own
                     // `guideline_name`: that name is the full ESVS title, which R7.2
                     // deliberately strips as noise. The key is only trustworthy
@@ -202,6 +278,7 @@ final class RetrieveEsvsSnippetsTool implements Tool
             'guideline_key' => $guidelineKey,
             'query' => $query,
             'citation_query' => $citationQuery,
+            'citation_queries' => $citationQueries,
             'retrieval_query' => (string) ($result['retrieval_query'] ?? $query),
             'full_pipeline' => $fullPipeline,
             'top_k' => $topK,
@@ -217,6 +294,7 @@ final class RetrieveEsvsSnippetsTool implements Tool
                 )),
                 'citation_available' => count($byBucket['citation']),
                 'narrative_available' => count($byBucket['narrative']),
+                'citation_query_count' => count($citationQueries),
                 'max_similarity' => $similarities === [] ? null : max($similarities),
                 'duration_ms' => (int) ($result['duration_ms'] ?? 0),
                 'signal_ratio' => $this->weightedSignalRatio($snippets),

@@ -92,4 +92,100 @@ class RetrieveEsvsSnippetsToolTest extends TestCase
         $this->assertSame(30, config('ragflow.request_timeout'));
         $this->assertSame(3, config('ragflow.connect_timeout'));
     }
+
+    public function test_multi_query_unions_text_deduplicates_and_preserves_citation_quota(): void
+    {
+        config()->set('gate-v2.retrieval.citation_multi_query', true);
+        config()->set('gate-v2.retrieval.citation_multi_query_max', 2);
+        config()->set('gate-v2.retrieval.citation_share', 0.4);
+        $retrieval = new class extends RetrievalService
+        {
+            public array $citationQuestions = [];
+
+            public array $timeouts = [];
+
+            public function retrieve(
+                string $question,
+                array $history = [],
+                ?array $requestedKeys = null,
+                ?string $citationQuestion = null,
+            ): array {
+                $this->citationQuestions[] = $citationQuestion;
+                $this->timeouts[] = [
+                    config('ragflow.request_timeout'),
+                    config('ragflow.connect_timeout'),
+                ];
+                $texts = count($this->citationQuestions) === 1
+                    ? ['duplicate recommendation', 'recommendation A', 'recommendation B']
+                    : ['duplicate recommendation', 'recommendation C', 'recommendation D'];
+
+                return [
+                    'duration_ms' => 1,
+                    'llm_citation_chunks' => array_map(
+                        static fn (string $text): array => ['text' => $text, 'similarity' => 0.8],
+                        $texts,
+                    ),
+                    'llm_narrative_chunks' => array_map(
+                        static fn (int $i): array => ['text' => "narrative {$i}", 'similarity' => 0.7],
+                        range(1, 10),
+                    ),
+                ];
+            }
+        };
+
+        $result = (new RetrieveEsvsSnippetsTool($retrieval))->retrieve(
+            'clti',
+            'narrative query',
+            false,
+            12,
+            20,
+            'legacy concatenated query',
+            ['antithrombotic therapy after vein bypass', 'critical limb-threatening ischaemia'],
+        );
+
+        $this->assertSame(
+            ['antithrombotic therapy after vein bypass', 'critical limb-threatening ischaemia'],
+            $retrieval->citationQuestions,
+        );
+        $this->assertSame([[15, 3], [15, 3]], $retrieval->timeouts);
+        $this->assertSame(5, $result['diagnostics']['citation_available']);
+        $this->assertSame(4, $result['diagnostics']['citation_count']);
+        $this->assertCount(10, $result['snippets']);
+        $this->assertCount(1, array_filter(
+            $result['snippets'],
+            static fn (array $snippet): bool => str_contains($snippet['text'], 'duplicate recommendation'),
+        ));
+    }
+
+    public function test_disabled_flag_uses_only_the_legacy_single_query(): void
+    {
+        config()->set('gate-v2.retrieval.citation_multi_query', false);
+        $retrieval = new class extends RetrievalService
+        {
+            public array $citationQuestions = [];
+
+            public function retrieve(
+                string $question,
+                array $history = [],
+                ?array $requestedKeys = null,
+                ?string $citationQuestion = null,
+            ): array {
+                $this->citationQuestions[] = $citationQuestion;
+
+                return ['duration_ms' => 1, 'llm_citation_chunks' => [], 'llm_narrative_chunks' => []];
+            }
+        };
+
+        (new RetrieveEsvsSnippetsTool($retrieval))->retrieve(
+            'clti',
+            'narrative query',
+            false,
+            12,
+            20,
+            'legacy concatenated query',
+            ['core one', 'core two'],
+        );
+
+        $this->assertSame(['legacy concatenated query'], $retrieval->citationQuestions);
+    }
 }

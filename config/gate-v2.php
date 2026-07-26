@@ -65,14 +65,26 @@ return [
         // narrative 16 / citation 12). Applied at retrieval, retry merge, and
         // prompt compaction alike — see GateEvidenceQuota.
         'citation_share' => (float) env('GATE_V2_CITATION_SHARE', 0.4),
+        // The recommendations bridge accepts only one citation query per call.
+        // Until it supports batching, run at most two short queries sequentially.
+        // Each receives 75% of the former single-query timeout, so the absolute
+        // worst case is 2 * 0.75 = 1.5 times the old retrieval budget. The branch
+        // deadline can reduce that total further.
+        'citation_multi_query' => filter_var(
+            env('GATE_V2_CITATION_MULTI_QUERY', true),
+            FILTER_VALIDATE_BOOLEAN,
+        ),
+        'citation_multi_query_max' => (int) env('GATE_V2_CITATION_MULTI_QUERY_MAX', 2),
+        'citation_multi_query_max_chars' => (int) env('GATE_V2_CITATION_MULTI_QUERY_MAX_CHARS', 60),
         // Snippets per guideline handed to Probe/Critic.
         'prompt_snippets_per_guideline' => (int) env('GATE_V2_PROMPT_SNIPPETS_PER_GUIDELINE', 6),
         // The recommendations dataset matches short declarative rows. Measured on
         // both recommendations documents: question-form queries return ZERO
         // recommendations at 292, 156 and 116 chars, while terms-only queries
-        // return 2-6 at 98 and 54 chars. 100 is the largest budget proven on both
-        // documents; the stricter CLTI document did better still at ~54, so this is
-        // worth re-probing if recommendation supply is thin.
+        // return 2-6 at 98 and 54 chars. The stricter CLTI document did best near
+        // 54, so each independent concept is capped at 60 rather than allowing a
+        // second concept to dilute it. The legacy 100-character budget remains
+        // separate so disabling citation_multi_query is a faithful A/B control.
         'citation_query_max_chars' => (int) env('GATE_V2_CITATION_QUERY_MAX_CHARS', 100),
         // A gate retrieval must never inherit the generic 30-second bridge timeout:
         // this budget is deliberately below the parent 90-second wall-clock.

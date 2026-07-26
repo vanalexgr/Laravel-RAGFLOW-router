@@ -21,7 +21,12 @@ final class GateRetrievalQueryBuilder
     /**
      * @param  array<string, mixed>  $orient
      * @param  array<int, array<string, mixed>>  $issues
-     * @return array{narrative: string, citation: string}
+     * @return array{
+     *   narrative: string,
+     *   citation: string,
+     *   citation_queries: array<int, string>,
+     *   citation_core_queries: array<int, string>
+     * }
      */
     public function build(array $orient, array $issues = []): array
     {
@@ -44,15 +49,89 @@ final class GateRetrievalQueryBuilder
             $issueText === '' ? null : 'Retrieval gaps to resolve: '.$issueText,
         ]);
 
+        $legacyCitation = $this->buildCitationQuery(
+            $coreQuestion,
+            // Must-include terms first: under a character budget the terms the
+            // planner marked mandatory must survive, not be truncated away.
+            $this->terms($orient, ['must_include_terms', 'expansion_terms', 'interpretation_terms']),
+        );
+        $multiQuery = $this->buildCitationQueries($patientModel, (array) ($orient['must_include_terms'] ?? []));
+
         return [
             'narrative' => implode("\n", $shared),
-            'citation' => $this->buildCitationQuery(
-                $coreQuestion,
-                // Must-include terms first: under a character budget the terms the
-                // planner marked mandatory must survive, not be truncated away.
-                $this->terms($orient, ['must_include_terms', 'expansion_terms', 'interpretation_terms']),
-            ),
+            // Kept verbatim for the feature-flagged A/B path.
+            'citation' => $legacyCitation,
+            'citation_queries' => (bool) config('gate-v2.retrieval.citation_multi_query', true)
+                ? $multiQuery['queries']
+                : [$legacyCitation],
+            'citation_core_queries' => (bool) config('gate-v2.retrieval.citation_multi_query', true)
+                ? $multiQuery['core']
+                : [],
         ];
+    }
+
+    /**
+     * Build an immutable deterministic core from structured case fields, then
+     * append (never concatenate into the core) at most two Orient terms.
+     *
+     * The bridge currently has no citation-query batch input. The sequential
+     * fallback is therefore capped at two queries; see RetrieveEsvsSnippetsTool
+     * for the 1.5x timeout budget. If batching is added, the configurable cap can
+     * safely be raised to four without changing this separation.
+     *
+     * @param  array<string, mixed>  $patientModel
+     * @param  array<int, mixed>  $mustIncludeTerms
+     * @return array{queries: array<int, string>, core: array<int, string>}
+     */
+    public function buildCitationQueries(array $patientModel, array $mustIncludeTerms = []): array
+    {
+        $maxQueries = max(2, min(4, (int) config('gate-v2.retrieval.citation_multi_query_max', 2)));
+        $fieldText = $this->structuredCitationText($patientModel);
+        $lower = mb_strtolower($fieldText);
+        $anchors = $this->caseAnchorTerms($fieldText);
+        $core = [];
+
+        $hasVeinBypass = preg_match('/\bvein\b.{0,24}\bbypass\b|\bbypass\b.{0,24}\bvein\b/iu', $fieldText) === 1
+            || preg_match('/\bvein\s+(?:bk|below[- ]knee)\s+bypass\b/iu', $fieldText) === 1;
+        if ($hasVeinBypass) {
+            $core[] = 'antithrombotic therapy after vein bypass';
+        } elseif (preg_match('/\bbypass\b/iu', $fieldText) === 1) {
+            $core[] = 'antithrombotic therapy after bypass';
+        }
+
+        $hasLimbIschaemia = in_array('limb', $anchors, true)
+            || preg_match('/\b(?:lower\s+limb|peripheral arterial disease|ischemi|ischaemi)\b/iu', $fieldText) === 1;
+        if ($hasLimbIschaemia && ($hasVeinBypass || str_contains($lower, 'revascular'))) {
+            $core[] = 'critical limb-threatening ischaemia revascularisation';
+        } elseif (in_array('carotid', $anchors, true)) {
+            $core[] = 'carotid stenosis revascularisation';
+        } elseif (in_array('aorta', $anchors, true)) {
+            $core[] = 'aortic aneurysm intervention';
+        } elseif (in_array('venous', $anchors, true)) {
+            $core[] = 'venous thrombosis treatment';
+        }
+
+        if ($core === []) {
+            $fallback = $this->firstStructuredConcept($patientModel);
+            if ($fallback !== '') {
+                $core[] = $fallback;
+            }
+        }
+
+        $core = $this->uniqueCappedQueries($core, $maxQueries);
+        $queries = $core;
+        foreach (array_slice($mustIncludeTerms, 0, 2) as $term) {
+            if (count($queries) >= $maxQueries) {
+                break;
+            }
+            $candidate = $this->shapeMultiCitationQuery((string) $term);
+            if ($candidate !== '') {
+                $queries[] = $candidate;
+                $queries = $this->uniqueCappedQueries($queries, $maxQueries);
+            }
+        }
+
+        return ['queries' => $queries, 'core' => $core];
     }
 
     /**
@@ -90,15 +169,15 @@ final class GateRetrievalQueryBuilder
      * it is. The question is therefore dropped entirely and only terms are sent.
      *
      * Shorter still helps within terms-only (54 chars beat 98 on the stricter CLTI
-     * document), but those two variants differed in wording as well as length, so
-     * the budget is set to the largest value proven on BOTH documents and left
-     * tunable rather than guessed tighter.
+     * document). Multi-query retrieval therefore caps each independent concept at
+     * 60 by default instead of spending a shared 100-character concatenation
+     * budget.
      *
      * @param  array<int, string>  $terms
      */
     private function buildCitationQuery(string $coreQuestion, array $terms): string
     {
-        $budget = max(40, (int) config('gate-v2.retrieval.citation_query_max_chars', 100));
+        $budget = max(20, (int) config('gate-v2.retrieval.citation_query_max_chars', 100));
         $query = '';
 
         foreach ($terms as $term) {
@@ -128,9 +207,66 @@ final class GateRetrievalQueryBuilder
      */
     public function shapeCitationQuery(string $text): string
     {
-        $budget = max(40, (int) config('gate-v2.retrieval.citation_query_max_chars', 100));
+        $budget = max(20, (int) config('gate-v2.retrieval.citation_query_max_chars', 100));
 
         return mb_substr($this->declarativeForm($text), 0, $budget);
+    }
+
+    private function shapeMultiCitationQuery(string $text): string
+    {
+        $budget = max(20, (int) config('gate-v2.retrieval.citation_multi_query_max_chars', 60));
+
+        return mb_substr($this->declarativeForm($text), 0, $budget);
+    }
+
+    /** @param array<string, mixed> $patientModel */
+    private function structuredCitationText(array $patientModel): string
+    {
+        $parts = [];
+        foreach (['lesion', 'intervention', 'planned_intervention', 'prior_interventions'] as $field) {
+            $value = $patientModel[$field] ?? null;
+            foreach (is_array($value) ? $value : [$value] as $part) {
+                $part = trim((string) $part);
+                if ($part !== '' && ! in_array(mb_strtolower($part), ['unknown', 'none', 'n/a'], true)) {
+                    $parts[] = $part;
+                }
+            }
+        }
+
+        return implode(' ', $parts);
+    }
+
+    /** @param array<string, mixed> $patientModel */
+    private function firstStructuredConcept(array $patientModel): string
+    {
+        foreach (['intervention', 'planned_intervention', 'prior_interventions', 'lesion'] as $field) {
+            $value = $patientModel[$field] ?? null;
+            $value = is_array($value) ? reset($value) : $value;
+            $candidate = $this->shapeMultiCitationQuery((string) $value);
+            if ($candidate !== '') {
+                return $candidate;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * @param  array<int, string>  $queries
+     * @return array<int, string>
+     */
+    private function uniqueCappedQueries(array $queries, int $limit): array
+    {
+        $unique = [];
+        foreach ($queries as $query) {
+            $query = $this->shapeMultiCitationQuery($query);
+            $key = mb_strtolower($query);
+            if ($query !== '' && ! isset($unique[$key])) {
+                $unique[$key] = $query;
+            }
+        }
+
+        return array_slice(array_values($unique), 0, $limit);
     }
 
     /**

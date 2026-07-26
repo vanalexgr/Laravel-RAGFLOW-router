@@ -105,4 +105,67 @@ class GateRetrievalQueryBuilderTest extends TestCase
         $this->assertStringContainsString('Patient context:', $narrative);
         $this->assertStringContainsString('Anatomical anchors:', $narrative);
     }
+
+    public function test_deterministic_core_is_identical_across_different_orient_terms(): void
+    {
+        $patientModel = [
+            'lesion' => 'peripheral arterial disease with lower limb ischemia requiring vein below-knee bypass',
+            'prior_interventions' => ['vein BK bypass'],
+            'symptom_status' => 'rest pain preoperative',
+        ];
+        $variantA = [
+            'core_question' => 'What antithrombotic therapy is appropriate?',
+            'patient_model' => $patientModel,
+            'must_include_terms' => ['rest pain', 'bleeding risk'],
+        ];
+        $variantB = [
+            'core_question' => 'What antithrombotic therapy is appropriate?',
+            'patient_model' => $patientModel,
+            'must_include_terms' => ['vein bypass', 'critical limb-threatening ischaemia'],
+        ];
+
+        $first = (new GateRetrievalQueryBuilder)->build($variantA);
+        $second = (new GateRetrievalQueryBuilder)->build($variantB);
+
+        $expected = [
+            'antithrombotic therapy after vein bypass',
+            'critical limb-threatening ischaemia revascularisation',
+        ];
+        $this->assertSame($expected, $first['citation_core_queries']);
+        $this->assertSame($expected, $second['citation_core_queries']);
+        $this->assertSame($expected, $first['citation_queries']);
+        $this->assertSame($expected, $second['citation_queries']);
+    }
+
+    public function test_every_multi_query_obeys_the_per_query_character_cap(): void
+    {
+        config()->set('gate-v2.retrieval.citation_multi_query_max_chars', 42);
+        config()->set('gate-v2.retrieval.citation_multi_query_max', 4);
+        $built = (new GateRetrievalQueryBuilder)->build([
+            'core_question' => 'What treatment is appropriate?',
+            'patient_model' => [
+                'lesion' => 'peripheral arterial disease with lower limb ischemia requiring vein below-knee bypass',
+                'prior_interventions' => ['vein BK bypass'],
+            ],
+            'must_include_terms' => [
+                'an exceptionally long additional clinical concept that must be truncated',
+                'duplex surveillance after bypass',
+            ],
+        ]);
+
+        $this->assertCount(4, $built['citation_queries']);
+        foreach ($built['citation_queries'] as $query) {
+            $this->assertLessThanOrEqual(42, mb_strlen($query), $query);
+        }
+    }
+
+    public function test_feature_flag_restores_the_single_legacy_query(): void
+    {
+        config()->set('gate-v2.retrieval.citation_multi_query', false);
+
+        $built = (new GateRetrievalQueryBuilder)->build($this->orient());
+
+        $this->assertSame([$built['citation']], $built['citation_queries']);
+        $this->assertSame([], $built['citation_core_queries']);
+    }
 }
