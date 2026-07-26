@@ -139,15 +139,16 @@ final class RetrieveEsvsSnippetsTool implements Tool
         $multiQueryDeadline = null;
         if ($timeoutSeconds !== null) {
             $timeoutSeconds = max(1, $timeoutSeconds);
+            $isMultiQuery = count($citationQueries) > 1;
             // With two sequential queries, 75% apiece gives a strict 1.5x cap
             // versus the old single-query allowance. GatePathwayWorker first
             // reduces the base allowance when the parent deadline is tighter.
-            $perQueryTimeout = count($citationQueries) > 1
+            $perQueryTimeout = $isMultiQuery
                 ? max(1, (int) floor($timeoutSeconds * 0.75))
                 : $timeoutSeconds;
-            $multiQueryDeadline = microtime(true) + (
-                count($citationQueries) > 1 ? $timeoutSeconds * 1.5 : $timeoutSeconds
-            );
+            $multiQueryDeadline = $isMultiQuery
+                ? microtime(true) + ($timeoutSeconds * 1.5)
+                : null;
             config()->set('ragflow.request_timeout', $perQueryTimeout);
             config()->set('ragflow.connect_timeout', min(
                 $perQueryTimeout,

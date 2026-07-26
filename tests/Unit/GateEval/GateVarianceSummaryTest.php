@@ -10,9 +10,9 @@ class GateVarianceSummaryTest extends TestCase
     public function test_it_counts_distinct_queries_and_summarizes_branch_citations(): void
     {
         $runs = [
-            $this->run('PASS', 0, 'query alpha', 4, 'query shared'),
-            $this->run('FAIL', 2, 'query beta', 8, 'query shared'),
-            $this->run('PASS', 7, 'query alpha', 12, 'query other'),
+            $this->varianceRun('PASS', 0, 'query alpha', 4, 'query shared'),
+            $this->varianceRun('FAIL', 2, 'query beta', 8, 'query shared'),
+            $this->varianceRun('PASS', 7, 'query alpha', 12, 'query other'),
         ];
 
         $summary = (new GateVarianceSummary)->summarize($runs);
@@ -43,7 +43,7 @@ class GateVarianceSummaryTest extends TestCase
     public function test_it_fills_a_missing_branch_with_zero_and_reports_the_missing_run(): void
     {
         $runs = [
-            $this->run('PASS', 5, 'query', 6, 'clti query'),
+            $this->varianceRun('PASS', 5, 'query', 6, 'clti query'),
             [
                 'grade' => 'PASS',
                 'branches' => [
@@ -69,8 +69,8 @@ class GateVarianceSummaryTest extends TestCase
     public function test_it_normalizes_whitespace_and_case_but_reports_raw_queries(): void
     {
         $runs = [
-            $this->run('PASS', 1, ' Query Alpha ', 2, 'CLTI'),
-            $this->run('PASS', 2, 'query alpha', 3, ' clti '),
+            $this->varianceRun('PASS', 1, ' Query Alpha ', 2, 'CLTI'),
+            $this->varianceRun('PASS', 2, 'query alpha', 3, ' clti '),
         ];
 
         $summary = (new GateVarianceSummary)->summarize($runs);
@@ -87,7 +87,7 @@ class GateVarianceSummaryTest extends TestCase
     public function test_null_grade_falls_back_to_not_judged(): void
     {
         $summary = (new GateVarianceSummary)->summarize([
-            $this->run(null, 1, 'query', 2, 'clti query'),
+            $this->varianceRun(null, 1, 'query', 2, 'clti query'),
         ]);
 
         $this->assertSame(['NOT_JUDGED' => 1], $summary['grade_distribution']);
@@ -96,7 +96,7 @@ class GateVarianceSummaryTest extends TestCase
     public function test_an_errored_run_is_counted_and_excluded_from_measurements(): void
     {
         $summary = (new GateVarianceSummary)->summarize([
-            $this->run('PASS', 5, 'query', 7, 'clti query'),
+            $this->varianceRun('PASS', 5, 'query', 7, 'clti query'),
             ['run' => 2, 'error' => 'network timeout', 'grade' => null, 'branches' => []],
         ]);
 
@@ -110,10 +110,40 @@ class GateVarianceSummaryTest extends TestCase
         $this->assertSame(0, $summary['branches']['antithrombotic_therapy']['runs_missing']);
     }
 
+    public function test_it_counts_the_actual_multi_query_plan_instead_of_the_legacy_query(): void
+    {
+        $runs = [
+            $this->varianceRun('PASS', 5, 'legacy query alpha', 7, 'legacy clti alpha'),
+            $this->varianceRun('PASS', 5, 'legacy query beta', 7, 'legacy clti beta'),
+        ];
+        foreach ($runs as &$run) {
+            foreach ($run['branches'] as &$branch) {
+                $branch['citation_queries'] = ['core query one', 'core query two'];
+            }
+        }
+        unset($run, $branch);
+
+        $summary = (new GateVarianceSummary)->summarize($runs);
+
+        $this->assertSame(1, $summary['distinct_citation_query_count']);
+        $this->assertSame(
+            ['core query one || core query two'],
+            $summary['distinct_citation_queries'],
+        );
+        $this->assertSame(
+            1,
+            $summary['branches']['antithrombotic_therapy']['distinct_citation_query_count'],
+        );
+        $this->assertSame(
+            1,
+            $summary['branches']['clti']['distinct_citation_query_count'],
+        );
+    }
+
     /**
      * @return array<string, mixed>
      */
-    private function run(
+    private function varianceRun(
         ?string $grade,
         int $antithromboticCount,
         string $antithromboticQuery,

@@ -29,11 +29,19 @@ final class GateVarianceSummary
             }
 
             $query = (string) ($detail['citation_query'] ?? '');
+            $queries = array_values(array_filter(array_map(
+                static fn (mixed $value): string => trim((string) $value),
+                (array) ($detail['citation_queries'] ?? [$query]),
+            ), static fn (string $value): bool => $value !== ''));
+            if ($queries === [] && $query !== '') {
+                $queries = [$query];
+            }
             $branches[$guideline] = [
                 'citation_count' => (int) ($detail['citation_count'] ?? 0),
                 'citation_available' => (int) ($detail['citation_available'] ?? 0),
                 'narrative_available' => (int) ($detail['narrative_available'] ?? 0),
                 'citation_query' => $query,
+                'citation_queries' => $queries,
                 'citation_query_chars' => array_key_exists('citation_query_chars', $detail)
                     ? (int) $detail['citation_query_chars']
                     : mb_strlen($query),
@@ -104,11 +112,21 @@ final class GateVarianceSummary
                 $metrics = (array) $runBranches[$branch];
                 $counts[] = (int) ($metrics['citation_count'] ?? 0);
                 $rawQuery = (string) ($metrics['citation_query'] ?? '');
-                $normalizedQuery = $this->normalizeQuery($rawQuery);
-                $rawQueries[$rawQuery] = true;
-                $normalizedQueries[$normalizedQuery] = true;
-                $allRawQueries[$rawQuery] = true;
-                $allNormalizedQueries[$normalizedQuery] = true;
+                $rawQueryPlan = array_values((array) ($metrics['citation_queries'] ?? [$rawQuery]));
+                $rawQueryPlan = array_values(array_filter(array_map(
+                    static fn (mixed $value): string => (string) $value,
+                    $rawQueryPlan,
+                ), static fn (string $value): bool => trim($value) !== ''));
+                $normalizedQueryPlan = array_map($this->normalizeQuery(...), $rawQueryPlan);
+                $rawQueryPlanText = implode(' || ', $rawQueryPlan);
+                $normalizedQueryPlanKey = json_encode(
+                    $normalizedQueryPlan,
+                    JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
+                );
+                $rawQueries[$rawQueryPlanText] = true;
+                $normalizedQueries[$normalizedQueryPlanKey] = true;
+                $allRawQueries[$rawQueryPlanText] = true;
+                $allNormalizedQueries[$normalizedQueryPlanKey] = true;
             }
 
             $rawQueryStrings = array_keys($rawQueries);

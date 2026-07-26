@@ -144,7 +144,10 @@ final class GateVarianceCommand extends Command
                 $metrics['citation_query_chars'],
                 $metrics['citation_top_k'],
             ));
-            $this->line('    query: '.$metrics['citation_query']);
+            $this->line('    query plan: '.implode(
+                ' || ',
+                (array) ($metrics['citation_queries'] ?? [$metrics['citation_query']]),
+            ));
         }
     }
 
