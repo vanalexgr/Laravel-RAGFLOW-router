@@ -135,12 +135,29 @@ class GateDeadlineBudgetTest extends TestCase
     public function test_a_retry_is_not_started_without_room_to_retrieve_and_assess(): void
     {
         config()->set('gate-v2.retrieval.minimum_attempt_seconds', 8);
+        config()->set('gate-v2.retrieval.assessment_reserve_seconds', 15);
         $canStart = new ReflectionMethod(GatePathwayWorker::class, 'canStartAttempt');
         $worker = $this->worker();
 
         $this->assertTrue($canStart->invoke($worker, null));
         $this->assertTrue($canStart->invoke($worker, microtime(true) + 30));
+        $this->assertFalse($canStart->invoke($worker, microtime(true) + 15.5));
         $this->assertFalse($canStart->invoke($worker, microtime(true) + 3));
+    }
+
+    public function test_multi_query_retrieval_cannot_consume_the_assessment_reserve(): void
+    {
+        config()->set('gate-v2.retrieval.branch_budget_fraction', 0.5);
+        config()->set('gate-v2.retrieval.assessment_reserve_seconds', 12);
+        $budget = new ReflectionMethod(GatePathwayWorker::class, 'retrievalBaseTimeout');
+
+        // R=40, F=.5, A=12 => total allowance=min(20, 28)=20.
+        // Two-query expansion E=1.5 => base=floor(20/1.5)=13, and
+        // 13*1.5=19.5 leaves at least the configured 12-second reserve.
+        $base = $budget->invoke($this->worker(), 30, microtime(true) + 40.5, 2);
+
+        $this->assertSame(13, $base);
+        $this->assertLessThanOrEqual(28, $base * 1.5);
     }
 
     // --- Both ground() branches must bound children the same way -------------

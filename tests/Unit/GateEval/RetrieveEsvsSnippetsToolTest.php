@@ -107,6 +107,10 @@ class RetrieveEsvsSnippetsToolTest extends TestCase
 
             public array $timeouts = [];
 
+            public int $narrativeCalls = 0;
+
+            public int $citationOnlyCalls = 0;
+
             public function retrieve(
                 string $question,
                 array $history = [],
@@ -114,6 +118,7 @@ class RetrieveEsvsSnippetsToolTest extends TestCase
                 ?string $citationQuestion = null,
             ): array {
                 $this->citationQuestions[] = $citationQuestion;
+                $this->narrativeCalls++;
                 $this->timeouts[] = [
                     config('ragflow.request_timeout'),
                     config('ragflow.connect_timeout'),
@@ -138,6 +143,32 @@ class RetrieveEsvsSnippetsToolTest extends TestCase
                     ),
                 ];
             }
+
+            public function retrieveCitations(
+                string $citationQuestion,
+                array $history = [],
+                ?array $requestedKeys = null,
+            ): array {
+                $this->citationOnlyCalls++;
+                $this->citationQuestions[] = $citationQuestion;
+                $this->timeouts[] = [
+                    config('ragflow.request_timeout'),
+                    config('ragflow.connect_timeout'),
+                ];
+
+                return [
+                    'duration_ms' => 1,
+                    'llm_citation_chunks' => array_map(
+                        static fn (string $text): array => [
+                            'text' => $text,
+                            'similarity' => 0.8,
+                            'document_id' => '31f83c34052911f18ceb32d89964721d',
+                        ],
+                        ['duplicate recommendation', 'recommendation C', 'recommendation D'],
+                    ),
+                    'llm_narrative_chunks' => [],
+                ];
+            }
         };
 
         $result = (new RetrieveEsvsSnippetsTool($retrieval))->retrieve(
@@ -156,8 +187,10 @@ class RetrieveEsvsSnippetsToolTest extends TestCase
         );
         $this->assertSame([[15, 3], [15, 3]], $retrieval->timeouts);
         $this->assertSame(5, $result['diagnostics']['citation_available']);
-        $this->assertSame(4, $result['diagnostics']['citation_count']);
-        $this->assertCount(10, $result['snippets']);
+        $this->assertSame(5, $result['diagnostics']['citation_count']);
+        $this->assertSame(1, $retrieval->narrativeCalls);
+        $this->assertSame(1, $retrieval->citationOnlyCalls);
+        $this->assertCount(15, $result['snippets']);
         $this->assertCount(1, array_filter(
             $result['snippets'],
             static fn (array $snippet): bool => str_contains($snippet['text'], 'duplicate recommendation'),
@@ -259,7 +292,7 @@ class RetrieveEsvsSnippetsToolTest extends TestCase
         $this->assertTrue($result['diagnostics']['provenance_guard_degraded']);
     }
 
-    public function test_one_unlabelled_citation_is_kept_alongside_a_verified_match(): void
+    public function test_partial_rollout_discards_unlabelled_citation_alongside_a_verified_match(): void
     {
         $retrieval = new class extends RetrievalService
         {
@@ -285,9 +318,38 @@ class RetrieveEsvsSnippetsToolTest extends TestCase
 
         $result = (new RetrieveEsvsSnippetsTool($retrieval))->retrieve('clti', 'q');
 
-        $this->assertCount(2, $result['snippets']);
-        $this->assertSame([true, false], array_column($result['snippets'], 'provenance_verified'));
+        $this->assertCount(1, $result['snippets']);
+        $this->assertSame([true], array_column($result['snippets'], 'provenance_verified'));
         $this->assertSame(0, $result['diagnostics']['provenance_mismatch']);
+        $this->assertSame(1, $result['diagnostics']['provenance_unverifiable']);
+        $this->assertFalse($result['diagnostics']['provenance_guard_degraded']);
+    }
+
+    public function test_present_but_unknown_document_id_is_discarded(): void
+    {
+        $retrieval = new class extends RetrievalService
+        {
+            public function retrieve(
+                string $question,
+                array $history = [],
+                ?array $requestedKeys = null,
+                ?string $citationQuestion = null,
+            ): array {
+                return [
+                    'duration_ms' => 1,
+                    'llm_citation_chunks' => [[
+                        'text' => 'Recommendation from an unknown document',
+                        'document_id' => 'unknown-document-id',
+                    ]],
+                    'llm_narrative_chunks' => [],
+                ];
+            }
+        };
+
+        $result = (new RetrieveEsvsSnippetsTool($retrieval))->retrieve('clti', 'q');
+
+        $this->assertSame([], $result['snippets']);
+        $this->assertSame(1, $result['diagnostics']['provenance_mismatch']);
         $this->assertSame(1, $result['diagnostics']['provenance_unverifiable']);
         $this->assertFalse($result['diagnostics']['provenance_guard_degraded']);
     }
@@ -342,7 +404,7 @@ class RetrieveEsvsSnippetsToolTest extends TestCase
         $this->assertSame([$unlabelled], $retrieval->filterForTest([$unlabelled]));
     }
 
-    public function test_authoritative_raw_filter_rejects_mismatch_but_keeps_missing_id(): void
+    public function test_authoritative_raw_filter_rejects_mismatch_and_missing_id_on_partial_rollout(): void
     {
         config()->set('ragflow.retrieval.authoritative_citation_document_scope', true);
         $retrieval = new class extends RetrievalService
@@ -368,9 +430,32 @@ class RetrieveEsvsSnippetsToolTest extends TestCase
         $unlabelled = ['content' => 'Recommendation with sparse metadata'];
 
         $this->assertSame(
-            [$matching, $unlabelled],
+            [$matching],
             $retrieval->filterForTest([$matching, $wrong, $unlabelled]),
         );
+    }
+
+    public function test_authoritative_raw_filter_passes_through_when_entire_response_has_no_ids(): void
+    {
+        config()->set('ragflow.retrieval.authoritative_citation_document_scope', true);
+        $retrieval = new class extends RetrievalService
+        {
+            public function filterForTest(array $chunks): array
+            {
+                return $this->filterRawChunksToSelectedGuidelines(
+                    $chunks,
+                    ['clti'],
+                    ['Chronic Limb-Threatening Ischemia'],
+                    'citation',
+                );
+            }
+        };
+        $chunks = [
+            ['content' => 'First recommendation without identity'],
+            ['content' => 'Second recommendation without identity'],
+        ];
+
+        $this->assertSame($chunks, $retrieval->filterForTest($chunks));
     }
 
     public function test_citation_formatter_propagates_canonical_document_id(): void

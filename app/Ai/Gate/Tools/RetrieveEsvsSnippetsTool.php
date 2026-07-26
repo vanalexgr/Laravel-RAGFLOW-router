@@ -26,8 +26,11 @@ use Stringable;
  */
 final class RetrieveEsvsSnippetsTool implements Tool
 {
-    /** Cap snippets returned to the model so the pathway prompt stays bounded. */
-    private const MAX_SNIPPETS = 10;
+    /**
+     * Preserve enough per-attempt candidates for the worker to rank retries
+     * globally. The worker still applies the final 10-snippet prompt bound.
+     */
+    private const MAX_SNIPPETS = 20;
 
     public function __construct(
         private readonly RetrievalService $retrieval,
@@ -180,20 +183,26 @@ final class RetrieveEsvsSnippetsTool implements Tool
                     $this->rebuildRagflowClient();
                 }
 
-                $current = $this->retrieval->retrieve(
-                    $query,
-                    [],
-                    [$guidelineKey],
-                    $currentCitationQuery,
-                );
+                $current = $index === 0
+                    ? $this->retrieval->retrieve(
+                        $query,
+                        [],
+                        [$guidelineKey],
+                        $currentCitationQuery,
+                    )
+                    : $this->retrieval->retrieveCitations(
+                        (string) $currentCitationQuery,
+                        [],
+                        [$guidelineKey],
+                    );
                 $result['duration_ms'] += (int) ($current['duration_ms'] ?? 0);
                 $result['llm_citation_chunks'] = array_merge(
                     $result['llm_citation_chunks'],
                     (array) ($current['llm_citation_chunks'] ?? []),
                 );
-                // Narrative retrieval is independent of the citation wording.
-                // Keep it from the first call only; later calls exist solely to
-                // widen recommendation recall.
+                // Narrative retrieval is independent of the citation wording and
+                // is fetched exactly once. Later passes set narrative_max=0 via
+                // RetrievalService::retrieveCitations().
                 if ($index === 0) {
                     $result['llm_narrative_chunks'] = (array) ($current['llm_narrative_chunks'] ?? []);
                     $result['retrieval_query'] = $current['retrieval_query'] ?? $query;
@@ -240,24 +249,22 @@ final class RetrieveEsvsSnippetsTool implements Tool
         ));
         $unlabelledCitationCount = count($citationChunks) - $citationsWithDocumentId;
         $provenanceGuardDegraded = $citationChunks !== [] && $citationsWithDocumentId === 0;
-        if ($unlabelledCitationCount > 0) {
-            if ($provenanceGuardDegraded) {
-                Log::warning(
-                    'Gate citation provenance guard degraded to pass-through: bridge does not supply document IDs.',
-                    [
-                        'requested_guideline' => $guidelineKey,
-                        'citation_count' => count($citationChunks),
-                    ],
-                );
-            } else {
-                Log::warning(
-                    'Gate citation provenance is unverifiable for chunks without document IDs; retaining them fail-open.',
-                    [
-                        'requested_guideline' => $guidelineKey,
-                        'unverifiable_count' => $unlabelledCitationCount,
-                    ],
-                );
-            }
+        if ($provenanceGuardDegraded) {
+            Log::warning(
+                'Gate citation provenance guard degraded to pass-through: bridge does not supply document IDs.',
+                [
+                    'requested_guideline' => $guidelineKey,
+                    'citation_count' => count($citationChunks),
+                ],
+            );
+        } elseif ($unlabelledCitationCount > 0) {
+            Log::warning(
+                'Gate discarded citation chunks without document IDs during a partial provenance rollout.',
+                [
+                    'requested_guideline' => $guidelineKey,
+                    'discarded_count' => $unlabelledCitationCount,
+                ],
+            );
         }
         foreach (['llm_citation_chunks', 'llm_narrative_chunks'] as $bucket) {
             $bucketName = $bucket === 'llm_citation_chunks' ? 'citation' : 'narrative';
@@ -273,19 +280,26 @@ final class RetrieveEsvsSnippetsTool implements Tool
                         ? null
                         : ($guidelineKeyByDocumentId[$documentId] ?? null);
 
-                    // Fail closed only on positive evidence of misattribution: a
-                    // known document ID that maps to another guideline. Missing
-                    // or unknown IDs are a deployment/metadata gap, so retain the
-                    // evidence fail-open without stamping it as verified.
-                    if ($citationGuidelineKey !== null && $citationGuidelineKey !== $guidelineKey) {
+                    if ($provenanceGuardDegraded) {
+                        $provenanceUnverifiable++;
+                    } elseif ($documentId === '') {
+                        // Some IDs are present in this response, so an unlabelled
+                        // chunk belongs to a partial rollout and cannot be vouched
+                        // for. Only an entirely unlabelled response fails open.
+                        $provenanceUnverifiable++;
+
+                        continue;
+                    } elseif ($citationGuidelineKey !== $guidelineKey) {
+                        // A supplied ID that is unknown is just as suspect as one
+                        // mapped to another guideline.
                         $provenanceMismatch++;
+                        if ($citationGuidelineKey === null) {
+                            $provenanceUnverifiable++;
+                        }
 
                         continue;
                     }
                     $provenanceVerified = $citationGuidelineKey === $guidelineKey;
-                    if (! $provenanceVerified) {
-                        $provenanceUnverifiable++;
-                    }
                 }
                 $cleaned = ($this->chunkCleaner ?? new GateChunkCleaner)->clean($chunk, 3000);
                 $text = $cleaned['text'];

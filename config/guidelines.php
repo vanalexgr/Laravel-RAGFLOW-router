@@ -11,24 +11,28 @@ return [
                     'id' => '5b51acbfffa411f0905532d89964721d',
                     'name' => 'Aortic Arch',
                     'recs_doc_id' => '5c02a7e7ff6011f0829532d89964721d',  // Thoracic Aortic Pathologies Involving the Aortic Arch
+                    'citation_phrases' => ['aortic arch aneurysm intervention', 'aortic arch dissection repair'],
                     'key_concepts' => ['Zone 0-4 anatomy', 'Frozen Elephant Trunk', 'FET', 'Total Endovascular Arch Repair', 'dissection management', 'arch aneurysm', 'hybrid arch'],
                 ],
                 'descending_thoracic_aorta' => [
                     'id' => '28c643e104de11f1966232d89964721d',
                     'name' => 'Descending Thoracic & Thoracoabdominal Aortic Aneurysms',
                     'recs_doc_id' => 'a6b1efd204dd11f1992e32d89964721d',
+                    'citation_phrases' => ['thoracoabdominal aortic aneurysm repair', 'type B aortic dissection treatment'],
                     'key_concepts' => ['Type B Dissection', 'TBAD', 'Intramural Hematoma', 'IMH', 'TEVAR', 'Spinal Cord Ischemia', 'thoracic aneurysm', 'penetrating ulcer', 'thoracoabdominal aneurysm', 'TAAA', 'Crawford classification', 'FEVAR', 'BEVAR', 'FBEVAR', 'juxtarenal AAA', 'pararenal AAA', 'suprarenal AAA'],
                 ],
                 'abdominal_aortic_aneurysm' => [
                     'id' => '7fb152c6ffbd11f0b2af32d89964721d',
                     'name' => 'Abdominal Aortic Aneurysm',
                     'recs_doc_id' => '40a8b701ff8111f080ad32d89964721d',  // ESVS_2024_AAA
+                    'citation_phrases' => ['abdominal aortic aneurysm repair', 'EVAR surveillance and reintervention'],
                     'key_concepts' => ['EVAR', 'Open Repair', 'surveillance', '5.0cm', '5.5cm', 'endoleaks', 'AAA', 'rupture', 'abdominal aneurysm'],
                 ],
                 'mesenteric_renal' => [
                     'id' => '681e339bffa311f08abc32d89964721d',
                     'name' => 'Mesenteric & Renal',
                     'recs_doc_id' => '5d49bb90ff5a11f0bda432d89964721d',  // Mesenteric and Renal Arteries
+                    'citation_phrases' => ['mesenteric ischaemia revascularisation', 'renal artery stenosis treatment'],
                     'key_concepts' => ['Chronic Mesenteric Ischemia', 'Acute Mesenteric Ischemia', 'CMI', 'AMI', 'Renal Artery Stenosis', 'RAS', 'visceral aneurysms', 'celiac', 'SMA', 'bowel ischemia'],
                 ],
             ],
@@ -40,24 +44,28 @@ return [
                     'id' => '87c72055ffbe11f095ef32d89964721d',
                     'name' => 'Carotid & Vertebral',
                     'recs_doc_id' => '4f5cce1cffbd11f0b3e232d89964721d',  // Management of Atherosclerotic Carotid and Vertebral Artery Disease
+                    'citation_phrases' => ['carotid stenosis revascularisation', 'stroke prevention after TIA'],
                     'key_concepts' => ['Stroke', 'TIA', 'CEA', 'CAS', 'TCAR', 'symptomatic stenosis', 'asymptomatic stenosis', 'carotid endarterectomy', 'carotid stenting', 'vertebral artery'],
                 ],
                 'asymptomatic_pad' => [
                     'id' => '127ff37d173511f1ab08aa811fe4315f',
                     'name' => 'Asymptomatic PAD',
                     'recs_doc_id' => '6e360863f89811f0bb3c32d89964721d',  // Asymptomatic Lower Limb Peripheral Arterial Disease and Intermittent Claudication
+                    'citation_phrases' => ['intermittent claudication treatment', 'asymptomatic peripheral arterial disease management'],
                     'key_concepts' => ['peripheral arterial disease', 'PAD', 'LEAD', 'lower extremity arterial disease', 'Supervised Exercise Therapy', 'SET', 'risk factor optimization', 'claudication', 'intermittent claudication', 'walking distance', 'ABI screening', 'ankle brachial index', 'asymptomatic PAD'],
                 ],
                 'clti' => [
                     'id' => '650c8742053511f1a14932d89964721d',
                     'name' => 'Chronic Limb-Threatening Ischemia',
                     'recs_doc_id' => '31f83c34052911f18ceb32d89964721d',
+                    'citation_phrases' => ['critical limb-threatening ischaemia revascularisation', 'limb salvage for tissue loss'],
                     'key_concepts' => ['WIfI classification', 'angiosome', 'heel ulcer', 'tissue loss', 'rest pain', 'gangrene', 'limb salvage', 'critical limb ischemia', 'CLI', 'CLTI'],
                 ],
                 'acute_limb_ischaemia' => [
                     'id' => '9eeed489ff9d11f0b82f32d89964721d',
                     'name' => 'Acute Limb Ischaemia',
                     'recs_doc_id' => '0fb7a35eff9711f08d5232d89964721d',  // ESVS_2020_ALI
+                    'citation_phrases' => ['acute limb ischaemia revascularisation', 'acute limb thromboembolism treatment'],
                     'key_concepts' => ['6 Ps', 'Rutherford classification', 'thrombolysis', 'embolectomy', 'acute limb', 'ALI', 'pulseless', 'pallor', 'pain', 'paresthesia', 'paralysis', 'poikilothermia'],
                 ],
             ],
@@ -69,18 +77,21 @@ return [
                     'id' => 'b6b02fdaffad11f0885f32d89964721d',
                     'name' => 'Antithrombotic Therapy',
                     'recs_doc_id' => '40795f9affad11f0a4d332d89964721d',  // Antithrombotic Therapy for Vascular Diseases
+                    'citation_phrases' => ['antithrombotic therapy for vascular disease', 'anticoagulant and antiplatelet treatment'],
                     'key_concepts' => ['DOACs', 'warfarin', 'triple therapy', 'cancer-associated thrombosis', 'anticoagulation', 'aspirin', 'clopidogrel', 'dual antiplatelet'],
                 ],
                 'venous_thrombosis' => [
                     'id' => '9302da4a352211f18a57896c82939c88',  // pplx-embed-v1-4b conceptual embeddings
                     'name' => 'Venous Thrombosis (DVT/PE)',
                     'recs_doc_id' => '5c98958919b511f18770aa811fe4315f',
+                    'citation_phrases' => ['venous thromboembolism treatment', 'deep vein thrombosis intervention'],
                     'key_concepts' => ['DVT', 'PE', 'deep vein thrombosis', 'pulmonary embolism', 'IVC filters', 'PTS', 'post-thrombotic syndrome', 'catheter-directed thrombolysis'],
                 ],
                 'chronic_venous_disease' => [
                     'id' => 'ec53f8c1ff9811f0a09132d89964721d',
                     'name' => 'Chronic Venous Disease',
                     'recs_doc_id' => 'd0eb8a25ff9211f096f132d89964721d',  // Chronic Venous Disease of the Lower Limbs
+                    'citation_phrases' => ['chronic venous disease treatment', 'venous ulcer and reflux intervention'],
                     'key_concepts' => ['Varicose veins', 'CEAP classification', 'ablation', 'sclerotherapy', 'venous ulcer', 'reflux', 'great saphenous vein', 'GSV', 'SSV'],
                 ],
             ],
@@ -92,18 +103,21 @@ return [
                     'id' => '94269d17007f11f1b59a32d89964721d',
                     'name' => 'Vascular Trauma',
                     'recs_doc_id' => '3bc100f9007f11f1b97432d89964721d',  // Management of Vascular Trauma
+                    'citation_phrases' => ['vascular trauma injury management', 'haemorrhage control and vascular repair'],
                     'key_concepts' => ['REBOA', 'mangled extremity', 'MESS', 'hard signs', 'soft signs', 'penetrating trauma', 'blunt trauma', 'vascular injury', 'hemorrhage control'],
                 ],
                 'vascular_graft_infections' => [
                     'id' => '29981e72dc4311f09021f2381272676b',
                     'name' => 'Vascular Graft Infections',
                     'recs_doc_id' => '4fec29b2ff8211f0a98232d89964721d',  // Vascular Graft and Endograft Infection
+                    'citation_phrases' => ['vascular graft infection treatment', 'infected endograft excision and reconstruction'],
                     'key_concepts' => ['MAGIC criteria', 'graft excision', 'antibiotic protocols', 'graft infection', 'prosthetic infection', 'aortic graft infection'],
                 ],
                 'vascular_access' => [
                     'id' => '079b4aea008311f1b45632d89964721d',
                     'name' => 'Vascular Access',
                     'recs_doc_id' => 'dbaf171a008c11f1aeff32d89964721d',  // Vascular Access
+                    'citation_phrases' => ['haemodialysis vascular access management', 'AV fistula creation and complications'],
                     'key_concepts' => ['AV fistula', 'AVF', 'dialysis access', 'hemodialysis', 'graft', 'steal syndrome', 'access thrombosis'],
                 ],
             ],

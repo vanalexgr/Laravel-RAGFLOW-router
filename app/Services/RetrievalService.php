@@ -6,6 +6,33 @@ use Illuminate\Support\Facades\Log;
 
 class RetrievalService
 {
+    private bool $citationOnly = false;
+
+    /**
+     * Run the normal scoped pipeline without spending a second vector search on
+     * narrative evidence. The bridge already accepts narrative_max=0; this entry
+     * point exposes that capability without changing retrieve()'s public contract.
+     */
+    public function retrieveCitations(
+        string $citationQuestion,
+        array $history = [],
+        ?array $requestedKeys = null,
+    ): array {
+        $previous = $this->citationOnly;
+        $this->citationOnly = true;
+
+        try {
+            return $this->retrieve(
+                $citationQuestion,
+                $history,
+                $requestedKeys,
+                $citationQuestion,
+            );
+        } finally {
+            $this->citationOnly = $previous;
+        }
+    }
+
     /**
      * Core retrieval pipeline: PHI Scrub -> Route -> Dual Retrieve.
      */
@@ -250,7 +277,7 @@ class RetrievalService
         $narrativeMax = (int) ($retrievalConfig['narrative_max'] ?? 10);
         $citationMax = (int) ($retrievalConfig['citation_max'] ?? 4);
         // Prevent pathological values while still allowing larger pools for experimentation.
-        $narrativeMax = max(1, min($narrativeMax, 200));
+        $narrativeMax = $this->citationOnly ? 0 : max(1, min($narrativeMax, 200));
         $citationMax = max(1, min($citationMax, 200));
 
         $definitionIntent = $this->isDefinitionIntent($scrubbedQuestion);
@@ -383,7 +410,9 @@ class RetrievalService
 
         $gapService = new GapDetectionService;
         $gapReport = null;
-        if ($definitionFastPath) {
+        if ($this->citationOnly) {
+            $log->info('[CITATION ONLY] Skipping narrative recall and secondary retrieval passes.');
+        } elseif ($definitionFastPath) {
             $log->info('[DEFINITION FAST PATH] Single-guideline definitional query satisfied first-pass evidence; skipping secondary retrieval passes', [
                 'selected_guideline' => array_key_first($selectedGuidelines),
                 'narrative_chunks' => count($dualResult['narrative_chunks'] ?? []),
@@ -1854,7 +1883,7 @@ class RetrievalService
         );
 
         $bridgeRerank = new BridgeRerankService;
-        $requestNarrativeMax = $bridgeRerank->enabled()
+        $requestNarrativeMax = $narrativeMax > 0 && $bridgeRerank->enabled()
             ? $bridgeRerank->candidatePoolSize($narrativeMax)
             : $narrativeMax;
         $requestCitationMax = $citationMax > 0 && $bridgeRerank->enabled()
@@ -2228,9 +2257,20 @@ class RetrievalService
                 }
             }
 
-            if ($allowedDocumentIds === []) {
-                // No configured IDs means the authoritative check cannot make a
-                // provenance decision. Preserve evidence instead of deleting it.
+            $responseCarriesDocumentIds = count(array_filter(
+                $rawChunks,
+                static function (mixed $chunk): bool {
+                    $documentId = is_array($chunk)
+                        ? ($chunk['document_id'] ?? $chunk['doc_id'] ?? $chunk['DocumentID'] ?? null)
+                        : null;
+
+                    return is_scalar($documentId) && trim((string) $documentId) !== '';
+                },
+            )) > 0;
+
+            if (! $responseCarriesDocumentIds) {
+                // The bridge supplies no IDs at all for this response, so there is
+                // no provenance signal to enforce. This is the sole fail-open case.
                 return $rawChunks;
             }
 
@@ -2242,11 +2282,11 @@ class RetrievalService
                     }
                     $documentId = $chunk['document_id'] ?? $chunk['doc_id'] ?? $chunk['DocumentID'] ?? null;
 
-                    // Fail closed when a supplied ID is outside the selected
-                    // guideline scope. Fail open when the bridge omitted the ID:
-                    // absence is a deployment gap, not proof of misattribution.
+                    // Once any chunk carries an ID, this is a partial/complete
+                    // rollout: missing, unknown, and cross-guideline IDs are all
+                    // suspect and must fail closed.
                     if (! is_scalar($documentId) || trim((string) $documentId) === '') {
-                        return true;
+                        return false;
                     }
 
                     return isset($allowedDocumentIds[trim((string) $documentId)]);

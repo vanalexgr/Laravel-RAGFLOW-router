@@ -86,13 +86,11 @@ final class GatePathwayWorker
             $topK = (int) ($topKCaps[$topKIndex] ?? 24);
             $retrievalStarted = microtime(true);
             $baseTimeout = $timeoutSeconds ?? (int) config('gate-v2.retrieval.timeout_seconds', 20);
-            if (count($citationQueries) > 1 && $deadlineAt !== null) {
-                // The tool may consume at most 1.5x this base across its two
-                // sequential calls. Reduce the base first so that enlarged
-                // allowance still fits the absolute parent deadline.
-                $remaining = max(1, $this->remainingSeconds($deadlineAt) ?? 1);
-                $baseTimeout = min($baseTimeout, max(1, (int) floor($remaining / 1.5)));
-            }
+            $baseTimeout = $this->retrievalBaseTimeout(
+                $baseTimeout,
+                $deadlineAt,
+                count($citationQueries),
+            );
             $retrieved = $this->retrieval->retrieve(
                 $guideline,
                 $query,
@@ -314,9 +312,56 @@ final class GatePathwayWorker
     private function canStartAttempt(?float $deadlineAt): bool
     {
         $remaining = $this->remainingSeconds($deadlineAt);
+        $assessmentReserve = max(
+            1,
+            (int) config('gate-v2.retrieval.assessment_reserve_seconds', 15),
+        );
 
         return $remaining === null
-            || $remaining >= max(1, (int) config('gate-v2.retrieval.minimum_attempt_seconds', 8));
+            || $remaining >= max(
+                $assessmentReserve + 1,
+                (int) config('gate-v2.retrieval.minimum_attempt_seconds', 8),
+            );
+    }
+
+    /**
+     * Convert the retrieval phase's total branch allowance into the base timeout
+     * understood by RetrieveEsvsSnippetsTool.
+     *
+     * For an attempt admitted by canStartAttempt(), remaining budget R, fraction
+     * F, reserve A, and tool expansion E (1.5 for two citation queries, otherwise
+     * 1), total retrieval is bounded by min(floor(R*F), R-A), and the base passed
+     * to the tool is floor(total/E). Therefore base*E <= R-A: retrieval cannot
+     * consume the assessment reserve.
+     */
+    private function retrievalBaseTimeout(
+        int $configuredTimeout,
+        ?float $deadlineAt,
+        int $citationQueryCount,
+    ): int {
+        if ($deadlineAt === null) {
+            return max(1, $configuredTimeout);
+        }
+
+        $remaining = max(1, $this->remainingSeconds($deadlineAt) ?? 1);
+        $fraction = max(
+            0.1,
+            min(0.9, (float) config('gate-v2.retrieval.branch_budget_fraction', 0.5)),
+        );
+        $reserve = max(
+            1,
+            (int) config('gate-v2.retrieval.assessment_reserve_seconds', 15),
+        );
+        $totalAllowance = max(1, min(
+            (int) floor($remaining * $fraction),
+            $remaining - $reserve,
+        ));
+        $expansion = $citationQueryCount > 1 ? 1.5 : 1.0;
+
+        return max(1, min(
+            $configuredTimeout,
+            (int) floor($totalAllowance / $expansion),
+        ));
     }
 
     /** @param array<string, mixed> $retrieved */

@@ -16,6 +16,22 @@ final class GateRetrievalQueryBuilder
         'renal_mesenteric' => '/\b(renal|mesenteric|sma|coeliac|celiac|visceral)\b/iu',
         'access' => '/\b(avf|fistula|dialysis|vascular\s+access)\b/iu',
         'trauma' => '/\b(trauma|injury|penetrating|blunt|reboa)\b/iu',
+        'antithrombotic' => '/\b(antithrombotic|anticoagul|antiplatelet|aspirin|clopidogrel|warfarin|doac|apixaban|rivaroxaban)\b/iu',
+    ];
+
+    /** @var array<string, array<int, string>> */
+    private const ANCHOR_CITATION_PHRASES = [
+        'carotid' => ['carotid stenosis revascularisation'],
+        'stroke' => ['stroke prevention after TIA'],
+        'aorta' => ['aortic aneurysm intervention'],
+        'venous' => ['chronic venous disease treatment'],
+        'thrombus' => ['venous thromboembolism treatment'],
+        'graft' => ['vascular graft and bypass management'],
+        'limb' => ['lower limb ischaemia treatment'],
+        'renal_mesenteric' => ['renal and mesenteric artery treatment'],
+        'access' => ['haemodialysis vascular access management'],
+        'trauma' => ['vascular trauma injury management'],
+        'antithrombotic' => ['antithrombotic therapy for vascular disease'],
     ];
 
     /**
@@ -125,12 +141,15 @@ final class GateRetrievalQueryBuilder
             || $this->hasGuardedTranscriptMatch('/\brevascular/iu', $rawTurnText);
         if ($hasLimbIschaemia && ($hasVeinBypass || $hasRevascularisation)) {
             $core[] = 'critical limb-threatening ischaemia revascularisation';
-        } elseif (in_array('carotid', $anchors, true)) {
-            $core[] = 'carotid stenosis revascularisation';
-        } elseif (in_array('aorta', $anchors, true)) {
-            $core[] = 'aortic aneurysm intervention';
-        } elseif (in_array('venous', $anchors, true)) {
-            $core[] = 'venous thrombosis treatment';
+        }
+
+        // Guideline-specific phrases live with the guideline registry, so adding
+        // coverage for a new document is a configuration change. Anchor phrases
+        // provide a specific fallback when the case does not identify one exact
+        // guideline strongly enough.
+        $core = array_merge($core, $this->configuredCitationPhrases($fieldText));
+        foreach ($anchors as $anchor) {
+            $core = array_merge($core, self::ANCHOR_CITATION_PHRASES[$anchor] ?? []);
         }
 
         if ($core === []) {
@@ -170,8 +189,9 @@ final class GateRetrievalQueryBuilder
     }
 
     /**
-     * A raw-turn term is usable only when no negation or family-attribution cue
-     * occurs in the approximately 40 characters immediately before the match.
+     * A raw-turn guard applies only inside the clause containing the match.
+     * Sentence punctuation, semicolons, commas, and contrast/presentation
+     * transitions terminate the scope of an earlier negation or family cue.
      */
     private function hasGuardedTranscriptMatch(string $pattern, string $rawTurnText): bool
     {
@@ -183,10 +203,14 @@ final class GateRetrievalQueryBuilder
         foreach ((array) ($matches[0] ?? []) as $match) {
             $byteOffset = (int) ($match[1] ?? 0);
             $prefix = substr($rawTurnText, 0, $byteOffset);
-            $guardWindow = mb_substr($prefix, -40);
+            $clauses = preg_split(
+                '/(?:[.;!?\r\n]+|,\s*|\b(?:but|however|presenting\s+with)\b)/iu',
+                $prefix,
+            ) ?: [];
+            $guardClause = (string) end($clauses);
             $isSuppressed = preg_match(
-                '/\b(?:no|not|without|denies|negative\s+for|ruled\s+out|family\s+history\s+of|father|mother|sibling)\b.{0,40}$/isu',
-                $guardWindow,
+                '/\b(?:no|not|without|denies|negative\s+for|ruled\s+out|family\s+history\s+of|father|mother|sibling)\b.*$/isu',
+                $guardClause,
             ) === 1;
             if (! $isSuppressed) {
                 return true;
@@ -194,6 +218,34 @@ final class GateRetrievalQueryBuilder
         }
 
         return false;
+    }
+
+    /** @return array<int, string> */
+    private function configuredCitationPhrases(string $fieldText): array
+    {
+        $matched = [];
+        $lower = mb_strtolower(str_replace('_', ' ', $fieldText));
+        foreach ((array) config('guidelines.categories', []) as $category) {
+            foreach ((array) ($category['guidelines'] ?? []) as $key => $guideline) {
+                $signals = array_merge(
+                    [str_replace('_', ' ', (string) $key), (string) ($guideline['name'] ?? '')],
+                    (array) ($guideline['key_concepts'] ?? []),
+                );
+                $hasSignal = false;
+                foreach ($signals as $signal) {
+                    $signal = mb_strtolower(trim((string) $signal));
+                    if ($signal !== '' && mb_strlen($signal) >= 3 && str_contains($lower, $signal)) {
+                        $hasSignal = true;
+                        break;
+                    }
+                }
+                if ($hasSignal) {
+                    $matched = array_merge($matched, (array) ($guideline['citation_phrases'] ?? []));
+                }
+            }
+        }
+
+        return $matched;
     }
 
     /**
@@ -314,7 +366,9 @@ final class GateRetrievalQueryBuilder
             $value = is_array($value) ? reset($value) : $value;
             $candidate = $this->shapeMultiCitationQuery((string) $value);
             if ($candidate !== '') {
-                return $candidate;
+                return count(preg_split('/\s+/u', $candidate, -1, PREG_SPLIT_NO_EMPTY) ?: []) > 1
+                    ? $candidate
+                    : $candidate.' clinical management';
             }
         }
 

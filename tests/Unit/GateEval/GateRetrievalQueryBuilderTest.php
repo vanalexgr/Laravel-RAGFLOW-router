@@ -7,6 +7,13 @@ use Tests\TestCase;
 
 class GateRetrievalQueryBuilderTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config()->set('gate-v2.retrieval.citation_multi_query', true);
+    }
+
     /** @return array<string, mixed> */
     private function orient(): array
     {
@@ -202,6 +209,65 @@ class GateRetrievalQueryBuilderTest extends TestCase
             'mother' => ['His mother underwent a vein bypass.'],
             'sibling' => ['A sibling previously had a vein bypass.'],
         ];
+    }
+
+    public function test_negation_in_a_previous_sentence_does_not_suppress_claudication(): void
+    {
+        $built = (new GateRetrievalQueryBuilder)->buildCitationQueries(
+            [],
+            [],
+            'Patient has no known allergies. Presenting with severe claudication.',
+        );
+
+        $this->assertContains('lower limb ischaemia treatment', $built['core']);
+    }
+
+    /**
+     * @dataProvider genuinelyGuardedClinicalTermProvider
+     */
+    public function test_negation_or_family_cue_in_the_same_clause_still_suppresses(
+        string $rawTurnText,
+        string $unexpected,
+    ): void {
+        $built = (new GateRetrievalQueryBuilder)->buildCitationQueries([], [], $rawTurnText);
+
+        $this->assertNotContains($unexpected, $built['core']);
+    }
+
+    /** @return array<string, array{string, string}> */
+    public static function genuinelyGuardedClinicalTermProvider(): array
+    {
+        return [
+            'no bypass' => ['The patient has no bypass.', 'antithrombotic therapy after bypass'],
+            'denies rest pain' => ['The patient denies rest pain.', 'lower limb ischaemia treatment'],
+            'father had bypass' => ['Her father had bypass.', 'antithrombotic therapy after bypass'],
+        ];
+    }
+
+    public function test_every_configured_guideline_produces_a_specific_multi_word_phrase(): void
+    {
+        $builder = new GateRetrievalQueryBuilder;
+        foreach ((array) config('guidelines.categories') as $category) {
+            foreach ((array) ($category['guidelines'] ?? []) as $key => $guideline) {
+                $patientModel = [
+                    'lesion' => implode(' ', [
+                        str_replace('_', ' ', (string) $key),
+                        (string) ($guideline['name'] ?? ''),
+                        (string) ((array) ($guideline['key_concepts'] ?? []))[0],
+                    ]),
+                ];
+                $built = $builder->buildCitationQueries($patientModel);
+
+                $this->assertNotEmpty($built['core'], (string) $key);
+                foreach ($built['core'] as $phrase) {
+                    $this->assertGreaterThan(
+                        1,
+                        count(preg_split('/\s+/u', trim($phrase)) ?: []),
+                        "{$key} emitted bare concept: {$phrase}",
+                    );
+                }
+            }
+        }
     }
 
     public function test_every_multi_query_obeys_the_per_query_character_cap(): void
