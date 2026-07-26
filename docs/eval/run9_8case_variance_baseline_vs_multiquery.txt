@@ -1,0 +1,212 @@
+=== PHASE2 COMPLETE ===
+### baseline-aaa_evolving_context.log
+  grade=PASS
+  Orient vein-bypass signal=no
+  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=no
+  grade=PASS
+  Orient vein-bypass signal=no
+Successful runs: 3; errors: 0
+Grade distribution: PASS=2, PASS_WITH_MINOR=1
+abdominal_aortic_aneurysm citation_count min/median/max: 0/0/6; distinct queries: 3; runs missing: 0
+Distinct citation queries observed: 3
+### baseline-batch_c2_brachial_vein_compression.log
+  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=no
+  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=no
+  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=no
+Successful runs: 3; errors: 0
+Grade distribution: PASS_WITH_MINOR=3
+antithrombotic_therapy citation_count min/median/max: 0/1/5; distinct queries: 3; runs missing: 0
+venous_thrombosis citation_count min/median/max: 0/2/6; distinct queries: 3; runs missing: 0
+Distinct citation queries observed: 3
+### baseline-batch_f1_clti_aps_warfarin.log
+  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=no
+    query plan: chronic limb-threatening ischemia infrainguinal bypass antiphospholipid syndrome warfarin
+    query plan: chronic limb-threatening ischemia infrainguinal bypass antiphospholipid syndrome warfarin
+  grade=PASS
+  Orient vein-bypass signal=no
+  grade=PASS
+  Orient vein-bypass signal=no
+    query plan: infrainguinal bypass antiphospholipid syndrome warfarin perioperative anticoagulation CLTI APLS
+    query plan: infrainguinal bypass antiphospholipid syndrome warfarin perioperative anticoagulation CLTI APLS
+Successful runs: 3; errors: 0
+Grade distribution: PASS=2, PASS_WITH_MINOR=1
+antithrombotic_therapy citation_count min/median/max: 0/3/6; distinct queries: 3; runs missing: 0
+clti citation_count min/median/max: 0/1/1; distinct queries: 3; runs missing: 0
+### baseline-batch_f2_clti_itp_after_bypass.log
+RUN 1/3 · batch_f2_clti_itp_after_bypass · JUDGED
+  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=no
+    query plan: CLTI immune thrombocytopenia postoperative management bypass surgery bleeding risk limb salvage
+    query plan: CLTI immune thrombocytopenia postoperative management bypass surgery bleeding risk limb salvage
+RUN 2/3 · batch_f2_clti_itp_after_bypass · JUDGED
+  grade=FAIL
+  Orient vein-bypass signal=no
+RUN 3/3 · batch_f2_clti_itp_after_bypass · JUDGED
+  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=no
+    query plan: CLTI ITP bypass surgery post-operative management post-operative care vascular surgery complications
+    query plan: CLTI ITP bypass surgery post-operative management post-operative care vascular surgery complications
+Successful runs: 3; errors: 0
+### baseline-batch_f4_aaa_clti_sepsis_anticoagulation.log
+  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=no
+  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=no
+  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=no
+Successful runs: 3; errors: 0
+Grade distribution: PASS_WITH_MINOR=3
+abdominal_aortic_aneurysm citation_count min/median/max: 6/6/6; distinct queries: 3; runs missing: 0
+antithrombotic_therapy citation_count min/median/max: 0/1/1; distinct queries: 3; runs missing: 0
+clti citation_count min/median/max: 0/0/1; distinct queries: 3; runs missing: 0
+Distinct citation queries observed: 3
+### baseline-batch_s2_post_vein_bypass_antithrombotics.log
+RUN 1/3 · batch_s2_post_vein_bypass_antithrombotics · JUDGED
+  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=yes
+    query plan: antithrombotic therapy vein bypass rest pain peripheral arterial disease below-knee bypass
+    query plan: antithrombotic therapy vein bypass rest pain peripheral arterial disease below-knee bypass
+RUN 2/3 · batch_s2_post_vein_bypass_antithrombotics · JUDGED
+  grade=FAIL
+  Orient vein-bypass signal=yes
+    query plan: antithrombotic therapy below knee bypass peripheral arterial disease rest pain bleeding risk
+    query plan: antithrombotic therapy below knee bypass peripheral arterial disease rest pain bleeding risk
+RUN 3/3 · batch_s2_post_vein_bypass_antithrombotics · JUDGED
+  grade=PASS
+  Orient vein-bypass signal=yes
+    query plan: antithrombotic therapy vein below-knee bypass peripheral arterial disease rest pain bleeding risk
+### baseline-batch_s5_iliofemoral_dvt_recent_surgery.log
+  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=no
+  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=no
+  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=no
+Successful runs: 3; errors: 0
+Grade distribution: PASS_WITH_MINOR=3
+antithrombotic_therapy citation_count min/median/max: 0/0/1; distinct queries: 3; runs missing: 0
+venous_thrombosis citation_count min/median/max: 0/1/6; distinct queries: 3; runs missing: 0
+Distinct citation queries observed: 3
+### baseline-batch_s6_urgent_cea_af_apixaban.log
+  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=no
+  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=no
+  grade=FAIL
+  Orient vein-bypass signal=no
+Successful runs: 3; errors: 0
+Grade distribution: FAIL=1, PASS_WITH_MINOR=2
+antithrombotic_therapy citation_count min/median/max: 6/6/6; distinct queries: 3; runs missing: 0
+carotid_vertebral citation_count min/median/max: 2/6/6; distinct queries: 3; runs missing: 0
+Distinct citation queries observed: 3
+### treatment-aaa_evolving_context.log
+  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=no
+RUN 2/3 · aaa_evolving_context   grade=PA  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=no
+    query plan: aortic aneurysm intervention || abdominal aortic aneurysm  grade=PASS_WITH_MINOR
+  Orient vein-bypas  grade=FAIL
+  Orient vein-bypass signal=no
+Successful runs: 3; errors: 0
+Grade distribution: FAIL=1, PASS_WITH_MINOR=2
+abdominal_aortic_aneurysm citation_count min/median/max: 6/6/6; distinct queries: 1; runs missing: 0
+Distinct citation queries observed: 1
+### treatment-batch_c2_brachial_vein_compression.log
+  grade=FAIL
+  Orient vein-bypass signal=no
+  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=no
+  grade=FAIL
+  Orient vein-bypass signal=no
+Successful runs: 3; errors: 0
+Grade distribution: FAIL=2, PASS_WITH_MINOR=1
+antithrombotic_therapy citation_count min/median/max: 6/6/6; distinct queries: 2; runs missing: 0
+venous_thrombosis citation_count min/median/max: 6/6/9; distinct queries: 2; runs missing: 0
+Distinct citation queries observed: 2
+### treatment-batch_f1_clti_aps_warfarin.log
+  grade=PASS
+  Orient vein-bypass signal=no
+    query plan: antithrombotic therapy after bypass || antiphospholipid syndrome
+    query plan: antithrombotic therapy after bypass || antiphospholipid syndrome
+{"error":"cURL error 28: Operation timed out after 30002 milliseconds with 0 bytes received (see https://curl.se/libcurl (truncated...)
+  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=no
+    query plan: antithrombotic therapy after bypass || CLTI
+    query plan: antithrombotic therapy after bypass || CLTI
+Successful runs: 2; errors: 1
+Grade distribution: PASS=1, PASS_WITH_MINOR=1
+antithrombotic_therapy citation_count min/median/max: 6/6/6; distinct queries: 2; runs missing: 0
+clti citation_count min/median/max: 0/3/6; distinct queries: 2; runs missing: 0
+Distinct citation queries observed: 2
+### treatment-batch_f2_clti_itp_after_bypass.log
+RUN 1/3 · batch_f2_clti_itp_after_bypass · JUDGED
+  grade=PASS
+  Orient vein-bypass signal=no
+    query plan: antithrombotic therapy after bypass || chronic limb-threatening ischaemia
+    query plan: antithrombotic therapy after bypass || chronic limb-threatening ischaemia
+RUN 2/3 · batch_f2_clti_itp_after_bypass · JUDGED
+  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=no
+    query plan: antithrombotic therapy after bypass || chronic limb threatening ischemia
+    query plan: antithrombotic therapy after bypass || chronic limb threatening ischemia
+RUN 3/3 · batch_f2_clti_i  grade=PASS_WITH_MINOR
+    grade=PASS
+  Orient vein-bypass signal=no
+    query plan: antithrombotic therapy after bypass || postoperative management
+### treatment-batch_f4_aaa_clti_sepsis_anticoagulation.log
+  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=no
+  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=no
+  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=no
+Successful runs: 3; errors: 0
+Grade distribution: PASS_WITH_MINOR=3
+abdominal_aortic_aneurysm citation_count min/median/max: 9/9/10; distinct queries: 2; runs missing: 0
+antithrombotic_therapy citation_count min/median/max: 6/7/7; distinct queries: 2; runs missing: 0
+clti citation_count min/median/max: 0/1/1; distinct queries: 2; runs missing: 0
+Distinct citation queries observed: 2
+### treatment-batch_s2_post_vein_bypass_antithrombotics.log
+RUN 1/3 · batch_s2_post_vein_bypass_antithrombotics · JUDGED
+  grade=PASS
+  Orient vein-bypass signal=yes
+    query plan: antithrombotic therapy after vein bypass || critical limb-threatening ischaemia revascularisation
+    query plan: antithrombotic therapy after vein bypass || critical limb-threatening ischaemia revascularisation
+RUN 2/3 · batch_s2_post_vein_bypass_antithrombotics · JUDGED
+  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=yes
+    query plan: antithrombotic therapy after vein bypass || critical limb-threatening ischaemia revascularisation
+    query plan: antithrombotic therapy after vein bypass || critical limb-threatening ischaemia revascularisation
+RUN 3/3 · batch_s2_post_vein_bypass_antithrombotics · JUDGED
+  grade=PASS
+  Orient vein-bypass signal=yes
+    query plan: antithrombotic therapy after vein bypass || critical limb-threatening ischaemia revascularisation
+### treatment-batch_s5_iliofemoral_dvt_recent_surgery.log
+  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=no
+RUN 2/3 · batch_s5_iliofemoral_dvt_recent_surgery   grade=P  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=no
+RUN 3/3 · batch_s5_iliofemoral_dvt_recent_surgery   grade=P  grade=PASS
+  Orient vein-bypass signal=no
+Successful runs: 3; errors: 0
+Grade distribution: PASS=1, PASS_WITH_MINOR=2
+antithrombotic_therapy citation_count min/median/max: 1/2/7; distinct queries: 2; runs missing: 0
+venous_thrombosis citation_count min/median/max: 0/4/6; distinct queries: 2; runs missing: 0
+Distinct citation queries observed: 2
+### treatment-batch_s6_urgent_cea_af_apixaban.log
+  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=no
+  grade=FAIL
+  Orient vein-bypass signal=no
+RUN 3/3 · batch_s6_urgent_cea_af_apixaban · JUD  gr  grade=PASS_WITH_MINOR
+  Orient vein-bypass signal=no
+Successful runs: 3; errors: 0
+Grade distribution: FAIL=1, PASS_WITH_MINOR=2
+antithrombotic_therapy citation_count min/median/max: 6/8/9; distinct queries: 2; runs missing: 0
+carotid_vertebral citation_count min/median/max: 6/6/8; distinct queries: 2; runs missing: 0
+Distinct citation queries observed: 2

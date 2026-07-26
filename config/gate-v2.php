@@ -71,8 +71,16 @@ return [
         // Each receives 75% of the former single-query timeout, so the absolute
         // worst case is 2 * 0.75 = 1.5 times the old retrieval budget. The branch
         // deadline can reduce that total further.
+        // DEFAULT FLIPPED TO FALSE 2026-07-26 after measurement. Over 8 cases x 3
+        // judged runs the multi-query path improved determinism (3 plans -> 1-2)
+        // and fixed S2's CLTI starvation, but REGRESSED grades: baseline
+        // 4 PASS/13 MINOR/1 FAIL vs multi-query 2 PASS/11 MINOR/4 FAIL. Four
+        // implementation defects are the likely cause (see the run9 artifact in
+        // docs/eval), chief among them a cancelled-out latency budget that let
+        // retrieval consume the whole branch deadline. Re-enable only after those
+        // are fixed AND a re-measurement shows a grade improvement.
         'citation_multi_query' => filter_var(
-            env('GATE_V2_CITATION_MULTI_QUERY', true),
+            env('GATE_V2_CITATION_MULTI_QUERY', false),
             FILTER_VALIDATE_BOOLEAN,
         ),
         'citation_multi_query_max' => (int) env('GATE_V2_CITATION_MULTI_QUERY_MAX', 2),
