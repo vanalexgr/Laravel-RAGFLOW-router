@@ -19,7 +19,7 @@ use Tests\TestCase;
  */
 class StrictRequestedKeysTest extends TestCase
 {
-    private const S2_QUESTION = 'What antithrombotic therapy is recommended after vein below-knee bypass for critical limb-threatening ischaemia with rest pain?';
+    private const S2_QUESTION = 'What antithrombotic therapy and anticoagulation are recommended after vein below-knee bypass for critical limb-threatening ischaemia with rest pain?';
 
     private function service(): RetrievalService
     {

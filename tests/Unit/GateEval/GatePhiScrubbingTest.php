@@ -207,7 +207,12 @@ class GatePhiScrubbingTest extends TestCase
     {
         $retrieval = new class extends RetrievalService
         {
-            public function retrieve(string $question, array $history = [], ?array $requestedKeys = null): array
+            public function retrieve(
+                string $question,
+                array $history = [],
+                ?array $requestedKeys = null,
+                ?string $citationQuestion = null,
+            ): array
             {
                 throw new \RuntimeException('Retrieval must not run.');
             }

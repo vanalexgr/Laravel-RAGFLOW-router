@@ -47,7 +47,12 @@ class GateDeadlineBudgetTest extends TestCase
         {
             public ?int $clientTimeout = null;
 
-            public function retrieve(string $question, array $history = [], ?array $requestedKeys = null): array
+            public function retrieve(
+                string $question,
+                array $history = [],
+                ?array $requestedKeys = null,
+                ?string $citationQuestion = null,
+            ): array
             {
                 $this->clientTimeout = (new ReflectionProperty(RAGFlowClient::class, 'timeout'))
                     ->getValue(RAGFlow::getFacadeRoot());
@@ -73,7 +78,12 @@ class GateDeadlineBudgetTest extends TestCase
 
         $retrieval = new class extends RetrievalService
         {
-            public function retrieve(string $question, array $history = [], ?array $requestedKeys = null): array
+            public function retrieve(
+                string $question,
+                array $history = [],
+                ?array $requestedKeys = null,
+                ?string $citationQuestion = null,
+            ): array
             {
                 return ['duration_ms' => 1, 'llm_citation_chunks' => [], 'llm_narrative_chunks' => []];
             }
@@ -141,6 +151,8 @@ class GateDeadlineBudgetTest extends TestCase
         $workflow = $this->workflow();
         $workflow->run(self::BLOCKED_TURN);
 
+        (new ReflectionProperty(GateWorkflowService::class, 'deadlineActive'))
+            ->setValue($workflow, true);
         $startedAt = new ReflectionProperty(GateWorkflowService::class, 'startedAt');
         $deadlineAt = new ReflectionMethod(GateWorkflowService::class, 'deadlineAt');
         $remaining = new ReflectionMethod(GateWorkflowService::class, 'remainingWallSeconds');
@@ -226,7 +238,12 @@ class GateDeadlineBudgetTest extends TestCase
     {
         return new class extends RetrievalService
         {
-            public function retrieve(string $question, array $history = [], ?array $requestedKeys = null): array
+            public function retrieve(
+                string $question,
+                array $history = [],
+                ?array $requestedKeys = null,
+                ?string $citationQuestion = null,
+            ): array
             {
                 throw new \RuntimeException('Retrieval must not run.');
             }
