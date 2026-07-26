@@ -9,7 +9,11 @@ use InvalidArgumentException;
 
 class GateProbeRetrievalCommand extends Command
 {
-    protected $signature = 'gate:probe-retrieval {--case=aaa : Fixture to probe (aaa|s2)} {--json : Emit machine-readable JSON}';
+    protected $signature = 'gate:probe-retrieval
+        {--case=aaa : Fixture to probe (aaa|s2)}
+        {--guideline= : Probe one guideline ad hoc, bypassing fixtures}
+        {--query= : Raw query to use with --guideline (both narrative and citation)}
+        {--json : Emit machine-readable JSON}';
 
     protected $description = 'Probe gate retrieval query shape, citation supply, and cleaned chunk signal';
 
@@ -17,16 +21,38 @@ class GateProbeRetrievalCommand extends Command
         GateRetrievalQueryBuilder $queryBuilder,
         RetrieveEsvsSnippetsTool $retrieval,
     ): int {
-        $case = (string) $this->option('case');
-        try {
-            $fixture = $this->fixture($case);
-        } catch (InvalidArgumentException $e) {
-            $this->error($e->getMessage());
+        $adHocGuideline = trim((string) $this->option('guideline'));
+        $adHocQuery = trim((string) $this->option('query'));
 
-            return self::FAILURE;
+        if ($adHocGuideline !== '') {
+            if ($adHocQuery === '') {
+                $this->error('--guideline requires --query.');
+
+                return self::FAILURE;
+            }
+            $case = "adhoc:{$adHocGuideline}";
+            $fixture = [
+                'orient' => [],
+                'guidelines' => [$adHocGuideline],
+                'min_citations' => 1,
+                'min_signal_ratio' => 0.0,
+                'expect_recommendation' => null,
+                'expect_marker' => null,
+            ];
+            // Answers "does this document supply recommendations for this query at
+            // all", so the raw query is used verbatim on both sides.
+            $queries = ['narrative' => $adHocQuery, 'citation' => $adHocQuery];
+        } else {
+            $case = (string) $this->option('case');
+            try {
+                $fixture = $this->fixture($case);
+            } catch (InvalidArgumentException $e) {
+                $this->error($e->getMessage());
+
+                return self::FAILURE;
+            }
+            $queries = $queryBuilder->build($fixture['orient']);
         }
-
-        $queries = $queryBuilder->build($fixture['orient']);
         $branches = [];
         $passed = true;
 
