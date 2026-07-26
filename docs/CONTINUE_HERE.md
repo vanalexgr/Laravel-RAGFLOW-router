@@ -5,6 +5,46 @@ Single source of truth for picking this work back up (from any machine). The Cla
 
 Branch: **`claude/prototyping-summary-d597c2`** (also on origin). Pull it and read this file first.
 
+## ⚑ PRODUCT PHILOSOPHY — settled by the clinician 2026-07-26. Read before any answer-quality work.
+
+The app is meant to **surface the available evidence so the clinician stays on top of the decision**,
+NOT to produce a single deterministic recommendation. The clinician reviewed a live S2 answer that
+offers VKA, aspirin, and aspirin+rivaroxaban without ranking them and judged it **good support**.
+
+Their clinical reasoning, which the answer correctly reflected: VKA has been standard for years where
+bypass patency is a concern; aspirin alone is standard for a good bypass with good outflow;
+rivaroxaban+aspirin is the newer option for difficult cases and many would choose it for patient
+convenience and lower bleeding risk. There is genuinely no single right regimen here.
+
+**This retires work that was queued and reverses several "defect" classifications:**
+
+- **Do NOT build `docs/DESIGN_DECISION_COMPOSITION.md` as designed.** Forcing a single committed
+  regimen through required non-empty fields and deferral-code policing would manufacture certainty the
+  guidelines do not have. KEEP the completeness and rule-based contraindication checks in
+  `app/Ai/Gate/Decision/`; DROP the mandated-commitment and deferral-policing parts.
+- **"Did not commit to one regimen" is not a failure.** The S2 FAIL grade is likely a RUBRIC error,
+  not a system error. Re-examine the rubric before trusting any FAIL count — this may account for a
+  meaningful share of the 11–12 FAILs in the last paired run, and it means grades are a suspect
+  optimisation target.
+- **Off-topic retrieved recommendations are acceptable, even welcome.** They show what was processed
+  and the clinician can click through; labelling them off-topic improves it. Do not optimise them
+  away. Only ensure they never crowd out on-topic ones.
+- **Interpretive-frame content from the model's own training is fine — IF flagged as non-ESVS.**
+  That makes accurate provenance labelling load-bearing.
+- **Clickable citations are a priority feature, not polish** (R7.8 / R7.9 in the Run 7 backlog).
+
+**Still genuine defects under this philosophy:** the answer says "From the retrieved ESVS text" while
+four snippets came from Global Vascular Guidelines (GVG) — a provenance mislabel; class/level parsing
+emits `Iib`, `Ila` and bare `2`, which matters more now that the clinician's job is weighing class and
+level; one narrative snippet arrived truncated mid-sentence and unusable; and multi-turn state loss
+(an asymptomatic aneurysm becoming symptomatic) is unaffected by any of this. Determinism still matters
+for reproducibility and trust, but it is no longer the headline goal.
+
+Full note: `memory/project_product_philosophy.md` (agent memory) and the reviewed output at
+`docs/eval/ANSWER_S2_FULL_EXPORT.md`.
+
+---
+
 ## Where we are (2026-07-26) — READ THIS FIRST, the 07-24 section below is historical
 
 **Work is PAUSED at the user's request until usage credits reset.** Nothing is half-applied: the tree
