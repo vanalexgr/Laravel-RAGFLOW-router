@@ -4,6 +4,7 @@ namespace App\Ai\Gate\Grounding;
 
 use App\Ai\Gate\PathwayAgent;
 use App\Ai\Gate\Retrieval\GateEvidenceQuota;
+use App\Ai\Gate\Retrieval\GateRetrievalQueryBuilder;
 use App\Ai\Gate\Tools\RetrieveEsvsSnippetsTool;
 use RuntimeException;
 
@@ -159,14 +160,14 @@ final class GatePathwayWorker
             $query = $betterQuery !== '' && ! in_array($betterQuery, $queriesTried, true)
                 ? $betterQuery
                 : $query.' ESVS recommendation decision threshold anatomy';
-            // Keep the retry's citation query terse for the same reason the builder
-            // does: the recommendations dataset matches short recommendation rows,
-            // and the old boilerplate prefix ("ESVS recommendation class evidence
-            // level decision threshold for: ") is not language any row contains.
-            $citationQuery = mb_substr(
-                $betterQuery !== '' ? $betterQuery : $query,
-                0,
-                max(80, (int) config('gate-v2.retrieval.citation_query_max_chars', 300)),
+            // Shape the retry's citation query the same way the builder does. The
+            // agent's `better_query` arrives in question form, which measurably
+            // returns zero recommendations from both recommendations documents
+            // regardless of length, and the old boilerplate prefix ("ESVS
+            // recommendation class evidence level decision threshold for: ") is not
+            // language any recommendation row contains.
+            $citationQuery = (new GateRetrievalQueryBuilder)->shapeCitationQuery(
+                $betterQuery !== '' ? $betterQuery : $citationQuery,
             );
         }
 

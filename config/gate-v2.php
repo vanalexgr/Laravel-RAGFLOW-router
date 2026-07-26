@@ -67,9 +67,13 @@ return [
         'citation_share' => (float) env('GATE_V2_CITATION_SHARE', 0.4),
         // Snippets per guideline handed to Probe/Critic.
         'prompt_snippets_per_guideline' => (int) env('GATE_V2_PROMPT_SNIPPETS_PER_GUIDELINE', 6),
-        // The recommendations dataset matches short verbatim rows, so its query is
-        // held to a tight character budget instead of the narrative prose blob.
-        'citation_query_max_chars' => (int) env('GATE_V2_CITATION_QUERY_MAX_CHARS', 300),
+        // The recommendations dataset matches short declarative rows. Measured on
+        // both recommendations documents: question-form queries return ZERO
+        // recommendations at 292, 156 and 116 chars, while terms-only queries
+        // return 2-6 at 98 and 54 chars. 100 is the largest budget proven on both
+        // documents; the stricter CLTI document did better still at ~54, so this is
+        // worth re-probing if recommendation supply is thin.
+        'citation_query_max_chars' => (int) env('GATE_V2_CITATION_QUERY_MAX_CHARS', 100),
         // A gate retrieval must never inherit the generic 30-second bridge timeout:
         // this budget is deliberately below the parent 90-second wall-clock.
         'timeout_seconds' => (int) env('GATE_V2_RETRIEVAL_TIMEOUT_SECONDS', 20),

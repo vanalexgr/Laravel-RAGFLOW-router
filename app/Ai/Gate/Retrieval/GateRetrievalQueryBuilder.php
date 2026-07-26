@@ -51,7 +51,6 @@ final class GateRetrievalQueryBuilder
                 // Must-include terms first: under a character budget the terms the
                 // planner marked mandatory must survive, not be truncated away.
                 $this->terms($orient, ['must_include_terms', 'expansion_terms', 'interpretation_terms']),
-                $issueText,
             ),
         ];
     }
@@ -75,31 +74,86 @@ final class GateRetrievalQueryBuilder
      *   - the old "Return the directly applicable recommendation…" instruction,
      *     which is an instruction to a model, meaningless to a similarity search.
      *
+     * Measured on both recommendations documents (CLTI and antithrombotic):
+     *
+     *   | variant                                  | chars | CLTI | antithrombotic |
+     *   | question + terms                         |   292 |    0 |              - |
+     *   | question only                            |   156 |    0 |              0 |
+     *   | question, patient modifiers stripped     |   116 |    0 |              - |
+     *   | terms only                               |    98 |    2 |              6 |
+     *   | short concept phrase                     |    54 |    5 |              6 |
+     *
+     * Question FORM is what fails, not length: 156- and 116-character question
+     * forms both returned zero, while 98- and 54-character term phrases returned
+     * 2-6. Recommendation rows are declarative statements, so an interrogative
+     * sentence is too dissimilar to clear the similarity floor no matter how short
+     * it is. The question is therefore dropped entirely and only terms are sent.
+     *
+     * Shorter still helps within terms-only (54 chars beat 98 on the stricter CLTI
+     * document), but those two variants differed in wording as well as length, so
+     * the budget is set to the largest value proven on BOTH documents and left
+     * tunable rather than guessed tighter.
+     *
      * @param  array<int, string>  $terms
      */
-    private function buildCitationQuery(string $coreQuestion, array $terms, string $issueText): string
+    private function buildCitationQuery(string $coreQuestion, array $terms): string
     {
-        $budget = max(80, (int) config('gate-v2.retrieval.citation_query_max_chars', 300));
-        $query = trim($coreQuestion);
+        $budget = max(40, (int) config('gate-v2.retrieval.citation_query_max_chars', 100));
+        $query = '';
 
         foreach ($terms as $term) {
-            if (str_contains(mb_strtolower($query), mb_strtolower($term))) {
+            $term = trim($term);
+            if ($term === '' || str_contains(mb_strtolower($query), mb_strtolower($term))) {
                 continue;
             }
-            $candidate = $query.' '.$term;
+            $candidate = $query === '' ? $term : $query.' '.$term;
             if (mb_strlen($candidate) > $budget) {
                 continue;
             }
             $query = $candidate;
         }
 
-        // A Critic-raised gap is only worth spending budget on if it still fits
-        // whole; a half-truncated gap description is noise.
-        if ($issueText !== '' && mb_strlen($query) + mb_strlen($issueText) + 1 <= $budget) {
-            $query .= ' '.$issueText;
+        // Only when the planner produced no usable terms at all. Still strips the
+        // interrogative framing, since question form is the thing that fails.
+        return $query !== ''
+            ? $query
+            : mb_substr($this->declarativeForm($coreQuestion), 0, $budget);
+    }
+
+    /**
+     * Shape an arbitrary string into a citation-dataset query: declarative form,
+     * within the character budget. Used by the retry path, whose `better_query`
+     * arrives as a question and would otherwise fail for exactly the reason
+     * documented on buildCitationQuery().
+     */
+    public function shapeCitationQuery(string $text): string
+    {
+        $budget = max(40, (int) config('gate-v2.retrieval.citation_query_max_chars', 100));
+
+        return mb_substr($this->declarativeForm($text), 0, $budget);
+    }
+
+    /**
+     * Reduce a clinical question to its declarative subject, e.g.
+     * "What is the recommended antithrombotic therapy after vein bypass?"
+     * becomes "antithrombotic therapy after vein bypass".
+     */
+    private function declarativeForm(string $question): string
+    {
+        $leadingNoise = [
+            'what', 'which', 'when', 'how', 'should', 'is', 'are', 'do', 'does',
+            'the', 'a', 'an', 'recommended', 'indicated', 'preferred', 'best', 'optimal',
+        ];
+
+        $words = preg_split('/\s+/u', trim(rtrim(trim($question), '?')), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        // Strip one leading filler word at a time rather than matching a single
+        // fixed pattern: "What is the recommended X" and "How should X" have
+        // different prefixes, and a single regex left "the recommended" behind.
+        while ($words !== [] && in_array(mb_strtolower(trim($words[0], ",.:;")), $leadingNoise, true)) {
+            array_shift($words);
         }
 
-        return $query;
+        return $words === [] ? trim(rtrim(trim($question), '?')) : implode(' ', $words);
     }
 
     /** @param array<string, mixed> $patientModel */
