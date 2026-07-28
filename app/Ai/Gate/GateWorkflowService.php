@@ -7,6 +7,7 @@ use App\Ai\Gate\Grounding\GatePathwayWorker;
 use App\Ai\Gate\Guard\PreOrientGuardService;
 use App\Ai\Gate\Progress\GateProgress;
 use App\Ai\Gate\Progress\NullGateProgress;
+use App\Ai\Gate\Presentation\GateCitationBuilder;
 use App\Ai\Gate\Retrieval\GateChunkCleaner;
 use App\Ai\Gate\Retrieval\GateEvidenceQuota;
 use App\Ai\Gate\Retrieval\GateRetrievalQueryBuilder;
@@ -55,6 +56,7 @@ final class GateWorkflowService
         private readonly PHIScrubberService $scrubber,
         private readonly ?GateRetrievalQueryBuilder $queryBuilder = null,
         private readonly ?GateChunkCleaner $chunkCleaner = null,
+        private readonly ?GateCitationBuilder $citationBuilder = null,
     ) {}
 
     /**
@@ -210,8 +212,8 @@ final class GateWorkflowService
             0,
             min(60, (int) config('gate-v2.revision_reserve_seconds', 35)),
         );
-        $progress->emit('retrieve', '🔍 Retrieving the selected ESVS guidance…');
-        $ground = $this->ground($turn, $orient, []);
+        $progress->emit('retrieve', '🔍 Preparing the selected guideline searches…');
+        $ground = $this->ground($turn, $orient, [], $progress);
         $evidenceStatus = $this->evidenceStatus->assess($turn, $ground['pathways']);
         $probe = $this->probe($turn, $orient, $ground, $evidenceStatus, [], $priorState);
 
@@ -225,7 +227,7 @@ final class GateWorkflowService
 
         for ($this->iteration = 1; $this->iteration <= $maxIterations; $this->iteration++) {
             try {
-                $progress->emit('evaluate', '🧪 Checking state, grounding, and question value…', [
+                $progress->emit('evaluate', '🩺 Weighing the case against the retrieved recommendations…', [
                     'iteration' => $this->iteration,
                 ]);
                 $lastCritic = $this->critic($turn, $candidate, $priorState);
@@ -280,21 +282,20 @@ final class GateWorkflowService
                 break;
             }
 
-            $progress->emit('revise', '✍️ Refining the earliest failing stage…', [
+            $progress->emit('revise', '⚠️ Evidence needs another look — re-checking…', [
                 'iteration' => $this->iteration,
-                'stage' => $stage,
             ]);
 
             try {
                 if ($stage === 'orient_route') {
                     $candidate['orient'] = $this->orient($turn, $priorState, $issues);
-                    $candidate['ground'] = $this->ground($turn, $candidate['orient'], $issues);
+                    $candidate['ground'] = $this->ground($turn, $candidate['orient'], $issues, $progress);
                     $candidate['evidenceStatus'] = $this->evidenceStatus->assess(
                         $turn,
                         $candidate['ground']['pathways'],
                     );
                 } elseif ($stage === 'ground') {
-                    $candidate['ground'] = $this->ground($turn, $candidate['orient'], $issues);
+                    $candidate['ground'] = $this->ground($turn, $candidate['orient'], $issues, $progress);
                     $candidate['evidenceStatus'] = $this->evidenceStatus->assess(
                         $turn,
                         $candidate['ground']['pathways'],
@@ -371,6 +372,9 @@ final class GateWorkflowService
             'pathways' => $bestCandidate['ground']['pathways'],
             'queries_tried' => $bestCandidate['ground']['queries_tried'],
             'snippet_digests' => $this->auditSnippetDigests(
+                $bestCandidate['ground']['snippet_digests'],
+            ),
+            'citations' => ($this->citationBuilder ?? new GateCitationBuilder)->build(
                 $bestCandidate['ground']['snippet_digests'],
             ),
             'critic' => $bestCritic,
@@ -589,12 +593,56 @@ final class GateWorkflowService
         };
     }
 
+    private function guidelineProgressLabel(string $guidelineKey): string
+    {
+        $name = match ($guidelineKey) {
+            'aaa' => 'AAA',
+            'clti' => 'CLTI',
+            default => str_replace('_', ' ', $guidelineKey),
+        };
+
+        return $name.' guidelines';
+    }
+
+    /** @param array<string, mixed> $result */
+    private function emitRetrievalRecheck(
+        ?GateProgress $progress,
+        string $guideline,
+        array $result,
+    ): void {
+        if ($progress === null) {
+            return;
+        }
+
+        $attempts = array_values(array_filter(array_map(
+            static fn (mixed $entry): int => is_array($entry)
+                ? (int) ($entry['detail']['attempt'] ?? 0)
+                : 0,
+            (array) ($result['trace'] ?? []),
+        )));
+        $attempt = $attempts === [] ? 1 : max($attempts);
+        if ($attempt <= 1) {
+            return;
+        }
+
+        $progress->emit(
+            'revise',
+            '⚠️ Evidence looked thin — re-checked '.$this->guidelineProgressLabel($guideline).'.',
+            ['guideline' => $guideline, 'attempt' => $attempt],
+        );
+    }
+
     /**
      * @param  array<string, mixed>  $orient
      * @param  array<int, array<string, mixed>>  $issues
      * @return array{pathways: array<int, array<string, mixed>>, queries_tried: array<string, array<int, string>>, snippet_digests: array<string, array<int, array<string, mixed>>>, degradation: array<int, array<string, mixed>>}
      */
-    private function ground(string $turn, array $orient, array $issues): array
+    private function ground(
+        string $turn,
+        array $orient,
+        array $issues,
+        ?GateProgress $progress = null,
+    ): array
     {
         $allPathways = [];
         $queriesTried = [];
@@ -641,6 +689,10 @@ final class GateWorkflowService
             $deadlineAt = $this->deadlineAt();
             $remaining = $this->remainingWallSeconds();
             foreach (array_keys($pending) as $guideline) {
+                $progress?->emit('retrieve', '🔍 Searching '.$this->guidelineProgressLabel($guideline).'…', [
+                    'guideline' => $guideline,
+                    'attempt' => $issues === [] ? 1 : $this->iteration + 1,
+                ]);
                 $patientModel = (array) $orient['patient_model'];
                 $prefetched = $usePrefetch ? ($this->prefetchedGround[$guideline] ?? null) : null;
                 $tasks[$guideline] = static function () use (
@@ -679,9 +731,28 @@ final class GateWorkflowService
                 ->run($tasks);
             $this->record('ground_parallel', $started, ['guidelines' => array_keys($pending)]);
             $results = array_merge($results, $completed);
+            $completedCount = count($guidelines) - count($pending);
+            foreach (array_keys($completed) as $guideline) {
+                $completedCount++;
+                $this->emitRetrievalRecheck($progress, $guideline, (array) $completed[$guideline]);
+                $progress?->emit(
+                    'retrieve',
+                    "Gathered evidence from {$completedCount} of ".count($guidelines).' guidelines.',
+                    [
+                        'guideline' => $guideline,
+                        'completed' => $completedCount,
+                        'total' => count($guidelines),
+                    ],
+                );
+            }
         } else {
+            $completedCount = count($guidelines) - count($pending);
             foreach (array_keys($pending) as $guideline) {
                 $this->assertWithinDeadline();
+                $progress?->emit('retrieve', '🔍 Searching '.$this->guidelineProgressLabel($guideline).'…', [
+                    'guideline' => $guideline,
+                    'attempt' => $issues === [] ? 1 : $this->iteration + 1,
+                ]);
                 $results[$guideline] = $this->pathwayWorker->run(
                     $guideline,
                     $query,
@@ -696,6 +767,17 @@ final class GateWorkflowService
                     $this->deadlineAt(),
                     $citationQuery,
                     $citationQueries,
+                );
+                $completedCount++;
+                $this->emitRetrievalRecheck($progress, $guideline, (array) $results[$guideline]);
+                $progress?->emit(
+                    'retrieve',
+                    "Gathered evidence from {$completedCount} of ".count($guidelines).' guidelines.',
+                    [
+                        'guideline' => $guideline,
+                        'completed' => $completedCount,
+                        'total' => count($guidelines),
+                    ],
                 );
             }
         }
@@ -936,7 +1018,7 @@ final class GateWorkflowService
         GateProgress $progress,
     ): array {
         $progress->emit('knowledge_fast', '🧭 Straightforward question — answering directly.');
-        $ground = $this->ground($turn, $orient, []);
+        $ground = $this->ground($turn, $orient, [], $progress);
         $evidenceStatus = $this->evidenceStatus->assess($turn, $ground['pathways']);
         $started = microtime(true);
         try {
@@ -989,6 +1071,9 @@ final class GateWorkflowService
             'pathways' => $ground['pathways'],
             'queries_tried' => $ground['queries_tried'],
             'snippet_digests' => $this->auditSnippetDigests($ground['snippet_digests']),
+            'citations' => ($this->citationBuilder ?? new GateCitationBuilder)->build(
+                $ground['snippet_digests'],
+            ),
             'iterations' => 0,
             'stage_trace' => $this->trace,
             'state' => [

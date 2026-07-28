@@ -9,7 +9,7 @@ Route::prefix('v1')->group(function () {
     Route::options('/{any}', function () {
         return response('', 200)
             ->header('Access-Control-Allow-Origin', '*')
-            ->header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+            ->header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
             ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     })->where('any', '.*');
 });
@@ -21,4 +21,6 @@ Route::prefix('v1')->middleware([ValidateApiKey::class, 'throttle:60,1'])->group
     Route::post('/pre-retrieval',    [App\Http\Controllers\ToolController::class, 'preRetrieve']);
     Route::post('/normalize',        [App\Http\Controllers\ToolController::class, 'normalize']);
     Route::post('/clinical-gate',    [App\Http\Controllers\ToolController::class, 'clinicalGate']);
+    Route::get('/gate-progress/{requestId}', [App\Http\Controllers\ToolController::class, 'gateProgress'])
+        ->where('requestId', '[A-Za-z0-9][A-Za-z0-9._-]{0,99}');
 });

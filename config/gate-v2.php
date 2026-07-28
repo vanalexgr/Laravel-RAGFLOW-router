@@ -68,6 +68,9 @@ return [
     'max_iterations' => (int) env('GATE_V2_MAX_ITERATIONS', 3),
     'deep_path_mode' => env('GATE_V2_DEEP_PATH_MODE', 'parallel'),
     'concurrency_driver' => env('GATE_V2_CONCURRENCY_DRIVER', 'process'),
+    'progress' => [
+        'ttl_seconds' => (int) env('GATE_V2_PROGRESS_TTL_SECONDS', 300),
+    ],
     'retrieval' => [
         'max_attempts' => (int) env('GATE_V2_RETRIEVAL_MAX_ATTEMPTS', 2),
         'revision_max_attempts' => (int) env('GATE_V2_REVISION_RETRIEVAL_MAX_ATTEMPTS', 1),

@@ -2,13 +2,16 @@
 
 namespace App\Http\Controllers;
 
+use App\Ai\Gate\GateWorkflowService;
+use App\Ai\Gate\Presentation\GateAssetPresenter;
+use App\Ai\Gate\Progress\RedisGateProgress;
 use App\Services\ChangeDetectionService;
 use App\Services\RetrievalService;
 use App\Services\GuidelineAssetService;
 use App\Services\GapDetectionService;
-use App\Services\ClinicalGateService;
 use App\Services\PreRetrievalService;
 use App\Services\CoverageAssessmentService;
+use App\Services\PHIScrubberService;
 use App\ValueObjects\PreRetrievalResult;
 use App\ValueObjects\GapAssessment;
 use Illuminate\Http\Request;
@@ -592,28 +595,80 @@ class ToolController extends Controller
     {
         return response()->json($payload, $status, [], JSON_INVALID_UTF8_SUBSTITUTE)
             ->header('Access-Control-Allow-Origin', '*')
-            ->header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+            ->header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
             ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     }
 
-    public function clinicalGate(Request $request)
+    public function clinicalGate(
+        Request $request,
+        GateWorkflowService $workflow,
+        GateAssetPresenter $assetPresenter,
+        PHIScrubberService $scrubber,
+    )
     {
         $request->validate([
             'question' => 'required|string|max:2000',
             'history'  => 'nullable|array|max:20',
             'history.*' => 'string|max:2000',
+            'state' => 'nullable|array',
+            'request_id' => ['nullable', 'string', 'max:100', 'regex:/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/'],
         ]);
 
-        $question = $request->input('question');
-        $history  = $request->input('history', []);
+        $question = (string) $request->input('question');
+        $requestId = $request->input('request_id');
+        $progress = is_string($requestId) && $requestId !== ''
+            ? new RedisGateProgress(
+                $requestId,
+                $scrubber,
+                (int) config('gate-v2.progress.ttl_seconds', 300),
+            )
+            : null;
 
-        $service = new ClinicalGateService();
-        $result  = $service->interpret($question, $history);
+        try {
+            $result = $workflow->run($question, (array) $request->input('state', []), $progress);
+        } finally {
+            $progress?->complete();
+        }
 
-        return response()->json($result, 200, [], JSON_INVALID_UTF8_SUBSTITUTE)
-            ->header('Access-Control-Allow-Origin', '*')
-            ->header('Access-Control-Allow-Methods', 'POST, OPTIONS')
-            ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        $citations = array_values((array) ($result['citations'] ?? []));
+        try {
+            $assets = $assetPresenter->build(
+                (string) $scrubber->scrub($question)['scrubbed_text'],
+                $citations,
+                array_values((array) ($result['routed_guidelines'] ?? [])),
+            );
+        } catch (\Throwable $exception) {
+            Log::channel('retrieval')->warning('[GATE PRESENTATION] Asset lookup failed.', [
+                'error_type' => $exception::class,
+                'error_digest' => substr(hash('sha256', $exception->getMessage()), 0, 16),
+            ]);
+            $assets = [];
+        }
+
+        $payload = array_merge($result, [
+            'citations' => $citations,
+            'assets' => $assets,
+            'degradation' => array_values((array) ($result['degradation'] ?? [])),
+            'progress' => $progress?->emissions() ?? [],
+        ]);
+
+        return $this->jsonApiResponse($payload);
+    }
+
+    public function gateProgress(string $requestId)
+    {
+        validator(
+            ['request_id' => $requestId],
+            ['request_id' => ['required', 'string', 'max:100', 'regex:/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/']],
+        )->validate();
+
+        $progress = RedisGateProgress::read($requestId);
+
+        return $this->jsonApiResponse([
+            'request_id' => $requestId,
+            'progress' => $progress->emissions(),
+            'done' => $progress->done(),
+        ]);
     }
 
     public function normalize(Request $request)
