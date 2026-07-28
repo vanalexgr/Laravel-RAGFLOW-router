@@ -59,7 +59,7 @@ Consequences:
   alongside the reranker switch and the intervening code changes.
 - **Do not tune anything against those grades** until the rubric is rewritten or the clinician
   has scored the same cases.
-- Rewriting the rubric is itself now a task (section 4, item 2).
+- Rewriting the rubric is itself now a task (section 4, item 4).
 
 ---
 
@@ -140,24 +140,56 @@ that a full day can be spent optimising against the wrong target.
 1. **Multi-turn review support.** `gate:variance` requires exactly one turn, so
    `aaa_evolving_context` self-excludes and the largest failure class has never been measured.
    `gate:probe2` may handle multi-turn — verify, and if not, add it. This blocks case 12 above.
-2. **Rewrite the eval rubric** to score evidence surfacing rather than single-regimen
+
+2. **Progress visibility during the wait — nothing reaches the user today.** At p50 the user
+   waits 47 s and at p95 80 s, and sees only OpenWebUI's pulsating dot. A clinician who sees a
+   silent dot for 80 s assumes it has hung and retries, which starts a second full run.
+   Four separate breaks, all of which must be fixed for any of it to show:
+   - `GateWorkflowService::run()` defaults to `new NullGateProgress`, which discards every
+     emission, and no caller on the HTTP path passes a real channel. The seven status lines that
+     exist are therefore emitted to nobody. They surface only via `LogGateProgress` on the CLI.
+   - The OpenWebUI adapter's `EMIT_STATUS_EVENTS` valve defaults to **false**.
+   - The adapter does not call `/api/v1/clinical-gate` at all — it is still on the legacy
+     `/vascular-consult` path, so gate v2 has no user-facing surface yet.
+   - Granularity is wrong even once wired: `GatePathwayWorker` emits nothing, so the dominant and
+     most variable stage — parallel per-guideline retrieval plus pathway assessment, p50 7.5 s per
+     call across N branches — is entirely silent. The gap between "Retrieving…" and "Checking
+     state…" is where most of the wait lives. The adapter also throttles identical text to one
+     update per 8 s, so a long stage with one static line looks frozen.
+   Emit per-branch progress ("Searching CLTI guidance… 2 of 3"), and surface the deliberate
+   re-think events the README already intends to explain added latency.
+
+3. **Latency re-measurement, as a gate before the review round.** Nothing has been latency-tested
+   since any of today's changes, and multi-query is now ON by default on grade-neutrality alone,
+   without its latency cost being measured. Last authoritative figures (Run 7, `docs/eval/
+   run7_latency_20260725_220506.json`): p50 47.1 s, p95 80.6 s against a 90 s deadline, retrieval
+   dominant at p50 7.5 s / p95 12.9 s per call. Run 6 control was p50 43.7 s and Run 6 with
+   bridge-side Cohere rerank was p50 34.0 s, so Run 7 was already the slowest of the three.
+   Run 7's default concurrent run **aborted at 24 of 32 turns** on a fixed 60 s child-process
+   timeout — below the 80.6 s p95 — so the pipeline was exceeding its child budget before
+   multi-query existed. Multi-query can take up to 1.5x on the dominant stage; the narrative-fetch
+   fix and the now-working retry-skip gate push the other way. Net effect unknown.
+   This gates the review round: a run that aborts mid-way produces packets that cannot be scored.
+   Measure the 3-guideline shapes first, they are the most exposed.
+
+4. **Rewrite the eval rubric** to score evidence surfacing rather than single-regimen
    commitment. Until then the LLM judge is screening only.
-3. **Clickable citations** (R7.8 / R7.9). Promoted at the clinician's request. Depends on the
+5. **Clickable citations** (R7.8 / R7.9). Promoted at the clinician's request. Depends on the
    labelled citation bucket, which now exists.
-4. **Fix provenance labelling.** The answer says "From the retrieved ESVS text" over four
+6. **Fix provenance labelling.** The answer says "From the retrieved ESVS text" over four
    snippets that came from Global Vascular Guidelines. If flagging is what makes interpretive
    content acceptable, a wrong flag is load-bearing.
-5. **Fix class/level parsing.** Emits `Iib`, `Ila` and bare `2`. Matters more now that weighing
+7. **Fix class/level parsing.** Emits `Iib`, `Ila` and bare `2`. Matters more now that weighing
    class and level is the clinician's job.
-6. **Matched reranker A/B** on identical code, Cohere versus local. Still the only way to
+8. **Matched reranker A/B** on identical code, Cohere versus local. Still the only way to
    explain the zero-PASS collapse — but note grades are a suspect measure, so read it on
    citation supply and relevance as well.
-7. **State ledger** (`gate-state.shadow_enabled`, currently off). Multi-turn state loss is
+9. **State ledger** (`gate-state.shadow_enabled`, currently off). Multi-turn state loss is
    unaffected by the philosophy change and remains a genuine safety issue: a knowledge-question
    interleave converted an asymptomatic aneurysm into a symptomatic one.
-8. **Decision contract, reduced scope.** Completeness and contraindication checks only.
-9. **Drop truncated snippets** before they reach the answer stage.
-10. Deferred: `similarity` scale is now correct but unvalidated against retrieval quality;
+10. **Decision contract, reduced scope.** Completeness and contraindication checks only.
+11. **Drop truncated snippets** before they reach the answer stage.
+12. Deferred: `similarity` scale is now correct but unvalidated against retrieval quality;
     `filterRawChunksToSelectedGuidelines` remains a weak guard for the legacy adapter path.
 
 ---
@@ -170,6 +202,9 @@ that a full day can be spent optimising against the wrong target.
 - Multi-turn state loss, including an asymptomatic → symptomatic contradiction.
 - The durable ledger event store is **unverified**: its test skips because the deployment host's
   PHP has only the `mysql` PDO driver while `phpunit.xml` uses `sqlite::memory:`.
+- No progress is visible to the user during a 47-80 s wait: `NullGateProgress` is the effective
+  default on the HTTP path, the adapter's status valve is off, and the worker emits nothing.
+- Latency is unmeasured since the multi-query change, which is enabled by default.
 - Synthesis is nondeterministic: identical evidence and identical upstream state produced
   different grades. Lower priority under the new philosophy, but it affects reproducibility and
   trust.
