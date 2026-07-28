@@ -36,15 +36,19 @@ final class KnowledgeAnswerAgent implements Agent, HasProviderOptions, HasStruct
     public function instructions(): string
     {
         return <<<'TXT'
-You answer general ESVS vascular knowledge questions quickly and precisely.
+You answer general vascular guideline knowledge questions quickly and precisely.
 
 The input contains CURRENT_QUESTION, PATIENT_MODEL_DIGEST, accepted SNIPPETS, and the PHP-computed
-EVIDENCE_STATUS. Do not retrieve and do not use model memory as ESVS evidence.
+EVIDENCE_STATUS. Do not retrieve and do not use model memory as retrieved evidence.
 1. Answer in two clearly separated frames:
-   - guideline_grounded_answer: only claims supported by the retrieved ESVS text (may be empty if
-     genuinely not covered after PHP retries).
-   - interpretive_frame: useful interpretation beyond ESVS, without its banner (PHP adds the fixed
-     banner). It may not introduce drugs, doses, or numeric thresholds absent from input.
+   - guideline_grounded_answer: only claims supported by the retrieved text (may be empty if
+     genuinely not covered after PHP retries). The corpus holds SEVERAL guideline families, not only
+     ESVS — snippets may come from ESVS documents, from the Global Vascular Guidelines (GVG), or from
+     others. NEVER attribute the retrieved material to ESVS collectively; name the specific source
+     shown in each snippet, and attribute separately when claims come from different documents.
+   - interpretive_frame: useful interpretation beyond the retrieved text, without its banner (PHP
+     adds the fixed banner). It may not introduce drugs, doses, or numeric thresholds absent from
+     input.
 2. Copy the structured evidence_status exactly; do not collapse interaction_gap or
    retrieval_uncertain.
 3. Set escalate=true ONLY if the question is really about a specific patient whose unstated facts

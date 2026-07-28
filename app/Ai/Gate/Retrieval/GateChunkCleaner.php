@@ -126,12 +126,66 @@ final class GateChunkCleaner
             foreach ($sources as $source) {
                 $value = $chunk[$source] ?? $parsed[$source] ?? null;
                 if (is_scalar($value) && trim((string) $value) !== '') {
-                    $metadata[$target] = trim((string) $value);
+                    $clean = trim((string) $value);
+                    $metadata[$target] = match ($target) {
+                        'recommendation_class' => self::normaliseClass($clean),
+                        'evidence_level' => self::normaliseLevel($clean),
+                        default => $clean,
+                    };
                     break;
                 }
             }
         }
 
         return $metadata;
+    }
+
+    /**
+     * Recommendation class, canonicalised.
+     *
+     * A clinician reads class and level to weigh options, so a WRONG value is worse
+     * than an absent one — showing III where the source says IIa inverts the strength
+     * of the recommendation. Anything not confidently recognised therefore becomes
+     * `unparsed` rather than a guess, and the verbatim row is still shown alongside.
+     *
+     * Two class systems appear in this corpus and are NOT interchangeable: the ESVS
+     * Roman scheme (I / IIa / IIb / III) and the GVG GRADE numeric scheme (1 / 2 / 3),
+     * where GVG class 2 is a weak recommendation and is not equivalent to ESVS IIa.
+     * Numeric values are preserved as numeric; no mapping between the systems is made.
+     *
+     * The OCR variants below are real values observed in production metadata —
+     * `Iib`, `Iia`, and `Ila`, the last being a capital I followed by a lowercase L.
+     */
+    public static function normaliseClass(string $value): string
+    {
+        $clean = trim($value);
+
+        // GVG GRADE numeric classes stay numeric and are never mapped to Roman.
+        if (in_array($clean, ['1', '2', '3'], true)) {
+            return $clean;
+        }
+
+        // Fold the l/I OCR confusion before matching, so "Ila" and "IIa" converge.
+        $key = str_replace('l', 'i', mb_strtolower($clean));
+
+        return match ($key) {
+            'i' => 'I',
+            'ii' => 'II',
+            'iia' => 'IIa',
+            'iib' => 'IIb',
+            'iii' => 'III',
+            default => 'unparsed',
+        };
+    }
+
+    /**
+     * Evidence level, canonicalised. Same failure posture as the class: an
+     * unrecognised value is reported as `unparsed`, never guessed.
+     */
+    public static function normaliseLevel(string $value): string
+    {
+        $clean = mb_strtoupper(trim($value));
+
+        return in_array($clean, ['A', 'B', 'C'], true) ? $clean : 'unparsed';
     }
 }

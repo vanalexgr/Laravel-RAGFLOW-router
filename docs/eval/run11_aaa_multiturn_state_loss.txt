@@ -1,0 +1,34 @@
+turns captured: 3
+
+=== TURN 1 | coverage=interaction_gap | routed=abdominal_aortic_aneurysm
+   demographics         74-year-old male
+   lesion               asymptomatic abdominal aortic aneurysm, 5.8 cm diameter, discovered on ultrasound
+   symptom_status       asymptomatic
+   imaging              abdominal ultrasound
+   comorbidities        active smoker, hypertension, dyslipidaemia
+
+=== TURN 2 | coverage=interaction_gap | routed=abdominal_aortic_aneurysm
+   demographics         74-year-old male
+   lesion               juxtarenal abdominal aortic aneurysm with inadequate infrarenal neck for standard EVAR
+   symptom_status       asymptomatic
+   imaging              computed tomography angiography (CTA)
+   comorbidities        active smoker, hypertension, dyslipidaemia, chronic kidney disease (eGFR 28 mL/min/1.73 m²)
+
+=== TURN 3 | coverage=not_covered | routed=abdominal_aortic_aneurysm
+   fitness              severe COPD, reduced functional capacity, significant frailty, independent in basic daily activities
+
+=== FIELD RETENTION ACROSS TURNS ===
+   demographics         keep -> keep -> LOST
+   lesion               keep -> keep -> LOST
+   symptom_status       keep -> keep -> LOST
+   imaging              keep -> keep -> LOST
+   comorbidities        keep -> keep -> LOST
+   fitness              LOST -> LOST -> keep
+
+=== CRITICAL FACTS (the Run 7 failure list) ===
+   diameter 5.8/58      yes  |  no  |  no 
+   juxtarenal            no  | yes  |  no 
+   eGFR 28               no  | yes  |  no 
+   asymptomatic         yes  | yes  |  no 
+   EVAR unsuitable       no  |  no  |  no 
+   age/sex              yes  | yes  |  no 
