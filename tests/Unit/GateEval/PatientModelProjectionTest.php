@@ -86,6 +86,38 @@ class PatientModelProjectionTest extends TestCase
         $this->assertStringContainsString('diameter unknown', $merged['lesion']);
     }
 
+    public function test_a_missed_extraction_is_not_papered_over_with_the_stale_value(): void
+    {
+        // The clinician states a NEW diameter and the extraction misses it. Silently
+        // restoring 5.8 cm would answer a premise-changing question against stale
+        // clinical state while the model still looked complete.
+        $suppressed = [];
+        $merged = PatientModelProjection::merge(
+            self::TURN_1,
+            ['lesion' => 'follow-up scan', 'anatomy' => '', 'diameter_value' => '', 'diameter_unit' => ''],
+            'Surveillance CT now shows the aneurysm has grown to 6.5 cm. Does that change management?',
+            $suppressed,
+        );
+
+        $this->assertSame('', $merged['diameter_value'], 'A stated-but-unextracted diameter must not be back-filled.');
+        $this->assertContains('diameter_value', $suppressed);
+    }
+
+    public function test_retention_still_applies_when_the_turn_is_silent_on_the_field(): void
+    {
+        $suppressed = [];
+        $merged = PatientModelProjection::merge(
+            self::TURN_1,
+            self::TURN_2,
+            'CTA now shows this is a juxtarenal aneurysm with an inadequate infrarenal neck.',
+            $suppressed,
+        );
+
+        // No size mentioned in the turn, so carrying 5.8 cm forward is correct.
+        $this->assertSame('5.8', $merged['diameter_value']);
+        $this->assertSame([], $suppressed);
+    }
+
     public function test_a_first_turn_with_no_prior_state_is_untouched(): void
     {
         $merged = PatientModelProjection::merge([], self::TURN_1);

@@ -31,16 +31,49 @@ final class PatientModelProjection
     private const DURABLE = ['anatomy', 'laterality', 'diameter_value', 'diameter_unit'];
 
     /**
-     * @param  array<string, mixed>  $prior    patient_model from the previous turn
-     * @param  array<string, mixed>  $current  patient_model as Orient just emitted it
+     * Evidence that the CURRENT turn spoke to a durable field. If the turn clearly
+     * discusses one and the extraction came back empty, the extraction missed it —
+     * which is categorically different from the clinician not mentioning it.
+     */
+    private const MENTIONED = [
+        'diameter_value' => '/\b\d+(?:[.,]\d+)?\s*(?:mm|cm|millimet\w*|centimet\w*)\b/iu',
+        'laterality' => '/\b(?:left|right|bilateral)\b/iu',
+    ];
+
+    /**
+     * @param  array<string, mixed>  $prior       patient_model from the previous turn
+     * @param  array<string, mixed>  $current     patient_model as Orient just emitted it
+     * @param  string  $turnText                  the current turn, to detect a missed extraction
+     * @param  array<int, string>  $suppressed    OUT: fields deliberately NOT carried forward
      * @return array<string, mixed>
      */
-    public static function merge(array $prior, array $current): array
-    {
+    public static function merge(
+        array $prior,
+        array $current,
+        string $turnText = '',
+        ?array &$suppressed = null,
+    ): array {
+        $suppressed = [];
+
         foreach (self::DURABLE as $field) {
-            if (self::isUnstated($current[$field] ?? null) && ! self::isUnstated($prior[$field] ?? null)) {
-                $current[$field] = $prior[$field];
+            if (! self::isUnstated($current[$field] ?? null) || self::isUnstated($prior[$field] ?? null)) {
+                continue;
             }
+
+            // THE STALE-MODEL TRAP. Retention is safe when the clinician simply did
+            // not mention the field again. It is DANGEROUS when they did mention it
+            // and extraction missed it: silently restoring the old value answers a
+            // premise-changing question ("what if it is now 6.5 cm?") against stale
+            // clinical state, and because the model then looks complete it slips past
+            // the refusal path with no degradation recorded. Refuse to retain, and
+            // let the caller declare it.
+            if (self::turnMentions($field, $turnText)) {
+                $suppressed[] = $field;
+
+                continue;
+            }
+
+            $current[$field] = $prior[$field];
         }
 
         $rendered = self::renderLesion($current);
@@ -91,6 +124,21 @@ final class PatientModelProjection
         $unit = self::stated($model['diameter_unit'] ?? null);
 
         return trim($value.' '.($unit === 'unknown' ? '' : $unit)).' diameter';
+    }
+
+    /**
+     * Did the current turn visibly discuss this field? Only fields with a crisp,
+     * low-false-positive detector are covered; anything else is left to retention,
+     * because a vague detector that fires constantly would suppress the very
+     * carry-forward this class exists to provide.
+     */
+    private static function turnMentions(string $field, string $turnText): bool
+    {
+        $pattern = self::MENTIONED[$field] ?? null;
+
+        return $pattern !== null
+            && trim($turnText) !== ''
+            && preg_match($pattern, $turnText) === 1;
     }
 
     /** A value the current turn simply did not speak to. */

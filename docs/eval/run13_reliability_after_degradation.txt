@@ -1,0 +1,20 @@
+RUN 1/1 · aaa_evolving_context · TURN 1
+  total=54608ms mode=case_new score=0.95 approved=no
+RUN 1/1 · aaa_evolving_context · TURN 2
+  total=83127ms mode=case_followup_substantive score=0.85 approved=no
+RUN 1/1 · aaa_evolving_context · TURN 3
+  total=64883ms mode=case_followup_substantive score=n/a approved=n/a
+RUN 1/1 · adversarial_retrieval_trap · TURN 1
+  total=39201ms mode=case_new score=1 approved=yes
++--------------+-------+--------+--------+--------+
+| Stage        | Calls | p50 ms | p95 ms | max ms |
++--------------+-------+--------+--------+--------+
+| TOTAL/TURN   | 4     | 54608  | 83127  | 83127  |
+| critic       | 5     | 3391   | 6058   | 6058   |
+| orient       | 4     | 7077   | 7939   | 7939   |
+| pathway      | 9     | 4166   | 6102   | 6102   |
+| probe        | 5     | 9001   | 10858  | 10858  |
+| probe_failed | 2     | 8007   | 30007  | 30007  |
+| retrieve     | 9     | 7462   | 11310  | 11310  |
++--------------+-------+--------+--------+--------+
+Artifact: gate-latency/runs/20260728_105637_344288.json

@@ -542,10 +542,28 @@ final class GateWorkflowService
         // where turn 2 replaced the whole lesion string and lost "5.8 cm".
         $priorModel = (array) ($priorState['patient_model'] ?? []);
         if ($priorModel !== []) {
+            $suppressed = [];
             $response['patient_model'] = PatientModelProjection::merge(
                 $priorModel,
                 (array) ($response['patient_model'] ?? []),
+                $turn,
+                $suppressed,
             );
+            // The turn discussed a fact the extraction did not return. Carrying the
+            // old value forward would answer a premise-changing question against
+            // stale clinical state while looking complete, so the field is left
+            // empty and the omission is declared rather than papered over.
+            if ($suppressed !== []) {
+                $this->addDegradation([
+                    'stage' => 'orient',
+                    'reason' => 'extraction_missed_stated_fact',
+                    'unavailable' => $suppressed,
+                ]);
+                $this->record('orient_fallback', 0, [
+                    'reason' => 'retention_suppressed',
+                    'fields' => $suppressed,
+                ]);
+            }
         }
         $response['mode'] = $this->constrainMode(
             (string) ($response['mode'] ?? 'case_new'),
