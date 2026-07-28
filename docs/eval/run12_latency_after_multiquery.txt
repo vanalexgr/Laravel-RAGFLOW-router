@@ -1,0 +1,21 @@
+RUN 1/1 · aaa_evolving_context · TURN 1
+  total=67247ms mode=case_new score=0.93 approved=no
+RUN 1/1 · aaa_evolving_context · TURN 2
+  total=64830ms mode=unknown score=n/a approved=n/a
+  RuntimeException: No candidate completed Critic scoring before the deadline.
+RUN 1/1 · aaa_evolving_context · TURN 3
+  total=48488ms mode=unknown score=n/a approved=n/a
+  Illuminate\Http\Client\ConnectionException: cURL error 28: Operation timed out after 30002 milliseconds with 0 bytes received (see https://curl.se/libcurl/c/libcurl-errors.html) for https://api.openai.com/v1/responses
+RUN 1/1 · adversarial_retrieval_trap · TURN 1
+  total=37523ms mode=case_new score=1 approved=yes
++------------+-------+--------+--------+--------+
+| Stage      | Calls | p50 ms | p95 ms | max ms |
++------------+-------+--------+--------+--------+
+| TOTAL/TURN | 4     | 48488  | 67247  | 67247  |
+| critic     | 3     | 4360   | 4652   | 4652   |
+| orient     | 4     | 8864   | 13201  | 13201  |
+| pathway    | 6     | 3627   | 4662   | 4662   |
+| probe      | 4     | 8923   | 12077  | 12077  |
+| retrieve   | 6     | 8813   | 11287  | 11287  |
++------------+-------+--------+--------+--------+
+Artifact: gate-latency/runs/20260728_104141_700636.json

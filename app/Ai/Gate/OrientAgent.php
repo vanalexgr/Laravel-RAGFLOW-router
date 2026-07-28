@@ -48,6 +48,17 @@ GUIDELINE_REFERENCE. Apply these rules:
 8. Emit an English core_question that states the clinical decision to retrieve. Also emit concise
    expansion_terms, interpretation_terms, and must_include_terms for retrieval. patient_model values
    and core_question must be in English clinical terminology, regardless of input language.
+9. DECOMPOSED CLINICAL FACTS — anatomy, laterality, diameter_value, diameter_unit.
+   Extract these VERBATIM as stated. NEVER infer, calculate, or convert units: report "5.8" with
+   unit "cm" exactly as written, never as "58" and "mm". A converted number that is wrong is far
+   more dangerous than an absent one.
+   Distinguish three cases, which are clinically different:
+     - the turn does not mention it            -> "" (empty string)
+     - the source explicitly says it is unknown or unmeasured -> "unknown"
+     - it does not apply to this pathology (e.g. laterality of an aortic aneurysm) -> "n/a"
+   Do NOT restate a value from an earlier turn you cannot see in the current turn; leave it empty and
+   the system will retain the established value. Inventing a plausible diameter is the worst outcome.
+   Keep `lesion` as the readable narrative summary; the decomposed fields are the durable record.
 
 Return ONLY the structured object. No prose.
 TXT;
@@ -81,7 +92,17 @@ TXT;
             'must_include_terms' => $schema->array()->items($schema->string())->required(),
             'patient_model' => $schema->object([
                 'demographics' => $schema->string()->required(),
+                // `lesion` remains the narrative field every downstream consumer reads.
+                // The decomposed fields below carry the facts that get silently lost when
+                // a later turn rewrites the prose: measured live, turn 2 replaced
+                // "…5.8 cm diameter…" with "juxtarenal…inadequate infrarenal neck" and the
+                // diameter was gone for good. PHP re-renders `lesion` from these, so an
+                // unmentioned diameter survives instead of being overwritten.
                 'lesion' => $schema->string()->required(),
+                'anatomy' => $schema->string()->required(),
+                'laterality' => $schema->string()->required(),
+                'diameter_value' => $schema->string()->required(),
+                'diameter_unit' => $schema->string()->required(),
                 'other_findings' => $schema->array()->items($schema->string())->required(),
                 'symptom_status' => $schema->string()->required(),
                 'timing' => $schema->string()->required(),

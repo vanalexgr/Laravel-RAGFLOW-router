@@ -11,6 +11,7 @@ use App\Ai\Gate\Retrieval\GateChunkCleaner;
 use App\Ai\Gate\Retrieval\GateEvidenceQuota;
 use App\Ai\Gate\Retrieval\GateRetrievalQueryBuilder;
 use App\Ai\Gate\Routing\OrientRoutingPriorService;
+use App\Ai\Gate\State\PatientModelProjection;
 use App\Ai\Gate\State\ShadowStateRecorder;
 use App\Services\PHIScrubberService;
 use Illuminate\Support\Facades\Concurrency;
@@ -491,6 +492,17 @@ final class GateWorkflowService
         if (! isset($response['response_mode'])) {
             $response['response_mode'] = $this->fallbackResponseMode($turn);
             $this->record('orient_fallback', 0, ['field' => 'response_mode']);
+        }
+        // Carry decomposed clinical facts across turns before anything reads the model.
+        // Orient re-derives from the latest turn alone, so a turn that does not restate
+        // the diameter would otherwise drop it permanently — measured on the AAA case,
+        // where turn 2 replaced the whole lesion string and lost "5.8 cm".
+        $priorModel = (array) ($priorState['patient_model'] ?? []);
+        if ($priorModel !== []) {
+            $response['patient_model'] = PatientModelProjection::merge(
+                $priorModel,
+                (array) ($response['patient_model'] ?? []),
+            );
         }
         $response['mode'] = $this->constrainMode(
             (string) ($response['mode'] ?? 'case_new'),
