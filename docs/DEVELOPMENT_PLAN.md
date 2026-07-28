@@ -137,11 +137,36 @@ that a full day can be spent optimising against the wrong target.
 
 ## 4. Backlog, reordered
 
-1. **Multi-turn review support.** `gate:variance` requires exactly one turn, so
-   `aaa_evolving_context` self-excludes and the largest failure class has never been measured.
-   `gate:probe2` may handle multi-turn — verify, and if not, add it. This blocks case 12 above.
+1. ~~**Multi-turn review support.**~~ **DONE 2026-07-26 — it already existed.** `gate:probe2`
+   iterates turns and threads state between them, so case 12 is unblocked. `gate:variance` still
+   requires exactly one turn; use `gate:probe2` for multi-turn review packets.
 
-2. **Progress visibility during the wait — nothing reaches the user today.** At p50 the user
+1b. **MEASURED, and it is severe.** Running the 3-turn AAA case live
+   (`docs/eval/run11_aaa_multiturn_state_loss.txt`): turn 3 discards the ENTIRE accumulated patient
+   model and keeps only the newly-mentioned fitness. Age, sex, 5.8 cm diameter, juxtarenal anatomy,
+   EVAR unsuitability, eGFR 28 and asymptomatic status all vanish; coverage collapsed to
+   `not_covered` as a direct result. Not gradual erosion — Orient re-derives the model from the
+   latest turn alone.
+   A replay test now PROVES the state ledger fixes this: every field established in turns 1-2
+   survives a turn 3 that does not mention them
+   (`tests/Unit/GateEval/AaaMultiTurnStateRetentionTest.php`). The ledger is therefore the fix for
+   the largest failure class — promoted to item 4 below.
+
+1c. **NEW — atomic patient-model fields.** The deeper issue the ledger does NOT solve. Turn 2's
+   lesion string drops "5.8 cm" while adding juxtarenal anatomy, and the reducer overwrites the
+   whole string, because clinical facts are packed into free prose. Decompose `lesion` into atomic
+   fields (diameter / anatomy / suitability) so an unmentioned diameter is simply retained. Ripples
+   into the Orient schema, retrieval query construction and the answer prompt, so it needs a design
+   pass first.
+
+2. **Progress visibility — BLOCKED, needs a decision, not just code.** `/api/v1/clinical-gate`
+   returns a single JSON response; there is no streaming, so server-side emissions cannot reach the
+   user however they are wired. And the adapter does not call the gate endpoint at all yet. The
+   transport must be chosen first — SSE, a polled progress endpoint, or client-side estimation in
+   the adapter — and that is a product decision. The four breaks below are still accurate and still
+   need fixing once transport is settled.
+
+   **Progress visibility during the wait — nothing reaches the user today.** At p50 the user
    waits 47 s and at p95 80 s, and sees only OpenWebUI's pulsating dot. A clinician who sees a
    silent dot for 80 s assumes it has hung and retries, which starts a second full run.
    Four separate breaks, all of which must be fixed for any of it to show:
@@ -184,7 +209,7 @@ that a full day can be spent optimising against the wrong target.
 8. **Matched reranker A/B** on identical code, Cohere versus local. Still the only way to
    explain the zero-PASS collapse — but note grades are a suspect measure, so read it on
    citation supply and relevance as well.
-9. **State ledger** (`gate-state.shadow_enabled`, currently off). Multi-turn state loss is
+9. **State ledger** — PROMOTED, see item 1b; it is the proven fix for the largest failure class (`gate-state.shadow_enabled`, currently off). Multi-turn state loss is
    unaffected by the philosophy change and remains a genuine safety issue: a knowledge-question
    interleave converted an asymptomatic aneurysm into a symptomatic one.
 10. **Decision contract, reduced scope.** Completeness and contraindication checks only.
@@ -209,7 +234,15 @@ that a full day can be spent optimising against the wrong target.
   different grades. Lower priority under the new philosophy, but it affects reproducibility and
   trust.
 
-## 6. Standing constraints
+## 6. Process note — Antigravity is NOT read-only
+
+Verified 2026-07-26: dispatched as a read-only reviewer, Antigravity created
+`app/Ai/Gate/State/StateEventStore.php` and modified two files in the repo. The change was small,
+correct and accepted after review, but the orchestration rule in `CLAUDE.md` describing it as
+"independent read-only review" was factually wrong and has been corrected. Run `git status` after
+any Antigravity call that touched a code question, and review its diff before accepting.
+
+## 7. Standing constraints
 
 - Rerank is billed **per call**, not per document. Lowering `top_k` saves nothing.
   `GATE_V2_RETRIEVAL_DEV_CACHE_TTL` is the lever; never enable it for a latency or reliability
