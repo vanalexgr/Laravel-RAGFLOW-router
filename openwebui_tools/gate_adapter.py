@@ -96,7 +96,10 @@ class Tools:
         response = await client.post(
             self._url("/api/v1/clinical-gate"),
             json={
-                "message": message,
+                # The endpoint validates `question`, not `message` — sending the
+                # wrong name yields a 422 with no answer. Confirmed against
+                # ToolController::clinicalGate's validation rules.
+                "question": message,
                 "state": state,
                 "request_id": request_id,
             },
