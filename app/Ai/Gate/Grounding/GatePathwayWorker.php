@@ -6,7 +6,9 @@ use App\Ai\Gate\PathwayAgent;
 use App\Ai\Gate\Retrieval\GateEvidenceQuota;
 use App\Ai\Gate\Retrieval\GateRetrievalQueryBuilder;
 use App\Ai\Gate\Tools\RetrieveEsvsSnippetsTool;
+use Illuminate\Http\Client\ConnectionException;
 use RuntimeException;
+use Throwable;
 
 final class GatePathwayWorker
 {
@@ -55,6 +57,7 @@ final class GatePathwayWorker
         $assessment = null;
         $snippetDigests = [];
         $trace = [];
+        $degradation = [];
         $maxAttempts = max(1, min(
             3,
             $maxAttemptsOverride ?? (int) config('gate-v2.retrieval.max_attempts', 3),
@@ -91,18 +94,37 @@ final class GatePathwayWorker
                 $deadlineAt,
                 count($citationQueries),
             );
-            $retrieved = $this->retrieval->retrieve(
-                $guideline,
-                $query,
-                $attempt === $maxAttempts,
-                $topK,
-                $this->clampToDeadline(
-                    $baseTimeout,
-                    $deadlineAt,
-                ),
-                $citationQuery,
-                $citationQueries,
-            );
+            try {
+                $retrieved = $this->retrieval->retrieve(
+                    $guideline,
+                    $query,
+                    $attempt === $maxAttempts,
+                    $topK,
+                    $this->clampToDeadline(
+                        $baseTimeout,
+                        $deadlineAt,
+                    ),
+                    $citationQuery,
+                    $citationQueries,
+                );
+            } catch (Throwable $exception) {
+                if (! $this->isUpstreamTimeout($exception)) {
+                    throw $exception;
+                }
+                $degradation[] = $this->failure(
+                    $guideline,
+                    'retrieval',
+                    'upstream_timeout',
+                    ['retrieved evidence for '.$guideline],
+                    $attempt,
+                );
+                $trace[] = [
+                    'stage' => 'retrieve_failed',
+                    'duration_ms' => (int) round((microtime(true) - $retrievalStarted) * 1000),
+                    'detail' => end($degradation),
+                ];
+                break;
+            }
             $retrievalDuration = (int) round((microtime(true) - $retrievalStarted) * 1000);
             $trace[] = [
                 'stage' => 'retrieve',
@@ -131,27 +153,64 @@ final class GatePathwayWorker
             ];
             $snippetDigests = $this->mergeSnippets($snippetDigests, (array) $retrieved['snippets']);
 
+            if (! $this->canStartStage('pathway', $deadlineAt)) {
+                $degradation[] = $this->failure(
+                    $guideline,
+                    'pathway',
+                    'insufficient_budget',
+                    ['pathway assessment for '.$guideline],
+                    $attempt,
+                );
+                $trace[] = [
+                    'stage' => 'pathway_skipped',
+                    'duration_ms' => 0,
+                    'detail' => end($degradation) + [
+                        'remaining_seconds' => $this->remainingSeconds($deadlineAt),
+                    ],
+                ];
+                break;
+            }
+
             $assessmentStarted = microtime(true);
-            $response = (new PathwayAgent($guideline))->prompt(
-                json_encode([
-                    'patient_model' => $patientModel,
-                    'current_question' => $turn,
-                    'query' => $query,
-                    'citation_query' => $citationQuery,
-                    'citation_queries' => $citationQueries,
-                    'attempt' => $attempt,
-                    'final_attempt' => $attempt === $maxAttempts,
-                    'snippets' => $snippetDigests,
-                    'retrieval_diagnostics' => $retrieved['diagnostics'],
-                ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
-                provider: (string) config('gate-v2.provider'),
-                model: (string) config('gate-v2.stage_models.pathway', config('gate-v2.model')),
-                timeout: $this->clampToDeadline(
-                    min(60, (int) config('gate-v2.stage_timeouts.pathway', 30)),
-                    $deadlineAt,
-                ),
-            );
-            $assessment = $response->toArray();
+            try {
+                $response = (new PathwayAgent($guideline))->prompt(
+                    json_encode([
+                        'patient_model' => $patientModel,
+                        'current_question' => $turn,
+                        'query' => $query,
+                        'citation_query' => $citationQuery,
+                        'citation_queries' => $citationQueries,
+                        'attempt' => $attempt,
+                        'final_attempt' => $attempt === $maxAttempts,
+                        'snippets' => $snippetDigests,
+                        'retrieval_diagnostics' => $retrieved['diagnostics'],
+                    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+                    provider: (string) config('gate-v2.provider'),
+                    model: (string) config('gate-v2.stage_models.pathway', config('gate-v2.model')),
+                    timeout: $this->clampToDeadline(
+                        min(60, (int) config('gate-v2.stage_timeouts.pathway', 30)),
+                        $deadlineAt,
+                    ),
+                );
+                $assessment = $response->toArray();
+            } catch (Throwable $exception) {
+                if (! $this->isUpstreamTimeout($exception)) {
+                    throw $exception;
+                }
+                $degradation[] = $this->failure(
+                    $guideline,
+                    'pathway',
+                    'upstream_timeout',
+                    ['pathway assessment for '.$guideline],
+                    $attempt,
+                );
+                $trace[] = [
+                    'stage' => 'pathway_failed',
+                    'duration_ms' => (int) round((microtime(true) - $assessmentStarted) * 1000),
+                    'detail' => end($degradation),
+                ];
+                break;
+            }
             if ($assessment === []) {
                 throw new RuntimeException(PathwayAgent::class.' returned an empty structured response.');
             }
@@ -204,7 +263,37 @@ final class GatePathwayWorker
             'queries_tried' => $queriesTried,
             'snippet_digests' => $snippetDigests,
             'trace' => $trace,
+            'degradation' => $degradation,
         ];
+    }
+
+    private function canStartStage(string $stage, ?float $deadlineAt): bool
+    {
+        $remaining = $this->remainingSeconds($deadlineAt);
+
+        return $remaining === null
+            || $remaining >= max(1, (int) config("gate-v2.minimum_stage_seconds.{$stage}", 3));
+    }
+
+    private function isUpstreamTimeout(Throwable $exception): bool
+    {
+        return $exception instanceof ConnectionException
+            || str_contains(mb_strtolower($exception->getMessage()), 'curl error 28')
+            || str_contains(mb_strtolower($exception->getMessage()), 'timed out');
+    }
+
+    /**
+     * @param  array<int, string>  $unavailable
+     * @return array<string, mixed>
+     */
+    private function failure(
+        string $guideline,
+        string $stage,
+        string $reason,
+        array $unavailable,
+        int $attempt,
+    ): array {
+        return compact('stage', 'reason', 'guideline', 'attempt', 'unavailable');
     }
 
     /**

@@ -14,6 +14,7 @@ use App\Ai\Gate\Routing\OrientRoutingPriorService;
 use App\Ai\Gate\State\PatientModelProjection;
 use App\Ai\Gate\State\ShadowStateRecorder;
 use App\Services\PHIScrubberService;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Concurrency;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -41,6 +42,9 @@ final class GateWorkflowService
     private bool $deadlineActive = false;
 
     private string $rawTurnText = '';
+
+    /** @var array<int, array<string, mixed>> */
+    private array $degradation = [];
 
     public function __construct(
         private readonly PreOrientGuardService $guard,
@@ -77,7 +81,8 @@ final class GateWorkflowService
         $this->startedAt = microtime(true);
         $this->iteration = 0;
         $this->reservedRevisionSeconds = 0;
-        $this->deadlineActive = false;
+        $this->deadlineActive = true;
+        $this->degradation = [];
 
         [$turn, $priorState] = $this->deidentify($turn, $priorState);
         $this->rawTurnText = $this->accumulateRawTurnText($turn, $priorState);
@@ -181,7 +186,15 @@ final class GateWorkflowService
         }
 
         $progress->emit('orient', '🧭 Framing and routing the case…');
-        $orient = $this->orientWithPrefetch($turn, $priorState);
+        try {
+            $orient = $this->orientWithPrefetch($turn, $priorState);
+        } catch (Throwable $exception) {
+            if (! $this->isUpstreamTimeout($exception)) {
+                throw $exception;
+            }
+
+            return $this->orientFailureResult($priorState, $exception, $progress);
+        }
         if ($priorState === []) {
             $orient['same_case'] = null;
         }
@@ -207,6 +220,7 @@ final class GateWorkflowService
         $budgets = config('gate-v2.bounce_budgets');
         $seenBounceFingerprints = [];
         $lastCritic = null;
+        $criticFailure = null;
         $maxIterations = max(1, (int) config('gate-v2.max_iterations', 3));
 
         for ($this->iteration = 1; $this->iteration <= $maxIterations; $this->iteration++) {
@@ -216,8 +230,13 @@ final class GateWorkflowService
                 ]);
                 $lastCritic = $this->critic($turn, $candidate, $priorState);
             } catch (Throwable $exception) {
+                $criticFailure = [
+                    'stage' => 'critic',
+                    'reason' => $this->failureReason($exception),
+                    'unavailable' => ['Critic evaluation and score'],
+                ];
                 $this->record('decide', 0, [
-                    'reason' => 'critic_or_deadline_failure',
+                    'reason' => 'critic_skipped_accept_unevaluated_candidate',
                     'error' => $exception->getMessage(),
                 ]);
                 break;
@@ -300,13 +319,37 @@ final class GateWorkflowService
             }
         }
 
-        $best = $ledger->best();
-        $bestCandidate = $best['candidate'];
-        $bestCritic = $best['critic'];
-        $bestScore = (float) $bestCritic['score'];
+        try {
+            $best = $ledger->best();
+            $bestCandidate = $best['candidate'];
+            $bestCritic = $best['critic'];
+            $bestScore = (float) $bestCritic['score'];
+            if ($criticFailure !== null) {
+                $this->addDegradation($criticFailure);
+            }
+        } catch (RuntimeException) {
+            $bestCandidate = $candidate;
+            $bestCritic = [
+                'status' => 'not_evaluated',
+                'approved' => null,
+                'score' => null,
+                'issues' => [],
+            ];
+            $bestScore = null;
+            $this->addDegradation([
+                'stage' => 'critic',
+                'reason' => 'no_candidate_scored',
+                'cause' => $criticFailure['reason'] ?? 'critic_unavailable',
+                'unavailable' => ['Critic evaluation and score'],
+            ]);
+            $this->record('decide', 0, [
+                'reason' => 'fallback_to_unevaluated_probe_candidate',
+            ]);
+        }
         $final = $this->tail->finalize(
             $bestCandidate['probe'],
             (array) ($bestCandidate['orient']['open_questions'] ?? []),
+            $this->degradation,
         );
         $this->record('decide', 0, [
             'decision' => $final['decision'],
@@ -531,13 +574,14 @@ final class GateWorkflowService
     /**
      * @param  array<string, mixed>  $orient
      * @param  array<int, array<string, mixed>>  $issues
-     * @return array{pathways: array<int, array<string, mixed>>, queries_tried: array<string, array<int, string>>, snippet_digests: array<string, array<int, array<string, mixed>>>}
+     * @return array{pathways: array<int, array<string, mixed>>, queries_tried: array<string, array<int, string>>, snippet_digests: array<string, array<int, array<string, mixed>>>, degradation: array<int, array<string, mixed>>}
      */
     private function ground(string $turn, array $orient, array $issues): array
     {
         $allPathways = [];
         $queriesTried = [];
         $snippetDigests = [];
+        $degradation = [];
         $guidelines = array_slice((array) ($orient['candidate_guidelines'] ?? []), 0, 3);
         $usePrefetch = $this->iteration === 0 && $issues === [] && $this->prefetchedQuery !== null;
         $maxAttempts = $issues === []
@@ -640,11 +684,25 @@ final class GateWorkflowService
         $this->prefetchedGround = [];
         $this->prefetchedQuery = null;
         foreach ($pending as $guideline => $cacheKey) {
-            $this->groundCache[$cacheKey] = $results[$guideline];
+            if (isset($results[$guideline])) {
+                $this->groundCache[$cacheKey] = $results[$guideline];
+            }
         }
         $this->assertWithinDeadline();
 
         foreach ($guidelines as $guideline) {
+            if (! isset($results[$guideline])) {
+                $failure = [
+                    'stage' => 'pathway',
+                    'reason' => 'branch_unavailable',
+                    'guideline' => $guideline,
+                    'unavailable' => ['retrieved evidence and pathway assessment for '.$guideline],
+                ];
+                $degradation[] = $failure;
+                $this->addDegradation($failure);
+
+                continue;
+            }
             $result = $results[$guideline];
             $guideline = (string) $result['guideline'];
             $queriesTried[$guideline] = (array) $result['queries_tried'];
@@ -652,15 +710,40 @@ final class GateWorkflowService
             foreach ((array) $result['trace'] as $entry) {
                 $this->recordExternal($entry);
             }
+            foreach ((array) ($result['degradation'] ?? []) as $failure) {
+                if (is_array($failure)) {
+                    $degradation[] = $failure;
+                    $this->addDegradation($failure);
+                }
+            }
             if (is_array($result['assessment'] ?? null)) {
                 $allPathways[] = $result['assessment'];
             }
+        }
+
+        if ($degradation !== []) {
+            $evidenceGuidelines = array_values(array_keys(array_filter(
+                $snippetDigests,
+                static fn (array $snippets): bool => $snippets !== [],
+            )));
+            $summary = [
+                'stage' => 'grounding',
+                'reason' => 'partial_evidence',
+                'routed_branch_count' => count($guidelines),
+                'evidence_branch_count' => count($evidenceGuidelines),
+                'available_guidelines' => $evidenceGuidelines,
+                'unavailable_guidelines' => array_values(array_diff($guidelines, $evidenceGuidelines)),
+                'unavailable' => ['complete routed-guideline evidence'],
+            ];
+            $degradation[] = $summary;
+            $this->addDegradation($summary);
         }
 
         return [
             'pathways' => $allPathways,
             'queries_tried' => $queriesTried,
             'snippet_digests' => $snippetDigests,
+            'degradation' => $degradation,
         ];
     }
 
@@ -724,8 +807,7 @@ final class GateWorkflowService
         array $issues,
         array $priorState,
     ): array {
-        $started = microtime(true);
-        $response = $this->prompt(new ProbeAgent, [
+        $payload = [
             'current_question' => $turn,
             'patient_model' => $orient['patient_model'],
             'response_mode' => $orient['response_mode'],
@@ -736,13 +818,58 @@ final class GateWorkflowService
             'open_questions' => $orient['open_questions'],
             'prior_assumptions' => $priorState['assumptions'] ?? [],
             'critic_issues' => $issues,
-        ]);
-        $this->record('probe', $started, [
-            'questions' => count((array) ($response['questions'] ?? [])),
-            'coverage' => $response['evidence_status']['coverage'] ?? null,
-        ]);
+        ];
 
-        return $response;
+        for ($attempt = 1; $attempt <= 2; $attempt++) {
+            if (! $this->canStartStage('probe')) {
+                $this->addDegradation([
+                    'stage' => 'probe',
+                    'reason' => 'insufficient_budget',
+                    'attempts' => $attempt - 1,
+                    'unavailable' => ['LLM-synthesized answer'],
+                ]);
+                $this->record('probe_skipped', 0, [
+                    'attempt' => $attempt,
+                    'remaining_seconds' => $this->remainingSeconds(),
+                ]);
+                break;
+            }
+
+            $started = microtime(true);
+            try {
+                $response = $this->prompt(new ProbeAgent, $payload);
+                $this->record('probe', $started, [
+                    'attempt' => $attempt,
+                    'questions' => count((array) ($response['questions'] ?? [])),
+                    'coverage' => $response['evidence_status']['coverage'] ?? null,
+                ]);
+
+                return $response;
+            } catch (Throwable $exception) {
+                if (! $this->isUpstreamTimeout($exception)) {
+                    throw $exception;
+                }
+                $this->record('probe_failed', $started, [
+                    'attempt' => $attempt,
+                    'reason' => 'upstream_timeout',
+                    'will_retry' => $attempt === 1 && $this->canStartStage('probe'),
+                ]);
+                if ($attempt === 1 && $this->canStartStage('probe')) {
+                    continue;
+                }
+                $this->addDegradation([
+                    'stage' => 'probe',
+                    'reason' => 'upstream_timeout',
+                    'attempts' => $attempt,
+                    'unavailable' => ['LLM-synthesized answer'],
+                ]);
+                break;
+            }
+        }
+
+        $this->record('probe_fallback', 0, ['reason' => 'evidence_only_response']);
+
+        return $this->evidenceOnlyProbe($orient, $ground, $evidenceStatus);
     }
 
     /**
@@ -794,12 +921,26 @@ final class GateWorkflowService
         $ground = $this->ground($turn, $orient, []);
         $evidenceStatus = $this->evidenceStatus->assess($turn, $ground['pathways']);
         $started = microtime(true);
-        $answer = $this->prompt(new KnowledgeAnswerAgent, [
-            'current_question' => $turn,
-            'patient_model_digest' => $orient['patient_model'],
-            'snippets' => $ground['snippet_digests'],
-            'evidence_status' => $evidenceStatus,
-        ]);
+        try {
+            $answer = $this->prompt(new KnowledgeAnswerAgent, [
+                'current_question' => $turn,
+                'patient_model_digest' => $orient['patient_model'],
+                'snippets' => $ground['snippet_digests'],
+                'evidence_status' => $evidenceStatus,
+            ]);
+        } catch (Throwable $exception) {
+            if (! $this->isUpstreamTimeout($exception)
+                && ! str_contains($exception->getMessage(), 'insufficient remaining budget')) {
+                throw $exception;
+            }
+            $this->addDegradation([
+                'stage' => 'knowledge',
+                'reason' => $this->failureReason($exception),
+                'unavailable' => ['LLM-synthesized knowledge answer'],
+            ]);
+            $answer = $this->evidenceOnlyProbe($orient, $ground, $evidenceStatus);
+            $this->record('knowledge_fallback', 0, ['reason' => 'evidence_only_response']);
+        }
         $this->record('knowledge', $started, [
             'escalate' => $answer['escalate'] ?? false,
             'coverage' => $answer['evidence_status']['coverage'] ?? null,
@@ -815,7 +956,11 @@ final class GateWorkflowService
             return $this->execute($turn, $forcedState, $progress);
         }
 
-        $final = $this->tail->finalize($answer + ['unknowns' => [], 'questions' => []]);
+        $final = $this->tail->finalize(
+            $answer + ['unknowns' => [], 'questions' => []],
+            [],
+            $this->degradation,
+        );
         $progress->emit('done', '✅ Gate reasoning complete.');
 
         return array_merge($final, [
@@ -921,6 +1066,11 @@ final class GateWorkflowService
             KnowledgeAnswerAgent::class => 'knowledge',
             default => 'default',
         };
+        if (! $this->canStartStage($stage)) {
+            throw new RuntimeException(
+                "{$stage} skipped: insufficient remaining budget for a model call.",
+            );
+        }
         $response = $agent->prompt(
             json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
             provider: (string) config('gate-v2.provider'),
@@ -1100,7 +1250,141 @@ final class GateWorkflowService
     private function deadlineAt(): ?float
     {
         return $this->deadlineActive
-            ? $this->startedAt + max(1, (int) config('gate-v2.deadline_seconds', 90))
+            ? $this->startedAt
+                + max(1, (int) config('gate-v2.deadline_seconds', 90))
+                - $this->reservedRevisionSeconds
             : null;
+    }
+
+    private function canStartStage(string $stage): bool
+    {
+        return $this->remainingSeconds()
+            >= max(1, (int) config("gate-v2.minimum_stage_seconds.{$stage}", 3));
+    }
+
+    private function isUpstreamTimeout(Throwable $exception): bool
+    {
+        $message = mb_strtolower($exception->getMessage());
+
+        return $exception instanceof ConnectionException
+            || str_contains($message, 'curl error 28')
+            || str_contains($message, 'timed out');
+    }
+
+    private function failureReason(Throwable $exception): string
+    {
+        return $this->isUpstreamTimeout($exception)
+            ? 'upstream_timeout'
+            : (str_contains($exception->getMessage(), 'insufficient remaining budget')
+                ? 'insufficient_budget'
+                : 'stage_failure');
+    }
+
+    /** @param array<string, mixed> $failure */
+    private function addDegradation(array $failure): void
+    {
+        $fingerprint = json_encode($failure, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        foreach ($this->degradation as $existing) {
+            if (json_encode($existing, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) === $fingerprint) {
+                return;
+            }
+        }
+        $this->degradation[] = $failure;
+    }
+
+    /**
+     * @param  array<string, mixed>  $priorState
+     * @return array<string, mixed>
+     */
+    private function orientFailureResult(
+        array $priorState,
+        Throwable $exception,
+        GateProgress $progress,
+    ): array {
+        $this->addDegradation([
+            'stage' => 'orient',
+            'reason' => 'upstream_timeout',
+            'unavailable' => ['updated patient model', 'guideline routing', 'clinical answer'],
+        ]);
+        $this->record('orient_fallback', 0, [
+            'reason' => 'fatal_case_stage_timeout',
+            'error_type' => $exception::class,
+        ]);
+        $progress->emit('done', '⚠️ Gate could not frame this turn; prior state was preserved.');
+        $final = $this->tail->finalize([
+            'guideline_grounded_answer' => 'The case could not be framed before the upstream model timeout. No new guideline-grounded conclusion was produced.',
+            'interpretive_frame' => 'No clinical interpretation was generated. Retry the turn; the structured prior patient state was preserved.',
+            'evidence_status' => [
+                'coverage' => 'retrieval_uncertain',
+                'core_question' => '',
+                'covered_components' => [],
+                'gap_summary' => 'Orient did not complete, so retrieval and synthesis were unavailable.',
+            ],
+            'unknowns' => [],
+            'questions' => [],
+            'assumptions' => [],
+            'confidence' => 0.0,
+        ], [], $this->degradation);
+
+        return array_merge($final, [
+            'mode' => 'case_incomplete',
+            'same_case' => $priorState === [] ? null : true,
+            'patient_model' => (array) ($priorState['patient_model'] ?? []),
+            'routed_guidelines' => (array) ($priorState['candidate_guidelines'] ?? []),
+            'pathways' => [],
+            'queries_tried' => [],
+            'snippet_digests' => [],
+            'critic' => ['status' => 'not_run', 'approved' => null, 'score' => null],
+            'best_score' => null,
+            'iterations' => 0,
+            'stage_trace' => $this->trace,
+            'state' => $priorState,
+        ]);
+    }
+
+    /**
+     * Deterministic last-resort answer: it states what was gathered and makes no
+     * new clinical claim when Probe synthesis cannot complete.
+     *
+     * @param  array<string, mixed>  $orient
+     * @param  array<string, mixed>  $ground
+     * @param  array<string, mixed>  $evidenceStatus
+     * @return array<string, mixed>
+     */
+    private function evidenceOnlyProbe(array $orient, array $ground, array $evidenceStatus): array
+    {
+        $routed = array_values((array) ($orient['candidate_guidelines'] ?? []));
+        $available = array_values(array_keys(array_filter(
+            (array) ($ground['snippet_digests'] ?? []),
+            static fn (array $snippets): bool => $snippets !== [],
+        )));
+        $summary = $available === []
+            ? 'No guideline evidence was available before synthesis stopped.'
+            : 'Evidence was retrieved for '.implode(', ', $available)
+                .', but the answer synthesis stage did not complete.';
+
+        return [
+            'baseline_pathway' => 'EVIDENCE_ABSENT',
+            'patient_deviations' => [],
+            'actionable_plan' => [
+                'timing' => 'EVIDENCE_ABSENT',
+                'pharmacotherapy_regimen' => 'EVIDENCE_ABSENT',
+                'what_not_to_do' => ['Do not treat this partial result as a completed guideline synthesis.'],
+                'deferral_justification' => 'NOT_DEFERRED',
+                'antithrombotic_combination_justification' => 'NOT_APPLICABLE',
+            ],
+            'escalation_and_reassessment' => [
+                'trigger_event' => 'Successful retry of the answer synthesis stage',
+                'action_on_trigger' => 'Reassess the preserved evidence and patient model.',
+            ],
+            'unknowns' => [],
+            'questions' => [],
+            'evidence_status' => $evidenceStatus,
+            'guideline_grounded_answer' => $summary,
+            'interpretive_frame' => 'No new clinical interpretation was generated. Routed guidelines: '
+                .($routed === [] ? 'none' : implode(', ', $routed)).'.',
+            'assumptions' => [],
+            'confidence' => 0.0,
+        ];
     }
 }

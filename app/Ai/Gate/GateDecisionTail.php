@@ -11,7 +11,11 @@ final class GateDecisionTail
      * @param  array<int, array<string, mixed>>  $openQuestions
      * @return array<string, mixed>
      */
-    public function finalize(array $candidate, array $openQuestions = []): array
+    public function finalize(
+        array $candidate,
+        array $openQuestions = [],
+        array $degradation = [],
+    ): array
     {
         $closed = [];
         foreach ($openQuestions as $question) {
@@ -39,15 +43,57 @@ final class GateDecisionTail
         $renderedInterpretive = self::NON_ESVS_BANNER."\n".$interpretive;
         $grounded = trim((string) ($candidate['guideline_grounded_answer'] ?? ''));
 
+        $degradationNotice = $this->degradationNotice($degradation);
+
         return array_merge($candidate, [
             'decision' => $decision,
             'questions' => $decision === 'ask' ? $questions : [],
             'interpretive_frame' => $renderedInterpretive,
             'lint_violations' => $lint,
-            'answer_markdown' => "## ESVS-grounded answer\n\n"
+            'degradation' => array_values($degradation),
+            'answer_markdown' => $degradationNotice
+                ."## ESVS-grounded answer\n\n"
                 .($grounded !== '' ? $grounded : '_No grounded ESVS statement was located._')
                 ."\n\n## Interpretation\n\n".$renderedInterpretive,
         ]);
+    }
+
+    /**
+     * Degradation is safety-relevant output, not diagnostic metadata. Keep the
+     * machine-readable records and render the same limitations before the answer.
+     *
+     * @param  array<int, array<string, mixed>>  $degradation
+     */
+    private function degradationNotice(array $degradation): string
+    {
+        if ($degradation === []) {
+            return '';
+        }
+
+        $items = array_map(static function (array $item): string {
+            $stage = (string) ($item['stage'] ?? 'pipeline');
+            $reason = str_replace('_', ' ', (string) ($item['reason'] ?? 'unavailable'));
+            $coverage = isset($item['evidence_branch_count'], $item['routed_branch_count'])
+                ? sprintf(
+                    ' (%d of %d routed guidelines supplied evidence)',
+                    (int) $item['evidence_branch_count'],
+                    (int) $item['routed_branch_count'],
+                )
+                : '';
+            $unavailable = array_values(array_filter(array_map(
+                'strval',
+                (array) ($item['unavailable'] ?? []),
+            )));
+            $suffix = $unavailable === []
+                ? ''
+                : '; unavailable: '.implode(', ', $unavailable);
+
+            return "- {$stage}: {$reason}{$coverage}{$suffix}";
+        }, $degradation);
+
+        return "## Degradation notice\n\n"
+            ."This answer was produced with partial processing or evidence:\n"
+            .implode("\n", $items)."\n\n";
     }
 
     /**

@@ -47,6 +47,18 @@ return [
         'knowledge' => (int) env('GATE_V2_KNOWLEDGE_TIMEOUT_SECONDS', 30),
         'default' => (int) env('GATE_V2_STAGE_TIMEOUT_SECONDS', 15),
     ],
+    // Do not launch an LLM call when the remaining turn budget is too small to
+    // give it a meaningful chance of completing. These gates are checked before
+    // every first attempt and retry; the configured timeout is still clamped to
+    // the actual remaining budget.
+    'minimum_stage_seconds' => [
+        'orient' => (int) env('GATE_V2_ORIENT_MINIMUM_SECONDS', 5),
+        'pathway' => (int) env('GATE_V2_PATHWAY_MINIMUM_SECONDS', 5),
+        'probe' => (int) env('GATE_V2_PROBE_MINIMUM_SECONDS', 5),
+        'critic' => (int) env('GATE_V2_CRITIC_MINIMUM_SECONDS', 5),
+        'knowledge' => (int) env('GATE_V2_KNOWLEDGE_MINIMUM_SECONDS', 5),
+        'default' => (int) env('GATE_V2_STAGE_MINIMUM_SECONDS', 3),
+    ],
     'revision_reserve_seconds' => (int) env('GATE_V2_REVISION_RESERVE_SECONDS', 25),
     'minimum_revision_seconds' => [
         'orient_route' => 25,
