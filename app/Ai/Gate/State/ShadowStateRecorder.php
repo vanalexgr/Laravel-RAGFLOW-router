@@ -11,9 +11,13 @@ use DateTimeImmutable;
 
 final class ShadowStateRecorder
 {
+    private readonly StateEventStore $store;
+
     public function __construct(
-        private readonly LedgerEventStore $store = new LedgerEventStore,
-    ) {}
+        ?StateEventStore $store = null,
+    ) {
+        $this->store = $store ?? new LedgerEventStore;
+    }
 
     /**
      * @param  array<string, mixed>  $priorState

@@ -9,7 +9,7 @@ use RuntimeException;
  * Append-only database storage. Unlike Laravel Cache, this table is the
  * authoritative event log and has no TTL or eviction policy.
  */
-final class LedgerEventStore
+final class LedgerEventStore implements StateEventStore
 {
     /** @return array<int, array<string, mixed>> */
     public function load(string $conversationId): array
