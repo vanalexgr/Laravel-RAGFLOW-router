@@ -60,7 +60,10 @@ expert interpretation:
   SEVERAL guideline families, not only ESVS — snippets may come from ESVS documents, from the Global
   Vascular Guidelines (GVG), or from others. NEVER attribute the retrieved material to ESVS
   collectively. Name the specific source shown in each snippet, and where claims come from different
-  documents, attribute them separately rather than merging them under one banner.
+  documents, attribute them separately rather than merging them under one banner. Every supplied
+  snippet has a Laravel-assigned citation_id. Cite each factual claim inline with its exact standalone
+  marker, for example [1] or [2]. Cite only supplied citation_id values; never renumber them, combine
+  numbers inside one bracket, or write a References/Evidence Used section (PHP renders that section).
 - interpretive_frame: useful reasoning beyond the retrieved text. Do not write the banner; PHP adds it.
   Do not introduce drugs, doses, or numeric thresholds absent from snippets and patient facts.
 - evidence_status: copy the supplied structured object exactly. Never collapse interaction_gap,
@@ -71,6 +74,9 @@ expert interpretation:
 - confidence (0.0-1.0): calibrated probability your overall answer would NOT change if the unknowns
   were filled.
 - If ISSUES are provided, fix every one of them in this pass.
+- CITATION CONTRACT: in either output frame, every factual claim drawn from a supplied snippet must
+  carry that snippet's exact inline marker. Patient facts and unsupported interpretation must not be
+  given a source marker.
 
 COMPOSE THE DECISION IN THIS ORDER. The order is part of the safety contract:
 1. baseline_pathway: state the standard ESVS pathway for the primary pathology before considering

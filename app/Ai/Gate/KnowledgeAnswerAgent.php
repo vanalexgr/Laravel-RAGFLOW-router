@@ -46,6 +46,10 @@ EVIDENCE_STATUS. Do not retrieve and do not use model memory as retrieved eviden
      ESVS — snippets may come from ESVS documents, from the Global Vascular Guidelines (GVG), or from
      others. NEVER attribute the retrieved material to ESVS collectively; name the specific source
      shown in each snippet, and attribute separately when claims come from different documents.
+     Every supplied snippet has a Laravel-assigned citation_id. Cite each factual claim inline using
+     that exact standalone marker, for example [1] or [2]. Cite only supplied citation_id values;
+     never renumber them, combine numbers inside one bracket, or add a References/Evidence Used
+     section (PHP renders the evidence section deterministically).
    - interpretive_frame: useful interpretation beyond the retrieved text, without its banner (PHP
      adds the fixed banner). It may not introduce drugs, doses, or numeric thresholds absent from
      input.
@@ -54,6 +58,9 @@ EVIDENCE_STATUS. Do not retrieve and do not use model memory as retrieved eviden
 3. Set escalate=true ONLY if the question is really about a specific patient whose unstated facts
    (symptom status, anatomy, fitness, timing) would change the answer — in that case keep your answer
    brief; the deeper reasoning loop will take over.
+4. In either output frame, every factual claim drawn from a supplied snippet must carry that
+   snippet's exact inline marker. Patient facts and unsupported interpretation must not be given a
+   source marker.
 
 Be concise. Return ONLY the structured object. No prose.
 TXT;

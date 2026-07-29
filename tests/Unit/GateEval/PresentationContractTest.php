@@ -26,6 +26,33 @@ use Tests\TestCase;
 
 class PresentationContractTest extends TestCase
 {
+    public function test_prompt_numbers_and_emitted_citation_ids_are_identical(): void
+    {
+        $builder = new GateCitationBuilder;
+        $numbered = $builder->numberForPrompt([
+            'carotid' => [[
+                'bucket' => 'citation',
+                'text' => 'Recommendation text.',
+                'source' => 'ESVS 2023 Carotid',
+                'metadata' => ['recommendation_id' => '17'],
+            ]],
+            'aaa' => [[
+                'bucket' => 'narrative',
+                'text' => 'Narrative text.',
+                'source' => 'ESVS 2024 AAA',
+                'metadata' => [],
+            ]],
+        ]);
+
+        $promptIds = [];
+        foreach ($numbered as $snippets) {
+            $promptIds = array_merge($promptIds, array_column($snippets, 'citation_id'));
+        }
+
+        $this->assertSame(['1', '2'], $promptIds);
+        $this->assertSame($promptIds, array_column($builder->build($numbered), 'id'));
+    }
+
     public function test_citations_preserve_bucket_provenance_and_canonical_metadata_verbatim(): void
     {
         $citations = (new GateCitationBuilder)->build([
@@ -87,6 +114,124 @@ class PresentationContractTest extends TestCase
             'class' => null,
             'level' => null,
         ], $citation['metadata']);
+    }
+
+    public function test_tail_keeps_only_resolved_markers_and_citations_one_to_one(): void
+    {
+        $builder = new GateCitationBuilder;
+        $numbered = $builder->numberForPrompt([
+            'carotid' => [[
+                'bucket' => 'citation',
+                'text' => 'Recommendation text.',
+                'source' => 'ESVS 2023 Carotid',
+                'metadata' => [
+                    'recommendation_id' => '17',
+                    'recommendation_class' => 'IIa',
+                    'evidence_level' => 'B',
+                ],
+            ]],
+            'aaa' => [[
+                'bucket' => 'narrative',
+                'text' => 'Narrative text.',
+                'source' => 'ESVS 2024 AAA',
+                'metadata' => [],
+            ]],
+        ]);
+
+        $result = (new GateDecisionTail)->finalize([
+            'unknowns' => [],
+            'questions' => [],
+            'guideline_grounded_answer' => 'Grounded recommendation [1].',
+            'interpretive_frame' => 'Context from narrative [2].',
+        ], [], [], $builder->build($numbered));
+
+        preg_match_all('/\[(\d+)\]/', $result['answer_markdown'], $markers);
+        $markerIds = array_values(array_unique($markers[1]));
+
+        $this->assertSame(['1', '2'], $markerIds);
+        $this->assertSame($markerIds, array_column($result['citations'], 'id'));
+    }
+
+    public function test_evidence_used_lists_exactly_cited_sources_with_canonical_strength(): void
+    {
+        $builder = new GateCitationBuilder;
+        $numbered = $builder->numberForPrompt([
+            'carotid' => [
+                [
+                    'bucket' => 'citation',
+                    'text' => 'Cited recommendation.',
+                    'source' => 'ESVS 2023 Carotid',
+                    'metadata' => [
+                        'recommendation_id' => '17',
+                        'recommendation_class' => 'Iia',
+                        'evidence_level' => 'b',
+                    ],
+                ],
+                [
+                    'bucket' => 'citation',
+                    'text' => 'Uncited recommendation.',
+                    'source' => 'ESVS 2023 Carotid',
+                    'metadata' => [
+                        'recommendation_id' => '18',
+                        'recommendation_class' => 'I',
+                        'evidence_level' => 'A',
+                    ],
+                ],
+                [
+                    'bucket' => 'narrative',
+                    'text' => 'Cited narrative.',
+                    'source' => 'ESVS 2023 Carotid',
+                    'metadata' => [],
+                ],
+            ],
+        ]);
+
+        $result = (new GateDecisionTail)->finalize([
+            'unknowns' => [],
+            'questions' => [],
+            'guideline_grounded_answer' => 'Use the recommendation [1] with context [3].',
+            'interpretive_frame' => '',
+        ], [], [], $builder->build($numbered));
+
+        $this->assertStringContainsString(
+            '- [1] **Recommendation 17** — Class IIa; Level B; ESVS 2023 Carotid',
+            $result['answer_markdown'],
+        );
+        $this->assertStringContainsString(
+            '- [3] _Narrative source_ — ESVS 2023 Carotid',
+            $result['answer_markdown'],
+        );
+        $this->assertStringNotContainsString('Recommendation 18', $result['answer_markdown']);
+        $this->assertSame(['1', '3'], array_column($result['citations'], 'id'));
+    }
+
+    public function test_unparsed_class_and_level_survive_in_evidence_used(): void
+    {
+        $builder = new GateCitationBuilder;
+        $numbered = $builder->numberForPrompt([
+            'clti' => [[
+                'bucket' => 'citation',
+                'text' => 'Recommendation text.',
+                'source' => 'GVG CLTI',
+                'metadata' => [
+                    'recommendation_id' => '4.1',
+                    'recommendation_class' => 'unparsed',
+                    'evidence_level' => 'unparsed',
+                ],
+            ]],
+        ]);
+
+        $result = (new GateDecisionTail)->finalize([
+            'unknowns' => [],
+            'questions' => [],
+            'guideline_grounded_answer' => 'Grounded [1].',
+            'interpretive_frame' => '',
+        ], [], [], $builder->build($numbered));
+
+        $this->assertStringContainsString(
+            'Recommendation 4.1** — Class unparsed; Level unparsed; GVG CLTI',
+            $result['answer_markdown'],
+        );
     }
 
     public function test_progress_endpoint_returns_emissions_in_order_and_flips_done(): void

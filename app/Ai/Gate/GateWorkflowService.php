@@ -347,10 +347,14 @@ final class GateWorkflowService
                 'reason' => 'fallback_to_unevaluated_probe_candidate',
             ]);
         }
+        $promptSnippets = $this->promptSnippetDigests(
+            $bestCandidate['ground']['snippet_digests'],
+        );
         $final = $this->tail->finalize(
             $bestCandidate['probe'],
             (array) ($bestCandidate['orient']['open_questions'] ?? []),
             $this->degradation,
+            ($this->citationBuilder ?? new GateCitationBuilder)->build($promptSnippets),
         );
         $this->record('decide', 0, [
             'decision' => $final['decision'],
@@ -374,9 +378,7 @@ final class GateWorkflowService
             'snippet_digests' => $this->auditSnippetDigests(
                 $bestCandidate['ground']['snippet_digests'],
             ),
-            'citations' => ($this->citationBuilder ?? new GateCitationBuilder)->build(
-                $bestCandidate['ground']['snippet_digests'],
-            ),
+            'citations' => $final['citations'],
             'critic' => $bestCritic,
             'best_score' => $bestScore,
             'iterations' => min($this->iteration, $maxIterations),
@@ -913,7 +915,7 @@ final class GateWorkflowService
             'response_mode' => $orient['response_mode'],
             'house_sections' => ['ESVS-grounded answer', 'Interpretation'],
             'pathways' => $ground['pathways'],
-            'source_snippets' => $this->compactSnippetDigests($ground['snippet_digests']),
+            'source_snippets' => $this->promptSnippetDigests($ground['snippet_digests']),
             'evidence_status' => $evidenceStatus,
             'open_questions' => $orient['open_questions'],
             'prior_assumptions' => $priorState['assumptions'] ?? [],
@@ -992,7 +994,7 @@ final class GateWorkflowService
                 'candidate_guidelines' => $candidate['orient']['candidate_guidelines'],
             ],
             'pathways' => $candidate['ground']['pathways'],
-            'source_snippet_digests' => $this->compactSnippetDigests(
+            'source_snippet_digests' => $this->promptSnippetDigests(
                 $candidate['ground']['snippet_digests'],
             ),
             'probe' => $candidate['probe'],
@@ -1021,11 +1023,12 @@ final class GateWorkflowService
         $ground = $this->ground($turn, $orient, [], $progress);
         $evidenceStatus = $this->evidenceStatus->assess($turn, $ground['pathways']);
         $started = microtime(true);
+        $promptSnippets = $this->promptSnippetDigests($ground['snippet_digests']);
         try {
             $answer = $this->prompt(new KnowledgeAnswerAgent, [
                 'current_question' => $turn,
                 'patient_model_digest' => $orient['patient_model'],
-                'snippets' => $ground['snippet_digests'],
+                'snippets' => $promptSnippets,
                 'evidence_status' => $evidenceStatus,
             ]);
         } catch (Throwable $exception) {
@@ -1060,6 +1063,7 @@ final class GateWorkflowService
             $answer + ['unknowns' => [], 'questions' => []],
             [],
             $this->degradation,
+            ($this->citationBuilder ?? new GateCitationBuilder)->build($promptSnippets),
         );
         $progress->emit('done', '✅ Gate reasoning complete.');
 
@@ -1071,9 +1075,7 @@ final class GateWorkflowService
             'pathways' => $ground['pathways'],
             'queries_tried' => $ground['queries_tried'],
             'snippet_digests' => $this->auditSnippetDigests($ground['snippet_digests']),
-            'citations' => ($this->citationBuilder ?? new GateCitationBuilder)->build(
-                $ground['snippet_digests'],
-            ),
+            'citations' => $final['citations'],
             'iterations' => 0,
             'stage_trace' => $this->trace,
             'state' => [
@@ -1260,6 +1262,21 @@ final class GateWorkflowService
         }
 
         return $digests;
+    }
+
+    /**
+     * The prompt and citation projection must share one numbered source set.
+     * Numbering earlier would include snippets later removed by the prompt cap;
+     * numbering later would let the model and UI disagree about marker identity.
+     *
+     * @param  array<string, array<int, array<string, mixed>>>  $digests
+     * @return array<string, array<int, array<string, mixed>>>
+     */
+    private function promptSnippetDigests(array $digests): array
+    {
+        return ($this->citationBuilder ?? new GateCitationBuilder)->numberForPrompt(
+            $this->compactSnippetDigests($digests),
+        );
     }
 
     /**

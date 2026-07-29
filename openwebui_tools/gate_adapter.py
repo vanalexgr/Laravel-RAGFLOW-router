@@ -316,10 +316,12 @@ class Tools:
         return "\n".join(lines).strip() if rendered else ""
 
     def _render_answer(self, data: dict) -> str:
+        if str(data.get("decision") or "").strip().lower() == "ask":
+            return self._render_questions(data.get("questions"))
+
         parts = [
             self._render_degradation(data.get("degradation")),
             self._render_body(data),
-            self._render_questions(data.get("questions")),
             self._render_assets(data.get("assets")),
         ]
         rendered = "\n\n".join(part for part in parts if part).strip()
@@ -330,7 +332,7 @@ class Tools:
         message: str,
         state: Optional[dict] = None,
         __event_emitter__: Optional[EventEmitter] = None,
-    ) -> str:
+    ) -> object:
         """
         Send a message and optional gate state to the Laravel clinical gate.
 
@@ -339,7 +341,8 @@ class Tools:
 
         :param message: The clinician's message.
         :param state: State returned by an earlier clinical-gate response.
-        :return: The backend's structured Markdown answer.
+        :return: The answer Markdown, or clarification Markdown plus the gate
+            state that must be supplied on the next turn.
         """
         request_id = str(uuid.uuid4())
         safe_state = state if isinstance(state, dict) else {}
@@ -382,6 +385,12 @@ class Tools:
             return "Clinical gate returned an invalid response. Please try again."
         except Exception:
             return "Clinical gate request failed unexpectedly. Please try again."
+
+        if str(data.get("decision") or "").strip().lower() == "ask":
+            return {
+                "clarification": self._render_answer(data),
+                "state": data.get("state") if isinstance(data.get("state"), dict) else {},
+            }
 
         await self._emit_citations(
             data.get("citations"),

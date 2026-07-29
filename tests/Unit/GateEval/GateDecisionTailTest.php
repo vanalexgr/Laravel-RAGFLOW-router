@@ -44,4 +44,23 @@ class GateDecisionTailTest extends TestCase
         $this->assertStringStartsWith(GateDecisionTail::NON_ESVS_BANNER, $result['interpretive_frame']);
         $this->assertSame(['5 mg'], $result['lint_violations']);
     }
+
+    public function test_unresolvable_marker_is_stripped_and_counted(): void
+    {
+        $result = (new GateDecisionTail)->finalize([
+            'unknowns' => [],
+            'questions' => [],
+            'guideline_grounded_answer' => 'Supported [1]. Unsupported [99].',
+            'interpretive_frame' => 'Interpretation.',
+        ], [], [], [[
+            'id' => '1',
+            'kind' => 'narrative',
+            'metadata' => ['guideline' => 'ESVS source'],
+        ]]);
+
+        $this->assertStringContainsString('Supported [1].', $result['answer_markdown']);
+        $this->assertStringNotContainsString('[99]', $result['answer_markdown']);
+        $this->assertSame(1, $result['citation_diagnostics']['unresolved_markers_stripped']);
+        $this->assertSame(['1'], $result['citation_diagnostics']['cited_ids']);
+    }
 }
