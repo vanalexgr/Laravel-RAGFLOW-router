@@ -8,6 +8,7 @@ chunks, and returns structured clinical responses for synthesis by an LLM.
 
 | Doc | What it covers |
 |---|---|
+| [`docs/ISI_HANDOFF.md`](docs/ISI_HANDOFF.md) | **Start here if you are taking over** — code lines, server, prototype, cloud keys, local models |
 | [`docs/SYSTEM_ARCHITECTURE.md`](docs/SYSTEM_ARCHITECTURE.md) | Components, deployment topology, request lifecycle, services & endpoints |
 | [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) | Every env var and config file |
 | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | Deploy, restart matrix, logs, troubleshooting, backups |
