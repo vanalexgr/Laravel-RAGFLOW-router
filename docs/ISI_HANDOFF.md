@@ -19,7 +19,7 @@ charge of the decision, not to issue a single deterministic recommendation.**
 | Code (public) | `github.com/vanalexgr/Laravel-RAGFLOW-router` | Two independent lines of work — see §2 |
 | Server | Hetzner VM `178.105.193.206` (all-in-one) | Production OpenWebUI + Laravel + RAGFlow — see §3 |
 | Guideline corpus | Inside RAGFlow on the server (~72k chunks) | Embedded with OpenAI models; must be re-embedded for local models — see §6 |
-| Prototype router ("Gate v2") | Branch `claude/prototyping-summary-d597c2`; also deployed on the Hetzner VM from that branch | The line of work to continue — see §4 |
+| Prototype router ("Gate v2") | Branch `claude/prototyping-summary-d597c2`; also deployed on the Hetzner VM from that branch (`/opt/cg/gate-v2/`) | The line of work to continue — see §3–§4 |
 
 ---
 
@@ -47,7 +47,8 @@ these landed (all 20–22 July 2026):
 - Turn-classification work in the adapter (`turn_classification_support.py`, corpus, eval harness)
 - Docs: `docs/OPERATIONS.md`, `docs/SELF_HOSTED_MODELS.md`
 
-> ⚠️ **Deployment hazard.** Both lines run on the same server, and each is
+> ⚠️ **Deployment hazard.** Both lines run on the same server (in separate
+> directories — see §3, "Two Laravel instances"), and each is
 > deployed with `rsync --delete` (see `docs/OPERATIONS.md` on `main`,
 > `docs/DEPLOY_OPENWEBUI_PROTOTYPE.md` on the prototype). Deploying one line
 > into a directory that holds the other **deletes the other line's files**.
@@ -90,6 +91,44 @@ Two operational rules that have caused outages before:
   the `.py` does nothing until it is pushed with `openwebui_tools/push_adapter.py`
   and the container is restarted (see `CLAUDE.md`).
 - When rsyncing, **exclude `ragflow_service/.venv`** — deleting it takes the bridge down.
+
+### Two Laravel instances on the server (verified 2026-09-28)
+
+Each code line has **its own directory and its own PHP-FPM pool**. Neither
+directory is a git checkout.
+
+| | Production (`main`) | Gate v2 prototype |
+|---|---|---|
+| Directory | `/opt/cg/laravel/app/` | `/opt/cg/gate-v2/` |
+| Code it holds | `main` only: has `app/Services/CaseStateService.php`, no `app/Ai/Gate/` | Prototype only: has `app/Ai/Gate/`, `config/gate-v2.php`, no `CaseStateService.php` |
+| PHP-FPM pool | `clinicalguidelines` → `127.0.0.1:9070` | `gate-v2` → `127.0.0.1:9071` (`/etc/php/8.5/fpm/pool.d/gate-v2.conf`, 150 s timeout, max 8 children) |
+| `.env` | own file | own file; sets `GATE_V2_ENABLED` and `GATE_V2_RETRIEVAL_DEV_CACHE_TTL` (check the second is off before any latency run or real use) |
+| Public URL | `https://chat.clinicalguidelines.io/api/v1/...` (allowlisted paths) | `https://chat.clinicalguidelines.io/gate/...` |
+| OpenWebUI tool record | `vascular_mcp_adapter` (v1.5.59), on model **"ESVS expert"** (`gpt-5-chat`) | `gate_adapter` ("Clinical Gate (prototype)", v0.1.0), on model **"ESVS expert (Clone)"** (`gpt-5-chat-clone`) |
+| Rollback copy | `/opt/cg/laravel/app.bak.20260728_205528` | — |
+
+How Gate v2 is routed: the `chat.clinicalguidelines.io` block in
+`/etc/caddy/Caddyfile` has `handle_path /gate/*`, which strips `/gate` and sends
+the request to pool 9071 with root `/opt/cg/gate-v2/public`. So the adapter's
+calls to `/gate/api/v1/clinical-gate` and `/gate/api/v1/gate-progress/{id}`
+reach the prototype as `/api/v1/clinical-gate` and `/api/v1/gate-progress/{id}`.
+A `vars gate_uri` / `env REQUEST_URI` override is needed there; without it
+Laravel sees route `/` and returns 405.
+
+The Caddyfile **also** has un-prefixed `handle /api/v1/clinical-gate` and
+`handle /api/v1/gate-progress/*` entries, but these go to the **production**
+pool (9070), not to Gate v2. Production's `/clinical-gate` is an older
+`main` endpoint, and production has no `gate-progress` route, so that path
+returns 404. Only the `/gate/` prefix reaches Gate v2.
+
+To deploy the prototype, rsync into `/opt/cg/gate-v2/` (never into
+`/opt/cg/laravel/app/`), then `systemctl restart php8.5-fpm.service`; the one
+FPM service runs both pools. Before any deploy, confirm the target directory
+with the file checks in §2.
+
+Also on the server: a stale OpenWebUI tool `vascular_agent_adapter` (Vizra ADK,
+pointing at a dead IP) that can be deleted, and `/opt/cg/laravel/azure_laravel.env.secure`,
+an old Azure-era env file holding credentials, which should be deleted once reviewed.
 
 ---
 
@@ -238,7 +277,8 @@ From `docs/AGENTIC_GATE_V2_PLAN.md` §0 and `docs/DEVELOPMENT_PLAN.md`:
 
 - [ ] Add ISI engineers as GitHub collaborators (or ISI forks the repo).
 - [ ] Give each ISI engineer their **own SSH key** on the server; do not share the owner's key.
-- [ ] Transfer OpenWebUI admin and RAGFlow admin accounts.
+- [ ] Admin access without sharing passwords: ISI engineers sign up for their own
+      OpenWebUI accounts and the owner promotes them to `admin` (Admin Panel → Users);
+      they register their own RAGFlow accounts and the owner invites them to the team,
+      then sets the guideline datasets' permission from "Only me" to "Team".
 - [ ] Hand over DNS/domain control for the Caddy site, if ISI keeps it.
-- [ ] Tell ISI how the Gate v2 instance on the server is deployed (directory,
-      Caddy paths, which OpenWebUI tool record uses it).
