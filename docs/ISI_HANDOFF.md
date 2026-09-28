@@ -19,7 +19,7 @@ charge of the decision, not to issue a single deterministic recommendation.**
 | Code (public) | `github.com/vanalexgr/Laravel-RAGFLOW-router` | Two independent lines of work — see §2 |
 | Server | Hetzner VM `178.105.193.206` (all-in-one) | Production OpenWebUI + Laravel + RAGFlow — see §3 |
 | Guideline corpus | Inside RAGFlow on the server (~72k chunks) | Embedded with OpenAI models; must be re-embedded for local models — see §6 |
-| Prototype router ("Gate v2") | Branch `claude/prototyping-summary-d597c2` | The line of work to continue — see §4 |
+| Prototype router ("Gate v2") | Branch `claude/prototyping-summary-d597c2`; also deployed on the Hetzner VM from that branch | The line of work to continue — see §4 |
 
 ---
 
@@ -47,13 +47,16 @@ these landed (all 20–22 July 2026):
 - Turn-classification work in the adapter (`turn_classification_support.py`, corpus, eval harness)
 - Docs: `docs/OPERATIONS.md`, `docs/SELF_HOSTED_MODELS.md`
 
-> ⚠️ **Deployment hazard.** The prototype's runbook
-> (`docs/DEPLOY_OPENWEBUI_PROTOTYPE.md`) deploys with `rsync --delete` into the
-> production app directory. Doing that from the prototype branch **deletes the
-> files listed above from production** and breaks the production adapter
-> (v1.5.59 depends on the case-state endpoints). Until the two lines are
-> reconciled, deploy the prototype to a **separate app directory / PHP-FPM
-> pool / port**, never over `/opt/cg/laravel/app`.
+> ⚠️ **Deployment hazard.** Both lines run on the same server, and each is
+> deployed with `rsync --delete` (see `docs/OPERATIONS.md` on `main`,
+> `docs/DEPLOY_OPENWEBUI_PROTOTYPE.md` on the prototype). Deploying one line
+> into a directory that holds the other **deletes the other line's files**.
+> For example, the production adapter (v1.5.59) needs the case-state endpoints
+> that exist only on `main`. The app directory is not a git checkout, so
+> before any deploy, check what is actually there: `app/Ai/Gate/` exists only
+> in the prototype, and `app/Services/CaseStateService.php` only in `main`.
+> Take a backup copy of the directory first, as the prototype runbook does.
+> Reconciling the two lines (below) removes this hazard.
 
 **Recommended first engineering task:** reconcile the two lines. Create a new
 branch from `main`, bring over the prototype's `app/Ai/`, `config/gate-*.php`,
@@ -174,14 +177,15 @@ tooling (Codex, Antigravity, local worktree paths). Treat those as history.
 
 ## 5. Cloud keys and data on the server
 
-The server currently calls cloud providers **on the previous owner's accounts**.
-ISI will replace all of them with local models (§6). Until then, these are the
-places a cloud credential lives — remove each one as its touchpoint moves local:
+The server calls cloud providers on the previous owner's accounts. **The
+previous owner continues to pay for these, and ISI may use them until the move
+to local models (§6) is complete.** These are the places a cloud credential
+lives. Remove each one as its touchpoint moves local:
 
 | Touchpoint | Provider now | Where the credential lives |
 |---|---|---|
 | Planner (Laravel) | OpenAI `gpt-5-mini` | `/opt/cg/laravel/app/.env` → `OPENAI_API_KEY` |
-| Gate v2 stages (if deployed) | OpenAI (per `config/gate-v2.php`) | same `.env` |
+| Gate v2 stages | OpenAI (per `config/gate-v2.php`) | same `.env` |
 | Answer writing | OpenAI `gpt-5-chat-latest` | OpenWebUI admin → Connections (stored in `webui.db`) |
 | Embeddings | OpenAI `text-embedding-3-large` / `ada-002` | RAGFlow MySQL `rag_flow.tenant_llm` rows |
 | Reranking | Cohere `rerank-english-v3.0` | RAGFlow `tenant_llm` (+ `BRIDGE_RERANK_API_KEY` in Laravel `.env`, standby) |
@@ -190,10 +194,11 @@ Backups made during the provider migration also contain keys:
 `/opt/cg/laravel/app/.env.bak.*`, `ragflow_service/.env.bak.*`, and
 `webui.db.bak.*` inside the `open-webui` container. Delete them once no longer needed.
 
-**Patient data.** `webui.db` holds OpenWebUI user accounts (emails) and full
-chat history, which may contain clinical details. Laravel logs
-(`storage/logs/`) and Redis case state hold PHI-scrubbed, but still clinical,
-content. See `docs/HIPAA_COMPLIANCE.md`. The open design question "PHI at rest
+**Data.** `webui.db` holds OpenWebUI user accounts (emails) and chat history.
+The history so far is development and test traffic, not real patients. Once
+real clinicians use the system, that history, the Laravel logs
+(`storage/logs/`) and the Redis case state will hold clinical content; see
+`docs/HIPAA_COMPLIANCE.md`. The open design question "PHI at rest
 for the Gate v2 patient model in Redis" (`docs/AGENTIC_GATE_V2_PLAN.md` §0) is
 now ISI's to decide.
 
@@ -209,8 +214,8 @@ not interchangeable across models).
 
 Gate v2 was designed for this: provider-agnostic via `laravel/ai`, structured
 JSON output, and any `GATE_V2_DEEP_PATH_MODE` value other than `parallel` runs
-guideline branches sequentially, for single-stream servers like Ollama. The planned local-model capability spike
-(`qwen2.5:14b-instruct`) was **deferred until ISI GPU hardware exists** — it is
+guideline branches sequentially, for single-stream servers like Ollama. The
+planned local-model capability spike (`qwen2.5:14b-instruct`) was **deferred until ISI GPU hardware exists** — it is
 the gate for committing to a local model. The Hetzner VM has no GPU.
 
 ---
@@ -233,10 +238,7 @@ From `docs/AGENTIC_GATE_V2_PLAN.md` §0 and `docs/DEVELOPMENT_PLAN.md`:
 
 - [ ] Add ISI engineers as GitHub collaborators (or ISI forks the repo).
 - [ ] Give each ISI engineer their **own SSH key** on the server; do not share the owner's key.
-- [ ] Agree who pays for OpenAI/Cohere until the local move; set spend caps, or
-      revoke the keys at hand-over and accept downtime until local models are in.
-- [ ] Decide what happens to existing OpenWebUI accounts and chat history
-      (transfer under a data-processing agreement, or export and purge).
 - [ ] Transfer OpenWebUI admin and RAGFlow admin accounts.
 - [ ] Hand over DNS/domain control for the Caddy site, if ISI keeps it.
-- [ ] Confirm whether a Gate v2 instance is currently running on the server, and where.
+- [ ] Tell ISI how the Gate v2 instance on the server is deployed (directory,
+      Caddy paths, which OpenWebUI tool record uses it).
