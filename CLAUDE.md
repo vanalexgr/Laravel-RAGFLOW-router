@@ -16,10 +16,10 @@ A Laravel 12 API that acts as a clinical decision-support router: it receives qu
 | Laravel app root | `/opt/cg/laravel/app/` | on Hetzner |
 | Laravel API | `127.0.0.1:8001` (fronted by Caddy on :80/:443) | PHP-FPM |
 | RAGFlow bridge | `127.0.0.1:8000` — FastAPI in `ragflow_service/app.py` | `ragflow-bridge.service` (reads `ragflow_service/.env`) |
-| RAGFlow | container `docker-ragflow-cpu-1` (v0.25.5, HTTP API `:9380`) | Docker |
+| RAGFlow | container `docker-ragflow-cpu-1` (v0.27.3, HTTP API `127.0.0.1:9380`; UI not public — `ssh -L 8082:127.0.0.1:8082`) | Docker |
 | RAGFlow DB | container `docker-mysql-1` (MySQL, db `rag_flow`) | Docker |
 | RAGFlow cache/queue | container `docker-redis-1` (valkey) | Docker |
-| OpenWebUI | container `open-webui`, DB `/app/backend/data/webui.db` | Docker |
+| OpenWebUI | container `open-webui` (v0.12.3), DB `/app/backend/data/webui.db` | Docker |
 
 ### Services (on Hetzner)
 ```bash
@@ -252,7 +252,7 @@ conn.close()
 
 Migrated off Azure OpenAI. Four independent touchpoints — see [`docs/PROVIDER_MIGRATION.md`](docs/PROVIDER_MIGRATION.md):
 - **Embeddings**: OpenAI `text-embedding-3-large` / `ada-002` (RAGFlow; bound via numeric `knowledgebase.tenant_embd_id`, NOT the `embd_id` string).
-- **Reranking**: Cohere `rerank-english-v3.0` (RAGFlow-side; `RAGFLOW_RERANK_ID`). Bridge just forwards `rerank_id`; Laravel-side `BridgeRerankService` is a disabled standby.
+- **Reranking**: Cohere `rerank-english-v3.0` (RAGFlow-side; `RAGFLOW_RERANK_ID=rerank-english-v3.0@default@Cohere` — RAGFlow 0.27 needs `name@instance@provider`). Bridge just forwards `rerank_id`; Laravel-side `BridgeRerankService` is a disabled standby.
 - **Planner inference**: OpenAI `gpt-5-mini` via `App\Services\OpenAiLlmClient` (bound in `AppServiceProvider`), config in `config/services.php` `services.openai` (NOT `config/prism.php`). `reasoning_effort=minimal`, `RETRIEVAL_PLANNER_MAX_TOKENS=3000`.
 - **Synthesis**: OpenAI `gpt-5-chat-latest` (OpenWebUI "ESVS expert" model `base_model_id`).
 - GraphRag LLM disabled (`GRAPHRAG_LLM_ENABLED=false`). No live Azure dependency.
