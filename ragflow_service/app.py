@@ -44,6 +44,8 @@ HIGH_RECALL_TOP_K_CEILING = max(
     int(os.getenv("RAGFLOW_HIGH_RECALL_TOP_K_CEILING", "1024")),
 )
 SIZE_CEILING = max(1, int(os.getenv("RAGFLOW_SIZE_CEILING", "12")))
+# RAGFlow >= 0.27 rejects /retrieval requests whose page size exceeds 100.
+RAGFLOW_MAX_PAGE_SIZE = 100
 UPSTREAM_TIMEOUT = float(os.getenv("RAGFLOW_UPSTREAM_TIMEOUT", "25"))
 
 if not SHARED_SECRET:
@@ -680,7 +682,10 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
         else:
             # Without scoping, retrieve more for potential filtering (old behavior)
             retrieve_size = body.citation_max * 3
-        
+        # RAGFlow >= 0.27 also requires size <= the rerank candidate pool (top_k).
+        size_cap = min(RAGFLOW_MAX_PAGE_SIZE, effective_citation_top_k)
+        retrieve_size = min(retrieve_size, size_cap)
+
         payload = {
             "question": body.citation_query or body.question,
             "dataset_ids": [body.citation_dataset_id],
@@ -759,7 +764,7 @@ async def retrieve_dual(request: Request, body: RetrieveDualRequest):
 
             if len(capped) < max(1, body.citation_min):
                 retry_threshold = max(0.05, (payload["similarity_threshold"] or 0.2) * 0.5)
-                retry_size = max(retrieve_size * 2, body.citation_max * 8)
+                retry_size = min(max(retrieve_size * 2, body.citation_max * 8), size_cap)
                 retry_payload = dict(payload)
                 retry_payload["similarity_threshold"] = retry_threshold
                 retry_payload["size"] = retry_size
