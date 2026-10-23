@@ -80,8 +80,12 @@ Single Hetzner VM, everything on one host. Full runbook: `docs/OPERATIONS.md`
 | Laravel API | PHP-FPM (`php8.5-fpm.service`), `127.0.0.1:8001`, fronted by Caddy on 80/443 |
 | Caddy | `/etc/caddy/Caddyfile` — **allowlists individual `/api/v1/...` paths**; a new endpoint 404s until added here |
 | RAGFlow bridge | FastAPI, `127.0.0.1:8000`, `ragflow-bridge.service`, config `ragflow_service/.env` |
-| RAGFlow | Docker `docker-ragflow-cpu-1` (v0.25.5), MySQL `docker-mysql-1` (db `rag_flow`), Valkey `docker-redis-1` |
-| OpenWebUI | Docker `open-webui`, database `/app/backend/data/webui.db` |
+| RAGFlow | Docker `docker-ragflow-cpu-1` (**v0.27.3** since 2026-10-24), MySQL `docker-mysql-1` 8.0.40 (db `rag_flow`), Valkey `docker-redis-1`, ES 8.11.3, MinIO (`pgsty/silo`). Compose in `/opt/cg/ragflow/ragflow/docker` (git checkout at tag `v0.27.3`) |
+| OpenWebUI | Docker `open-webui` (**v0.12.3**, pinned tag), compose in `/opt/cg/openwebui`, database `/app/backend/data/webui.db` |
+
+Every Docker-published port is bound to `127.0.0.1`; Docker bypasses ufw, so
+never publish a port on `0.0.0.0`. The RAGFlow web UI is **not public** — reach
+it with `ssh -L 8082:127.0.0.1:8082 root@<server>` and open http://localhost:8082.
 
 Two operational rules that have caused outages before:
 
@@ -226,12 +230,44 @@ lives. Remove each one as its touchpoint moves local:
 | Planner (Laravel) | OpenAI `gpt-5-mini` | `/opt/cg/laravel/app/.env` → `OPENAI_API_KEY` |
 | Gate v2 stages | OpenAI (per `config/gate-v2.php`) | same `.env` |
 | Answer writing | OpenAI `gpt-5-chat-latest` | OpenWebUI admin → Connections (stored in `webui.db`) |
-| Embeddings | OpenAI `text-embedding-3-large` / `ada-002` | RAGFlow MySQL `rag_flow.tenant_llm` rows |
-| Reranking | Cohere `rerank-english-v3.0` | RAGFlow `tenant_llm` (+ `BRIDGE_RERANK_API_KEY` in Laravel `.env`, standby) |
+| Embeddings | OpenAI `text-embedding-3-large` / `ada-002` | RAGFlow MySQL `rag_flow.tenant_model_instance` (what 0.27 reads) and legacy `tenant_llm` rows |
+| Reranking | Cohere `rerank-english-v3.0` | RAGFlow `tenant_model_instance` + `tenant_llm` (+ `BRIDGE_RERANK_API_KEY` in both Laravel `.env`s, standby) |
 
-Backups made during the provider migration also contain keys:
-`/opt/cg/laravel/app/.env.bak.*`, `ragflow_service/.env.bak.*`, and
-`webui.db.bak.*` inside the `open-webui` container. Delete them once no longer needed.
+Since RAGFlow 0.27, models are referenced as `name@instance@provider`
+(e.g. `RAGFLOW_RERANK_ID=rerank-english-v3.0@default@Cohere`), and a model is
+only usable if it has a row in `tenant_model`. OpenWebUI 0.12 stores its
+settings as key/value rows in the `config` table. `scripts/ops/rotate_openai_key.sh`
+and `scripts/ops/rotate_cohere_key.sh` handle all of this (hidden prompt, key sent
+only over SSH stdin, validate first, back up, verify); `scripts/ops/reset_ragflow_password.sh`
+resets a RAGFlow UI password.
+
+### Security incident (found 2026-10-24) — read this
+
+RAGFlow's built-in superuser `admin@ragflow.io` still had its factory-default
+password, and the RAGFlow UI was public with open registration. Between June
+and October attackers logged into its admin console, switched the agent code
+sandbox to `local`, ran code as root inside the RAGFlow container and copied
+the `tenant_llm` table (all provider API keys) plus the RAGFlow API tokens; on
+2026-10-09 they also changed the owner's RAGFlow password. The stolen OpenAI key
+was abused on 2026-10-23. Evidence: `/root/incident_20261023/` (root-only).
+
+Remediation done 2026-10-24: every provider key and the RAGFlow API token
+revoked and replaced; default admin disabled with a random password (so the
+RAGFlow admin console, port 9381, deliberately refuses to start); sandbox set
+to `self_managed`; registration disabled; RAGFlow closed to the internet; all
+four internal RAGFlow passwords (MySQL root, Valkey, MinIO, Elasticsearch)
+changed from the public default; RAGFlow and OpenWebUI upgraded; all ports
+bound to localhost. Checks found no host compromise (packages verify clean, no
+new users/keys/cron/units, no MySQL backdoor users/triggers, no rogue OpenWebUI
+functions). The attacker had root *inside the RAGFlow container* and network
+access to MySQL/Valkey/ES/MinIO, so a full rebuild onto a fresh VM is the only
+way to be certain — a good moment for that is the move to local models.
+
+Never re-enable `admin@ragflow.io` with a known password, never set the
+sandbox provider to `local`, and keep `REGISTER_ENABLED=0`.
+
+Backups holding revoked keys were moved to `/root/stale_secrets_20261024/`
+(safe to delete). Upgrade backups and rollback notes: `/root/upgrade_20261024/`.
 
 **Data.** `webui.db` holds OpenWebUI user accounts (emails) and chat history.
 The history so far is development and test traffic, not real patients. Once
